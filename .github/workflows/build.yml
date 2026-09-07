@@ -138,9 +138,9 @@ jobs:
         if: runner.os == 'macOS'
         working-directory: third_party/gio
         run: go test ./app -run TestFallbackTimerStartsStopsAndCloses
-      - name: Test Windows tray structure ABI
+      - name: Test Windows tray structure ABI and initialization
         if: runner.os == 'Windows'
-        run: go test fyne.io/systray -run TestNotifyIconDataWindowsABI
+        run: go test fyne.io/systray -run TestNotifyIconData
       - name: Test Linux clipboard event delivery
         if: runner.os == 'Linux'
         working-directory: third_party/gio

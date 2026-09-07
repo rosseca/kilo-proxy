@@ -34,3 +34,18 @@ func TestNotifyIconDataWindowsABI(t *testing.T) {
 		}
 	}
 }
+
+func TestNotifyIconDataInitialRegistration(t *testing.T) {
+	value := initialNotifyIconData(11, 22, 0x401)
+	// NIM_ADD's Win32 contract requires the receiving window, identifier and a
+	// valid icon. An icon field without NIF_ICON is ignored by the shell.
+	if value.Wnd != 11 || value.Icon != 22 || value.ID == 0 {
+		t.Fatal("initial registration omitted its window, identifier or icon")
+	}
+	if value.Flags&0x3 != 0x3 || value.CallbackMessage != 0x401 {
+		t.Fatal("initial registration does not enable its icon and callback")
+	}
+	if value.Size != 976 {
+		t.Fatalf("initial registration uses invalid Win32 structure size %d", value.Size)
+	}
+}

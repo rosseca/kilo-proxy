@@ -371,8 +371,6 @@ func (t *winTray) initInstance() error {
 		CS_HREDRAW = 0x0002
 		CS_VREDRAW = 0x0001
 	)
-	const NIF_MESSAGE = 0x00000001
-
 	// https://msdn.microsoft.com/en-us/library/windows/desktop/ms644931(v=vs.85).aspx
 	const WM_USER = 0x0400
 
@@ -470,15 +468,25 @@ func (t *winTray) initInstance() error {
 
 	t.muNID.Lock()
 	defer t.muNID.Unlock()
-	t.nid = &notifyIconData{
-		Wnd:             windows.Handle(t.window),
-		ID:              100,
-		Flags:           NIF_MESSAGE,
-		CallbackMessage: t.wmSystrayMessage,
-	}
-	t.nid.Size = uint32(unsafe.Sizeof(*t.nid))
+	t.nid = initialNotifyIconData(t.window, t.icon, t.wmSystrayMessage)
 
 	return t.nid.add()
+}
+
+func initialNotifyIconData(window, icon windows.Handle, callback uint32) *notifyIconData {
+	// The initial NIM_ADD must carry an actual icon. The application's SetIcon
+	// replaces this checked stock icon once the tray's onReady callback runs.
+	// https://learn.microsoft.com/en-us/windows/win32/shell/taskbar
+	const NIF_MESSAGE, NIF_ICON = 0x00000001, 0x00000002
+	nid := &notifyIconData{
+		Wnd:             window,
+		ID:              100,
+		Flags:           NIF_MESSAGE | NIF_ICON,
+		Icon:            icon,
+		CallbackMessage: callback,
+	}
+	nid.Size = uint32(unsafe.Sizeof(*nid))
+	return nid
 }
 
 func (t *winTray) createMenu() error {

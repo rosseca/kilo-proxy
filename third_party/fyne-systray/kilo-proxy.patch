@@ -18,9 +18,52 @@
  	}
  	return nil
  }
+@@ -371,8 +371,6 @@
+ 		CS_HREDRAW = 0x0002
+ 		CS_VREDRAW = 0x0001
+ 	)
+-	const NIF_MESSAGE = 0x00000001
+-
+ 	// https://msdn.microsoft.com/en-us/library/windows/desktop/ms644931(v=vs.85).aspx
+ 	const WM_USER = 0x0400
+ 
+@@ -470,15 +468,25 @@
+ 
+ 	t.muNID.Lock()
+ 	defer t.muNID.Unlock()
+-	t.nid = &notifyIconData{
+-		Wnd:             windows.Handle(t.window),
++	t.nid = initialNotifyIconData(t.window, t.icon, t.wmSystrayMessage)
++
++	return t.nid.add()
++}
++
++func initialNotifyIconData(window, icon windows.Handle, callback uint32) *notifyIconData {
++	// The initial NIM_ADD must carry an actual icon. The application's SetIcon
++	// replaces this checked stock icon once the tray's onReady callback runs.
++	// https://learn.microsoft.com/en-us/windows/win32/shell/taskbar
++	const NIF_MESSAGE, NIF_ICON = 0x00000001, 0x00000002
++	nid := &notifyIconData{
++		Wnd:             window,
+ 		ID:              100,
+-		Flags:           NIF_MESSAGE,
+-		CallbackMessage: t.wmSystrayMessage,
+-	}
+-	t.nid.Size = uint32(unsafe.Sizeof(*t.nid))
+-
+-	return t.nid.add()
++		Flags:           NIF_MESSAGE | NIF_ICON,
++		Icon:            icon,
++		CallbackMessage: callback,
++	}
++	nid.Size = uint32(unsafe.Sizeof(*nid))
++	return nid
+ }
+ 
+ func (t *winTray) createMenu() error {
 --- /dev/null
 +++ b/notify_icon_windows_test.go
-@@ -0,0 +1,36 @@
+@@ -0,0 +1,51 @@
 +//go:build windows && (amd64 || arm64)
 +
 +package systray
@@ -55,5 +98,20 @@
 +		if field.got != field.want {
 +			t.Errorf("%s offset = %d, Windows expects %d", field.name, field.got, field.want)
 +		}
++	}
++}
++
++func TestNotifyIconDataInitialRegistration(t *testing.T) {
++	value := initialNotifyIconData(11, 22, 0x401)
++	// NIM_ADD's Win32 contract requires the receiving window, identifier and a
++	// valid icon. An icon field without NIF_ICON is ignored by the shell.
++	if value.Wnd != 11 || value.Icon != 22 || value.ID == 0 {
++		t.Fatal("initial registration omitted its window, identifier or icon")
++	}
++	if value.Flags&0x3 != 0x3 || value.CallbackMessage != 0x401 {
++		t.Fatal("initial registration does not enable its icon and callback")
++	}
++	if value.Size != 976 {
++		t.Fatalf("initial registration uses invalid Win32 structure size %d", value.Size)
 +	}
 +}
