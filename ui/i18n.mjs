@@ -1,4 +1,18 @@
 export const translations = {
+"Caché del contexto":"Context cache",
+"Tokens leídos de caché":"Tokens read from cache",
+"Tokens escritos en caché":"Tokens written to cache",
+"Entrada reutilizada":"Input reused",
+"Porcentaje calculado sobre {covered} de {requests} peticiones con datos completos de entrada y caché.":"Percentage calculated from {covered} of {requests} requests with complete input and cache data.",
+"Caché leída reportada en {read} peticiones; escritura en {write}.":"Cache reads reported in {read} requests; writes in {write}.",
+"Acumulado desde que abriste Kilo Local. El mismo contexto puede contarse en varias peticiones; no es el tamaño de una caché activa ni un ahorro en dólares. La última petición muestra caché leída / entrada total. Sin datos del gateway se muestra «Sin dato», no cero.":"Accumulated since opening Kilo Local. The same context can count across multiple requests; this is not active cache size or dollar savings. The last request shows cache reads / total input. Missing gateway data is shown as “Not reported”, not zero.",
+"Caché leída":"Cache read",
+"Caché escrita":"Cache written",
+"Reutilizado · cobertura":"Reused · coverage",
+"Última petición · caché / entrada":"Last request · cache / input",
+"{input} entrada total · {output} salida":"{input} total input · {output} output",
+"Sin dato de caché":"Cache not reported",
+
 "Al usar Fable 5, Opus 4.7 u Opus 4.8 por primera vez, Claude puede mantener su nivel predeterminado hasta que elijas /effort una vez.":"On first use of Fable 5, Opus 4.7 or Opus 4.8, Claude may keep its default effort until you choose /effort once.",
 "Sesión de Claude":"Claude session",
 "Claude Code {version} · compatible con la configuración de Kilo":"Claude Code {version} · compatible with Kilo configuration",

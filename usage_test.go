@@ -213,3 +213,50 @@ func TestBrowserModulesAreServed(t *testing.T) {
 		}
 	}
 }
+
+func TestCachePercentageAcrossProtocols(t *testing.T) {
+	responses := observeUsage(t, false, `{"usage":{"input_tokens":100,"output_tokens":2,"input_tokens_details":{"cached_tokens":80,"cache_write_tokens":10}}}`)
+	messages := observeUsage(t, true, "data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":10,\"cache_read_input_tokens\":80,\"cache_creation_input_tokens\":10}}}\n\ndata: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":5}}\n\ndata: {\"type\":\"message_stop\"}\n\n")
+	for _, u := range []*usageObserver{responses, messages} {
+		if u.usage.Prompt == nil || *u.usage.Prompt != 100 {
+			t.Fatal("incorrect input denominator", u.usage.Prompt)
+		}
+	}
+	var s usageSummary
+	s.add(responses)
+	s.add(messages)
+	if s.CacheRatioInput != 200 || s.CacheRatioRead != 160 || s.CacheRatioRequests != 2 || s.Cached != 160 || s.CacheWrite != 20 || s.Prompt != 200 {
+		t.Fatalf("%+v", s)
+	}
+	// An unreported cache must not turn a known 80% ratio into 40%.
+	s.add(observeUsage(t, false, `{"usage":{"input_tokens":200,"output_tokens":1}}`))
+	if s.CacheRatioInput != 200 || s.CacheRatioRead != 160 || s.WithCacheRead != 2 || s.Requests != 3 || s.LastCache.Read != nil {
+		t.Fatalf("missing cache counted as zero: %+v", s)
+	}
+}
+func TestCacheUnknownZeroAndPartial(t *testing.T) {
+	tests := []struct {
+		body    string
+		covered int64
+		read    *int64
+	}{
+		{`{"usage":{"input_tokens":100}}`, 0, nil},
+		{`{"usage":{"input_tokens":100,"input_tokens_details":{"cached_tokens":0}}}`, 1, new(int64(0))},
+		{`{"usage":{"input_tokens":100,"input_tokens_details":{"cached_tokens":101}}}`, 0, new(int64(101))},
+		{`{"type":"message","usage":{"input_tokens":10,"cache_read_input_tokens":80}}`, 0, new(int64(80))},
+		{`{"type":"message","usage":{"input_tokens":10,"cache_read_input_tokens":80,"cache_creation_input_tokens":0}}`, 1, new(int64(80))},
+	}
+	for _, tt := range tests {
+		var s usageSummary
+		s.add(observeUsage(t, false, tt.body))
+		if s.CacheRatioRequests != tt.covered || (s.LastCache.Read == nil) != (tt.read == nil) {
+			t.Fatal(tt.body, s)
+		}
+	}
+	partial := observeUsage(t, true, "data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":10,\"cache_read_input_tokens\":80,\"cache_creation_input_tokens\":10}}}\n\n")
+	var s usageSummary
+	s.add(partial)
+	if s.WithCacheRead != 1 || s.CacheRatioRequests != 0 || s.LastCache.Complete {
+		t.Fatal("partial response counted as complete")
+	}
+}

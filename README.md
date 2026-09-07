@@ -62,6 +62,8 @@ The last 30 requests are kept in memory only. Capture starts enabled and can be 
 
 **Activity → Observed spend** shows reported USD, input/output/cache tokens, and a session/task breakdown. It listens to responses passing through the proxy, including streaming, and keeps totals independently of the last 30 debug captures. Codex task IDs and Claude Code session IDs are used when present; requests without an identifier are marked unassigned.
 
+**Context cache** shows tokens read from cache, tokens written to cache, and the share of input reused. The conversation table includes cumulative figures and the last request’s cache read / total input. Ratios use complete, comparable usage records; missing cache data is never treated as zero.
+
 Costs that are missing stay **Not reported**, with coverage shown alongside the total. A canceled response may not deliver final billing data. Totals last until the app closes and are gateway observations, not a Kilo invoice or catalog estimate. See [accounting fields and limits](docs/security-and-debugging.md#passive-spend-tracking-0130).
 
 ## Develop and release

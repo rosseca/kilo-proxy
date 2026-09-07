@@ -91,3 +91,19 @@ Grouping prefers Codex `thread-id`, then `session-id` (or legacy `session_id`), 
 The usage parser buffers at most 1 MiB per JSON body or SSE data event, independently of the 128 KiB debug capture. Oversized frames are skipped and flagged; a later final SSE usage event can still be read. An interrupted or unterminated SSE frame is not treated as a completed response. The stream itself continues unchanged.
 
 Sources: [Kilo usage and billing](https://kilo.ai/docs/gateway/usage-and-billing), [Kilo streaming](https://kilo.ai/docs/gateway/streaming), and [Kilo client cost extraction](https://github.com/Kilo-Org/kilo/blob/main/packages/opencode/src/session/index.ts). Documentation confirms usage reporting; no paid inference was made to validate a specific model's returned billing fields. Automated tests use representative gateway fixtures.
+
+
+## Context cache statistics (0.16.0)
+
+The activity panel displays reported cache reads and writes as token counts, plus the percentage of input served from cache. The session/task table shows the same cumulative figures, coverage, and the latest completed proxy request's cache read / total input. An interrupted request can report token counts while its ratio remains unavailable.
+
+The denominator is normalized per protocol:
+
+- OpenAI Responses and Chat Completions: input/prompt tokens already include cached input.
+- Anthropic Messages: total input is ordinary input plus cache-read input plus cache-creation input. All three counters must be present; an omitted counter is not assumed to be zero.
+
+The cumulative percentage divides the sum of cache reads by the sum of normalized input for the same complete, non-truncated requests. Coverage states how many requests qualified. Requests without cache data do not silently reduce the ratio, explicit zero cache hits remain zero, and zero input has no meaningful percentage. Reported cache-write tokens are shown separately; writing content is not a cache hit.
+
+The latest request is replaced even when it has no cache information, so a previous cache hit is not presented as current. Counters remain in memory until the app closes and survive clearing debug captures. They count processed tokens, including repeated context across requests, not unique conversation tokens, currently stored cache size, cache expiry or dollar savings.
+
+Primary references: [OpenAI prompt caching](https://developers.openai.com/api/docs/guides/prompt-caching) and [Anthropic prompt caching](https://platform.claude.com/docs/en/build-with-claude/prompt-caching).

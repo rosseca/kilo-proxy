@@ -32,3 +32,5 @@
 #codex-setup-status{overflow-wrap:anywhere}#save-codex-catalog{margin:8px 0 6px}
 
 #claude-setup-status{overflow-wrap:anywhere}#claude-models .primary-button,#claude-models .secondary-button{margin:8px 0}#claude-models table{font-size:11px;border-collapse:collapse;width:100%}#claude-models th,#claude-models td{padding:10px 6px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}.claude-version-row{display:flex;align-items:center;gap:16px}
+
+.cache-panel{border-top:1px solid var(--border);margin-top:18px;padding-top:14px}.cache-metrics{display:flex;flex-wrap:wrap;gap:16px 32px;margin:14px 0}.cache-metrics>div{min-width:145px}.cache-metrics strong{font-size:23px;display:block;font-weight:600}.cache-metrics span{font-size:11px;color:var(--muted)}#usage-session-table td:nth-child(n+6){white-space:nowrap}

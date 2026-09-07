@@ -24,6 +24,7 @@ type requestUsage struct {
 	Source     string  `json:"source"`
 	Model      string  `json:"model,omitempty"`
 	Input      *int64  `json:"input,omitempty"`
+	Prompt     *int64  `json:"prompt,omitempty"`
 	Output     *int64  `json:"output,omitempty"`
 	Cached     *int64  `json:"cached,omitempty"`
 	CacheWrite *int64  `json:"cacheWrite,omitempty"`
@@ -35,7 +36,22 @@ type requestUsage struct {
 	costNanos  int64
 }
 
+type cacheSample struct {
+	Read     *int64 `json:"read"`
+	Write    *int64 `json:"write"`
+	Prompt   *int64 `json:"prompt"`
+	Complete bool   `json:"complete"`
+}
 type usageSummary struct {
+	Prompt             int64        `json:"prompt"`
+	WithPrompt         int64        `json:"withPrompt"`
+	WithCacheRead      int64        `json:"withCacheRead"`
+	WithCacheWrite     int64        `json:"withCacheWrite"`
+	CacheRatioRequests int64        `json:"cacheRatioRequests"`
+	CacheRatioInput    int64        `json:"cacheRatioInput"`
+	CacheRatioRead     int64        `json:"cacheRatioRead"`
+	LastCache          *cacheSample `json:"lastCache,omitempty"`
+
 	ID         string `json:"id"`
 	Label      string `json:"label"`
 	Source     string `json:"source"`
@@ -59,6 +75,7 @@ type usageObserver struct {
 	eventDropped  bool
 	usage         requestUsage
 	label, org    string
+	messages      bool
 	sse           bool
 	buffer, event []byte
 	dropping      bool
@@ -91,7 +108,7 @@ func newUsageObserver(r *http.Request, org string) *usageObserver {
 		break
 	}
 	digest := sha256.Sum256([]byte(org + "\x00" + identity))
-	return &usageObserver{usage: requestUsage{Session: hex.EncodeToString(digest[:]), Source: source}, label: label, org: org}
+	return &usageObserver{usage: requestUsage{Session: hex.EncodeToString(digest[:]), Source: source}, label: label, org: org, messages: r.URL.Path == "/v1/messages"}
 }
 
 func (u *usageObserver) configure(r *http.Response) {
@@ -265,6 +282,9 @@ func (u *usageObserver) parse(data []byte) {
 		return
 	}
 	kind, _ := root["type"].(string)
+	if kind == "message" || kind == "message_start" || kind == "message_delta" {
+		u.messages = true
+	}
 	payload := root
 	if response := usageObject(root["response"]); response != nil {
 		payload = response
@@ -287,6 +307,21 @@ func (u *usageObserver) parse(data []byte) {
 		replaceInt(&u.usage.Cached, usageObject(usage["prompt_tokens_details"])["cached_tokens"])
 		replaceInt(&u.usage.CacheWrite, usage["cache_creation_input_tokens"])
 		replaceInt(&u.usage.CacheWrite, usage["cache_write_tokens"])
+		replaceInt(&u.usage.CacheWrite, usageObject(usage["input_tokens_details"])["cache_write_tokens"])
+		replaceInt(&u.usage.CacheWrite, usageObject(usage["prompt_tokens_details"])["cache_write_tokens"])
+		// OpenAI input already includes cached tokens. Messages input excludes
+		// cache reads and writes; require all three counters before forming a total.
+		u.usage.Prompt = nil
+		if u.usage.Input != nil {
+			if !u.messages {
+				v := *u.usage.Input
+				u.usage.Prompt = &v
+			} else if u.usage.Cached != nil && u.usage.CacheWrite != nil {
+				v := *u.usage.Input + *u.usage.Cached + *u.usage.CacheWrite
+				u.usage.Prompt = &v
+			}
+		}
+
 		replaceInt(&u.usage.Reasoning, usageObject(usage["output_tokens_details"])["reasoning_tokens"])
 		replaceInt(&u.usage.Reasoning, usageObject(usage["completion_tokens_details"])["reasoning_tokens"])
 		// Prefer Kilo's explicitly denominated field; never substitute BYOK provider charges.
@@ -329,6 +364,23 @@ func (r *usageReader) Read(p []byte) (int, error) {
 
 func (s *usageSummary) add(u *usageObserver) {
 	s.Requests++
+	if u.usage.Cached != nil {
+		s.WithCacheRead++
+	}
+	if u.usage.CacheWrite != nil {
+		s.WithCacheWrite++
+	}
+	if u.usage.Prompt != nil && s.Prompt <= math.MaxInt64-*u.usage.Prompt {
+		s.WithPrompt++
+		s.Prompt += *u.usage.Prompt
+	}
+	s.LastCache = &cacheSample{Read: u.usage.Cached, Write: u.usage.CacheWrite, Prompt: u.usage.Prompt, Complete: u.usage.Complete && !u.usage.Limited}
+	if s.LastCache.Complete && u.usage.Cached != nil && u.usage.Prompt != nil && *u.usage.Cached <= *u.usage.Prompt && s.CacheRatioInput <= math.MaxInt64-*u.usage.Prompt && s.CacheRatioRead <= math.MaxInt64-*u.usage.Cached {
+		s.CacheRatioRequests++
+		s.CacheRatioInput += *u.usage.Prompt
+		s.CacheRatioRead += *u.usage.Cached
+	}
+
 	if !u.usage.Complete || u.usage.Limited {
 		s.Incomplete++
 	}
