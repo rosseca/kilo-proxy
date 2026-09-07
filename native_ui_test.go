@@ -172,7 +172,7 @@ func TestNativeLanguageClipboardTeamsAndLoginCancel(t *testing.T) {
 	nativeTestFrame(t, u)
 	u.clickable("language").Click()
 	nativeTestFrame(t, u)
-	nativeTestWait(t, u, func() bool { return u.language == "es" })
+	nativeTestWait(t, u, func() bool { return u.language == "es" && u.SmokeSnapshot()["language-saving"] == "false" })
 	saved, err := readSettings(u.owner.dir)
 	if err != nil || saved.Language != "es" {
 		t.Fatal("language not persisted")

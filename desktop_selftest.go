@@ -136,6 +136,7 @@ func (d *nativeDesktop) checkDesktop(checks *[]string) error {
 		if err := d.withUI(func() error { return d.ui.SmokeAction("set-language", language) }); err != nil {
 			return err
 		}
+		progress := "awaiting the first language state"
 		if err := desktopWait("native window and tray language "+language, func() bool {
 			state, err := d.snapshot()
 			d.owner.mu.Lock()
@@ -144,9 +145,13 @@ func (d *nativeDesktop) checkDesktop(checks *[]string) error {
 			d.mu.Lock()
 			label := d.quitLabel
 			d.mu.Unlock()
-			return err == nil && state["language"] == language && saved == language && label == trayText(language).exit
+			progress = fmt.Sprintf("UI=%q saved=%q tray=%q pending=%q frame-error=%v", state["language"], saved, label, state["language-saving"], err)
+			// Selecting the existing default still submits a real language POST.
+			// Await its completion before submitting the next choice, otherwise
+			// an unchanged English value can hide an in-flight save.
+			return err == nil && state["language-saving"] == "false" && state["language"] == language && saved == language && label == trayText(language).exit
 		}); err != nil {
-			return err
+			return fmt.Errorf("%w (%s)", err, progress)
 		}
 		passed("window-and-tray-language-" + language)
 	}

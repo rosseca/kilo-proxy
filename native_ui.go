@@ -25,8 +25,10 @@ import (
 // All view state is confined to the window event goroutine. Network requests
 // return through updates; polling never changes an editor the user is typing in.
 type nativeUI struct {
-	traceGeneration uint64
-	modelsPending   bool
+	traceGeneration  uint64
+	modelsPending    bool
+	languageRevision uint64
+	languageTarget   string
 
 	owner                          *app
 	invalidate                     func()
@@ -405,7 +407,19 @@ func (u *nativeUI) call(method, path string, payload any, done func(json.RawMess
 		})
 	}()
 }
-func (u *nativeUI) refreshState() { u.call("GET", "/api/state", nil, u.acceptState) }
+func (u *nativeUI) refreshState() {
+	revision, saving := u.languageRevision, u.languageTarget != ""
+	u.call("GET", "/api/state", nil, func(raw json.RawMessage) {
+		u.acceptState(raw)
+		// A response captured before a choice or during its save can contain
+		// the previous language, even when it arrives after the save succeeds.
+		if !saving && revision == u.languageRevision && u.languageTarget == "" {
+			if lang := nativeString(u.state, "language"); lang != "" {
+				u.language = lang
+			}
+		}
+	})
+}
 func (u *nativeUI) acceptState(raw json.RawMessage) {
 	var state map[string]any
 	if json.Unmarshal(raw, &state) != nil {
@@ -430,9 +444,6 @@ func (u *nativeUI) acceptState(raw json.RawMessage) {
 	if u.modelsPending && !u.busy["POST/api/models"] {
 		u.modelsPending = false
 		u.refreshModels()
-	}
-	if lang := nativeString(state, "language"); lang != "" {
-		u.language = lang
 	}
 	if first || oldOrg != nativeString(state, "orgId") {
 		u.setValue("connection.org", nativeString(state, "orgId"))
@@ -498,7 +509,38 @@ func (u *nativeUI) statusLabel() string {
 	return u.tr("Proxy stopped", "Proxy detenido")
 }
 func (u *nativeUI) setLanguage(lang string) {
-	u.call("POST", "/api/language", map[string]string{"language": lang}, func(json.RawMessage) { u.language = lang; u.refreshState() })
+	if lang != "en" && lang != "es" {
+		return
+	}
+	u.languageRevision++
+	u.language, u.languageTarget = lang, lang
+	u.saveLanguage()
+}
+
+func (u *nativeUI) saveLanguage() {
+	const key = "POST/api/language"
+	if u.languageTarget == "" || u.busy[key] {
+		return
+	}
+	lang := u.languageTarget
+	u.busy[key] = true
+	go func() {
+		_, err := nativeRequest(u.owner, "POST", "/api/language", map[string]string{"language": lang})
+		u.enqueue(func() {
+			delete(u.busy, key)
+			// Preserve the latest choice while the previous request completes.
+			// Serial writes also prevent an older save from winning on disk.
+			if u.languageTarget != lang {
+				u.saveLanguage()
+				return
+			}
+			u.languageTarget = ""
+			if err != nil {
+				u.notice = nativeMessage(err.Error(), u.language)
+			}
+			u.refreshState()
+		})
+	}()
 }
 func (u *nativeUI) submitConnection(start bool) {
 	port, err := strconv.Atoi(strings.TrimSpace(u.value("connection.port")))
@@ -612,5 +654,5 @@ func (u *nativeUI) SmokeSnapshot() map[string]string {
 	if nativeBool(u.state, "running") {
 		status = "running"
 	}
-	return map[string]string{"version": version, "language": u.language, "status": status, "content-ready": ready, "baseURL": nativeString(u.state, "baseURL"), "notice": u.notice}
+	return map[string]string{"version": version, "language": u.language, "language-saving": strconv.FormatBool(u.languageTarget != "" || u.busy["POST/api/language"]), "status": status, "content-ready": ready, "baseURL": nativeString(u.state, "baseURL"), "notice": u.notice}
 }
