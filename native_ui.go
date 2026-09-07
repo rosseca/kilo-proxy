@@ -143,7 +143,7 @@ func (u *nativeUI) label(s string) layout.Widget {
 func (u *nativeUI) note(s string) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
 		l := material.Caption(u.theme, s)
-		l.Color = nativeColor(0x747c76)
+		l.Color = nativeColor(0x64705f)
 		return l.Layout(gtx)
 	}
 }
@@ -163,9 +163,16 @@ func (u *nativeUI) button(id, label string, action func()) layout.Widget {
 		}
 		style := material.Button(u.theme, b, label)
 		style.CornerRadius = 7
+		style.TextSize = 12
+		style.Inset = layout.Inset{Top: 11, Bottom: 11, Left: 14, Right: 14}
+		gtx.Constraints.Min.Y = max(gtx.Constraints.Min.Y, gtx.Dp(40))
 		style.Background = nativeColor(0xeff2e8)
 		if id == "connection.save-start" || id == "connection.login" || strings.Contains(id, "prepare") {
 			style.Background = nativeColor(0xe8f36a)
+		}
+		if strings.HasPrefix(label, "● ") || strings.HasPrefix(label, "★ ") {
+			style.Background = nativeColor(0x293b26)
+			style.Color = nativeColor(0xf3f8df)
 		}
 		return style.Layout(gtx)
 	}
@@ -189,6 +196,8 @@ func (u *nativeUI) field(id, label, placeholder string, secret bool) layout.Widg
 		}
 		return widget.Border{Color: nativeColor(0xdfe3d8), Width: 1, CornerRadius: 6}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			gtx.Constraints.Min.X = gtx.Constraints.Max.X
+			gtx.Constraints.Min.Y = max(0, gtx.Constraints.Min.Y-gtx.Dp(20))
+			gtx.Constraints.Min.Y = max(gtx.Constraints.Min.Y, gtx.Dp(20))
 			return layout.UniformInset(10).Layout(gtx, material.Editor(u.theme, e, placeholder).Layout)
 		})
 	})
@@ -225,7 +234,7 @@ func (u *nativeUI) column(children ...layout.Widget) layout.Widget {
 		flex := make([]layout.FlexChild, 0, len(children)*2)
 		for i, child := range children {
 			if i > 0 {
-				flex = append(flex, layout.Rigid(layout.Spacer{Height: 10}.Layout))
+				flex = append(flex, layout.Rigid(layout.Spacer{Height: 8}.Layout))
 			}
 			flex = append(flex, layout.Rigid(child))
 		}
@@ -233,6 +242,12 @@ func (u *nativeUI) column(children ...layout.Widget) layout.Widget {
 	}
 }
 func (u *nativeUI) row(children ...layout.Widget) layout.Widget {
+	return u.alignedRow(layout.End, children...)
+}
+func (u *nativeUI) topRow(children ...layout.Widget) layout.Widget {
+	return u.alignedRow(layout.Start, children...)
+}
+func (u *nativeUI) alignedRow(alignment layout.Alignment, children ...layout.Widget) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
 		max := 3
 		if gtx.Constraints.Max.X < gtx.Dp(650) {
@@ -256,7 +271,7 @@ func (u *nativeUI) row(children ...layout.Widget) layout.Widget {
 					}
 					items = append(items, layout.Flexed(1, w))
 				}
-				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, items...)
+				return layout.Flex{Axis: layout.Horizontal, Alignment: alignment}.Layout(gtx, items...)
 			})
 		}
 		return u.column(rows...)(gtx)
@@ -515,7 +530,7 @@ func (u *nativeUI) connectionPanel() layout.Widget {
 		}
 	}
 	editable := !nativeBool(u.state, "running") && !pending && !connectionBusy
-	login := []layout.Widget{u.heading(u.tr("Connect your Kilo team", "Conecta tu equipo de Kilo")), u.note(u.tr("Your tools send requests here. Kilo Local adds your organization header before forwarding them to Kilo.", "Tus herramientas envían aquí sus peticiones. Kilo Local añade la cabecera de tu organización antes de enviarlas a Kilo.")), u.disabled(editable, u.button("connection.login", u.tr("Sign in with Kilo / SSO", "Iniciar sesión con Kilo / SSO"), func() {
+	login := []layout.Widget{u.heading(u.tr("Connect your Kilo team", "Conecta tu equipo de Kilo")), u.note(u.tr("Your tools send requests here. Kilo Proxy adds your organization header before forwarding them to Kilo.", "Tus herramientas envían aquí sus peticiones. Kilo Proxy añade la cabecera de tu organización antes de enviarlas a Kilo.")), u.disabled(editable, u.button("connection.login", u.tr("Sign in with Kilo / SSO", "Iniciar sesión con Kilo / SSO"), func() {
 		u.call("POST", "/api/auth/start", map[string]any{}, func(raw json.RawMessage) {
 			var auth map[string]any
 			_ = json.Unmarshal(raw, &auth)
@@ -529,14 +544,12 @@ func (u *nativeUI) connectionPanel() layout.Widget {
 		login = append(login, u.label(email))
 	}
 	if pending {
-		login = append(login, u.label(u.tr("Authorize this device in Kilo:", "Autoriza este dispositivo en Kilo:")+" "+nativeString(auth, "code")), u.row(u.button("connection.verify", u.tr("Open authorization page", "Abrir autorización"), func() { u.open(nativeString(auth, "verificationUrl")) }), u.button("connection.cancel", u.tr("Cancel login", "Cancelar login"), func() { u.call("POST", "/api/auth/cancel", map[string]any{}, u.acceptState) })))
+		login = append(login, u.label(u.tr("Authorize this device in Kilo:", "Autoriza este dispositivo en Kilo:")+" "+nativeString(auth, "code")), u.pills(u.button("connection.verify", u.tr("Open authorization page", "Abrir autorización"), func() { u.open(nativeString(auth, "verificationUrl")) }), u.button("connection.cancel", u.tr("Cancel login", "Cancelar login"), func() { u.call("POST", "/api/auth/cancel", map[string]any{}, u.acceptState) })))
 	}
 	if msg := nativeString(auth, "message"); msg != "" {
 		login = append(login, u.note(nativeMessage(msg, u.language)))
 	}
-	login = append(login, u.disabled(editable, u.field("connection.key", u.tr("Personal API key (or sign in above)", "API key personal (o inicia sesión arriba)"), u.tr("Leave blank to keep the current key", "Deja vacío para mantener la clave"), !u.checked("connection.reveal"))), u.check("connection.reveal", u.tr("Show API key", "Mostrar API key"), nil), u.disabled(editable, u.button("connection.teams", u.tr("Load my teams", "Cargar mis equipos"), func() {
-		u.call("POST", "/api/auth/organizations", map[string]any{"apiKey": u.value("connection.key")}, u.acceptState)
-	})))
+	login = append(login, u.disabled(editable, u.field("connection.key", u.tr("Personal API key (or sign in above)", "API key personal (o inicia sesión arriba)"), u.tr("Leave blank to keep the current key", "Deja vacío para mantener la clave"), !u.checked("connection.reveal"))), u.check("connection.reveal", u.tr("Show API key", "Mostrar API key"), nil))
 	for _, raw := range nativeArray(u.state, "organizations") {
 		org := nativeMap(raw)
 		id := nativeString(org, "id")
@@ -546,7 +559,9 @@ func (u *nativeUI) connectionPanel() layout.Widget {
 		}
 		login = append(login, u.disabled(editable, u.button("team."+id, name, func() { u.setValue("connection.org", id) })))
 	}
-	login = append(login, u.disabled(editable, u.row(u.field("connection.org", u.tr("Organization ID", "ID de organización"), "org_…", false), u.field("connection.port", u.tr("Local port", "Puerto local"), "8877", false))), u.disabled(editable, u.check("connection.remember", u.tr("Remember upstream key in the system credential store", "Recordar la clave de Kilo en el almacén del sistema"), nil)), u.row(u.disabled(editable, u.button("connection.save-start", u.tr("Save & start", "Guardar y arrancar"), func() { u.submitConnection(true) })), u.disabled(editable, u.button("connection.save", u.tr("Save connection", "Guardar conexión"), func() { u.submitConnection(false) })), u.disabled(nativeBool(u.state, "running"), u.button("connection.stop", u.tr("Stop proxy", "Detener proxy"), func() { u.call("POST", "/api/stop", map[string]any{}, u.acceptState) }))), u.row(u.button("connection.check", u.tr("Check gateway", "Comprobar gateway"), func() {
+	login = append(login, u.disabled(editable, u.actionRow(u.row(u.field("connection.org", u.tr("Organization ID", "ID de organización"), "org_…", false), u.field("connection.port", u.tr("Local port", "Puerto local"), "8877", false)), u.button("connection.teams", u.tr("Load my teams", "Cargar mis equipos"), func() {
+		u.call("POST", "/api/auth/organizations", map[string]any{"apiKey": u.value("connection.key")}, u.acceptState)
+	}))), u.disabled(editable, u.check("connection.remember", u.tr("Remember upstream key in the system credential store", "Recordar la clave de Kilo en el almacén del sistema"), nil)), u.pills(u.disabled(editable, u.button("connection.save-start", u.tr("Save & start", "Guardar y arrancar"), func() { u.submitConnection(true) })), u.disabled(editable, u.button("connection.save", u.tr("Save connection", "Guardar conexión"), func() { u.submitConnection(false) })), u.disabled(nativeBool(u.state, "running"), u.button("connection.stop", u.tr("Stop proxy", "Detener proxy"), func() { u.call("POST", "/api/stop", map[string]any{}, u.acceptState) }))), u.pills(u.button("connection.check", u.tr("Check gateway", "Comprobar gateway"), func() {
 		revision := nativeNumber(u.state, "catalogRevision")
 		u.call("POST", "/api/check", map[string]any{}, func(raw json.RawMessage) {
 			if !u.applyModels(raw, revision, "catalog") {
@@ -557,7 +572,7 @@ func (u *nativeUI) connectionPanel() layout.Widget {
 	}), u.disabled(editable, u.button("connection.forget", u.tr("Forget upstream key", "Olvidar clave de Kilo"), func() {
 		u.call("POST", "/api/forget", map[string]any{}, func(json.RawMessage) { u.setValue("connection.key", ""); u.refreshState() })
 	}))))
-	endpoint := u.card(u.heading(u.tr("Your local endpoint", "Tu endpoint local")), u.label(nativeString(u.state, "baseURL")), u.row(u.button("connection.copy-url", u.tr("Copy base URL", "Copiar URL base"), func() { u.copy(nativeString(u.state, "baseURL")) }), u.button("connection.copy-key", u.tr("Copy local API key", "Copiar API key local"), func() { u.copy(nativeString(u.state, "localKey")) })), u.note(u.tr("The local key authenticates your tools. Your personal Kilo key stays on this device.", "La clave local autentica tus herramientas. Tu clave personal de Kilo permanece en este equipo.")), u.button("connection.clients", u.tr("Set up a client →", "Configurar un cliente →"), func() {
+	endpoint := u.card(u.heading(u.tr("Your local endpoint", "Tu endpoint local")), u.label(nativeString(u.state, "baseURL")), u.pills(u.button("connection.copy-url", u.tr("Copy base URL", "Copiar URL base"), func() { u.copy(nativeString(u.state, "baseURL")) }), u.button("connection.copy-key", u.tr("Copy local API key", "Copiar API key local"), func() { u.copy(nativeString(u.state, "localKey")) })), u.note(u.tr("The local key authenticates your tools. Your personal Kilo key stays on this device.", "La clave local autentica tus herramientas. Tu clave personal de Kilo permanece en este equipo.")), u.button("connection.clients", u.tr("Set up a client →", "Configurar un cliente →"), func() {
 		u.page = "clients"
 		if len(u.models) == 0 {
 			u.refreshModels()

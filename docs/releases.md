@@ -1,6 +1,6 @@
 # Development and release process
 
-The repository is [rosseca/kilo-proxy](https://github.com/rosseca/kilo-proxy). Like [AISI](https://github.com/rosseca/aisi), releases are triggered by pushing a version tag. The production application uses a native Gio window and system tray. Kilo Local retains its Python packager for macOS app bundles, Windows GUI executables, and the optional Linux application-menu installer. Gio is pinned to `v0.10.2`, with documented [virtual desktop compatibility patches](../third_party/gio/PATCHES.md). Its controls render directly through operating-system graphics APIs; no embedded browser or WebView runtime is required. Changing the framework version requires the same native checks as an application change.
+The repository is [rosseca/kilo-proxy](https://github.com/rosseca/kilo-proxy). Like [AISI](https://github.com/rosseca/aisi), releases are triggered by pushing a version tag. The production application uses a native Gio window and system tray. Kilo Proxy retains its Python packager for macOS app bundles, Windows GUI executables, and the optional Linux application-menu installer. Gio is pinned to `v0.10.2`, with documented [virtual desktop compatibility patches](../third_party/gio/PATCHES.md). Its controls render directly through operating-system graphics APIs; no embedded browser or WebView runtime is required. Changing the framework version requires the same native checks as an application change.
 
 ## Local checks
 
@@ -32,13 +32,13 @@ Build and test the native target first. For example, on Apple Silicon:
 
 ```sh
 python3 scripts/package.py --build-only --target darwin/arm64 --output dist/binaries
-python3 scripts/smoke_desktop.py --binary dist/binaries/kilo-local-darwin-arm64
+python3 scripts/smoke_desktop.py --binary dist/binaries/kilo-proxy-darwin-arm64
 python3 scripts/package.py --binaries-directory dist/binaries --target darwin/arm64
 python3 scripts/package.py --verify-macos-archives --target darwin/arm64
 python3 scripts/smoke_macos.py
 ```
 
-`--build-only` emits `kilo-local-OS-ARCH` (plus `.exe` on Windows), using `go build -tags desktop`. Windows uses `CGO_ENABLED=0`; macOS and Linux use `CGO_ENABLED=1`. Linux builds require a native host of the target architecture; macOS can build both Darwin architectures; Windows can be cross-compiled with Go. The release workflow uses native hardware for all six targets so each executable can also be launched and tested.
+`--build-only` emits `kilo-proxy-OS-ARCH` (plus `.exe` on Windows), using `go build -tags desktop`. Windows uses `CGO_ENABLED=0`; macOS and Linux use `CGO_ENABLED=1`. Linux builds require a native host of the target architecture; macOS can build both Darwin architectures; Windows can be cross-compiled with Go. The release workflow uses native hardware for all six targets so each executable can also be launched and tested.
 
 With no `--target`, local builds select the host architecture. `--binaries-directory` selects all six supplied binaries unless a target is specified. It inspects each executable's native header before packaging, rejects missing files or incorrect CPU/OS artifacts, and checks Windows imports for non-system DLL dependencies. It never recompiles the tested input. To aggregate archives downloaded from the platform jobs:
 
@@ -57,18 +57,20 @@ The default output is `dist/`. Version strings are `X.Y.Z`, optionally followed 
 
 ## Publish a release
 
-1. Update `VERSION`, for example to `0.12.1`, and commit the tested changes to `main`.
+The native-interface and branding migration is a pull-request change only. It does not create a release, tag or version bump. The commands below describe a future release after separate authorization.
+
+1. Update `VERSION`, for example to `0.20.2`, and commit the tested changes to `main`.
 2. Push the commit, then an annotated matching tag:
 
 ```sh
 git add VERSION
-git commit -m "chore: prepare v0.12.1"
+git commit -m "chore: prepare v0.20.2"
 git push origin main
-git tag -a v0.12.1 -m "Kilo Local v0.12.1"
-git push origin v0.12.1
+git tag -a v0.20.2 -m "Kilo Proxy v0.20.2"
+git push origin v0.20.2
 ```
 
-The numbers above illustrate the next patch release; always use the version actually committed in `VERSION`. For the first GitHub release, the tag is `v0.12.0`.
+The numbers above are examples; always use the version actually committed in `VERSION`. The historical first GitHub release was `v0.12.0`, published under the former Kilo Local name.
 
 The **Release** workflow calls **Test and package**, which:
 
@@ -90,12 +92,12 @@ This automates release publishing, not installation or updating on user machines
 
 Each release contains:
 
-- `kilo-local-VERSION-darwin-arm64.zip`
-- `kilo-local-VERSION-darwin-amd64.zip`
-- `kilo-local-VERSION-linux-amd64.tar.gz`
-- `kilo-local-VERSION-linux-arm64.tar.gz`
-- `kilo-local-VERSION-windows-amd64.zip`
-- `kilo-local-VERSION-windows-arm64.zip`
+- `kilo-proxy-VERSION-darwin-arm64.zip`
+- `kilo-proxy-VERSION-darwin-amd64.zip`
+- `kilo-proxy-VERSION-linux-amd64.tar.gz`
+- `kilo-proxy-VERSION-linux-arm64.tar.gz`
+- `kilo-proxy-VERSION-windows-amd64.zip`
+- `kilo-proxy-VERSION-windows-arm64.zip`
 - `SHA256SUMS.txt`
 
 Archives include English README/documentation and third-party notices. The source is available through GitHub’s automatically generated source archives. Build output, profiles, keys, environment files, trace files, and common editor caches are ignored by Git. `.gitignore` is not a secret scanner; review the staged file list before committing.
@@ -106,12 +108,12 @@ Download all six archives alongside the manifest, then verify on Linux:
 sha256sum -c SHA256SUMS.txt
 ```
 
-On macOS use `shasum -a 256 -c SHA256SUMS.txt`. For an individual Windows download, compare `Get-FileHash .\kilo-local-0.12.0-windows-amd64.zip -Algorithm SHA256` with its line in the manifest. A checksum detects file corruption; it is not a publisher signature.
+On macOS use `shasum -a 256 -c SHA256SUMS.txt`. For an individual Windows download, compare `Get-FileHash .\kilo-proxy-0.20.2-windows-amd64.zip -Algorithm SHA256` with its line in the manifest. A checksum detects file corruption; it is not a publisher signature.
 
 For local full-set verification:
 
 ```sh
-python3 scripts/release.py check-tag --tag v0.12.0
+python3 scripts/release.py check-tag --tag v0.20.2
 python3 scripts/release.py verify-assets
 ```
 

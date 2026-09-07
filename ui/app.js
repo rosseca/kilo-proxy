@@ -623,7 +623,7 @@ $('model').addEventListener('input', () => { applyModelContext(); renderModels()
 $('context-window').addEventListener('input', renderSnippet);
 $('quit').addEventListener('click', () => action(async () => {
   await api('quit', {}); stopped = true;
-  lock('Kilo Local está cerrado', 'El proxy se ha detenido. Puedes cerrar esta pestaña. Para volver a usarlo, abre la aplicación.');
+  lock('Kilo Proxy está cerrado', 'El proxy se ha detenido. Puedes cerrar esta pestaña. Para volver a usarlo, abre la aplicación.');
 }));
 document.querySelectorAll('.nav-link').forEach(link => link.addEventListener('click', () => {
   document.querySelectorAll('.nav-link').forEach(l => l.classList.toggle('selected', l === link));
@@ -631,7 +631,7 @@ document.querySelectorAll('.nav-link').forEach(link => link.addEventListener('cl
 bindDesktopLinks(document, error => notify(error.message, true));
 async function poll() {
   if (stopped) return;
-  if (!busy) { try { await refresh(); } catch { if (!stopped) notify('Se ha perdido la conexión con la aplicación. Comprueba que Kilo Local siga abierto.', true); } }
+  if (!busy) { try { await refresh(); } catch { if (!stopped) notify('Se ha perdido la conexión con la aplicación. Comprueba que Kilo Proxy siga abierto.', true); } }
   setTimeout(poll, 2500);
 }
 $('language').addEventListener('change', async () => {
@@ -642,7 +642,7 @@ $('language').addEventListener('change', async () => {
   catch { notify('No se pudo guardar el idioma. La selección solo se mantendrá en esta pestaña.', true); }
   finally { $('language').disabled = false; }
 });
-if (!token) { stopped = true; lock('Abre Kilo Local', 'Este panel necesita el enlace de acceso de la aplicación. Usa «Abrir panel» en el icono de Kilo Local de la barra de menús o bandeja del sistema.'); }
+if (!token) { stopped = true; lock('Abre Kilo Proxy', 'Este panel necesita el enlace de acceso de la aplicación. Usa «Abrir panel» en el icono de Kilo Proxy de la barra de menús o bandeja del sistema.'); }
 else poll();
 
 function currentClaudeCaps(){return $('claude-mode').value==='modern' ? claudeCapabilities('2.1.251') : claudeInstalled;}
@@ -733,7 +733,7 @@ function renderCursorConnection() {
  'cursor-heading':en?'Cursor · HTTPS connection':'Cursor · conexión HTTPS',
  'cursor-intro':en?'Select models below, then connect. The app starts a dedicated ngrok tunnel for Cursor’s servers.':'Selecciona modelos y conecta. La app inicia un túnel ngrok propio para los servidores de Cursor.',
  'cursor-setup-title':en?'First time? Set up ngrok once':'¿Primera vez? Configura ngrok una vez',
- 'cursor-setup-help':en?'Install ngrok 3 for your OS, create an account, and run the command below with your ngrok authtoken. This is a separate credential from Kilo. Restart Kilo Local after installation.':'Instala ngrok 3 para tu sistema, crea una cuenta y ejecuta el comando con tu authtoken de ngrok. Es una credencial distinta a la de Kilo. Reinicia Kilo Local después de instalarlo.',
+ 'cursor-setup-help':en?'Install ngrok 3 for your OS, create an account, and run the command below with your ngrok authtoken. This is a separate credential from Kilo. Restart Kilo Proxy after installation.':'Instala ngrok 3 para tu sistema, crea una cuenta y ejecuta el comando con tu authtoken de ngrok. Es una credencial distinta a la de Kilo. Reinicia Kilo Proxy después de instalarlo.',
  'cursor-privacy':en?'Connecting publishes an authenticated inference endpoint. Prompts and responses travel through Cursor, ngrok and Kilo. Local ngrok inspection is disabled; cloud logging follows your ngrok account settings. The admin panel stays private.':'Conectar publica un endpoint de IA autenticado. Los mensajes y respuestas pasan por Cursor, ngrok y Kilo. La inspección local de ngrok está desactivada; los registros en la nube dependen de tu cuenta ngrok. El panel de administración sigue siendo privado.',
  'cursor-connect':en?'Connect Cursor':'Conectar Cursor','cursor-disconnect':en?'Disconnect / revoke key':'Desconectar / revocar clave',
  'cursor-check':en?'Test public connection (no model charge)':'Probar conexión pública (sin gasto de modelo)',

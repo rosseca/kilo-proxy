@@ -1,25 +1,25 @@
-# Cursor with Kilo Local
+# Cursor with Kilo Proxy
 
-Kilo Local can start a dedicated **ngrok HTTPS tunnel** for Cursor. Cursor sends BYOK requests through its servers, so an ordinary localhost URL cannot work.
+Kilo Proxy can start a dedicated **ngrok HTTPS tunnel** for Cursor. Cursor sends BYOK requests through its servers, so an ordinary localhost URL cannot work.
 
 ## One-time setup
 
-1. Install [ngrok 3](https://ngrok.com/download) for macOS, Linux, or Windows. Put the executable on your PATH and restart Kilo Local. Homebrew locations on macOS, `~/.local/bin/ngrok`, and Scoop's Windows shim are also detected.
-2. Create an ngrok account and run `ngrok config add-authtoken YOUR_NGROK_AUTHTOKEN` using the token from your ngrok dashboard. This is **not** your Kilo API key. Kilo Local uses ngrok's existing configuration without reading or copying the token.
-3. Sign in to Kilo Local, select your organization, and start the local proxy.
+1. Install [ngrok 3](https://ngrok.com/download) for macOS, Linux, or Windows. Put the executable on your PATH and restart Kilo Proxy. Homebrew locations on macOS, `~/.local/bin/ngrok`, and Scoop's Windows shim are also detected.
+2. Create an ngrok account and run `ngrok config add-authtoken YOUR_NGROK_AUTHTOKEN` using the token from your ngrok dashboard. This is **not** your Kilo API key. Kilo Proxy uses ngrok's existing configuration without reading or copying the token.
+3. Sign in to Kilo Proxy, select your organization, and start the local proxy.
 
 ## Connect
 
-1. Open the **Cursor** tab. Select a model from the Kilo catalog and click **Add to Cursor list**. Repeat for the models you want (up to 50).
-2. Click **Connect Cursor**. This explicitly publishes an authenticated inference endpoint through your ngrok account. Keep the app and computer running while using Cursor.
+1. Open the **Cursor** tab and check the models you want in the catalog (up to 50). Search by name or use **Add an exact model ID** for models missing from the catalog.
+2. Click **Connect HTTPS tunnel**. This explicitly publishes an authenticated inference endpoint through your ngrok account. Keep the app and computer running while using Cursor.
 3. Click **Test public connection**. This checks HTTPS, authentication, and the selected model list without making a billable inference request.
 4. In **Cursor → Settings → Models**, enable **OpenAI API Key**, paste the helper's **Cursor key**, and enable **Override OpenAI Base URL** with the helper's HTTPS URL, including `/v1`.
 5. Add each exact model ID from the helper using **Add Custom Model / Add model**, and enable it. Select that custom model in a new chat and send a small test request. UI labels vary with Cursor versions.
-6. Inspect **Session activity** in Kilo Local for the actual request, upstream response, and any gateway error. Cost and cache statistics use the same pipeline as other clients when Kilo returns usage data.
+6. Inspect **Activity & costs** in Kilo Proxy for the actual request, upstream response, and any gateway error. Cost and cache statistics use the same pipeline as other clients when Kilo returns usage data.
 
 The OpenAI key field receives the dedicated `kl_cursor_…` key, never your Kilo API key or the ordinary `kl_local_…` key. Do not enter a second organization header in Cursor; the proxy supplies it.
 
-**Disconnect / revoke key** stops the tunnel and its listener. Stopping the main proxy or quitting Kilo Local also disconnects Cursor. Each connection gets a fresh key. Reconnect and update Cursor's key (and URL if changed). Changing the model list requires disconnecting first. Tunnels do not restart automatically. Your ngrok account's endpoint, bandwidth, concurrent-session, and pricing limits apply.
+**Disconnect** stops the tunnel and its listener. Stopping the main proxy or quitting Kilo Proxy also disconnects Cursor. Each connection gets a fresh key. Reconnect and update Cursor's key (and URL if changed). Changing the model list requires disconnecting first. Tunnels do not restart automatically. Your ngrok account's endpoint, bandwidth, concurrent-session, and pricing limits apply.
 
 ## Scope and limitations
 
@@ -34,14 +34,14 @@ The OpenAI key field receives the dedicated `kl_cursor_…` key, never your Kilo
 
 ## Troubleshooting
 
-- **Install ngrok / could not start:** check `ngrok version`, `ngrok config check`, and that your GUI can find the executable. Restart Kilo Local after installing it.
+- **Install ngrok / could not start:** check `ngrok version`, `ngrok config check`, and that your GUI can find the executable. Restart Kilo Proxy after installing it.
 - **ngrok stopped / startup timeout:** check account authentication, allowed endpoints, existing ngrok sessions, quotas, and corporate network rules. Disconnect and reconnect after resolving the issue.
 - **Public connection check fails:** check ngrok first. Do not substitute localhost in Cursor; its backend cannot reach it.
 - **401:** copy the current Cursor key. A previous connection's key is invalid.
 - **400 model not enabled:** add the exact requested Kilo model ID in the helper and reconnect, then select that model in Cursor. No silent fallback or model substitution is performed.
 - **404:** verify the base URL ends in `/v1`, not `/v1/chat/completions`; this adapter serves Chat Completions only.
-- **No request in Session activity:** Cursor did not reach the inference handler. Check the public connection, selected custom model, key, and URL override. Authentication and rejected ingress requests do not call Kilo.
-- **Kilo error in Session activity:** inspect the response for organization credits, model access, or unsupported parameters. Listing a model does not establish inference compatibility.
+- **No request in Activity & costs:** Cursor did not reach the inference handler. Check the public connection, selected custom model, key, and URL override. Authentication and rejected ingress requests do not call Kilo.
+- **Kilo error in Activity & costs:** inspect the response for organization credits, model access, or unsupported parameters. Listing a model does not establish inference compatibility.
 
 ## Verification
 

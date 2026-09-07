@@ -2,14 +2,14 @@
 
 ## Login and credential storage
 
-**Connect with Kilo** uses the device authorization flow implemented by Kilo’s public CLI:
+**Sign in with Kilo / SSO** uses the device authorization flow implemented by Kilo’s public CLI:
 
 1. `POST https://api.kilo.ai/api/device-auth/codes` creates a temporary code.
 2. You approve the code on Kilo’s HTTPS website with your usual login or company SSO.
 3. The Go backend polls every three seconds and receives an individual token after approval.
 4. `GET https://api.kilo.ai/api/profile` supplies organization membership. One organization is selected automatically; for multiple organizations, choose one yourself.
 
-Kilo Local does not receive your password, browser cookies, MFA, or SSO-provider credentials. It does not create or obtain a shared team master key. Every user retains their own identity; the proxy adds the organization ID. SSO availability and access restrictions depend on your company’s Kilo configuration. If no teams are returned, the app reports this instead of silently switching to personal billing. Changing accounts clears the previous organization selection.
+Kilo Proxy does not receive your password, browser cookies, MFA, or SSO-provider credentials. It does not create or obtain a shared team master key. Every user retains their own identity; the proxy adds the organization ID. SSO availability and access restrictions depend on your company’s Kilo configuration. If no teams are returned, the app reports this instead of silently switching to personal billing. Changing accounts clears the previous organization selection.
 
 The device/profile endpoints come from Kilo’s implementation rather than a stable third-party API contract. Manual API key and organization ID entry remains available. Canceling login prevents that attempt from applying locally; it does not revoke an already issued remote token. **Forget key** removes the local copy only. For an expired or revoked token, sign in again.
 
@@ -45,11 +45,11 @@ The catalog is public and can be retrieved without login. When credentials and a
 
 ## Optional Cursor HTTPS ingress
 
-**Connect Cursor** starts a separate loopback listener and ngrok process. Only this listener is exposed through ngrok; the ordinary proxy and admin panel keep their existing network restrictions. Cursor uses an independent, in-memory `kl_cursor_…` bearer token and can request only selected models through Chat Completions. The public model list is generated locally. Requests are limited to 16 MiB and eight concurrent generations; browser-origin requests, arbitrary query strings, and other routes are rejected.
+**Connect HTTPS tunnel** starts a separate loopback listener and ngrok process. Only this listener is exposed through ngrok; the ordinary proxy and admin panel keep their existing network restrictions. Cursor uses an independent, in-memory `kl_cursor_…` bearer token and can request only selected models through Chat Completions. The public model list is generated locally. Requests are limited to 16 MiB and eight concurrent generations; browser-origin requests, arbitrary query strings, and other routes are rejected.
 
 Stopping Cursor, stopping the main proxy, or quitting the app closes the ingress and cancels the tunnel process. Reconnecting generates a fresh key. The public connection check sends the Cursor token to the session's HTTPS URL, refuses redirects, and verifies the selected model list without calling Kilo. This check is not paid inference or native Cursor validation.
 
-Messages pass through Cursor and ngrok before reaching the local proxy. Local ngrok inspection is disabled, while cloud logging follows the ngrok account configuration. Kilo Local discards raw ngrok process logs and may display only a recognized `ERR_NGROK_…` code alongside its own diagnostic message. See [Cursor setup and privacy](cursor.md).
+Messages pass through Cursor and ngrok before reaching the local proxy. Local ngrok inspection is disabled, while cloud logging follows the ngrok account configuration. Kilo Proxy discards raw ngrok process logs and may display only a recognized `ERR_NGROK_…` code alongside its own diagnostic message. See [Cursor setup and privacy](cursor.md).
 
 ## Activity inspector
 

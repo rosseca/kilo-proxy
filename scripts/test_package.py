@@ -22,7 +22,7 @@ class PackageTests(unittest.TestCase):
         self.version = '0.20.1'
         for filename in ['VERSION', 'README.md', 'THIRD-PARTY-NOTICES.txt',
                          'third_party/systray/LICENSE', 'third_party/systray/PATCHES.md',
-                         'ui/icon.svg']:
+                         'ui/icon.svg', 'ui/icon.png']:
             path = self.root / filename
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(self.version if filename == 'VERSION' else 'fixture')
@@ -39,7 +39,12 @@ class PackageTests(unittest.TestCase):
 
     def native_command(self, command, **kwargs):
         self.calls.append(command)
-        if command[0] == 'go':
+        if command[:2] == ['go', 'run']:
+            self.assertEqual(command[2], 'github.com/tc-hib/go-winres@v0.3.3')
+            arch = command[command.index('--arch') + 1]
+            resource = Path(command[command.index('--out') + 1] + f'_windows_{arch}.syso')
+            resource.write_bytes(b'resource fixture')
+        elif command[0] == 'go':
             env = kwargs['env']
             self.assertEqual(command[command.index('-tags') + 1], 'desktop')
             self.assertEqual(env['CGO_ENABLED'], '0' if env['GOOS'] == 'windows' else '1')
@@ -49,10 +54,14 @@ class PackageTests(unittest.TestCase):
             seal = bundle / 'Contents/_CodeSignature/CodeResources'
             if '--sign' in command:
                 # Signing must occur after the executable, icon and metadata exist.
-                self.assertTrue((bundle / 'Contents/MacOS/kilo-local').is_file())
+                self.assertTrue((bundle / 'Contents/MacOS/kilo-proxy').is_file())
                 self.assertTrue((bundle / 'Contents/Resources/AppIcon.icns').is_file())
                 with (bundle / 'Contents/Info.plist').open('rb') as stream:
-                    self.assertEqual(plistlib.load(stream)['CFBundleVersion'], self.version)
+                    metadata = plistlib.load(stream)
+                    self.assertEqual(metadata['CFBundleVersion'], self.version)
+                    self.assertEqual(metadata['CFBundleDisplayName'], 'Kilo Proxy')
+                    self.assertEqual(metadata['CFBundleIdentifier'], 'ai.kilo.local-proxy')
+                    self.assertEqual(metadata['CFBundleExecutable'], 'kilo-proxy')
                 seal.parent.mkdir()
                 seal.write_bytes(b'bundle resource seal fixture')
             else:
@@ -94,12 +103,12 @@ class PackageTests(unittest.TestCase):
                          ['go', '/usr/bin/codesign', '/usr/bin/codesign'])
         self.assertIn('--sign', self.calls[1])
         self.assertIn('--verify', self.calls[2])
-        archive = self.output / f'kilo-local-{self.version}-darwin-arm64.zip'
+        archive = self.output / f'kilo-proxy-{self.version}-darwin-arm64.zip'
         with zipfile.ZipFile(archive) as zipped:
-            prefix = f'kilo-local-{self.version}-darwin-arm64/Kilo Local.app/Contents/'
+            prefix = f'kilo-proxy-{self.version}-darwin-arm64/Kilo Proxy.app/Contents/'
             self.assertEqual(zipped.read(prefix + '_CodeSignature/CodeResources'),
                              b'bundle resource seal fixture')
-            mode = zipped.getinfo(prefix + 'MacOS/kilo-local').external_attr >> 16
+            mode = zipped.getinfo(prefix + 'MacOS/kilo-proxy').external_attr >> 16
             if os.name != 'nt':
                 self.assertEqual(mode & 0o777, 0o755)
 
@@ -123,7 +132,8 @@ class PackageTests(unittest.TestCase):
     def test_non_macos_host_can_build_repeated_non_darwin_targets(self):
         self.build('--target', 'windows/amd64', '--target', 'linux/amd64',
                    '--target', 'windows/amd64', platform='linux')
-        self.assertEqual([call[0] for call in self.calls], ['go', 'go'])
+        self.assertEqual([call[:2] for call in self.calls], [['go', 'run'], ['go', 'build'], ['go', 'build']])
+        self.assertEqual(list(self.root.glob('*.syso')), [])
         lines = (self.output / 'SHA256SUMS.txt').read_text().splitlines()
         self.assertEqual(len(lines), 2)
         self.assertTrue(lines[0].endswith('windows-amd64.zip'))
@@ -150,7 +160,7 @@ class PackageTests(unittest.TestCase):
     def test_raw_build_does_not_create_bundle_or_manifest(self):
         self.build('--build-only', '--target', 'darwin/arm64')
         self.assertEqual([call[0] for call in self.calls], ['go'])
-        raw = self.output / 'kilo-local-darwin-arm64'
+        raw = self.output / 'kilo-proxy-darwin-arm64'
         self.assertTrue(raw.is_file())
         self.assertFalse((self.output / 'staging').exists())
         self.assertFalse((self.output / 'SHA256SUMS.txt').exists())
@@ -159,16 +169,16 @@ class PackageTests(unittest.TestCase):
         prebuilt = self.root / 'binaries'
         prebuilt.mkdir()
         data = self.binary_fixture('windows', 'arm64') + b'tested desktop contents'
-        (prebuilt / 'kilo-local-windows-arm64.exe').write_bytes(data)
+        (prebuilt / 'kilo-proxy-windows-arm64.exe').write_bytes(data)
         self.build('--binaries-directory', str(prebuilt), '--target', 'windows/arm64', platform='linux')
         self.assertEqual(self.calls, [])
-        with zipfile.ZipFile(self.output / f'kilo-local-{self.version}-windows-arm64.zip') as zipped:
-            self.assertEqual(zipped.read(f'kilo-local-{self.version}-windows-arm64/Kilo Local.exe'), data)
+        with zipfile.ZipFile(self.output / f'kilo-proxy-{self.version}-windows-arm64.zip') as zipped:
+            self.assertEqual(zipped.read(f'kilo-proxy-{self.version}-windows-arm64/Kilo Proxy.exe'), data)
 
     def test_prebuilt_wrong_architecture_fails_before_packaging(self):
         prebuilt = self.root / 'binaries'
         prebuilt.mkdir()
-        (prebuilt / 'kilo-local-windows-arm64.exe').write_bytes(self.binary_fixture('windows', 'amd64'))
+        (prebuilt / 'kilo-proxy-windows-arm64.exe').write_bytes(self.binary_fixture('windows', 'amd64'))
         with self.assertRaises(SystemExit):
             self.build('--binaries-directory', str(prebuilt), '--target', 'windows/arm64', platform='linux')
         self.assertFalse(self.output.exists())
@@ -185,11 +195,11 @@ class PackageTests(unittest.TestCase):
         manifest.write_text('previous manifest')
         for system, arch in package.TARGETS[:-1]:
             ext = '.tar.gz' if system == 'linux' else '.zip'
-            (self.output / f'kilo-local-{self.version}-{system}-{arch}{ext}').write_bytes(b'archive')
+            (self.output / f'kilo-proxy-{self.version}-{system}-{arch}{ext}').write_bytes(b'archive')
         with self.assertRaises(SystemExit):
             self.build('--checksums-only', platform='linux')
         self.assertEqual(manifest.read_text(), 'previous manifest')
-        (self.output / f'kilo-local-{self.version}-windows-arm64.zip').write_bytes(b'archive')
+        (self.output / f'kilo-proxy-{self.version}-windows-arm64.zip').write_bytes(b'archive')
         self.build('--checksums-only', platform='linux')
         self.assertEqual(len(manifest.read_text().splitlines()), 6)
 
@@ -198,7 +208,7 @@ class PackageTests(unittest.TestCase):
         prebuilt.mkdir()
         data = bytearray(self.binary_fixture('windows', 'arm64'))
         data[576:600] = b'WebView2Loader.dll\0'.ljust(24, b'\0')
-        (prebuilt / 'kilo-local-windows-arm64.exe').write_bytes(data)
+        (prebuilt / 'kilo-proxy-windows-arm64.exe').write_bytes(data)
         with self.assertRaises(SystemExit):
             self.build('--binaries-directory', str(prebuilt), '--target', 'windows/arm64', platform='linux')
         self.assertFalse(self.output.exists())

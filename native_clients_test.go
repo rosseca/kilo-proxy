@@ -294,7 +294,7 @@ func TestNativeClientsExportMasksPreviewsAndCopiesRealLocalKey(t *testing.T) {
 			t.Fatal("missing route")
 		}
 	}
-	// A remembered API key belongs to Kilo Local only, never an editor export.
+	// A remembered API key belongs to Kilo Proxy only, never an editor export.
 	if strings.Contains(full, "synthetic-kilo-personal-key") {
 		t.Fatal("upstream credential leaked into editor config")
 	}

@@ -1,11 +1,8 @@
 package main
 
 import (
-	"bytes"
+	_ "embed"
 	"fmt"
-	"image"
-	"image/color"
-	"image/png"
 	"strings"
 	"unicode"
 )
@@ -61,26 +58,18 @@ func menuText(s string) string {
 	return string(runes)
 }
 
-// Rasterize our own K mark. macOS uses its alpha mask to adapt to light/dark
-// menu bars; other desktops get a high-contrast badge on a transparent canvas.
+// Every surface is generated from internal/brand's selected geometric K.
+// macOS uses the monochrome alpha template to adapt to its menu-bar appearance.
+//
+//go:embed ui/tray.png
+var trayColorPNG []byte
+
+//go:embed ui/tray-template.png
+var trayTemplatePNG []byte
+
 func trayIcon(template bool) []byte {
-	const size = 44
-	img := image.NewNRGBA(image.Rect(0, 0, size, size))
-	for y := 0; y < size; y++ {
-		for x := 0; x < size; x++ {
-			px, py := float64(x)+.5, float64(y)+.5
-			k := (px >= 10 && px < 16 && py >= 7 && py < 37) ||
-				(px >= 15 && px < 34 && py >= 7 && py < 37 &&
-					((py <= 23 && px+py >= 32 && px+py < 41) ||
-						(py >= 21 && py-px >= -1 && py-px < 8)))
-			if k {
-				img.SetNRGBA(x, y, color.NRGBA{R: 30, G: 38, B: 32, A: 255})
-			} else if !template && (px-22)*(px-22)+(py-22)*(py-22) <= 22*22 {
-				img.SetNRGBA(x, y, color.NRGBA{R: 232, G: 243, B: 106, A: 255})
-			}
-		}
+	if template {
+		return trayTemplatePNG
 	}
-	var b bytes.Buffer
-	_ = png.Encode(&b, img)
-	return b.Bytes()
+	return trayColorPNG
 }

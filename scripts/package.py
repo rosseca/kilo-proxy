@@ -14,7 +14,6 @@ import sys
 import tarfile
 import tempfile
 import zipfile
-import zlib
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGETS = [('darwin', 'arm64'), ('darwin', 'amd64'), ('linux', 'amd64'), ('linux', 'arm64'), ('windows', 'amd64'), ('windows', 'arm64')]
@@ -47,14 +46,14 @@ def verify_macos_archives(directory, version, targets=None):
     for system, arch in targets or TARGETS:
         if system != 'darwin':
             continue
-        name = f'kilo-local-{version}-{system}-{arch}'
+        name = f'kilo-proxy-{version}-{system}-{arch}'
         archive = directory / (name + '.zip')
         if not archive.is_file():
             raise ValueError(f'Missing macOS archive: {archive.name}')
         with tempfile.TemporaryDirectory(prefix='kilo-macos-archive-') as temporary:
             # Exercise Apple's ZIP extraction, preserving executable permissions.
             subprocess.run(['/usr/bin/ditto', '-x', '-k', str(archive), temporary], check=True)
-            bundle = Path(temporary) / name / 'Kilo Local.app'
+            bundle = Path(temporary) / name / 'Kilo Proxy.app'
             verify_macos_bundle(bundle)
         print(f'Verified extracted macOS app: {archive.name}', flush=True)
 
@@ -68,7 +67,7 @@ def native_target():
 
 
 def binary_name(system, arch):
-    return f'kilo-local-{system}-{arch}' + ('.exe' if system == 'windows' else '')
+    return f'kilo-proxy-{system}-{arch}' + ('.exe' if system == 'windows' else '')
 
 
 def require_build_host(targets):
@@ -92,9 +91,30 @@ def build_binary(system, arch, executable, version):
         for name in ('CGO_CFLAGS', 'CGO_LDFLAGS'):
             env[name] = (env.get(name, '') + ' -mmacosx-version-min=12.0').strip()
     executable.parent.mkdir(parents=True, exist_ok=True)
-    subprocess.run(['go', 'build', '-trimpath', '-tags', 'desktop',
-                    '-ldflags', ldflags, '-o', str(executable), '.'],
-                   cwd=ROOT, env=env, check=True)
+    resource = None
+    if system == 'windows':
+        resource = ROOT / f'kilo_proxy_icon_windows_{arch}.syso'
+        if resource.exists():
+            raise ValueError(f'Remove the leftover build resource before retrying: {resource.name}')
+    try:
+        if resource:
+            host_system, host_arch = native_target()
+            resource_env = dict(os.environ, GOOS=host_system, GOARCH=host_arch, CGO_ENABLED='0')
+            subprocess.run(['go', 'run', 'github.com/tc-hib/go-winres@v0.3.3', 'simply',
+                            '--arch', arch, '--out', str(ROOT / 'kilo_proxy_icon'),
+                            '--icon', str(ROOT / 'ui' / 'icon.png'), '--manifest', 'gui',
+                            '--product-name', 'Kilo Proxy', '--file-description', 'Kilo Proxy',
+                            '--original-filename', 'Kilo Proxy.exe',
+                            '--product-version', version.split('-')[0],
+                            '--file-version', version.split('-')[0]],
+                           cwd=ROOT, env=resource_env, check=True)
+        subprocess.run(['go', 'build', '-trimpath', '-tags', 'desktop',
+                        '-ldflags', ldflags, '-o', str(executable), '.'],
+                       cwd=ROOT, env=env, check=True)
+    finally:
+        if resource:
+            resource.unlink(missing_ok=True)
+
     executable.chmod(0o755)
 
 
@@ -175,7 +195,7 @@ def validate_binary(executable, system, arch):
 
 
 def write_checksums(out, version, targets):
-    archives = [out / (f'kilo-local-{version}-{system}-{arch}' +
+    archives = [out / (f'kilo-proxy-{version}-{system}-{arch}' +
                       ('.tar.gz' if system == 'linux' else '.zip')) for system, arch in targets]
     for archive in archives:
         if not archive.is_file() or archive.is_symlink() or not archive.stat().st_size:
@@ -186,28 +206,9 @@ def write_checksums(out, version, targets):
     (out / 'SHA256SUMS.txt').write_text(content)
 
 
-def icon_png(size=512):
-    # Rasterize the project's own simple geometric icon; no image libraries needed.
-    polygon = [(17,15),(25,15),(25,31),(39,15),(49,15),(33,33),(50,50),(39,50),(25,36),(25,50),(17,50)]
-    def inside(x, y):
-        result = False
-        for i, (ax, ay) in enumerate(polygon):
-            bx, by = polygon[i - 1]
-            if (ay > y) != (by > y) and x < (bx-ax)*(y-ay)/(by-ay)+ax:
-                result = not result
-        return result
-    pixels = bytearray()
-    for y in range(size):
-        pixels.append(0)
-        for x in range(size):
-            px, py = (x+.5)*64/size, (y+.5)*64/size
-            dx, dy = max(17-px, 0, px-47), max(17-py, 0, py-47)
-            alpha = 255 if dx*dx+dy*dy <= 17*17 else 0
-            color = (32,37,32) if inside(px,py) or (px-47)**2+(py-17)**2 < 16 else (232,243,106)
-            pixels.extend((*color, alpha))
-    def chunk(kind, content):
-        return struct.pack('>I',len(content))+kind+content+struct.pack('>I',zlib.crc32(kind+content)&0xffffffff)
-    return b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack('>IIBBBBB',size,size,8,6,0,0,0))+chunk(b'IDAT',zlib.compress(bytes(pixels)))+chunk(b'IEND',b'')
+def icon_png():
+    # The same generated artwork is embedded in the native sidebar and tray.
+    return (ROOT / 'ui' / 'icon.png').read_bytes()
 
 
 def main():
@@ -217,7 +218,7 @@ def main():
                    help='Select a target; repeat for several (default: native host, or all six with prebuilt binaries)')
     p.add_argument('--output', type=Path, default=ROOT/'dist')
     p.add_argument('--build-only', action='store_true', help='Build raw desktop binaries for native smoke tests; do not create bundles')
-    p.add_argument('--binaries-directory', type=Path, help='Package previously built and tested kilo-local-OS-ARCH binaries without rebuilding')
+    p.add_argument('--binaries-directory', type=Path, help='Package previously built and tested kilo-proxy-OS-ARCH binaries without rebuilding')
     p.add_argument('--checksums-only', action='store_true', help='Require all six archives and create their combined checksum manifest')
     p.add_argument('--verify-macos-archives', action='store_true',
                    help='Extract and verify macOS ZIPs without rebuilding; --target selects one (macOS only)')
@@ -260,22 +261,22 @@ def main():
     bundle_version = args.version.split('-')[0]
     out = args.output.resolve(); out.mkdir(parents=True, exist_ok=True)
     for system, arch in targets:
-        name = f'kilo-local-{args.version}-{system}-{arch}'
+        name = f'kilo-proxy-{args.version}-{system}-{arch}'
         stage = out/'staging'/name
         if stage.exists(): shutil.rmtree(stage)
         stage.mkdir(parents=True)
         if system == 'darwin':
-            bundle = stage/'Kilo Local.app'/'Contents'
+            bundle = stage/'Kilo Proxy.app'/'Contents'
             (bundle/'MacOS').mkdir(parents=True)
             (bundle/'Resources').mkdir()
             png = icon_png()
             icns = b'ic09'+struct.pack('>I',len(png)+8)+png
             (bundle/'Resources'/'AppIcon.icns').write_bytes(b'icns'+struct.pack('>I',len(icns)+8)+icns)
             with (bundle/'Info.plist').open('wb') as f:
-                plistlib.dump({'CFBundleName':'Kilo Local','CFBundleDisplayName':'Kilo Local','CFBundleIdentifier':'ai.kilo.local-proxy','CFBundleExecutable':'kilo-local','CFBundlePackageType':'APPL','CFBundleShortVersionString':bundle_version,'CFBundleVersion':bundle_version,'CFBundleIconFile':'AppIcon','LSUIElement':False,'LSMinimumSystemVersion':'12.0','NSHighResolutionCapable':True},f)
-            executable = bundle/'MacOS'/'kilo-local'
+                plistlib.dump({'CFBundleName':'Kilo Proxy','CFBundleDisplayName':'Kilo Proxy','CFBundleIdentifier':'ai.kilo.local-proxy','CFBundleExecutable':'kilo-proxy','CFBundlePackageType':'APPL','CFBundleShortVersionString':bundle_version,'CFBundleVersion':bundle_version,'CFBundleIconFile':'AppIcon','LSUIElement':False,'LSMinimumSystemVersion':'12.0','NSHighResolutionCapable':True},f)
+            executable = bundle/'MacOS'/'kilo-proxy'
         else:
-            executable = stage/('Kilo Local.exe' if system == 'windows' else 'kilo-local')
+            executable = stage/('Kilo Proxy.exe' if system == 'windows' else 'kilo-proxy')
         if args.binaries_directory:
             shutil.copyfile(args.binaries_directory / binary_name(system, arch), executable)
         else:
@@ -298,7 +299,7 @@ def main():
             for filename in ('PATCHES.md', 'LICENSE', 'kilo-local.patch'):
                 shutil.copy2(ROOT/'third_party'/'gio'/filename, notices/filename)
         if system == 'linux':
-            shutil.copy2(ROOT/'ui'/'icon.svg', stage/'kilo-local.svg')
+            shutil.copy2(ROOT/'ui'/'icon.svg', stage/'kilo-proxy.svg')
             installer = stage/'install-user.sh'
             installer.write_text('''#!/bin/sh
 set -eu
@@ -306,20 +307,20 @@ HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 APP_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/kilo-local"
 DESKTOP_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
 mkdir -p "$APP_DIR" "$DESKTOP_DIR"
-cp "$HERE/kilo-local" "$APP_DIR/kilo-local"
-cp "$HERE/kilo-local.svg" "$APP_DIR/icon.svg"
-chmod 755 "$APP_DIR/kilo-local"
+cp "$HERE/kilo-proxy" "$APP_DIR/kilo-proxy"
+cp "$HERE/kilo-proxy.svg" "$APP_DIR/icon.svg"
+chmod 755 "$APP_DIR/kilo-proxy"
 cat > "$DESKTOP_DIR/kilo-local.desktop" <<DESKTOP
 [Desktop Entry]
 Type=Application
-Name=Kilo Local
+Name=Kilo Proxy
 Comment=Connect your editors to your organization’s Kilo credits
-Exec="$APP_DIR/kilo-local"
+Exec="$APP_DIR/kilo-proxy"
 Icon=$APP_DIR/icon.svg
 Terminal=false
 Categories=Development;
 DESKTOP
-printf 'Kilo Local is available in your applications menu.\\n'
+printf 'Kilo Proxy is available in your applications menu.\\n'
 ''')
             installer.chmod(0o755)
         if system == 'linux':

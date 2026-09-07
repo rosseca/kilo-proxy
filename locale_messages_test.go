@@ -17,7 +17,7 @@ func TestNativeMessagesTranslateBackendWithoutChangingDetails(t *testing.T) {
 		{"Kilo devolvió HTTP 429. Revisa la clave y la organización.", "en", "Kilo returned HTTP 429. Check your key and organization."},
 		{"Kilo returned HTTP 502. Check your key and organization.", "es", "Kilo devolvió HTTP 502. Revisa la clave y la organización."},
 		{"No se pudo adaptar el esquema de herramientas para Anthropic: tools.13.input_schema oneOf", "en", "Could not adapt the tool schema for Anthropic: tools.13.input_schema oneOf"},
-		{"API key local incorrecta. Cópiala desde Kilo Local.", "unknown", "Incorrect local API key. Copy it from Kilo Local."},
+		{"API key local incorrecta. Cópiala desde Kilo Proxy.", "unknown", "Incorrect local API key. Copy it from Kilo Proxy."},
 		{"El puerto debe estar entre 1024 y 65535.", "es", "El puerto debe estar entre 1024 y 65535."},
 		{"Enter your personal Kilo API key.", "es", "Introduce tu API key personal de Kilo."},
 	} {

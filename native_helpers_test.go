@@ -325,61 +325,110 @@ func TestNativePowerShellCommandsQuoteAndRestoreEnvironment(t *testing.T) {
 	if err = os.WriteFile(configPath, []byte("{}"), 0600); err != nil {
 		t.Fatal(err)
 	}
+	// PowerShell 7.5 distinguishes absent variables from existing empty values.
+	// Exercise the real Env: provider instead of accepting either state as unset.
+	names := append([]string{"CODEX_HOME", "KILO_LOCAL_API_KEY", "CODEX_ELECTRON_USER_DATA_PATH", "OPENCODE_CONFIG", "OPENCODE_CONFIG_CONTENT", "CLAUDE_CONFIG_DIR"}, nativeClaudeResetEnv...)
+	quotedNames := make([]string, len(names))
+	for i, name := range names {
+		quotedNames[i] = helperPowerShellQuote(name)
+	}
 	prefix := `$ErrorActionPreference='Stop'
-function codex { @{home=$env:CODEX_HOME;key=$env:KILO_LOCAL_API_KEY} | ConvertTo-Json -Compress }
-function Start-Process { param([string]$FilePath,[object[]]$ArgumentList) @{path=$FilePath;args=$ArgumentList;home=$env:CODEX_HOME;key=$env:KILO_LOCAL_API_KEY;ui=$env:CODEX_ELECTRON_USER_DATA_PATH} | ConvertTo-Json -Compress }
-function claude { @{dir=$env:CLAUDE_CONFIG_DIR;token=$env:ANTHROPIC_AUTH_TOKEN;args=$args} | ConvertTo-Json -Compress }
-function opencode { @{config=$env:OPENCODE_CONFIG;inline=$env:OPENCODE_CONFIG_CONTENT;args=$args} | ConvertTo-Json -Compress }
+$kiloTestNames = @(` + strings.Join(quotedNames, ", ") + `)
+function Get-KiloTestEnvironment {
+  $result = @{}
+  foreach ($name in $kiloTestNames) {
+    $result[$name] = @{exists=(Test-Path -LiteralPath "Env:$name");value=[Environment]::GetEnvironmentVariable($name, 'Process')}
+  }
+  return $result
+}
+function Complete-KiloTestChild($result) {
+  $result.env = Get-KiloTestEnvironment
+  $result | ConvertTo-Json -Depth 5 -Compress
+  if ($env:KILO_HELPER_TEST_FAILURE -eq 'true') { throw 'Synthetic client failure' }
+}
+function codex { Complete-KiloTestChild @{home=$env:CODEX_HOME;key=$env:KILO_LOCAL_API_KEY} }
+function Start-Process { param([string]$FilePath,[object[]]$ArgumentList) Complete-KiloTestChild @{path=$FilePath;args=$ArgumentList;home=$env:CODEX_HOME;key=$env:KILO_LOCAL_API_KEY;ui=$env:CODEX_ELECTRON_USER_DATA_PATH} }
+function claude { Complete-KiloTestChild @{dir=$env:CLAUDE_CONFIG_DIR;args=$args} }
+function opencode { Complete-KiloTestChild @{config=$env:OPENCODE_CONFIG;args=$args} }
 `
-	suffix := `@{home=$env:CODEX_HOME;key=$env:KILO_LOCAL_API_KEY;ui=$env:CODEX_ELECTRON_USER_DATA_PATH;token=$env:ANTHROPIC_AUTH_TOKEN;config=$env:OPENCODE_CONFIG;inline=$env:OPENCODE_CONFIG_CONTENT} | ConvertTo-Json -Compress`
-	run := func(command string) map[string]any {
-		t.Helper()
-		command = strings.ReplaceAll(command, "$env:USERPROFILE", "$env:KILO_HELPER_TEST_PROFILE")
-		command = strings.ReplaceAll(command, "$env:LOCALAPPDATA", "$env:KILO_HELPER_TEST_PROFILE")
-		cmd := exec.Command(powershell, "-NoProfile", "-NonInteractive", "-Command", prefix+command+"\n"+suffix)
-		cmd.Env = append(os.Environ(), "KILO_HELPER_TEST_PROFILE="+root, "CODEX_HOME=parent-home", "KILO_LOCAL_API_KEY=parent-key", "CODEX_ELECTRON_USER_DATA_PATH=parent-ui", "ANTHROPIC_AUTH_TOKEN=parent-token", "OPENCODE_CONFIG=parent-config", "OPENCODE_CONFIG_CONTENT=parent-inline")
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("PowerShell failed: %v\n%s", err, out)
-		}
-		decoder := json.NewDecoder(bytes.NewReader(out))
-		var child, parent map[string]any
-		if decoder.Decode(&child) != nil || decoder.Decode(&parent) != nil {
-			t.Fatalf("PowerShell returned invalid fixture output: %s", out)
-		}
-		for name, want := range map[string]string{"home": "parent-home", "key": "parent-key", "ui": "parent-ui", "token": "parent-token", "config": "parent-config", "inline": "parent-inline"} {
-			if parent[name] != want {
-				t.Fatalf("PowerShell did not restore%s: %+v", name, parent)
+	key := "key'$(throw 'injection')`evil"
+	desktopCommand, err := codexLaunchCommand(true, "powershell", "windows", `C:\Team's $Codex\Codex.exe`, key, "en", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cliCommand, err := codexLaunchCommand(false, "powershell", "", "", key, "en", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claudeCommand, err := claudeLaunchCommand("powershell", "en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	openCodeCommand, err := openCodeLaunchCommand(configPath, "vendor/model", "powershell")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		name, command string
+		values        map[string]string
+		absent        []string
+	}{
+		{"codex-desktop", desktopCommand, map[string]string{"key": key, "path": `C:\Team's $Codex\Codex.exe`, "home": filepath.Join(root, ".codex-kilo-desktop")}, nil},
+		{"codex-cli", cliCommand, map[string]string{"key": key, "home": filepath.Join(root, ".codex-kilo-cli")}, nil},
+		{"claude", claudeCommand, map[string]string{"dir": filepath.Join(root, ".claude-kilo")}, nativeClaudeResetEnv},
+		{"opencode", openCodeCommand, map[string]string{"config": configPath}, []string{"OPENCODE_CONFIG_CONTENT"}},
+	}
+	for _, state := range []string{"value", "absent", "empty"} {
+		for _, failure := range []bool{false, true} {
+			for _, tc := range cases {
+				t.Run(fmt.Sprintf("%s/%s/failure=%v", tc.name, state, failure), func(t *testing.T) {
+					setup := `foreach ($name in $kiloTestNames) {
+  Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+`
+					if state == "value" {
+						setup += `  Set-Item -LiteralPath "Env:$name" -Value 'parent-''value$'` + "\n"
+					} else if state == "empty" {
+						setup += `  Set-Item -LiteralPath "Env:$name" -Value ''` + "\n"
+					}
+					setup += "}\nGet-KiloTestEnvironment | ConvertTo-Json -Depth 5 -Compress\n$kiloTestFailed = $false\n"
+					command := strings.ReplaceAll(tc.command, "$env:USERPROFILE", "$env:KILO_HELPER_TEST_PROFILE")
+					command = strings.ReplaceAll(command, "$env:LOCALAPPDATA", "$env:KILO_HELPER_TEST_PROFILE")
+					script := prefix + setup + "try {\n" + command + "\n} catch { $kiloTestFailed = $true }\n" + `@{env=(Get-KiloTestEnvironment);failed=$kiloTestFailed} | ConvertTo-Json -Depth 5 -Compress`
+					cmd := exec.Command(powershell, "-NoProfile", "-NonInteractive", "-Command", script)
+					cmd.Env = append(os.Environ(), "KILO_HELPER_TEST_PROFILE="+root, fmt.Sprintf("KILO_HELPER_TEST_FAILURE=%v", failure))
+					out, err := cmd.CombinedOutput()
+					if err != nil {
+						t.Fatalf("PowerShell failed: %v\n%s", err, out)
+					}
+					decoder := json.NewDecoder(bytes.NewReader(out))
+					var before, child, after map[string]any
+					if decoder.Decode(&before) != nil || decoder.Decode(&child) != nil || decoder.Decode(&after) != nil {
+						t.Fatalf("PowerShell returned invalid fixture output: %s", out)
+					}
+					if !reflect.DeepEqual(after["env"], before) {
+						t.Fatalf("PowerShell did not restore exact presence and values:\nbefore=%+v\nafter=%+v", before, after)
+					}
+					if after["failed"] != failure {
+						t.Fatalf("Unexpected client failure state: %+v", after)
+					}
+					for name, value := range tc.values {
+						if child[name] != value {
+							t.Fatalf("Child %s changed: got %v, want %q", name, child[name], value)
+						}
+					}
+					childEnv, ok := child["env"].(map[string]any)
+					if !ok {
+						t.Fatal("Child did not report its environment")
+					}
+					for _, name := range tc.absent {
+						entry, ok := childEnv[name].(map[string]any)
+						if !ok || entry["exists"] != false || entry["value"] != nil {
+							t.Fatalf("Conflicting %s was not removed: %+v", name, entry)
+						}
+					}
+				})
 			}
 		}
-		return child
-	}
-	key := "key'$(throw 'injection')`evil"
-	command, err := codexLaunchCommand(true, "powershell", "windows", `C:\Team's $Codex\Codex.exe`, key, "en", true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	child := run(command)
-	if child["key"] != key || child["path"] != `C:\Team's $Codex\Codex.exe` || child["home"] != filepath.Join(root, ".codex-kilo-desktop") {
-		t.Fatalf("desktop quoting changed arguments: %+v", child)
-	}
-	command, err = codexLaunchCommand(false, "powershell", "", "", key, "en", true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if child = run(command); child["key"] != key || child["home"] != filepath.Join(root, ".codex-kilo-cli") {
-		t.Fatalf("CLI environment incorrect: %+v", child)
-	}
-	command, _ = claudeLaunchCommand("powershell", "en")
-	if child = run(command); child["dir"] != filepath.Join(root, ".claude-kilo") || child["token"] != nil {
-		t.Fatalf("Claude did not clear conflicting authentication: %+v", child)
-	}
-	command, err = openCodeLaunchCommand(configPath, "vendor/model", "powershell")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if child = run(command); child["config"] != configPath || child["inline"] != nil {
-		t.Fatalf("OpenCode did not scope configuration: %+v", child)
 	}
 }
 

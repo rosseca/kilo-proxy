@@ -67,8 +67,8 @@ func mergeCodexConfig(data, catalog []byte, port int) ([]byte, error) {
 		return nil, err
 	}
 	for key, value := range map[string]any{
-		"name": "Kilo Local", "base_url": "http://127.0.0.1:" + strconv.Itoa(port) + "/v1",
-		"env_key": "KILO_LOCAL_API_KEY", "env_key_instructions": "Launch Codex Kilo with the command from the Kilo Local Codex helper.",
+		"name": "Kilo Proxy", "base_url": "http://127.0.0.1:" + strconv.Itoa(port) + "/v1",
+		"env_key": "KILO_LOCAL_API_KEY", "env_key_instructions": "Launch Codex Kilo with the command from the Kilo Proxy Codex helper.",
 		"wire_api": "responses", "requires_openai_auth": false, "supports_websockets": false,
 	} {
 		provider[key] = value

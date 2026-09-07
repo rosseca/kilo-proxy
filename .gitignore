@@ -6,6 +6,10 @@
 /kilo-local.exe
 /Kilo Local.app/
 /Kilo Local.exe
+/kilo-proxy
+/kilo-proxy.exe
+/Kilo Proxy.app/
+/Kilo Proxy.exe
 
 # Local credentials and captured traffic; never commit real profiles
 .env

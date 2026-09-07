@@ -5,15 +5,15 @@ package main
 /*
 #cgo CFLAGS: -x objective-c
 #cgo LDFLAGS: -framework AppKit
-void kiloInstallLifecycle(void *view);
-int kiloWindowVisible(void *view);
+#include <stdint.h>
+void kiloInstallLifecycle(uintptr_t view);
+int kiloWindowVisible(uintptr_t view);
 */
 import "C"
 
 import (
 	gioapp "gioui.org/app"
 	"sync"
-	"unsafe"
 )
 
 var nativeLifecycle struct {
@@ -29,7 +29,7 @@ func installNativeLifecycle(d *nativeDesktop, event gioapp.ViewEvent) {
 	nativeLifecycle.Lock()
 	nativeLifecycle.desktop = d
 	nativeLifecycle.Unlock()
-	C.kiloInstallLifecycle(unsafe.Pointer(view))
+	C.kiloInstallLifecycle(C.uintptr_t(view))
 }
 
 //export kiloNativeQuit
@@ -72,6 +72,6 @@ func (d *nativeDesktop) windowVisible() bool {
 		return false
 	}
 	visible := false
-	w.Run(func() { visible = C.kiloWindowVisible(unsafe.Pointer(view)) != 0 })
+	w.Run(func() { visible = C.kiloWindowVisible(C.uintptr_t(view)) != 0 })
 	return visible
 }

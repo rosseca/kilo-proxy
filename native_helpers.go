@@ -250,7 +250,13 @@ func codexLaunchCommand(desktop bool, shell, platform, appPath, key, language st
     $env:CODEX_HOME = $kiloHome
     $env:KILO_LOCAL_API_KEY = %s%s
   } finally {
-    foreach ($kiloName in $kiloNames) { [Environment]::SetEnvironmentVariable($kiloName, $kiloPrevious[$kiloName], 'Process') }
+    foreach ($kiloName in $kiloNames) {
+      if ($null -eq $kiloPrevious[$kiloName]) {
+        Remove-Item -LiteralPath "Env:$kiloName" -ErrorAction SilentlyContinue
+      } else {
+        Set-Item -LiteralPath "Env:$kiloName" -Value $kiloPrevious[$kiloName]
+      }
+    }
   }
 }`, profile, helperPowerShellQuote(saveFirst+" "), check, strings.Join(names, ", "), helperPowerShellQuote(key), launch), nil
 	}
@@ -282,7 +288,7 @@ func claudeLaunchCommand(shell, language string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	message := helperText(language, "Prepare Claude Code in Kilo Local first.", "Prepara Claude Code desde Kilo Local primero.")
+	message := helperText(language, "Prepare Claude Code in Kilo Proxy first.", "Prepara Claude Code desde Kilo Proxy primero.")
 	if shell == "powershell" {
 		names := append([]string{"CLAUDE_CONFIG_DIR"}, nativeClaudeResetEnv...)
 		for i := range names {
@@ -296,11 +302,17 @@ func claudeLaunchCommand(shell, language string) (string, error) {
   $kiloPrevious = @{}
   foreach ($kiloName in $kiloNames) { $kiloPrevious[$kiloName] = [Environment]::GetEnvironmentVariable($kiloName, 'Process') }
   try {
-    foreach ($kiloName in $kiloNames) { [Environment]::SetEnvironmentVariable($kiloName, $null, 'Process') }
+    foreach ($kiloName in $kiloNames) { Remove-Item -LiteralPath "Env:$kiloName" -ErrorAction SilentlyContinue }
     $env:CLAUDE_CONFIG_DIR = $kiloHome
     claude --settings $kiloSettings
   } finally {
-    foreach ($kiloName in $kiloNames) { [Environment]::SetEnvironmentVariable($kiloName, $kiloPrevious[$kiloName], 'Process') }
+    foreach ($kiloName in $kiloNames) {
+      if ($null -eq $kiloPrevious[$kiloName]) {
+        Remove-Item -LiteralPath "Env:$kiloName" -ErrorAction SilentlyContinue
+      } else {
+        Set-Item -LiteralPath "Env:$kiloName" -Value $kiloPrevious[$kiloName]
+      }
+    }
   }
 }`, helperPowerShellQuote(message), strings.Join(names, ", ")), nil
 	}
@@ -322,15 +334,21 @@ func openCodeLaunchCommand(configPath, initialModel, shell string) (string, erro
 		return fmt.Sprintf(`& {
   $kiloConfig = %s
   if (!(Test-Path -LiteralPath $kiloConfig -PathType Leaf)) { throw 'Prepare OpenCode first.' }
-  $kiloPrevious = $env:OPENCODE_CONFIG
-  $kiloInline = $env:OPENCODE_CONFIG_CONTENT
+  $kiloNames = @('OPENCODE_CONFIG', 'OPENCODE_CONFIG_CONTENT')
+  $kiloPrevious = @{}
+  foreach ($kiloName in $kiloNames) { $kiloPrevious[$kiloName] = [Environment]::GetEnvironmentVariable($kiloName, 'Process') }
   try {
     $env:OPENCODE_CONFIG = $kiloConfig
-    Remove-Item Env:OPENCODE_CONFIG_CONTENT -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath Env:OPENCODE_CONFIG_CONTENT -ErrorAction SilentlyContinue
     opencode --model %s
   } finally {
-    $env:OPENCODE_CONFIG = $kiloPrevious
-    $env:OPENCODE_CONFIG_CONTENT = $kiloInline
+    foreach ($kiloName in $kiloNames) {
+      if ($null -eq $kiloPrevious[$kiloName]) {
+        Remove-Item -LiteralPath "Env:$kiloName" -ErrorAction SilentlyContinue
+      } else {
+        Set-Item -LiteralPath "Env:$kiloName" -Value $kiloPrevious[$kiloName]
+      }
+    }
   }
 }`, helperPowerShellQuote(configPath), helperPowerShellQuote("kilo-local/"+initialModel)), nil
 	}
@@ -395,10 +413,10 @@ func cursorSetupGuide(session *cursorSession, selected []string, language string
 	return strings.ReplaceAll(helperText(language, nativeCursorGuideEN, nativeCursorGuideES), "NATIVE_MODELS_SENTINEL", models)
 }
 
-const nativeXcodeGuideEN = "Xcode → Settings → Intelligence → Add a Chat Provider (or Add a Model Provider)\n\nChoose Internet Hosted to supply authentication for this local URL.\nURL: NATIVE_BASE_SENTINEL/xcode\nAPI Key Header: Authorization\nAPI Key: Bearer NATIVE_KEY_SENTINEL\n\nDo not append /v1: Xcode adds it. Keep Kilo Local running.\nXcode fetches the saved selection from NATIVE_BASE_SENTINEL/xcode/v1/models.\nSelect a model in Xcode. Re-add or refresh the provider if its list is stale.\nModels must support Chat Completions; listing does not verify generation access."
+const nativeXcodeGuideEN = "Xcode → Settings → Intelligence → Add a Chat Provider (or Add a Model Provider)\n\nChoose Internet Hosted to supply authentication for this local URL.\nURL: NATIVE_BASE_SENTINEL/xcode\nAPI Key Header: Authorization\nAPI Key: Bearer NATIVE_KEY_SENTINEL\n\nDo not append /v1: Xcode adds it. Keep Kilo Proxy running.\nXcode fetches the saved selection from NATIVE_BASE_SENTINEL/xcode/v1/models.\nSelect a model in Xcode. Re-add or refresh the provider if its list is stale.\nModels must support Chat Completions; listing does not verify generation access."
 
-const nativeCursorGuideEN = "Cursor · setup guide (external HTTPS endpoint required)\n\nKilo Local is loopback-only. Cursor's servers cannot reach it.\nDo not paste its localhost URL or local key into Cursor.\n\nConnect the ngrok tunnel in the Cursor helper to obtain the public URL and Cursor key. Then:\n1. Cursor Settings > Models: enable OpenAI API Key.\n2. Override OpenAI Base URL: use that gateway's public HTTPS API URL.\n3. API key: use the credential issued for that gateway.\n4. Add Custom Model / Add model: add each exact ID below and enable it.\n5. Choose a model in Cursor's picker and verify a request.\n\nDo not remove the provider prefix or use a display name instead of the ID.\nAdding an ID does not prove protocol or organization compatibility.\nCursor Tab keeps using Cursor's own models.\n\nModel IDs (add one at a time):\nNATIVE_MODELS_SENTINEL"
+const nativeCursorGuideEN = "Cursor · setup guide (external HTTPS endpoint required)\n\nKilo Proxy is loopback-only. Cursor's servers cannot reach it.\nDo not paste its localhost URL or local key into Cursor.\n\nConnect the ngrok tunnel in the Cursor helper to obtain the public URL and Cursor key. Then:\n1. Cursor Settings > Models: enable OpenAI API Key.\n2. Override OpenAI Base URL: use that gateway's public HTTPS API URL.\n3. API key: use the credential issued for that gateway.\n4. Add Custom Model / Add model: add each exact ID below and enable it.\n5. Choose a model in Cursor's picker and verify a request.\n\nDo not remove the provider prefix or use a display name instead of the ID.\nAdding an ID does not prove protocol or organization compatibility.\nCursor Tab keeps using Cursor's own models.\n\nModel IDs (add one at a time):\nNATIVE_MODELS_SENTINEL"
 
-const nativeXcodeGuideES = "Xcode → Settings → Intelligence → Add a Chat Provider (o Add a Model Provider)\n\nElige Internet Hosted para introducir autenticación con esta URL local.\nURL: NATIVE_BASE_SENTINEL/xcode\nAPI Key Header: Authorization\nAPI Key: Bearer NATIVE_KEY_SENTINEL\n\nNo añadas /v1: lo añade Xcode. Mantén Kilo Local abierto.\nXcode obtiene la selección guardada de NATIVE_BASE_SENTINEL/xcode/v1/models.\nElige un modelo en Xcode. Actualiza o vuelve a añadir el proveedor si la lista no cambia.\nLos modelos deben admitir Chat Completions; listar no verifica el acceso al generar."
+const nativeXcodeGuideES = "Xcode → Settings → Intelligence → Add a Chat Provider (o Add a Model Provider)\n\nElige Internet Hosted para introducir autenticación con esta URL local.\nURL: NATIVE_BASE_SENTINEL/xcode\nAPI Key Header: Authorization\nAPI Key: Bearer NATIVE_KEY_SENTINEL\n\nNo añadas /v1: lo añade Xcode. Mantén Kilo Proxy abierto.\nXcode obtiene la selección guardada de NATIVE_BASE_SENTINEL/xcode/v1/models.\nElige un modelo en Xcode. Actualiza o vuelve a añadir el proveedor si la lista no cambia.\nLos modelos deben admitir Chat Completions; listar no verifica el acceso al generar."
 
-const nativeCursorGuideES = "Cursor · guía de configuración (requiere HTTPS externo)\n\nKilo Local solo escucha en loopback. Los servidores de Cursor no pueden acceder.\nNo pegues su URL localhost ni su clave local en Cursor.\n\nConecta el túnel ngrok del helper de Cursor para obtener la URL pública y la clave de Cursor. Después:\n1. Cursor Settings > Models: activa OpenAI API Key.\n2. Override OpenAI Base URL: usa la URL HTTPS pública de la API de ese gateway.\n3. API key: usa la credencial emitida para ese gateway.\n4. Add Custom Model / Add model: añade y activa cada ID exacto de abajo.\n5. Elige un modelo en el selector de Cursor y verifica una petición.\n\nNo quites el prefijo del proveedor ni sustituyas el ID por el nombre visible.\nAñadir un ID no verifica el protocolo ni los permisos de la organización.\nCursor Tab sigue usando los modelos propios de Cursor.\n\nIDs de modelos (añadir uno a uno):\nNATIVE_MODELS_SENTINEL"
+const nativeCursorGuideES = "Cursor · guía de configuración (requiere HTTPS externo)\n\nKilo Proxy solo escucha en loopback. Los servidores de Cursor no pueden acceder.\nNo pegues su URL localhost ni su clave local en Cursor.\n\nConecta el túnel ngrok del helper de Cursor para obtener la URL pública y la clave de Cursor. Después:\n1. Cursor Settings > Models: activa OpenAI API Key.\n2. Override OpenAI Base URL: usa la URL HTTPS pública de la API de ese gateway.\n3. API key: usa la credencial emitida para ese gateway.\n4. Add Custom Model / Add model: añade y activa cada ID exacto de abajo.\n5. Elige un modelo en el selector de Cursor y verifica una petición.\n\nNo quites el prefijo del proveedor ni sustituyas el ID por el nombre visible.\nAñadir un ID no verifica el protocolo ni los permisos de la organización.\nCursor Tab sigue usando los modelos propios de Cursor.\n\nIDs de modelos (añadir uno a uno):\nNATIVE_MODELS_SENTINEL"

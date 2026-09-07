@@ -8,6 +8,9 @@ const readJSON=async file=>JSON.parse(await readFile(file,'utf8'));
 async function seed(dir,name,text) { await mkdir(dir,{recursive:true});await writeFile(path.join(dir,name),text); }
 
 test('connection, team selection, language persistence, all clients and mobile navigation',async({page,gateway,request})=>{
+  await expect(page).toHaveTitle('Kilo Proxy · Your gateway, within reach');
+  await expect(page.locator('.brand')).toHaveAccessibleName('Kilo Proxy, home');
+  await expect(page.locator('.brand-light')).toHaveText('Proxy');
   await startProxy(page,gateway);
   await expect(page.locator('#api-key')).toBeDisabled();
   await expect(page.locator('#key-state')).toHaveText('Saved in the system store');
@@ -36,6 +39,8 @@ test('connection, team selection, language persistence, all clients and mobile n
   await expect(page.locator('#tab-zed')).toBeFocused();
   await expect(page.locator('#editor-helper')).toBeVisible();
   await page.locator('#language').selectOption('es');
+  await expect(page).toHaveTitle('Kilo Proxy · Tu gateway, a mano');
+  await expect(page.locator('.brand')).toHaveAccessibleName('Kilo Proxy, inicio');
   await expect(page.locator('#status-label')).toHaveText('Proxy detenido');
   await expect.poll(async()=>(await state(request,gateway)).language).toBe('es');
   await page.reload();

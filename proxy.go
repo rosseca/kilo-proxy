@@ -169,7 +169,7 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 		}
 		bearer := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		if !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") || !secureEqual(bearer, localKey) {
-			jsonError(w, http.StatusUnauthorized, "API key local incorrecta. Cópiala desde Kilo Local.")
+			jsonError(w, http.StatusUnauthorized, "API key local incorrecta. Cópiala desde Kilo Proxy.")
 			return
 		}
 		if r.URL.RawPath == "" && r.URL.RawQuery == "" && r.URL.Path == "/xcode/v1/models" && r.Method == "GET" {

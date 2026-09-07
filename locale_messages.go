@@ -92,7 +92,7 @@ var nativeBackendMessages = map[string]string{
 	"organización no válida":                                               "invalid organization",
 	"No se pudo conectar con Kilo. Comprueba la red e inténtalo de nuevo.": "Could not connect to Kilo. Check your network and try again.",
 	"Este endpoint solo admite clientes locales de API.":                   "This endpoint only accepts local API clients.",
-	"API key local incorrecta. Cópiala desde Kilo Local.":                  "Incorrect local API key. Copy it from Kilo Local.",
+	"API key local incorrecta. Cópiala desde Kilo Proxy.":                  "Incorrect local API key. Copy it from Kilo Proxy.",
 	"Endpoint no compatible. Usa la base URL terminada en /v1.":            "Unsupported endpoint. Use the base URL ending in /v1.",
 	"La petición supera 32 MiB.":                                           "The request exceeds 32 MiB.",
 }

@@ -2,7 +2,9 @@
 
 The native desktop migration is being developed in a separate branch for pull-request review. It does not create a new release or change the current published version. Existing downloadable releases may still use the browser interface.
 
-Kilo Local's desktop interface is written in Go with **Gio v0.10.2**. Forms, model selectors, configuration previews and activity views render directly through the operating system's graphics APIs. The system tray uses `fyne.io/systray`. There is no embedded browser, HTML renderer or WebView runtime in the native interface.
+The application is now named **Kilo Proxy** (formerly Kilo Local). Existing application configuration, system-store credentials and editor profile locations are preserved. Do not rename the `kilo-local` provider ID, `KILO_LOCAL_API_KEY`, or existing `.codex-kilo-*`, `.claude-kilo` and `.opencode-kilo` folders.
+
+Kilo Proxy's desktop interface is written in Go with **Gio v0.10.2**. Forms, model selectors, configuration previews and activity views render directly through the operating system's graphics APIs. The system tray uses `fyne.io/systray`. There is no embedded browser, HTML renderer or WebView runtime in the native interface.
 
 | Desktop target | Processor | Graphics |
 | --- | --- | --- |
@@ -31,17 +33,17 @@ These images are rendered by Gio with synthetic test data, using the same layout
 
 ## Window and tray
 
-- Launch Kilo Local to open its native window and create the tray/menu-bar icon.
+- Launch Kilo Proxy to open its native window and create the tray/menu-bar icon.
 - Closing the window leaves the application and an active proxy running, including requests already in progress.
-- Choose **Open Kilo Local…** in the tray menu to reopen the interface with the same application session.
+- Choose **Open Kilo Proxy…** in the tray menu to reopen the interface with the same application session.
 - The tray shows the team, endpoint, request counts and connection state. **Start proxy** and **Stop proxy** control the same backend as the window.
-- **Stop proxy** cancels active requests. **Quit Kilo Local** stops the application and proxy.
+- **Stop proxy** cancels active requests. **Quit Kilo Proxy** stops the application and proxy.
 
 The tray needs a desktop environment that supports status icons. Linux shells differ in where or whether they display StatusNotifierItem/AppIndicator icons. Browser and headless modes remain available when native desktop integration is unsuitable.
 
 ## Language
 
-On startup, a saved English or Spanish application preference takes priority. Without a saved choice, Kilo Local reads the operating system's preferred language:
+On startup, a saved English or Spanish application preference takes priority. Without a saved choice, Kilo Proxy reads the operating system's preferred language:
 
 - **macOS:** `AppleLanguages`, then `AppleLocale`, with a bounded timeout.
 - **Windows:** the native `GetUserPreferredUILanguages` API.
@@ -67,7 +69,7 @@ Linux executables use system libraries; they are not universal binaries with all
 
 ## Optional launch modes
 
-Use these options with the executable. In Windows archives it is named `Kilo Local.exe`; in the macOS bundle it is `Kilo Local.app/Contents/MacOS/kilo-local`.
+Use these options with the executable. In Windows archives it is named `Kilo Proxy.exe`; in the macOS bundle it is `Kilo Proxy.app/Contents/MacOS/kilo-proxy`.
 
 | Option | Behavior |
 | --- | --- |
@@ -85,15 +87,15 @@ An explicitly supplied `--browser` can be combined with `--no-tray` to open the 
 The proxy, admin API and shared helpers compile without GUI dependencies:
 
 ```sh
-go build -o kilo-local .
-./kilo-local --browser
-# Or: ./kilo-local --no-tray
+go build -o kilo-proxy .
+./kilo-proxy --browser
+# Or: ./kilo-proxy --no-tray
 ```
 
 This build deliberately omits the native window. Build the desktop application with the `desktop` tag:
 
 ```sh
-go build -tags desktop -o kilo-local .
+go build -tags desktop -o kilo-proxy .
 ```
 
 macOS and Linux desktop builds require CGO and the platform's development tools. Windows desktop builds use `CGO_ENABLED=0`. On Ubuntu 24.04, the development packages used by CI are:
@@ -111,7 +113,7 @@ Use `scripts/package.py` for the production tags, linker settings and platform r
 Validation separates the native interface from the optional browser frontend:
 
 1. **Core:** Go race tests, `go vet`, module verification, JavaScript helper tests and Python packaging/release tests on macOS, Linux and Windows.
-2. **Native controls:** tests built with `-tags desktop` exercise Gio controls and backend effects using temporary profiles and a synthetic gateway. Shared Go helper tests compare catalogs, reasoning, launch commands and guides with the existing browser implementations; executable shell tests verify quoting and environment isolation.
+2. **Native controls:** tests built with `-tags desktop` exercise Gio controls and backend effects using temporary profiles and a synthetic gateway. Real pointer and keyboard tests verify navigation, wrapped tabs, focus, typing and model selection at wide, compact and minimum-width window sizes. Shared Go helper tests compare catalogs, reasoning, launch commands and guides with the existing browser implementations; executable shell tests verify quoting and environment isolation.
 3. **Optional browser:** Playwright runs Chromium and WebKit against an isolated local backend. These tests verify browser-mode behavior, not the native renderer.
 4. **Real desktop:** `scripts/smoke_desktop.py` launches the production executable. It checks rendered native content, authenticated backend access, window/tray language changes, OS clipboard, proxy startup, close/reopen behavior, tray stop and clean process exit.
 5. **Packaging:** the workflow requires its core, browser and native jobs to pass before creating bundles. It packages the tested executable, then exercises the extracted archive. macOS also receives full bundle-signature and LaunchServices checks. The aggregate job validates six archives and their checksums.
@@ -121,7 +123,7 @@ A future tag-triggered release remains gated on the reusable build workflow. The
 To run a native smoke test locally:
 
 ```sh
-python3 scripts/smoke_desktop.py --binary ./kilo-local
+python3 scripts/smoke_desktop.py --binary ./kilo-proxy
 ```
 
 The executable's `--desktop-self-test REPORT.json` mode creates a fresh temporary profile and synthetic local gateway. Its report contains check names and errors. It does not use a saved Kilo account or send paid inference. Native lifecycle tests do not establish compatibility with every remote model, provider, client application or production Kilo service. Linux CI runs graphical tests inside Xvfb with a private D-Bus session and software graphics enabled.

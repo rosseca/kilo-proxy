@@ -383,7 +383,7 @@ func (u *nativeUI) clientsPanel() layout.Widget {
 		}
 		tabs = append(tabs, u.button("client-tab:"+id, name, func() { u.client = id }))
 	}
-	widgets := []layout.Widget{u.heading(u.tr("Connect your editor", "Conecta tu editor")), u.pills(tabs...)}
+	widgets := []layout.Widget{u.pills(tabs...)}
 	key := u.client
 	if key == "xcode" {
 		variants := []layout.Widget{}
@@ -496,7 +496,7 @@ func (u *nativeUI) clientPicker(key string, s *nativeClientSelection) layout.Wid
 		return true
 	}
 	available := nativeVisibleModels(u.models, s, u.value(prefix+"search"), u.checked(prefix+"selected"), u.checked(prefix+"coding"))
-	controls := []layout.Widget{u.row(u.field(prefix+"search", u.tr("Search models or saved names", "Buscar modelos o nombres guardados"), "provider/model", false), u.button(prefix+"refresh", u.tr("Refresh catalog", "Actualizar catálogo"), u.refreshModels)), u.row(u.check(prefix+"selected", u.tr("Selected only", "Solo seleccionados"), func(bool) {}), u.check(prefix+"coding", u.tr("Text models with tools only", "Solo texto con herramientas"), func(bool) {}), u.check(prefix+"advanced", u.tr("Advanced model options", "Opciones avanzadas"), func(bool) {})), u.row(u.button(prefix+"select-all", u.tr("Select results", "Marcar resultados"), func() {
+	controls := []layout.Widget{u.actionRow(u.field(prefix+"search", u.tr("Search models or saved names", "Buscar modelos o nombres guardados"), "provider/model", false), u.button(prefix+"refresh", u.tr("Refresh catalog", "Actualizar catálogo"), u.refreshModels)), u.pills(u.check(prefix+"selected", u.tr("Selected only", "Solo seleccionados"), func(bool) {}), u.check(prefix+"coding", u.tr("Text models with tools only", "Solo texto con herramientas"), func(bool) {}), u.check(prefix+"advanced", u.tr("Advanced options", "Opciones avanzadas"), func(bool) {})), u.pills(u.button(prefix+"select-all", u.tr("Select results", "Marcar resultados"), func() {
 		for _, m := range available {
 			if len(s.Models) >= limit {
 				break
@@ -513,7 +513,7 @@ func (u *nativeUI) clientPicker(key string, s *nativeClientSelection) layout.Wid
 		for _, alias := range []string{"sonnet", "opus", "haiku"} {
 			u.setValue(prefix+"alias:"+alias, "")
 		}
-	})), u.note(fmt.Sprintf(u.tr("%d selected · %d matching · up to %d models", "%d seleccionados · %d resultados · hasta %d modelos"), len(s.Models), len(available), limit)), u.note(u.tr("Prices: input / output per 1 million tokens. — means unavailable.", "Precios: entrada / salida por 1 millón de tokens. — indica no disponible."))}
+	})), u.note(fmt.Sprintf(u.tr("%d selected · %d matching · up to %d models", "%d seleccionados · %d resultados · hasta %d modelos"), len(s.Models), len(available), limit) + u.tr(" · Prices: input / output per 1M tokens", " · Precios: entrada / salida por 1M tokens"))}
 	rows := []layout.Widget{}
 	for i, model := range available {
 		if i >= 150 {
@@ -636,16 +636,20 @@ func (u *nativeUI) clientPicker(key string, s *nativeClientSelection) layout.Wid
 				row = append(row, u.row(u.field(nativeClientField(key, id, "context"), u.tr("Context tokens", "Tokens de contexto"), "200000", false), u.field(nativeClientField(key, id, "output"), u.tr("Max output (0 = unspecified)", "Salida máxima (0 = sin especificar)"), "0", false)))
 			}
 		}
-		rows = append(rows, u.card(row...))
+		rows = append(rows, u.modelCard(choice != nil, row...))
 	}
 	if len(rows) == 0 {
 		rows = append(rows, u.note(u.tr("No matches. Refresh or add an exact model ID.", "Sin resultados. Actualiza o añade un ID exacto.")))
 	}
-	controls = append(controls, u.scroll(prefix+"models", unit.Dp(440), rows...))
+	if len(rows) > 6 {
+		controls = append(controls, u.scroll(prefix+"models", unit.Dp(480), rows...))
+	} else {
+		controls = append(controls, u.column(rows...))
+	}
 	if len(available) > 150 {
 		controls = append(controls, u.note(u.tr("Showing the first 150 results. Search to narrow the catalog.", "Se muestran los primeros 150 resultados. Busca para acotar el catálogo.")))
 	}
-	controls = append(controls, u.row(u.field(prefix+"manual", u.tr("Add an exact model ID", "Añadir un ID de modelo exacto"), "provider/model", false), u.button(prefix+"add", u.tr("Add model", "Añadir modelo"), func() {
+	controls = append(controls, u.actionRow(u.field(prefix+"manual", u.tr("Add an exact model ID", "Añadir un ID de modelo exacto"), "provider/model", false), u.button(prefix+"add", u.tr("Add model", "Añadir modelo"), func() {
 		id := strings.TrimSpace(u.value(prefix + "manual"))
 		m := modelInfo{ID: id, Name: id}
 		for _, candidate := range u.models {

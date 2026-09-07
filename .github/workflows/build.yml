@@ -2,13 +2,17 @@ name: Test and package
 
 on:
   push:
-    branches: ['**']
+    branches: [main]
   pull_request:
   workflow_dispatch:
   workflow_call:
 
 permissions:
   contents: read
+
+concurrency:
+  group: desktop-checks-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
@@ -77,27 +81,27 @@ jobs:
           - runner: macos-latest
             system: darwin
             arch: arm64
-            binary: kilo-local-darwin-arm64
+            binary: kilo-proxy-darwin-arm64
           - runner: macos-15-intel
             system: darwin
             arch: amd64
-            binary: kilo-local-darwin-amd64
+            binary: kilo-proxy-darwin-amd64
           - runner: ubuntu-24.04
             system: linux
             arch: amd64
-            binary: kilo-local-linux-amd64
+            binary: kilo-proxy-linux-amd64
           - runner: ubuntu-24.04-arm
             system: linux
             arch: arm64
-            binary: kilo-local-linux-arm64
+            binary: kilo-proxy-linux-arm64
           - runner: windows-latest
             system: windows
             arch: amd64
-            binary: kilo-local-windows-amd64.exe
+            binary: kilo-proxy-windows-amd64.exe
           - runner: windows-11-arm
             system: windows
             arch: arm64
-            binary: kilo-local-windows-arm64.exe
+            binary: kilo-proxy-windows-arm64.exe
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 25
     steps:
@@ -116,6 +120,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential pkg-config libwayland-dev libx11-dev libx11-xcb-dev libxkbcommon-x11-dev libxcursor-dev libxfixes-dev libegl1-mesa-dev libgles2-mesa-dev libvulkan-dev mesa-vulkan-drivers libgl1-mesa-dri xvfb dbus-x11
+      - name: Vet native desktop code
+        run: go vet -tags desktop ./...
       - name: Test native controls and render review screenshots on Linux
         if: runner.os == 'Linux'
         env:
@@ -226,7 +232,7 @@ jobs:
           WAYLAND_DISPLAY: ''
         run: |
           kilo_release_version="$(cat VERSION)"
-          dbus-run-session -- xvfb-run -a python scripts/smoke_desktop.py --archive "dist/kilo-local-${kilo_release_version}-${KILO_SYSTEM}-${KILO_ARCH}.tar.gz"
+          dbus-run-session -- xvfb-run -a python scripts/smoke_desktop.py --archive "dist/kilo-proxy-${kilo_release_version}-${KILO_SYSTEM}-${KILO_ARCH}.tar.gz"
       - name: Exercise the extracted desktop release archive
         if: runner.os != 'Linux'
         env:
@@ -235,7 +241,7 @@ jobs:
         shell: bash
         run: |
           kilo_release_version="$(cat VERSION)"
-          python scripts/smoke_desktop.py --archive "dist/kilo-local-${kilo_release_version}-${KILO_SYSTEM}-${KILO_ARCH}.zip"
+          python scripts/smoke_desktop.py --archive "dist/kilo-proxy-${kilo_release_version}-${KILO_SYSTEM}-${KILO_ARCH}.zip"
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-archive-${{ matrix.system }}-${{ matrix.arch }}

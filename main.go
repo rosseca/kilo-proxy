@@ -68,7 +68,7 @@ func main() {
 	}
 	app, err := newApp(*configDir, systemVault{})
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Cannot load Kilo Local:", err)
+		fmt.Fprintln(os.Stderr, "Cannot load Kilo Proxy:", err)
 		os.Exit(1)
 	}
 	stopFakeGateway := func() {}
@@ -101,7 +101,7 @@ func main() {
 	}
 	defer cleanup()
 	panelURL := "http://" + app.adminHost + "/#" + app.adminToken
-	fmt.Printf("Kilo Local %s\nControl panel: %s\nClosing the window keeps the proxy running. Use Quit to stop the application.\n", version, panelURL)
+	fmt.Printf("Kilo Proxy %s\nControl panel: %s\nClosing the window keeps the proxy running. Use Quit to stop the application.\n", version, panelURL)
 	if *useBrowser && !*noBrowser {
 		if err := openBrowser(panelURL); err != nil {
 			fmt.Fprintln(os.Stderr, "Open the control panel URL above in your browser.")
@@ -121,7 +121,7 @@ func main() {
 		if err := app.runDesktop(panelURL, *noBrowser, *selfTest, cleanup); err != nil {
 			fmt.Fprintln(os.Stderr, "Desktop startup failed:", err)
 			cleanup()
-			return
+			os.Exit(1)
 		}
 		return
 	}

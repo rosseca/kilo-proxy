@@ -26,12 +26,12 @@ static BOOL kiloWindowShouldClose(id self, SEL selector, NSWindow *window) {
     return NO;
 }
 
-int kiloWindowVisible(void *view) {
-    return [(__bridge NSView *)view window].visible ? 1 : 0;
+int kiloWindowVisible(uintptr_t view) {
+    return [(__bridge NSView *)(void *)view window].visible ? 1 : 0;
 }
 
-void kiloInstallLifecycle(void *view) {
-    Class windowDelegateClass = [[(__bridge NSView *)view window].delegate class];
+void kiloInstallLifecycle(uintptr_t view) {
+    Class windowDelegateClass = [[(__bridge NSView *)(void *)view window].delegate class];
     class_addMethod(windowDelegateClass, @selector(windowShouldClose:), (IMP)kiloWindowShouldClose, protocol_getMethodDescription(@protocol(NSWindowDelegate), @selector(windowShouldClose:), NO, YES).types);
     Class delegateClass = [[NSApp delegate] class];
     class_addMethod(delegateClass, @selector(applicationShouldTerminate:), (IMP)kiloShouldTerminate, protocol_getMethodDescription(@protocol(NSApplicationDelegate), @selector(applicationShouldTerminate:), NO, YES).types);

@@ -62,7 +62,10 @@ test('Windows launcher restores process environment after launching desktop',()=
  const command=launchCommand({client:'codex',key:"a'b",platform:'windows',appPath:"C:\\Codex\\Codex.exe"});
  assert.ok(command.includes("'a''b'"));assert.ok(command.includes('Start-Process'));
  assert.ok(command.includes('CODEX_ELECTRON_USER_DATA_PATH'));assert.ok(command.includes('finally'));
- assert.ok(command.includes("[Environment]::SetEnvironmentVariable($kiloName, $kiloPrevious[$kiloName], 'Process')"));
+ assert.match(command,/if \(\$null -eq \$kiloPrevious\[\$kiloName\]\)/);
+ assert.match(command,/Remove-Item -LiteralPath "Env:\$kiloName"/);
+ assert.match(command,/Set-Item -LiteralPath "Env:\$kiloName" -Value \$kiloPrevious\[\$kiloName\]/);
+ assert.doesNotMatch(command,/SetEnvironmentVariable/);
 });
 
 test('desktop catalog launcher refuses missing models.json before opening the app', {skip:process.platform==='win32'},()=>{

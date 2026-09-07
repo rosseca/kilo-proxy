@@ -1,0 +1,2 @@
+# Keep the upstream runtime collapsed in PRs; review our documented patch.
+third_party/gio/** linguist-vendored

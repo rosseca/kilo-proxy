@@ -1,1 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="17" fill="#e8f36a"/><path d="M17 15h8v16l14-16h10L33 33l17 17H39L25 36v14h-8z" fill="#202520"/><circle cx="47" cy="17" r="4" fill="#202520"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000" role="img" aria-label="Kilo Proxy">
+  <path fill="#f4f5ef" transform="translate(0 0) scale(1)" d="M200 0 L800 0 Q1000 0 1000 200 L1000 800 Q1000 1000 800 1000 L200 1000 Q0 1000 0 800 L0 200 Q0 0 200 0 Z "/>
+  <path fill="#202720" transform="translate(150 154.55) scale(0.7)" d="M60 0 L243 0 Q303 0 303 60 L303 323 C303 395 248 410 205 448 C184 470 171 488 171 517 C171 562 206 591 239 615 C279 644 303 660 303 708 L303 927 Q303 987 243 987 L60 987 Q0 987 0 927 L0 60 Q0 0 60 0 Z "/>
+  <path fill="#202720" transform="translate(150 154.55) scale(0.7)" d="M331 475 Q303 475 303 447 Q303 435 317 420 L684 37 Q719 0 762 0 L938 0 Q1000 0 1000 67 L1000 82 Q1000 135 958 177 L694 438 Q653 475 565 475 Z "/>
+  <path fill="#202720" transform="translate(150 154.55) scale(0.7)" d="M338 550 L568 550 Q641 550 695 604 L978 885 Q1000 907 1000 932 Q1000 987 945 987 L735 987 Q693 987 663 959 L313 602 Q302 591 304 576 Q307 550 338 550 Z "/>
+  <path fill="#e8f36a" transform="translate(150 154.55) scale(0.7)" d="M444 475 Q527 475 527 400 L527 258 Q527 208 557 175 L686 39 Q723 0 763 0 L938 0 Q1000 0 1000 67 L1000 82 Q1000 135 958 177 L694 438 Q653 475 565 475 Z "/>
+</svg>

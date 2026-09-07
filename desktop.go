@@ -58,7 +58,7 @@ func (d *nativeDesktop) CopyText(text string) error {
 	d.mu.Lock()
 	if d.window == nil {
 		d.mu.Unlock()
-		return errors.New("Open the Kilo Local window before copying")
+		return errors.New("Open the Kilo Proxy window before copying")
 	}
 	if len(d.copyPending) >= 32 {
 		d.mu.Unlock()
@@ -119,7 +119,7 @@ func (d *nativeDesktop) runWindow(w *gioapp.Window, done chan struct{}) {
 		}
 		d.mu.Unlock()
 	}()
-	w.Option(gioapp.Title("Kilo Local"), gioapp.Size(unit.Dp(1180), unit.Dp(820)), gioapp.MinSize(unit.Dp(720), unit.Dp(560)))
+	w.Option(gioapp.Title("Kilo Proxy"), gioapp.Size(unit.Dp(1180), unit.Dp(820)), gioapp.MinSize(unit.Dp(720), unit.Dp(560)))
 	var ops op.Ops
 	var nativeViewEvent gioapp.ViewEvent
 	lifecycleInstalled := false
@@ -227,9 +227,9 @@ func (d *nativeDesktop) setupTray() {
 	} else {
 		systray.SetIcon(trayIcon(false))
 	}
-	systray.SetTitle("Kilo Local")
+	systray.SetTitle("Kilo Proxy")
 	d.items = map[string]*systray.MenuItem{}
-	systray.AddMenuItem("Kilo Local · "+version, "").Disable()
+	systray.AddMenuItem("Kilo Proxy · "+version, "").Disable()
 	for _, key := range []string{"status", "team", "address", "activity"} {
 		d.items[key] = systray.AddMenuItem(" ", "")
 		d.items[key].Disable()
@@ -241,7 +241,7 @@ func (d *nativeDesktop) setupTray() {
 	d.items["message"] = systray.AddMenuItem(" ", "")
 	d.items["message"].Disable()
 	systray.AddSeparator()
-	d.items["quit"] = systray.AddMenuItem("Quit Kilo Local", "")
+	d.items["quit"] = systray.AddMenuItem("Quit Kilo Proxy", "")
 	for _, key := range []string{"open", "start", "stop", "quit"} {
 		action, clicked := key, d.items[key].ClickedCh
 		go func() {

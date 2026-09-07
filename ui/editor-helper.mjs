@@ -9,15 +9,21 @@ export function editorLaunch(path,model,shell='unix'){
  if(shell==='powershell')return `& {
   $kiloConfig = ${ps(path)}
   if (!(Test-Path -LiteralPath $kiloConfig -PathType Leaf)) { throw 'Prepare OpenCode first.' }
-  $kiloPrevious = $env:OPENCODE_CONFIG
-  $kiloInline = $env:OPENCODE_CONFIG_CONTENT
+  $kiloNames = @('OPENCODE_CONFIG', 'OPENCODE_CONFIG_CONTENT')
+  $kiloPrevious = @{}
+  foreach ($kiloName in $kiloNames) { $kiloPrevious[$kiloName] = [Environment]::GetEnvironmentVariable($kiloName, 'Process') }
   try {
     $env:OPENCODE_CONFIG = $kiloConfig
-    Remove-Item Env:OPENCODE_CONFIG_CONTENT -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath Env:OPENCODE_CONFIG_CONTENT -ErrorAction SilentlyContinue
     opencode --model ${ps('kilo-local/'+model)}
   } finally {
-    $env:OPENCODE_CONFIG = $kiloPrevious
-    $env:OPENCODE_CONFIG_CONTENT = $kiloInline
+    foreach ($kiloName in $kiloNames) {
+      if ($null -eq $kiloPrevious[$kiloName]) {
+        Remove-Item -LiteralPath "Env:$kiloName" -ErrorAction SilentlyContinue
+      } else {
+        Set-Item -LiteralPath "Env:$kiloName" -Value $kiloPrevious[$kiloName]
+      }
+    }
   }
 }`;
  return `(\n  kilo_config=${quote(path)}\n  [ -f "$kilo_config" ] || { printf '%s\\n' 'Prepare OpenCode first.' >&2; exit 1; }\n  unset OPENCODE_CONFIG_CONTENT\n  OPENCODE_CONFIG="$kilo_config" opencode --model ${quote('kilo-local/'+model)}\n)`;

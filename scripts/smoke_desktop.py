@@ -39,7 +39,7 @@ def extract(archive, directory):
                         not (member.isfile() or member.isdir())):
                     raise ValueError('Unsafe TAR entry')
             tar.extractall(directory)
-    name = 'Kilo Local.exe' if platform.system() == 'Windows' else 'kilo-local'
+    name = 'Kilo Proxy.exe' if platform.system() == 'Windows' else 'kilo-proxy'
     candidates = [path for path in directory.rglob(name) if path.is_file()]
     if len(candidates) != 1:
         raise ValueError('Archive must contain exactly one desktop executable')

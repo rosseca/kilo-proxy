@@ -26,7 +26,7 @@ type desktopProbe struct {
 func externalDesktopURL(raw string) (string, error) {
 	u, err := url.Parse(raw)
 	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || strings.ContainsAny(raw, "\r\n\x00") {
-		return "", errors.New("Only HTTPS links can be opened outside Kilo Local")
+		return "", errors.New("Only HTTPS links can be opened outside Kilo Proxy")
 	}
 	return u.String(), nil
 }

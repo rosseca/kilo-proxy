@@ -59,12 +59,12 @@ def smoke(directory, version):
     if platform.system() != 'Darwin':
         raise RuntimeError('This launch test requires macOS with a graphical login session')
     arch = {'arm64': 'arm64', 'x86_64': 'amd64'}[platform.machine()]
-    name = f'kilo-local-{version}-darwin-{arch}'
+    name = f'kilo-proxy-{version}-darwin-{arch}'
     archive = directory / (name + '.zip')
     with tempfile.TemporaryDirectory(prefix='kilo-launch-') as temporary:
         root = Path(temporary).resolve()
         subprocess.run(['/usr/bin/ditto', '-x', '-k', str(archive), str(root)], check=True)
-        bundle = root / name / 'Kilo Local.app'
+        bundle = root / name / 'Kilo Proxy.app'
         subprocess.run(['/usr/bin/codesign', '--verify', '--deep', '--strict',
                         '--verbose=2', str(bundle)], check=True)
         stdout, stderr = root / 'stdout', root / 'stderr'
