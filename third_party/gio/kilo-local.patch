@@ -190,3 +190,168 @@
  
  	DXGI_FORMAT_UNKNOWN             = 0
  	DXGI_FORMAT_R16_FLOAT           = 54
+--- a/app/os_x11.go
++++ b/app/os_x11.go
+@@ -29,9 +29,7 @@
+ 	"errors"
+ 	"fmt"
+ 	"image"
+-	"io"
+ 	"strconv"
+-	"strings"
+ 	"sync"
+ 	"time"
+ 	"unsafe"
+@@ -41,7 +39,6 @@
+ 	"gioui.org/io/key"
+ 	"gioui.org/io/pointer"
+ 	"gioui.org/io/system"
+-	"gioui.org/io/transfer"
+ 	"gioui.org/op"
+ 	"gioui.org/unit"
+ 
+@@ -667,28 +664,19 @@
+ 		case C.SelectionNotify:
+ 			cevt := (*C.XSelectionEvent)(unsafe.Pointer(xev))
+ 			prop := w.atoms.clipboardContent
+-			if cevt.property != prop {
+-				break
+-			}
+-			if cevt.selection != w.atoms.clipboard {
+-				break
+-			}
+-			var text C.XTextProperty
+-			if st := C.XGetTextProperty(w.x, w.xw, &text, prop); st == 0 {
+-				// Failed; ignore.
+-				break
+-			}
+-			if text.format != 8 || text.encoding != w.atoms.utf8string {
+-				// Ignore non-utf-8 encoded strings.
+-				break
+-			}
+-			str := C.GoStringN((*C.char)(unsafe.Pointer(text.value)), C.int(text.nitems))
+-			w.ProcessEvent(transfer.DataEvent{
+-				Type: "application/text",
+-				Open: func() io.ReadCloser {
+-					return io.NopCloser(strings.NewReader(str))
+-				},
++			data, ok := x11ClipboardDataEvent(uint64(cevt.selection), uint64(w.atoms.clipboard), uint64(cevt.property), uint64(prop), func() (string, bool) {
++				var text C.XTextProperty
++				if st := C.XGetTextProperty(w.x, w.xw, &text, prop); st == 0 {
++					return "", false
++				}
++				if text.format != 8 || text.encoding != w.atoms.utf8string {
++					return "", false
++				}
++				return C.GoStringN((*C.char)(unsafe.Pointer(text.value)), C.int(text.nitems)), true
+ 			})
++			if ok {
++				w.ProcessEvent(data)
++			}
+ 		case C.SelectionRequest:
+ 			cevt := (*C.XSelectionRequestEvent)(unsafe.Pointer(xev))
+ 			if (cevt.selection != w.atoms.clipboard && cevt.selection != w.atoms.primary) || cevt.property == C.None {
+--- a/app/x11_clipboard.go
++++ b/app/x11_clipboard.go
+@@ -0,0 +1,35 @@
++// SPDX-License-Identifier: Unlicense OR MIT
++
++//go:build ((linux && !android) || freebsd || openbsd) && !nox11
++
++package app
++
++import (
++	"io"
++	"strings"
++
++	"gioui.org/io/transfer"
++)
++
++// x11ClipboardDataEvent completes a clipboard SelectionNotify. X11 replies
++// with property None (zero) when no owner exists or conversion is unavailable.
++// That is an empty clipboard response, not an event to leave unanswered.
++func x11ClipboardDataEvent(selection, clipboard, property, destination uint64, readText func() (string, bool)) (transfer.DataEvent, bool) {
++	if selection != clipboard {
++		return transfer.DataEvent{}, false
++	}
++	var text string
++	if property != 0 {
++		if property != destination {
++			return transfer.DataEvent{}, false
++		}
++		var ok bool
++		if text, ok = readText(); !ok {
++			return transfer.DataEvent{}, false
++		}
++	}
++	return transfer.DataEvent{
++		Type: "application/text",
++		Open: func() io.ReadCloser { return io.NopCloser(strings.NewReader(text)) },
++	}, true
++}
+--- a/app/x11_clipboard_test.go
++++ b/app/x11_clipboard_test.go
+@@ -0,0 +1,63 @@
++// SPDX-License-Identifier: Unlicense OR MIT
++
++//go:build ((linux && !android) || freebsd || openbsd) && !nox11
++
++package app
++
++import (
++	"io"
++	"testing"
++)
++
++func TestX11ClipboardSelectionNotify(t *testing.T) {
++	const clipboard, destination = 11, 12
++	tests := []struct {
++		name                string
++		selection, property uint64
++		text                string
++		readOK, wantRead    bool
++		wantEvent           bool
++	}{
++		{name: "no selection owner answers empty", selection: clipboard, property: 0, wantEvent: true},
++		{name: "clipboard text", selection: clipboard, property: destination, text: "Kilo Proxy — español 日本語", readOK: true, wantRead: true, wantEvent: true},
++		{name: "owned empty clipboard", selection: clipboard, property: destination, readOK: true, wantRead: true, wantEvent: true},
++		{name: "other selection with no owner", selection: 99, property: 0},
++		{name: "other selection with property", selection: 99, property: destination},
++		{name: "other property", selection: clipboard, property: 99},
++		{name: "unreadable property", selection: clipboard, property: destination, wantRead: true},
++	}
++	for _, tt := range tests {
++		t.Run(tt.name, func(t *testing.T) {
++			reads := 0
++			data, ok := x11ClipboardDataEvent(tt.selection, clipboard, tt.property, destination, func() (string, bool) {
++				reads++
++				return tt.text, tt.readOK
++			})
++			if ok != tt.wantEvent {
++				t.Fatalf("delivered clipboard event = %v, want %v", ok, tt.wantEvent)
++			}
++			wantReads := 0
++			if tt.wantRead {
++				wantReads = 1
++			}
++			if reads != wantReads {
++				t.Fatalf("read property %d times, want %d", reads, wantReads)
++			}
++			if !ok {
++				return
++			}
++			if data.Type != "application/text" || data.Open == nil {
++				t.Fatalf("invalid clipboard transfer: %#v", data)
++			}
++			// Each consumer opens an independent stream, including empty replies.
++			for i := 0; i < 2; i++ {
++				stream := data.Open()
++				body, err := io.ReadAll(stream)
++				closeErr := stream.Close()
++				if err != nil || closeErr != nil || string(body) != tt.text {
++					t.Fatalf("clipboard stream = %q, read error %v, close error %v; want %q", body, err, closeErr, tt.text)
++				}
++			}
++		})
++	}
++}

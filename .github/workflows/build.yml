@@ -138,6 +138,13 @@ jobs:
         if: runner.os == 'macOS'
         working-directory: third_party/gio
         run: go test ./app -run TestFallbackTimerStartsStopsAndCloses
+      - name: Test Linux clipboard event delivery
+        if: runner.os == 'Linux'
+        working-directory: third_party/gio
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          WAYLAND_DISPLAY: ''
+        run: dbus-run-session -- xvfb-run -a go test ./app -run TestX11Clipboard
       - uses: actions/upload-artifact@v4
         if: always()
         with:

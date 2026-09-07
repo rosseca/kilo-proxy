@@ -29,9 +29,7 @@ import (
 	"errors"
 	"fmt"
 	"image"
-	"io"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 	"unsafe"
@@ -41,7 +39,6 @@ import (
 	"gioui.org/io/key"
 	"gioui.org/io/pointer"
 	"gioui.org/io/system"
-	"gioui.org/io/transfer"
 	"gioui.org/op"
 	"gioui.org/unit"
 
@@ -667,28 +664,19 @@ func (h *x11EventHandler) handleEvents() bool {
 		case C.SelectionNotify:
 			cevt := (*C.XSelectionEvent)(unsafe.Pointer(xev))
 			prop := w.atoms.clipboardContent
-			if cevt.property != prop {
-				break
-			}
-			if cevt.selection != w.atoms.clipboard {
-				break
-			}
-			var text C.XTextProperty
-			if st := C.XGetTextProperty(w.x, w.xw, &text, prop); st == 0 {
-				// Failed; ignore.
-				break
-			}
-			if text.format != 8 || text.encoding != w.atoms.utf8string {
-				// Ignore non-utf-8 encoded strings.
-				break
-			}
-			str := C.GoStringN((*C.char)(unsafe.Pointer(text.value)), C.int(text.nitems))
-			w.ProcessEvent(transfer.DataEvent{
-				Type: "application/text",
-				Open: func() io.ReadCloser {
-					return io.NopCloser(strings.NewReader(str))
-				},
+			data, ok := x11ClipboardDataEvent(uint64(cevt.selection), uint64(w.atoms.clipboard), uint64(cevt.property), uint64(prop), func() (string, bool) {
+				var text C.XTextProperty
+				if st := C.XGetTextProperty(w.x, w.xw, &text, prop); st == 0 {
+					return "", false
+				}
+				if text.format != 8 || text.encoding != w.atoms.utf8string {
+					return "", false
+				}
+				return C.GoStringN((*C.char)(unsafe.Pointer(text.value)), C.int(text.nitems)), true
 			})
+			if ok {
+				w.ProcessEvent(data)
+			}
 		case C.SelectionRequest:
 			cevt := (*C.XSelectionRequestEvent)(unsafe.Pointer(xev))
 			if (cevt.selection != w.atoms.clipboard && cevt.selection != w.atoms.primary) || cevt.property == C.None {
