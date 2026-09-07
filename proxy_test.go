@@ -271,7 +271,11 @@ func TestStartStopAndPortConflict(t *testing.T) {
 	if !errors.Is(a.start(), errMissingCredentials) {
 		t.Fatal("started without credentials")
 	}
-	occupied, _ := net.Listen("tcp4", "127.0.0.1:0")
+	occupied, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = occupied.Close() })
 	a.config.Port = occupied.Addr().(*net.TCPAddr).Port
 	a.apiKey = "key"
 	a.config.OrgID = "org"
@@ -289,10 +293,49 @@ func TestStartStopAndPortConflict(t *testing.T) {
 	a.stop()
 	ln, err := net.Listen("tcp4", net.JoinHostPort("127.0.0.1", jsonNumber(a.config.Port)))
 	if err != nil {
-		t.Fatal("stop did not release port")
+		t.Fatalf("stop did not release port: %v", err)
 	}
 	ln.Close()
 }
+
+// Model the interval after Listen succeeds but before the Serve goroutine runs.
+// Server.Close alone cannot release a listener it has not registered yet.
+func TestStopBeforeServeReleasesPort(t *testing.T) {
+	a := testApp(t)
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	a.config.Port = ln.Addr().(*net.TCPAddr).Port
+	a.apiKey, a.config.OrgID = "test-key", "test-org"
+	srv := &http.Server{}
+	a.proxyServer, a.proxyListener = srv, ln
+
+	a.stop()
+	a.stop()
+	rebound, err := net.Listen("tcp4", ln.Addr().String())
+	if err != nil {
+		t.Fatalf("stop returned before releasing the unserved listener: %v", err)
+	}
+	if err := rebound.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.start(); err != nil {
+		t.Fatalf("immediate restart failed: %v", err)
+	}
+	// A late Serve from the previous run must not affect the new listener.
+	if err := srv.Serve(ln); !errors.Is(err, http.ErrServerClosed) {
+		t.Fatalf("late Serve returned %v, want ErrServerClosed", err)
+	}
+	conn, err := net.DialTimeout("tcp4", ln.Addr().String(), time.Second)
+	if err != nil {
+		t.Fatalf("late Serve interfered with the restarted proxy: %v", err)
+	}
+	conn.Close()
+	a.stop()
+}
+
 func jsonNumber(n int) string { b, _ := json.Marshal(n); return string(b) }
 func TestGatewayCheckUsesOrgAndDoesNotFollowRedirect(t *testing.T) {
 	for _, redirect := range []bool{false, true} {

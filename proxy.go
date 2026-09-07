@@ -53,6 +53,7 @@ type app struct {
 	upstream         *url.URL
 	transport        http.RoundTripper
 	proxyServer      *http.Server
+	proxyListener    net.Listener
 	started          time.Time
 	requests         int
 	failures         int
@@ -280,6 +281,7 @@ func (a *app) start() error {
 	}
 	srv := &http.Server{Handler: a.inferenceHandler(a.apiKey, a.config.OrgID, a.config.LocalKey, host), ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 2 * time.Minute, IdleTimeout: 90 * time.Second, MaxHeaderBytes: 32 << 10}
 	a.proxyServer = srv
+	a.proxyListener = ln
 	a.started = time.Now()
 	go func() { _ = srv.Serve(ln) }()
 	return nil
@@ -288,6 +290,12 @@ func (a *app) start() error {
 func (a *app) stop() {
 	a.mu.Lock()
 	srv := a.proxyServer
+	// Serve runs asynchronously and may not have registered the listener yet.
+	// Release our listener before exposing the stopped state to another start.
+	if a.proxyListener != nil {
+		_ = a.proxyListener.Close()
+		a.proxyListener = nil
+	}
 	a.proxyServer = nil
 	a.mu.Unlock()
 	if srv != nil {
