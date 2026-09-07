@@ -298,6 +298,11 @@ def main():
             notices.mkdir(parents=True)
             for filename in ('PATCHES.md', 'LICENSE', 'kilo-local.patch'):
                 shutil.copy2(ROOT/'third_party'/'gio'/filename, notices/filename)
+        if (ROOT/'third_party'/'fyne-systray').is_dir():
+            notices = stage/'third_party'/'fyne-systray'
+            notices.mkdir(parents=True)
+            for filename in ('PATCHES.md', 'LICENSE', 'kilo-proxy.patch'):
+                shutil.copy2(ROOT/'third_party'/'fyne-systray'/filename, notices/filename)
         if system == 'linux':
             shutil.copy2(ROOT/'ui'/'icon.svg', stage/'kilo-proxy.svg')
             installer = stage/'install-user.sh'

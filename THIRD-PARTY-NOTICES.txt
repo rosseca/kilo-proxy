@@ -3,7 +3,8 @@ THIRD-PARTY NOTICES
 Production dependencies are pinned in go.mod/go.sum. The native interface uses
 Gio and fyne.io/systray. License texts below come from those exact dependency
 versions and their embedded font, icon and shaping sources. Gio platform
-modifications are documented alongside the vendored source in third_party/gio.
+modifications are documented alongside the vendored source in third_party/gio;
+the Windows tray ABI correction is documented in third_party/fyne-systray.
 The old third_party/systray source is archived reference material only.
 
 

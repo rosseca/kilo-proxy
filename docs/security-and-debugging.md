@@ -84,7 +84,7 @@ Use `--no-tray` for headless operation and `--no-browser` to suppress automatic 
 - [Kilo profile and organizations](https://github.com/Kilo-Org/kilo/blob/main/packages/kilo-gateway/src/api/profile.ts).
 - [Kilo authentication](https://kilo.ai/docs/gateway/authentication).
 - [Cross-platform credential store](https://github.com/zalando/go-keyring).
-- [Native tray library](https://github.com/gogpu/systray); local changes are recorded in `third_party/systray/PATCHES.md` in the source repository.
+- [Native tray library](https://github.com/fyne-io/systray); local changes are recorded in `third_party/fyne-systray/PATCHES.md` in the source repository.
 
 ## Passive spend tracking (0.13.0)
 

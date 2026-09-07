@@ -114,6 +114,6 @@ Automated tests cover authentication replacement, host/origin restrictions, life
 
 Codex catalog loading and reasoning/display-name metadata were checked against the installed app-server. Desktop isolation depends partly on version-specific application behavior: see [inspection notes](docs/codex-desktop-compatibility.md). Kilo must support the protocol and model you choose, and your organization must permit it.
 
-Dependency versions are pinned in `go.mod` and `go.sum`. Licensing notices are in [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt); local Gio platform changes are documented alongside `third_party/gio`. The old `third_party/systray` source remains archived reference material.
+Dependency versions are pinned in `go.mod` and `go.sum`. Licensing notices are in [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt); local Gio platform changes are documented alongside `third_party/gio`, and the Windows tray ABI correction alongside `third_party/fyne-systray`. The old `third_party/systray` source remains archived reference material.
 
 See [Xcode setup](docs/xcode.md) for Chat provider registration and the dedicated Codex/Claude agent profiles.

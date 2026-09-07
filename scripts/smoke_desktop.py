@@ -18,6 +18,24 @@ REQUIRED = {
 }
 
 
+def windows_desktop_context():
+    """Read the smoke process's shell context without starting or altering it."""
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.WinDLL('user32', use_last_error=True)
+    kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+    user32.FindWindowW.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR]
+    user32.FindWindowW.restype = wintypes.HWND
+    kernel32.ProcessIdToSessionId.argtypes = [wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)]
+    kernel32.ProcessIdToSessionId.restype = wintypes.BOOL
+    session = wintypes.DWORD()
+    identified = kernel32.ProcessIdToSessionId(os.getpid(), ctypes.byref(session))
+    return {'taskbar_present': bool(user32.FindWindowW('Shell_TrayWnd', None)),
+            'session_id': session.value if identified else None,
+            'process_arch': platform.machine().lower()}
+
+
 def extract(archive, directory):
     if archive.name.endswith('.zip'):
         with zipfile.ZipFile(archive) as zipped:
@@ -49,6 +67,8 @@ def extract(archive, directory):
 def smoke(binary, root):
     report = root / 'desktop-report.json'
     command = [str(binary.resolve()), '--desktop-self-test', str(report)]
+    if platform.system() == 'Windows':
+        print('Windows graphical session: ' + json.dumps(windows_desktop_context()), flush=True)
     try:
         result = subprocess.run(command, capture_output=True, text=True, timeout=150)
     except subprocess.TimeoutExpired as error:

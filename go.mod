@@ -27,3 +27,5 @@ require (
 )
 
 replace gioui.org => ./third_party/gio
+
+replace fyne.io/systray => ./third_party/fyne-systray
