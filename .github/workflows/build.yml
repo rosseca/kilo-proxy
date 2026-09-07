@@ -1,0 +1,67 @@
+name: Test and package
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: go mod verify
+      - run: go test -race ./...
+      - run: go vet ./...
+      - name: Test every client helper
+        shell: bash
+        run: node --test scripts/*.test.mjs
+      - run: python -m unittest discover -s scripts -p 'test_*.py'
+
+  package:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate release tag
+        if: github.ref_type == 'tag'
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: python scripts/release.py check-tag --tag "$RELEASE_TAG"
+      - name: Build all six platforms and checksums
+        run: python scripts/package.py
+      - name: Verify release assets
+        run: python scripts/release.py verify-assets
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            dist/*.zip
+            dist/*.tar.gz
+            dist/SHA256SUMS.txt

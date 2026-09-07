@@ -1,0 +1,46 @@
+# Build output and temporary development profiles
+/dist/
+/build/
+/tmp-profile/
+/kilo-local
+/kilo-local.exe
+/Kilo Local.app/
+/Kilo Local.exe
+
+# Local credentials and captured traffic; never commit real profiles
+.env
+.env.*
+!.env.example
+settings.json
+auth.json
+credentials.json
+*.pem
+*.key
+*.p12
+*.pfx
+*.har
+*.log
+.codex/
+.codex-kilo-desktop/
+.codex-kilo-cli/
+
+# Test output and language caches
+coverage.out
+coverage.html
+*.test
+*.prof
+__pycache__/
+*.py[cod]
+node_modules/
+.venv/
+
+# Editor and operating-system files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini

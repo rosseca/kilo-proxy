@@ -1,0 +1,41 @@
+package internal
+
+// PlatformTray is the per-platform system tray implementation.
+// Each platform (Win32, macOS, Linux) implements this interface.
+type PlatformTray interface {
+	Create() error
+	SetIcon(png []byte) error
+	SetTooltip(text string) error
+	SetMenu(menu *Menu) error
+	ShowNotification(title, message string) error
+	Show() error
+	Hide() error
+	Bounds() (x, y, w, h int)
+	Run() error
+	Destroy()
+}
+
+// Run blocks the current goroutine, running the platform message loop.
+// On Windows this pumps Win32 messages (GetMessage/DispatchMessage).
+// On macOS this runs the NSApplication run loop.
+// On Linux this runs the D-Bus event loop.
+// Call this from the main goroutine after Show().
+
+// MenuItemUpdater dispatches dynamic menu item updates to the native platform.
+// Implemented by platform tray types that support in-place menu item updates.
+type MenuItemUpdater interface {
+	UpdateItem(item *MenuItem) error
+}
+
+// menuItemSnapshotUpdater is the race-free dispatch seam used by built-in
+// platforms. It is deliberately private so snapshots cannot escape internal.
+type menuItemSnapshotUpdater interface {
+	updateItem(item menuItemSnapshot) error
+}
+
+// Callbacks holds event handlers set by the public API layer.
+type Callbacks struct {
+	OnClick       func()
+	OnDoubleClick func()
+	OnRightClick  func()
+}
