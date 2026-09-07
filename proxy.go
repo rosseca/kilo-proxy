@@ -19,16 +19,19 @@ import (
 const gatewayURL = "https://api.kilo.ai/api/gateway"
 
 type event struct {
-	ID         string `json:"id"`
-	HasDetails bool   `json:"hasDetails"`
-	At         string `json:"at"`
-	Method     string `json:"method"`
-	Path       string `json:"path"`
-	Status     int    `json:"status"`
-	Duration   int64  `json:"duration"`
+	Usage      *requestUsage `json:"usage,omitempty"`
+	ID         string        `json:"id"`
+	HasDetails bool          `json:"hasDetails"`
+	At         string        `json:"at"`
+	Method     string        `json:"method"`
+	Path       string        `json:"path"`
+	Status     int           `json:"status"`
+	Duration   int64         `json:"duration"`
 }
 
 type app struct {
+	usageTotal       usageSummary
+	usageSessions    map[string]*usageSummary
 	captureEnabled   bool
 	activeTraces     int
 	nextEventID      uint64
@@ -166,6 +169,11 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 			return
 		}
 		start := time.Now()
+		var usage *usageObserver
+		if r.Method == http.MethodPost {
+			usage = newUsageObserver(r, orgID)
+			r = r.WithContext(context.WithValue(r.Context(), usageContextKey{}, usage))
+		}
 		id, epoch, capture := a.beginActivity(r, key, localKey)
 		recorder := &statusWriter{ResponseWriter: w, status: http.StatusOK, capture: capture}
 		w = recorder
@@ -193,13 +201,24 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 			if recorder.status >= 400 {
 				a.failures++
 			}
+			if usage != nil {
+				usage = usage.snapshot()
+				if r.Context().Err() != nil {
+					usage.usage.Complete = false
+				}
+			}
+			a.recordUsage(usage)
+			var usageDetail *requestUsage
+			if usage != nil {
+				usageDetail = &usage.usage
+			}
 			if epoch != a.activityEpoch {
 				return
 			}
 			if detail != nil && a.captureEnabled {
 				a.traces[id] = detail
 			}
-			a.events = append([]event{{ID: id, HasDetails: a.traces[id] != nil, At: time.Now().Format(time.RFC3339), Method: r.Method, Path: r.URL.Path, Status: recorder.status, Duration: time.Since(start).Milliseconds()}}, a.events...)
+			a.events = append([]event{{Usage: usageDetail, ID: id, HasDetails: a.traces[id] != nil, At: time.Now().Format(time.RFC3339), Method: r.Method, Path: r.URL.Path, Status: recorder.status, Duration: time.Since(start).Milliseconds()}}, a.events...)
 			if len(a.events) > traceCountLimit {
 				for _, old := range a.events[traceCountLimit:] {
 					delete(a.traces, old.ID)

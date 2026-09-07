@@ -59,7 +59,7 @@ func (a *app) adminHandler() http.Handler {
 			return
 		}
 		if !strings.HasPrefix(r.URL.Path, "/api/") {
-			if r.Method != "GET" || (r.URL.Path != "/" && r.URL.Path != "/app.js" && r.URL.Path != "/activity-helper.mjs" && r.URL.Path != "/codex-catalog.mjs" && r.URL.Path != "/model-helper.mjs" && r.URL.Path != "/client-config.mjs" && r.URL.Path != "/i18n.mjs" && r.URL.Path != "/style.css" && r.URL.Path != "/icon.svg") {
+			if r.Method != "GET" || (r.URL.Path != "/" && r.URL.Path != "/app.js" && r.URL.Path != "/activity-helper.mjs" && r.URL.Path != "/usage-helper.mjs" && r.URL.Path != "/codex-catalog.mjs" && r.URL.Path != "/model-helper.mjs" && r.URL.Path != "/client-config.mjs" && r.URL.Path != "/i18n.mjs" && r.URL.Path != "/style.css" && r.URL.Path != "/icon.svg") {
 				http.NotFound(w, r)
 				return
 			}
@@ -144,6 +144,7 @@ func (a *app) state(w http.ResponseWriter) {
 		"localKey": a.config.LocalKey, "hasKey": a.apiKey != "", "remember": a.config.Remember,
 		"running": a.proxyServer != nil, "baseURL": "http://127.0.0.1:" + strconv.Itoa(a.config.Port) + "/v1",
 		"requests": a.requests, "failures": a.failures, "active": a.active, "uptime": uptime,
+		"usage":          a.usageSnapshot(),
 		"captureEnabled": a.captureEnabled, "activityEpoch": a.activityEpoch,
 		"events": a.events, "warning": a.vaultWarning,
 	})

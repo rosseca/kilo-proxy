@@ -75,3 +75,19 @@ Use `--no-tray` for headless operation and `--no-browser` to suppress automatic 
 - [Kilo authentication](https://kilo.ai/docs/gateway/authentication).
 - [Cross-platform credential store](https://github.com/zalando/go-keyring).
 - [Native tray library](https://github.com/gogpu/systray); local changes are recorded in `third_party/systray/PATCHES.md` in the source repository.
+
+## Passive spend tracking (0.13.0)
+
+Activity shows reported USD costs and token usage for inference requests observed since this application process started. The totals and session breakdown survive clearing the 30-entry trace history and pausing detail capture. Restarting the application resets them; accounting metadata is not saved to disk. Requests already completed before starting this version cannot be recovered.
+
+The reader observes upstream response bytes without changing the request, forwarding session headers, delaying streaming, or making additional inference/billing calls. Chat Completions, Responses, and Messages are handled as JSON or SSE. Cumulative usage snapshots replace prior values within the same request instead of being summed repeatedly. Messages input/cache usage from `message_start` is combined with final output usage. Individual activity rows include the response model and reported cost.
+
+`usage.cost_microdollars`, when present, is converted to USD. Otherwise, numeric `usage.cost` is used as the gateway-reported USD amount. Money is rounded to the nearest nanodollar and summed as integers. Explicit zero is retained. Missing, negative, malformed, or unsupported cost fields remain **Not reported**; no catalog estimate is silently substituted. Provider/BYOK `cost_details.upstream_inference_cost` is not added to a Kilo charge. These observations are not a reconciliation of the organization invoice; cost semantics and availability depend on the Kilo route/provider.
+
+The UI displays how many requests supplied costs and how many responses were incomplete or exceeded parsing limits. Canceled requests can incur charges without delivering final usage; unknown requests do not count as free. Token counters retain provider-reported input/output/cache/reasoning values; cache can be included in input counts for one protocol and separate in another, so these categories must not be added indiscriminately. Models/catalog GET requests do not enter inference-spend totals.
+
+Grouping prefers Codex `thread-id`, then `session-id` (or legacy `session_id`), then `X-KiloCode-TaskId`, then an explicit `X-Kilo-Local-Session`. Codex sends session/thread headers in its [official API client](https://github.com/openai/codex/blob/main/codex-rs/codex-api/src/requests/headers.rs); availability depends on the client version. A thread ID groups the conversation; a session ID may identify a wider client session. Without an identifier, requests are explicitly grouped as unassigned rather than guessing from prompts, model, or connection. Organization IDs are part of the grouping key. Up to 200 groups are retained, with additional groups combined under Other sessions.
+
+The usage parser buffers at most 1 MiB per JSON body or SSE data event, independently of the 128 KiB debug capture. Oversized frames are skipped and flagged; a later final SSE usage event can still be read. An interrupted or unterminated SSE frame is not treated as a completed response. The stream itself continues unchanged.
+
+Sources: [Kilo usage and billing](https://kilo.ai/docs/gateway/usage-and-billing), [Kilo streaming](https://kilo.ai/docs/gateway/streaming), and [Kilo client cost extraction](https://github.com/Kilo-Org/kilo/blob/main/packages/opencode/src/session/index.ts). Documentation confirms usage reporting; no paid inference was made to validate a specific model's returned billing fields. Automated tests use representative gateway fixtures.

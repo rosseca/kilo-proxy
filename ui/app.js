@@ -1,4 +1,5 @@
 'use strict';
+import {reportedCost, usageCoverage} from './usage-helper.mjs';
 import {formatTraceJSON} from './activity-helper.mjs';
 import {codexCatalog,codexDisplayName,reasoningFor,reasoningLevels} from './codex-catalog.mjs';
 import {filterModels, formatPrice, validModelID} from './model-helper.mjs';
@@ -160,13 +161,14 @@ function render(s) {
   $('connection-foot').textContent = s.running ? t('Detener interrumpe las peticiones que estén en curso.') : t('La clave de Kilo nunca se copia a tu editor.');
   $('request-count').textContent = s.requests; $('active-count').textContent = s.active; $('error-count').textContent = s.failures;
   $('capture-activity').checked=s.captureEnabled;
+  renderUsage(s.usage);
   if(activeTrace && !(s.events || []).some(event=>event.id===activeTrace.id)){activeTrace=null;traceRequest++;}
   renderTrace();
   $('empty-activity').hidden = !!s.events?.length; $('activity-table').hidden = !s.events?.length;
   $('event-rows').replaceChildren();
   for (const e of s.events || []) {
     const row = document.createElement('tr');
-    const values = [new Date(e.at).toLocaleTimeString(language, {hour: '2-digit', minute: '2-digit', second: '2-digit'}), e.method + ' ' + e.path, e.status, e.duration < 1000 ? e.duration + ' ms' : (e.duration / 1000).toFixed(1) + ' s'];
+    const values = [new Date(e.at).toLocaleTimeString(language, {hour: '2-digit', minute: '2-digit', second: '2-digit'}), e.method + ' ' + e.path, e.status, e.usage?.model || '—', reportedCost(e.usage?.costUSD) ?? t('Coste desconocido'), e.duration < 1000 ? e.duration + ' ms' : (e.duration / 1000).toFixed(1) + ' s'];
     values.forEach((value, i) => {
       const cell = document.createElement('td');
       if (i === 2) { const badge = document.createElement('span'); badge.className = 'status-code' + (e.status >= 400 ? ' error' : ''); badge.textContent = value; cell.append(badge); }
@@ -182,6 +184,29 @@ function render(s) {
     catalogRevision = s.catalogRevision; catalog = []; catalogFetchedAt = ''; void loadModels();
   }
   renderSnippet();
+}
+
+function renderUsage(usage) {
+ const total=usage?.total || {};
+ const coverage=usageCoverage(total);
+ $('spend-total').textContent=reportedCost(total.costUSD,coverage.priced) ?? t('Coste desconocido');
+ $('spend-coverage').textContent=t('Coste recibido en {priced} de {requests} peticiones',coverage);
+ $('spend-tokens').textContent=t('{input} entrada · {output} salida · {cached} caché',{input:(total.input||0).toLocaleString(language),output:(total.output||0).toLocaleString(language),cached:(total.cached||0).toLocaleString(language)});
+ $('spend-partial').textContent=t('{count} peticiones incompletas o con lectura limitada',{count:coverage.incomplete});
+ $('usage-sessions').replaceChildren();
+ for(const session of usage?.sessions || []){
+  const row=document.createElement('tr');
+  let label=session.label;
+  if(session.source==='unassigned') label=t('Peticiones sin sesión identificada');
+  else if(session.source==='overflow') label=t('Otras sesiones');
+  else label=label.replace('Codex task',t('Tarea de Codex')).replace('Client session',t('Sesión del cliente')).replace('Kilo task',t('Tarea de Kilo'));
+  const c=usageCoverage(session);
+  for(const value of [label,session.orgId||'—',session.requests,reportedCost(session.costUSD,c.priced) ?? t('Coste desconocido'),`${c.priced}/${c.requests}`]){
+   const cell=document.createElement('td');cell.textContent=value;row.append(cell);
+  }
+  $('usage-sessions').append(row);
+ }
+ $('usage-session-table').hidden=!usage?.sessions?.length;
 }
 
 async function showTrace(event){
@@ -434,8 +459,8 @@ function renderModels() {
   }
   const title = document.createElement('strong'); title.textContent = selected.name; details.append(title);
   const grid = document.createElement('dl');
-  const count = n => n ? n.toLocaleString(language) : t('Sin dato');
-  const flag = value => value === true ? t('Sí') : value === false ? t('No') : t('Sin dato');
+  const count = n => n ? n.toLocaleString(language) : t('Coste desconocido');
+  const flag = value => value === true ? t('Sí') : value === false ? t('No') : t('Coste desconocido');
   for (const [label,value] of [
     ['Entrada · USD / 1M tokens',formatPrice(selected.inputPrice,language) ?? t('Variable / sin dato')],
     ['Salida · USD / 1M tokens',formatPrice(selected.outputPrice,language) ?? t('Variable / sin dato')],

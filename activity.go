@@ -158,6 +158,10 @@ func (t traceTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 			response.Body = &traceReader{response.Body, &c.upResponse}
 		}
 	}
+	if u, _ := r.Context().Value(usageContextKey{}).(*usageObserver); u != nil && response != nil && response.Body != nil {
+		u.configure(response)
+		response.Body = &usageReader{response.Body, u}
+	}
 	return response, err
 }
 
