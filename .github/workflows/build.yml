@@ -115,6 +115,17 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Probe Windows notification registration independently of Go
+        if: runner.os == 'Windows'
+        timeout-minutes: 2
+        run: python scripts/probe_windows_tray.py --report native-probe/windows-tray.json
+      - uses: actions/upload-artifact@v4
+        if: always() && runner.os == 'Windows'
+        with:
+          name: windows-tray-probe-${{ matrix.arch }}
+          path: native-probe/windows-tray.json
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Install Linux native graphics and graphical test dependencies
         if: runner.os == 'Linux'
         run: |
