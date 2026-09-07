@@ -1,4 +1,5 @@
 import {codexCatalog,reasoningFor,codexDisplayName} from './codex-catalog.mjs';
+import {writeClipboard} from './desktop-helper.mjs';
 import {claudeCapabilities,claudeEfforts,claudeSelection} from './claude-helper.mjs';
 import {validModelID,formatPrice} from './model-helper.mjs';
 
@@ -89,6 +90,6 @@ export function createXcodeHelper({api,notify,refreshCatalog}) {
  $('xcode-detect').addEventListener('click',detect);
  $('xcode-save').addEventListener('click',async()=>{const target=variant,s=selection(),sent=fingerprint();saving=true;render();try{const result=await api('xcode/'+target,payload(target,s));s.saved={signature:sent,path:result.profileDir}}catch(e){notify(e.message,true)}finally{saving=false;render()}});
  $('xcode-load').addEventListener('click',async()=>{const target=variant,s=selection();try{const data=await api('xcode/'+target);s.models.clear();if(target==='codex'){for(const m of data.models)s.models.set(m.slug,{id:m.slug,displayName:m.display_name,contextWindow:m.context_window,inputModalities:m.input_modalities,reasoningLevels:(m.supported_reasoning_levels||[]).map(r=>r.effort),defaultReasoning:m.default_reasoning_level});s.initial=data.models[0]?.slug||''}else{for(const m of data.models)s.models.set(m.id,m);s.initial=data.initial;s.aliases=data.aliases||{}}s.saved=null;render()}catch(e){notify(e.message,true)}});
- $('xcode-copy').addEventListener('click',async()=>{try{await navigator.clipboard.writeText(xcodeChatGuide(context.state?.baseURL||'',context.state?.localKey||'',context.language));notify(L('Connection copied with the local key','Conexión copiada con la clave local'))}catch(e){notify(L('Clipboard unavailable','Portapapeles no disponible'),true)}});
+ $('xcode-copy').addEventListener('click',async()=>{try{await writeClipboard(xcodeChatGuide(context.state?.baseURL||'',context.state?.localKey||'',context.language));notify(L('Connection copied with the local key','Conexión copiada con la clave local'))}catch(e){notify(L('Clipboard unavailable','Portapapeles no disponible'),true)}});
  return {render};
 }

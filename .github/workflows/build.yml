@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-latest, windows-latest]
+        os: [macos-latest, ubuntu-24.04, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -35,33 +35,233 @@ jobs:
         shell: bash
         run: node --test scripts/*.test.mjs
       - run: python -m unittest discover -s scripts -p 'test_*.py'
-
-  package:
-    needs: test
-    # Darwin app bundles require Apple's codesign to seal Info.plist/resources.
-    # Go still cross-compiles the other five targets with CGO disabled.
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
       - name: Validate release tag
         if: github.ref_type == 'tag'
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: python scripts/release.py check-tag --tag "$RELEASE_TAG"
-      - name: Build all six platforms and checksums
-        run: python scripts/package.py
-      - name: Verify macOS app signatures after ZIP extraction
-        run: python scripts/package.py --verify-macos-archives
-      - name: Launch extracted macOS app and verify startup and shutdown
+        shell: bash
+
+  browser-e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium webkit
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-e2e-failure
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            playwright-report/
+            test-results/
+
+  native:
+    # Raw executables are tested here. No bundle/archive is created until every
+    # architecture, the core suite, and the browser E2E job have succeeded.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-latest
+            system: darwin
+            arch: arm64
+            binary: kilo-local-darwin-arm64
+          - runner: macos-15-intel
+            system: darwin
+            arch: amd64
+            binary: kilo-local-darwin-amd64
+          - runner: ubuntu-24.04
+            system: linux
+            arch: amd64
+            binary: kilo-local-linux-amd64
+          - runner: ubuntu-24.04-arm
+            system: linux
+            arch: arm64
+            binary: kilo-local-linux-arm64
+          - runner: windows-latest
+            system: windows
+            arch: amd64
+            binary: kilo-local-windows-amd64.exe
+          - runner: windows-11-arm
+            system: windows
+            arch: arm64
+            binary: kilo-local-windows-arm64.exe
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Linux native graphics and graphical test dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libwayland-dev libx11-dev libx11-xcb-dev libxkbcommon-x11-dev libxcursor-dev libxfixes-dev libegl1-mesa-dev libgles2-mesa-dev libvulkan-dev mesa-vulkan-drivers libgl1-mesa-dri xvfb dbus-x11
+      - name: Test native controls and render review screenshots on Linux
+        if: runner.os == 'Linux'
+        env:
+          KILO_NATIVE_SCREENSHOTS: native-screenshots
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          WAYLAND_DISPLAY: ''
+        run: dbus-run-session -- xvfb-run -a go test -tags desktop ./...
+      - name: Test native controls and render review screenshots
+        if: runner.os != 'Linux'
+        env:
+          KILO_NATIVE_SCREENSHOTS: native-screenshots
+        run: go test -tags desktop ./...
+      - name: Test macOS display timing fallback
+        if: runner.os == 'macOS'
+        working-directory: third_party/gio
+        run: go test ./app -run TestFallbackTimerStartsStopsAndCloses
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-screenshots-${{ matrix.system }}-${{ matrix.arch }}
+          path: native-screenshots/
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Build the production desktop executable
+        env:
+          KILO_TARGET: ${{ matrix.system }}/${{ matrix.arch }}
+        shell: bash
+        run: python scripts/package.py --build-only --target "$KILO_TARGET" --output dist/binaries
+      - name: Test the native Linux window, clipboard, tray lifecycle and proxy
+        if: runner.os == 'Linux'
+        env:
+          KILO_BINARY: dist/binaries/${{ matrix.binary }}
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          WAYLAND_DISPLAY: ''
+        run: dbus-run-session -- xvfb-run -a python scripts/smoke_desktop.py --binary "$KILO_BINARY"
+      - name: Test the native window, clipboard, tray lifecycle and proxy
+        if: runner.os != 'Linux'
+        env:
+          KILO_BINARY: dist/binaries/${{ matrix.binary }}
+        shell: bash
+        run: python scripts/smoke_desktop.py --binary "$KILO_BINARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-binary-${{ matrix.system }}-${{ matrix.arch }}
+          if-no-files-found: error
+          retention-days: 7
+          path: dist/binaries/${{ matrix.binary }}
+
+  package:
+    needs: [test, browser-e2e, native]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-latest
+            system: darwin
+            arch: arm64
+          - runner: macos-15-intel
+            system: darwin
+            arch: amd64
+          - runner: ubuntu-24.04
+            system: linux
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            system: linux
+            arch: arm64
+          - runner: windows-latest
+            system: windows
+            arch: amd64
+          - runner: windows-11-arm
+            system: windows
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: desktop-binary-${{ matrix.system }}-${{ matrix.arch }}
+          path: dist/binaries
+      - name: Install Linux runtime and graphical test dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwayland-client0 libwayland-cursor0 libwayland-egl1 libx11-6 libx11-xcb1 libxkbcommon-x11-0 libxcursor1 libxfixes3 libegl1 libgles2 mesa-vulkan-drivers libgl1-mesa-dri xvfb dbus-x11
+      - name: Package the exact tested executable
+        env:
+          KILO_TARGET: ${{ matrix.system }}/${{ matrix.arch }}
+        shell: bash
+        run: python scripts/package.py --binaries-directory dist/binaries --target "$KILO_TARGET"
+      - name: Verify macOS app signature after ZIP extraction
+        if: runner.os == 'macOS'
+        env:
+          KILO_TARGET: ${{ matrix.system }}/${{ matrix.arch }}
+        run: python scripts/package.py --verify-macos-archives --target "$KILO_TARGET"
+      - name: Launch extracted macOS app through LaunchServices
+        if: runner.os == 'macOS'
         run: python scripts/smoke_macos.py
-      - name: Verify release assets
-        run: python scripts/release.py verify-assets
+      - name: Exercise the extracted Linux release archive
+        if: runner.os == 'Linux'
+        env:
+          KILO_SYSTEM: ${{ matrix.system }}
+          KILO_ARCH: ${{ matrix.arch }}
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          WAYLAND_DISPLAY: ''
+        run: |
+          kilo_release_version="$(cat VERSION)"
+          dbus-run-session -- xvfb-run -a python scripts/smoke_desktop.py --archive "dist/kilo-local-${kilo_release_version}-${KILO_SYSTEM}-${KILO_ARCH}.tar.gz"
+      - name: Exercise the extracted desktop release archive
+        if: runner.os != 'Linux'
+        env:
+          KILO_SYSTEM: ${{ matrix.system }}
+          KILO_ARCH: ${{ matrix.arch }}
+        shell: bash
+        run: |
+          kilo_release_version="$(cat VERSION)"
+          python scripts/smoke_desktop.py --archive "dist/kilo-local-${kilo_release_version}-${KILO_SYSTEM}-${KILO_ARCH}.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-archive-${{ matrix.system }}-${{ matrix.arch }}
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            dist/*.zip
+            dist/*.tar.gz
+
+  aggregate:
+    needs: package
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-archive-*
+          merge-multiple: true
+          path: dist
+      - name: Create and verify the complete six-target checksum manifest
+        run: |
+          python scripts/package.py --checksums-only
+          python scripts/release.py verify-assets
       - uses: actions/upload-artifact@v4
         with:
           name: release-assets

@@ -1,4 +1,5 @@
 import {createEditorHelper} from './editor-helper.mjs';
+import {configureDesktop, writeClipboard, openExternal, bindDesktopLinks} from './desktop-helper.mjs';
 import {createXcodeHelper} from './xcode-helper.mjs';
 import {claudeCapabilities,claudeEfforts,claudeSelection,claudeSettings} from './claude-helper.mjs';
 'use strict';
@@ -90,7 +91,7 @@ async function api(path, body) {
   return data;
 }
 async function copy(text) {
-  try { await navigator.clipboard.writeText(text); toast('Copiado al portapapeles'); }
+  try { await writeClipboard(text); toast('Copiado al portapapeles'); }
   catch { notify('El navegador ha bloqueado el portapapeles. Selecciona y copia el texto manualmente.', true); }
 }
 function snippet(reveal = false) {
@@ -142,6 +143,7 @@ function renderSnippet() {
 }
 function render(s) {
   state = s;
+  configureDesktop(api, !!s.desktop);
   if (!initialized) {
     if (!languageChosen) { language = chooseLanguage(s.language, navigator.languages || [navigator.language]); translateDocument(language); $('language').value = language; }
     $('org-id').value = s.orgId; $('port').value = s.port; $('remember').checked = s.remember; initialized = true;
@@ -582,6 +584,7 @@ $('toggle-key').addEventListener('click', () => {
 });
 document.querySelectorAll('[data-copy]').forEach(button => button.addEventListener('click', () => state && copy(button.dataset.copy === 'url' ? state.baseURL : state.localKey)));
 function selectClient(button) {
+  if (client !== button.dataset.client) { $('codex-selected-only').checked = false; $('model-search').value = ''; }
   clientModels[client] = $('model').value;
   $('model').value = clientModels[button.dataset.client] || '';
   client = button.dataset.client;
@@ -598,7 +601,7 @@ document.querySelectorAll('[data-client]').forEach((button, i) => {
 });
 $('sso-login').addEventListener('click', () => action(async () => {
   const login = await api('auth/start', {}); lastAuthStatus = 'pending';
-  window.open(login.verificationUrl, '_blank', 'noopener,noreferrer');
+  await openExternal(login.verificationUrl);
 }));
 $('cancel-login').addEventListener('click', () => action(async () => { await api('auth/cancel', {}); }));
 $('load-teams').addEventListener('click', () => action(async () => {
@@ -625,6 +628,7 @@ $('quit').addEventListener('click', () => action(async () => {
 document.querySelectorAll('.nav-link').forEach(link => link.addEventListener('click', () => {
   document.querySelectorAll('.nav-link').forEach(l => l.classList.toggle('selected', l === link));
 }));
+bindDesktopLinks(document, error => notify(error.message, true));
 async function poll() {
   if (stopped) return;
   if (!busy) { try { await refresh(); } catch { if (!stopped) notify('Se ha perdido la conexión con la aplicación. Comprueba que Kilo Local siga abierto.', true); } }

@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -33,14 +34,29 @@ func randomKey(prefix string) string {
 }
 
 func main() {
-	noBrowser := flag.Bool("no-browser", false, "Do not open the local control panel")
-	noTray := flag.Bool("no-tray", false, "Run without a system tray icon (headless mode)")
+	noBrowser := flag.Bool("no-browser", false, "Start with the window hidden (also suppresses --browser launch)")
+	noTray := flag.Bool("no-tray", false, "Run headlessly without a window or system tray")
+	useBrowser := flag.Bool("browser", false, "Use the system browser instead of the desktop window")
+	selfTest := flag.String("desktop-self-test", "", "Run isolated native desktop checks and write a JSON report")
 	configDir := flag.String("config-dir", "", "Override the application configuration directory")
 	showVersion := flag.Bool("version", false, "Print version")
 	flag.Parse()
 	if *showVersion {
 		fmt.Println(version)
 		return
+	}
+	isolatedProfile := ""
+	if *selfTest != "" {
+		// Diagnostic mode owns a fresh profile and never reads the user's vault.
+		isolated, err := os.MkdirTemp("", "kilo-desktop-check-")
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		defer os.RemoveAll(isolated)
+		isolatedProfile = isolated
+		*configDir = isolated
+		*noBrowser, *noTray, *useBrowser = false, false, false
 	}
 	if *configDir == "" {
 		base, err := os.UserConfigDir()
@@ -55,6 +71,11 @@ func main() {
 		fmt.Fprintln(os.Stderr, "Cannot load Kilo Local:", err)
 		os.Exit(1)
 	}
+	stopFakeGateway := func() {}
+	if *selfTest != "" {
+		stopFakeGateway = app.desktopTestGateway()
+		defer stopFakeGateway()
+	}
 	listener, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -63,9 +84,25 @@ func main() {
 	app.adminHost = listener.Addr().String()
 	admin := &http.Server{Handler: app.adminHandler(), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 32 << 10}
 	go func() { _ = admin.Serve(listener) }()
+	var cleanupOnce sync.Once
+	cleanup := func() {
+		cleanupOnce.Do(func() {
+			app.requestQuit()
+			app.cancelLogin()
+			app.stop()
+			stopFakeGateway()
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			_ = admin.Shutdown(ctx)
+			if isolatedProfile != "" {
+				_ = os.RemoveAll(isolatedProfile)
+			}
+		})
+	}
+	defer cleanup()
 	panelURL := "http://" + app.adminHost + "/#" + app.adminToken
-	fmt.Printf("Kilo Local %s\nControl panel: %s\nUse the panel or tray menu to start the proxy. Closing the browser does not stop it.\n", version, panelURL)
-	if !*noBrowser {
+	fmt.Printf("Kilo Local %s\nControl panel: %s\nClosing the window keeps the proxy running. Use Quit to stop the application.\n", version, panelURL)
+	if *useBrowser && !*noBrowser {
 		if err := openBrowser(panelURL); err != nil {
 			fmt.Fprintln(os.Stderr, "Open the control panel URL above in your browser.")
 		}
@@ -80,18 +117,15 @@ func main() {
 		case <-app.quit:
 		}
 	}()
-	if !*noTray {
-		// The tray library locks the startup OS thread; its native loop must run here.
-		if err := app.runTray(panelURL); err != nil {
-			fmt.Fprintln(os.Stderr, "System tray error (headless mode: --no-tray):", err)
+	if !*noTray && !*useBrowser {
+		if err := app.runDesktop(panelURL, *noBrowser, *selfTest, cleanup); err != nil {
+			fmt.Fprintln(os.Stderr, "Desktop startup failed:", err)
+			cleanup()
+			return
 		}
+		return
 	}
 	<-app.quit
-	app.cancelLogin()
-	app.stop()
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	_ = admin.Shutdown(ctx)
 }
 
 func (a *app) requestQuit() {

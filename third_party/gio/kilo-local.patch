@@ -1,0 +1,192 @@
+--- a/app/os_darwin.go
++++ b/app/os_darwin.go
+@@ -43,6 +43,7 @@
+ 
+ import (
+ 	"errors"
++	"runtime"
+ 	"runtime/cgo"
+ 	"sync"
+ 	"sync/atomic"
+@@ -124,6 +125,13 @@
+ 	}
+ 	dl := C.gio_createDisplayLink()
+ 	if dl == 0 {
++		if runtime.GOOS == "darwin" {
++			// Remote and virtual desktops can expose a window server without
++			// an active CoreVideo display. Keep the real renderer and window;
++			// only animation scheduling falls back to a bounded timer.
++			go d.runTimer()
++			return d, nil
++		}
+ 		return nil, errors.New("app: failed to create display link")
+ 	}
+ 	go d.run(dl)
+--- a/app/os_macos.m
++++ b/app/os_macos.m
+@@ -211,7 +211,7 @@
+ 	gio_onDraw(self.handle);
+ }
+ - (void)dealloc {
+-	gio_onDestroy(self.handle);
++	if (self.handle != 0) { gio_onDestroy(self.handle); }
+ }
+ - (BOOL) becomeFirstResponder {
+ 	gio_onFocus(self.handle, 1);
+@@ -234,9 +234,11 @@
+ }
+ 
+ CFTypeRef gio_createDisplayLink(void) {
+-	CVDisplayLinkRef dl;
+-	CVDisplayLinkCreateWithActiveCGDisplays(&dl);
+-	CVDisplayLinkSetOutputCallback(dl, displayLinkCallback, nil);
++	CVDisplayLinkRef dl = NULL;
++    CVReturn status = CVDisplayLinkCreateWithActiveCGDisplays(&dl);
++    if (status != kCVReturnSuccess || dl == NULL) { return NULL; }
++    status = CVDisplayLinkSetOutputCallback(dl, displayLinkCallback, nil);
++    if (status != kCVReturnSuccess) { CVDisplayLinkRelease(dl); return NULL; }
+ 	return dl;
+ }
+ 
+--- a/app/display_timer.go
++++ b/app/display_timer.go
+@@ -0,0 +1,35 @@
++// SPDX-License-Identifier: Unlicense OR MIT
++//go:build darwin
++
++package app
++
++import "time"
++
++func (d *displayLink) runTimer() {
++	var ticker *time.Ticker
++	var ticks <-chan time.Time
++	defer func() {
++		if ticker != nil {
++			ticker.Stop()
++		}
++	}()
++	for {
++		select {
++		case start := <-d.states:
++			if start && ticker == nil {
++				ticker = time.NewTicker(time.Second / 60)
++				ticks = ticker.C
++			}
++			if !start && ticker != nil {
++				ticker.Stop()
++				ticker = nil
++				ticks = nil
++			}
++		case <-ticks:
++			d.callback()
++		case <-d.dids: // A timer does not track a physical display.
++		case <-d.done:
++			return
++		}
++	}
++}
+--- a/app/display_timer_test.go
++++ b/app/display_timer_test.go
+@@ -0,0 +1,51 @@
++// SPDX-License-Identifier: Unlicense OR MIT
++//go:build darwin
++
++package app
++
++import (
++	"testing"
++	"time"
++)
++
++func TestFallbackTimerStartsStopsAndCloses(t *testing.T) {
++	frames := make(chan struct{}, 16)
++	finished := make(chan struct{})
++	d := &displayLink{callback: func() {
++		select {
++		case frames <- struct{}{}:
++		default:
++		}
++	}, states: make(chan bool), done: make(chan struct{}), dids: make(chan uint64)}
++	go func() { d.runTimer(); close(finished) }()
++	d.Start()
++	select {
++	case <-frames:
++	case <-time.After(time.Second):
++		t.Fatal("timer did not request a frame")
++	}
++	d.SetDisplayID(42)
++	d.Stop()
++	// Stopping is synchronous; drain any callback queued before the stop.
++	time.Sleep(25 * time.Millisecond)
++	for len(frames) > 0 {
++		<-frames
++	}
++	select {
++	case <-frames:
++		t.Fatal("timer rendered while idle")
++	case <-time.After(50 * time.Millisecond):
++	}
++	d.Start()
++	select {
++	case <-frames:
++	case <-time.After(time.Second):
++		t.Fatal("timer did not restart")
++	}
++	d.Close()
++	select {
++	case <-finished:
++	case <-time.After(time.Second):
++		t.Fatal("timer leaked after close")
++	}
++}
+--- a/app/d3d11_windows.go
++++ b/app/d3d11_windows.go
+@@ -36,7 +36,13 @@
+ 				flags,
+ 			)
+ 			if err != nil {
+-				return nil, fmt.Errorf("NewContext: %v", err)
++				// WARP ships with Windows. Remote desktops and virtual machines
++				// may not expose a hardware adapter, including ARM64 machines.
++				hardwareErr := err
++				dev, ctx, _, err = d3d11.CreateDevice(d3d11.DRIVER_TYPE_WARP, flags)
++				if err != nil {
++					return nil, fmt.Errorf("NewContext: hardware: %v; WARP: %w", hardwareErr, err)
++				}
+ 			}
+ 			swchain, err := d3d11.CreateSwapChain(dev, hwnd)
+ 			if err != nil {
+--- a/gpu/headless/headless_windows.go
++++ b/gpu/headless/headless_windows.go
+@@ -3,6 +3,7 @@
+ package headless
+ 
+ import (
++	"fmt"
+ 	"unsafe"
+ 
+ 	"gioui.org/gpu"
+@@ -20,7 +21,11 @@
+ 			0,
+ 		)
+ 		if err != nil {
+-			return nil, err
++			hardwareErr := err
++			dev, ctx, _, err = d3d11.CreateDevice(d3d11.DRIVER_TYPE_WARP, 0)
++			if err != nil {
++				return nil, fmt.Errorf("hardware: %v; WARP: %w", hardwareErr, err)
++			}
+ 		}
+ 		// Don't need it.
+ 		d3d11.IUnknownRelease(unsafe.Pointer(ctx), ctx.Vtbl.Release)
+--- a/internal/d3d11/d3d11_windows.go
++++ b/internal/d3d11/d3d11_windows.go
+@@ -634,6 +634,7 @@
+ const (
+ 	SDK_VERSION          = 7
+ 	DRIVER_TYPE_HARDWARE = 1
++	DRIVER_TYPE_WARP     = 5
+ 
+ 	DXGI_FORMAT_UNKNOWN             = 0
+ 	DXGI_FORMAT_R16_FLOAT           = 54

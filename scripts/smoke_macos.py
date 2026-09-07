@@ -2,7 +2,7 @@
 """Open the native release ZIP through LaunchServices and check app startup/quit.
 
 Requires a macOS graphical login session. Uses a fresh temporary profile, no
-saved keychain credentials, no browser, and no upstream inference requests.
+saved keychain credentials, a visible owned window, and no upstream inference requests.
 """
 import argparse
 import json
@@ -23,12 +23,19 @@ def running_application(bundle):
     # NSRunningApplication.finishedLaunching confirms native startup completed;
     # an HTTP listener alone would miss a stalled AppKit/LaunchServices launch.
     script = '''ObjC.import("AppKit");
+ObjC.import("CoreGraphics");
 var apps=$.NSWorkspace.sharedWorkspace.runningApplications;
 var result=null;
 for(var i=0;i<apps.count;i++){
     var a=apps.objectAtIndex(i);
     if(ObjC.unwrap(a.bundleIdentifier)==="ai.kilo.local-proxy" && ObjC.unwrap(a.bundleURL.path)===BUNDLE){
-        result={pid:Number(a.processIdentifier),finishedLaunching:Boolean(a.finishedLaunching)};
+        var pid=Number(a.processIdentifier);
+        var windows=ObjC.deepUnwrap(ObjC.castRefToObject($.CGWindowListCopyWindowInfo(1,0)));
+        var visible=windows.filter(function(w){
+            var b=w.kCGWindowBounds;
+            return w.kCGWindowOwnerPID===pid && w.kCGWindowLayer===0 && b.Width>=300 && b.Height>=200;
+        }).length;
+        result={pid:pid,finishedLaunching:Boolean(a.finishedLaunching),visibleWindows:visible,hidden:Boolean(a.hidden)};
         break;
     }
 }
@@ -74,7 +81,7 @@ def smoke(directory, version):
 
         try:
             subprocess.run(['/usr/bin/open', '-n', '--stdout', str(stdout), '--stderr', str(stderr),
-                            str(bundle), '--args', '--no-browser', '--config-dir', str(root / 'profile')],
+                            str(bundle), '--args', '--config-dir', str(root / 'profile')],
                            check=True, capture_output=True, text=True, timeout=35)
             match = wait_for(lambda: re.search(r'Control panel: (http://127\.0\.0\.1:\d+)/#([a-f0-9]{64})',
                                               stdout.read_text()), 'the control panel')
@@ -85,14 +92,16 @@ def smoke(directory, version):
 
             def finished():
                 app = running_application(bundle)
-                return app and app['finishedLaunching']
+                return app and app['finishedLaunching'] and app['visibleWindows'] > 0 and not app['hidden']
 
-            wait_for(finished, 'native application launch completion')
-            if 'System tray error' in stderr.read_text():
+            wait_for(finished, 'native application launch and a visible owned window')
+            if not request('/api/state').get('desktop'):
+                raise RuntimeError('The launched bundle did not initialize its native desktop')
+            if any(message in stderr.read_text() for message in ('System tray error', 'Desktop startup failed')):
                 raise RuntimeError('The native tray failed to initialize')
             request('/api/quit', 'POST')
             wait_for(lambda: running_application(bundle) is None, 'native application shutdown')
-            print(f'Passed: extracted {arch} app signature, LaunchServices startup, native event loop, '
+            print(f'Passed: extracted {arch} app signature, LaunchServices startup, visible native window, '
                   f'authenticated panel ({version}), and graceful quit.')
         finally:
             # Only terminate the unique temporary bundle launched by this test.

@@ -30,6 +30,8 @@ type event struct {
 }
 
 type app struct {
+	desktop            desktopBridge
+	desktopProbes      chan desktopProbe
 	editorTestRoot     string
 	cursor             *cursorSession
 	usageTotal         usageSummary
@@ -76,6 +78,7 @@ func newApp(dir string, vault credentialVault) (*app, error) {
 	if err != nil {
 		return nil, err
 	}
+	cfg.Language = initialLanguage(cfg.Language)
 	u, _ := url.Parse(gatewayURL)
 	tr := http.DefaultTransport.(*http.Transport).Clone()
 	// Credentials only travel directly to Kilo; ignore ambient HTTP(S)_PROXY settings.
