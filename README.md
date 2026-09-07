@@ -38,7 +38,7 @@ Distribution binaries are **unsigned and not notarized**. macOS and Windows may 
 | Codex Desktop | Separate GUI profile, multiple models, short display names, native reasoning selector |
 | Codex CLI | Independent terminal profile, separate from the Desktop tab |
 | OpenCode | Multiple models and an initial model |
-| Claude Code | Initial model, Sonnet/Opus/Haiku aliases, commands for additional model IDs |
+| Claude Code | Automatic isolated profile, version-aware model picker, short names, native effort and terminal launcher |
 | Zed / Xcode | OpenAI-compatible provider settings |
 | Cursor | Multiple model IDs and setup guidance; requires an externally reachable gateway |
 
@@ -46,7 +46,9 @@ Distribution binaries are **unsigned and not notarized**. macOS and Windows may 
 
 The catalog supports search, tool-capable text-model filtering, manual IDs, context metadata, and input/output prices in USD per million tokens. Prices come from Kilo’s catalog, not your invoice; zero, variable, and missing prices are distinguished. Refreshing models does not run inference. Model selections are independent between client tabs and remain available during the panel session.
 
-For Codex Desktop, check models directly in one list, choose the initial model and reasoning in each row, and edit **Name in Codex** to shorten labels. Click **Prepare Codex GUI** to create the isolated profile folder and save or update both `config.toml` and `models.json`, preserving unrelated settings and backing up changed files. Then copy the launch command; close the Kilo instance first if it is already running. The actual Kilo model IDs remain unchanged. See [client setup](docs/clients.md) for profile isolation, saving, and compatibility limits.
+For Codex Desktop, check models directly in one list, choose the initial model and reasoning in each row, and edit **Name in Codex** to shorten labels. Click **Prepare Codex GUI** to create the isolated profile folder and save or update both `config.toml` and `models.json`, preserving unrelated settings and backing up changed files. Then copy the launch command; close the Kilo instance first if it is already running. The actual Kilo model IDs remain unchanged.
+
+Claude Code has the same select-and-prepare flow in its own tab. It detects the installed version, writes a separate profile with backups, and enables supported native model names and reasoning preferences. The GUI includes a comparison explaining the remaining differences from Codex Desktop. See [client setup](docs/clients.md) for profile isolation, saving, and compatibility limits.
 
 The control panel supports **English / Español**, remembers the selected language, and preserves your edits when switching. Documentation and release instructions are in English. The native tray menu currently uses Spanish labels.
 
@@ -58,7 +60,7 @@ The last 30 requests are kept in memory only. Capture starts enabled and can be 
 
 ## Track observed spend
 
-**Activity → Observed spend** shows reported USD, input/output/cache tokens, and a session/task breakdown. It listens to responses passing through the proxy, including streaming, and keeps totals independently of the last 30 debug captures. Codex task IDs are used when present; requests without an identifier are marked unassigned.
+**Activity → Observed spend** shows reported USD, input/output/cache tokens, and a session/task breakdown. It listens to responses passing through the proxy, including streaming, and keeps totals independently of the last 30 debug captures. Codex task IDs and Claude Code session IDs are used when present; requests without an identifier are marked unassigned.
 
 Costs that are missing stay **Not reported**, with coverage shown alongside the total. A canceled response may not deliver final billing data. Totals last until the app closes and are gateway observations, not a Kilo invoice or catalog estimate. See [accounting fields and limits](docs/security-and-debugging.md#passive-spend-tracking-0130).
 

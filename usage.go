@@ -70,6 +70,7 @@ func newUsageObserver(r *http.Request, org string) *usageObserver {
 	source, label, identity := "unassigned", "Unassigned requests", "unassigned"
 	for _, candidate := range []struct{ header, source, label string }{
 		{"Thread-Id", "codex-thread", "Codex task"},
+		{"X-Claude-Code-Session-Id", "claude-session", "Claude session"},
 		{"Session-Id", "client-session", "Client session"},
 		{"Session_id", "client-session", "Client session"},
 		{"X-KiloCode-TaskId", "kilo-task", "Kilo task"},

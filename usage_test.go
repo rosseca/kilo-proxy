@@ -84,7 +84,7 @@ func TestUsageUnknownFreeCacheAndPreciseMoney(t *testing.T) {
 func TestUsageIndependentOfTraceLimitsPauseAndClear(t *testing.T) {
 	body := "data: {\"choices\":[{\"delta\":{\"content\":\"" + strings.Repeat("x", traceBodyLimit+100) + "\"}}]}\n\ndata: {\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":3,\"cost\":0.01}}\n\ndata: [DONE]\n\n"
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		for _, header := range []string{"Thread-Id", "Session-Id", "X-Kilo-Local-Session"} {
+		for _, header := range []string{"Thread-Id", "Session-Id", "X-Claude-Code-Session-Id", "X-Kilo-Local-Session"} {
 			if r.Header.Get(header) != "" {
 				t.Error("session tracking header leaked upstream")
 			}

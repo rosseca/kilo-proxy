@@ -38,6 +38,7 @@ type app struct {
 	activityEpoch    uint64
 	traces           map[string]*requestTrace
 	codexProfileDir  string
+	claudeProfileDir string
 	catalogRevision  uint64
 	accountURL       string
 	authPollInterval time.Duration

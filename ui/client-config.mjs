@@ -1,3 +1,4 @@
+import {claudeLaunch} from './claude-helper.mjs';
 import {validModelID} from './model-helper.mjs';
 export function clientConfig({client, baseURL, key, model, contextWindow=200000, language='es', catalogPath='', models=[], selectedModels=[], aliases={}}) {
  if (client === 'cursor') return cursorGuide(models.length ? models : model ? [model] : [],language);
@@ -21,7 +22,7 @@ export function clientConfig({client, baseURL, key, model, contextWindow=200000,
 const shQuote = value => "'" + value.replaceAll("'", "'\\''") + "'";
 const psQuote = value => "'" + value.replaceAll("'", "''") + "'";
 export function launchCommand({client,key,shell='unix',platform='macos',appPath='',language='es', catalog=false}) {
- if(client==='claude') return 'claude';
+ if(client==='claude') return claudeLaunch(shell,language);
  if(!['codex','codex-cli'].includes(client)) return '';
  const desktop = client === 'codex';
  const catalogCheck = desktop && catalog;

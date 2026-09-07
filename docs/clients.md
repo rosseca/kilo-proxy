@@ -56,18 +56,36 @@ The **Codex CLI** tab has its own model choice and terminal launcher using `~/.c
 
 Add multiple models in the **OpenCode** tab and choose the initial model. Merge the generated custom provider into your OpenCode configuration. Use `/connect`, choose **Other**, and supply the local key for the configured provider. Use `/models` to switch between configured models. This helper targets OpenCode v1 and the OpenAI-compatible Chat Completions path.
 
-## Claude Code
+## Claude Code: automatic isolated setup
 
-Merge the helper’s JSON into your user-level `~/.claude/settings.json` (`%USERPROFILE%\.claude\settings.json` on Windows). The configuration uses:
+1. Open **Claude Code** in the helper. It detects your installed version and shows whether the Kilo configuration is supported. Use **Detect version** after updating Claude.
+2. Check models directly in the catalog. Edit a short name, choose **Use on startup**, and set supported reasoning preferences in each row. Manual IDs, search, prices, bulk selection and **Selected only** work like the Codex Desktop picker.
+3. Click **1. Prepare Claude Code**. This creates `~/.claude-kilo` (`%USERPROFILE%\.claude-kilo` on Windows), saves `settings.json` and `kilo-models.json`, and shows **Configuration saved**. Changed existing files receive exact `.bak` backups. Unrelated settings such as permissions and hooks are retained.
+4. Copy and run **2. Copy launch command** in your project directory. It supplies `CLAUDE_CONFIG_DIR` and `--settings`, clears conflicting inherited authentication/provider variables for that child, and restores the parent environment. The normal Claude profile remains available in another terminal.
+5. Use `/model` to switch models. Restart a Kilo session after preparing changes. **Load Claude profile** restores selected models, names, initial model, aliases and reasoning preferences.
 
-- `ANTHROPIC_BASE_URL`: `http://127.0.0.1:8877`, without `/v1`; the SDK appends it.
-- `ANTHROPIC_AUTH_TOKEN`: the local key, sent as Bearer authentication.
-- `ANTHROPIC_MODEL`: the initial Kilo model ID.
-- `ANTHROPIC_DEFAULT_SONNET_MODEL`, `ANTHROPIC_DEFAULT_OPUS_MODEL`, and `ANTHROPIC_DEFAULT_HAIKU_MODEL`: independently assigned models, falling back to the initial model when requested.
+The profile contains only the local proxy credential, not your Kilo account key. It configures `ANTHROPIC_BASE_URL` without a trailing `/v1`, uses bearer authentication, and maps internal Sonnet/Opus/Haiku aliases to selected models. Modern versions also pin the Fable default. Advanced alias assignments are optional. Existing Kilo routing/authentication/model mappings are refreshed; policy settings such as `availableModels` remain in force.
 
-Add several models and assign the three aliases. Switch with `/model sonnet`, `/model opus`, or `/model haiku`. For additional entries, copy `/model <full-kilo-id>` from the helper. Removing a model resets references to it. Start `claude` and check the base URL with `/status`; review setting precedence if you already define these variables elsewhere.
+### Compared with Codex Desktop
 
-This template uses aliases present in the inspected Claude Code 2.1.39. It does not inject an arbitrary catalog into that version’s picker, activate newer gateway discovery / `modelPicker`, or override organization restrictions. All selected models, including aliases used by internal tasks, must support Anthropic Messages. The proxy supports `/v1/messages?beta=true` and version/beta headers, but not auxiliary endpoints such as token counting. Helper prices may differ from labels in older Claude versions.
+| Feature | Claude Code with Kilo Local |
+| --- | --- |
+| Automatic profile creation, updates and backups | Supported on macOS, Linux and Windows |
+| Multiple models and short native picker labels | `modelPicker` from Claude Code 2.1.242; earlier versions use three aliases and `/model ID` commands |
+| Per-model persistent effort | `modelSettings` from 2.1.251, for recognized Claude models; earlier versions use a global initial effort |
+| Arbitrary Codex reasoning levels | Not portable. Claude accepts its own model-dependent levels; `max` is session-only, and unknown/non-Claude models receive no invented effort options |
+| Catalog prices and request inspection | Available in Kilo Local; Claude's own price calculations can differ |
+| Spend by conversation | Uses `x-claude-code-session-id` when present; missing billing/session data remains unknown or unassigned |
+| Independent running clients | Separate terminal sessions with the isolated Claude profile |
+| Second desktop GUI instance | This launcher opens Claude Code in a terminal. It does not configure Claude Desktop |
+
+The automatic mode matches the installed version. If preparing for a newer installation, select **Claude Code 2.1.251 or later** and update it before launching. Upgrade with `claude update`, then detect the version and prepare again. The helper reports configuration compatibility, not a successful paid gateway request.
+
+Recognized Claude families use native model IDs in the picker plus `modelOverrides` to send the original Kilo ID to the gateway. This avoids gateway spellings such as `anthropic/claude-fable-5.1` losing native reasoning recognition. Choose one gateway spelling per native family/version. Per-model effort preferences are keyed by Claude's canonical model name. Fable 5, Opus 4.7 and Opus 4.8 can retain their first-use default until an explicit `/effort` choice; the helper documents that native behavior.
+
+Models must support Anthropic Messages, tools and the capabilities Claude sends. Anthropic does not officially support non-Claude models through gateways; configuring an ID does not certify compatibility. The proxy forwards `/v1/messages?beta=true`, version/beta headers and streaming responses. Optional token-counting endpoints are not implemented; Claude can fall back. Organization policy and access restrictions still apply.
+
+See [Claude Code compatibility verification](claude-code-compatibility.md).
 
 ## Zed and Xcode
 
