@@ -86,3 +86,67 @@ func TestCatalogValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestCodexCLIProfileIsIndependent(t *testing.T) {
+	a := testApp(t)
+	a.adminHost = "127.0.0.1:1234"
+	root := t.TempDir()
+	a.codexProfileDir = filepath.Join(root, "desktop")
+	a.codexCLIProfileDir = filepath.Join(root, "cli")
+	request := func(method, body string, auth bool) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, "http://"+a.adminHost+"/api/codex-cli/catalog", strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
+		if auth {
+			r.Header.Set("Authorization", "Bearer "+a.adminToken)
+		}
+		w := httptest.NewRecorder()
+		a.adminHandler().ServeHTTP(w, r)
+		return w
+	}
+	body := `{"catalog":` + testCatalog + `}`
+	if w := request("POST", body, false); w.Code != 401 {
+		t.Fatal(w.Code)
+	}
+	if w := request("GET", "", true); w.Code != 404 {
+		t.Fatal(w.Code)
+	}
+	if w := catalogRequest(a, "POST", body, true); w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	desktopConfig, _ := os.ReadFile(filepath.Join(a.codexProfileDir, "config.toml"))
+	desktopCatalog, _ := os.ReadFile(filepath.Join(a.codexProfileDir, "models.json"))
+	if w := request("POST", body, true); w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	configPath := filepath.Join(a.codexCLIProfileDir, "config.toml")
+	cliConfig, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Place an unrelated setting at the top level, outside the managed provider.
+	custom := append([]byte("# retained CLI preference\napproval_policy = 'on-request'\n"), cliConfig...)
+	if err := os.WriteFile(configPath, custom, 0600); err != nil {
+		t.Fatal(err)
+	}
+	updated := strings.ReplaceAll(body, "anthropic/claude-fable-5.1", "vendor/cli-only")
+	if w := request("POST", updated, true); w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	if w := request("GET", "", true); w.Code != 200 || !strings.Contains(w.Body.String(), "vendor/cli-only") {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	backup, _ := os.ReadFile(configPath + ".bak")
+	if !bytes.Equal(backup, custom) {
+		t.Fatal("CLI backup changed")
+	}
+	result, _ := os.ReadFile(configPath)
+	if !strings.Contains(string(result), "retained CLI preference") || !strings.Contains(string(result), "vendor/cli-only") {
+		t.Fatal("CLI update lost settings")
+	}
+	for name, expected := range map[string][]byte{"config.toml": desktopConfig, "models.json": desktopCatalog} {
+		got, _ := os.ReadFile(filepath.Join(a.codexProfileDir, name))
+		if !bytes.Equal(got, expected) {
+			t.Fatal("CLI changed desktop", name)
+		}
+	}
+}

@@ -1,4 +1,14 @@
 export const translations = {
+"1. Preparar Codex CLI":"1. Prepare Codex CLI",
+"Configurar y abrir Codex CLI":"Set up and launch Codex CLI",
+"Perfil de Codex CLI preparado":"Codex CLI profile prepared",
+"Hay cambios sin guardar. Prepara este perfil antes de abrir Codex Kilo.":"There are unsaved changes. Prepare this profile before opening Codex Kilo.",
+"Prepara este perfil para guardar los modelos y la configuración.":"Prepare this profile to save the models and configuration.",
+"Crea {path} y guarda config.toml y models.json en este ordenador. Actualiza los parámetros de Kilo, conserva los demás ajustes y guarda una copia .bak de cada archivo que cambia.":"Creates {path} and saves config.toml and models.json on this computer. Updates Kilo parameters, preserves other settings and makes a .bak backup of each changed file.",
+"Selecciona modelos y pulsa «Preparar Codex CLI». El helper crea y actualiza su perfil independiente. Copia el arranque y usa /model en Codex para cambiar de modelo y razonamiento.":"Select models and click “Prepare Codex CLI”. The helper creates and updates its independent profile. Copy the launch command and use /model in Codex to switch model and reasoning.",
+"1. Selecciona los modelos y pulsa «Preparar Codex CLI». Se crean la carpeta, config.toml y models.json; si ya existen, se actualizan.":"1. Select models and click “Prepare Codex CLI”. The folder, config.toml and models.json are created or updated if they already exist.",
+"En Codex CLI, usa /model para elegir un modelo y su nivel de razonamiento. Reinicia la sesión después de cambiar el catálogo en el helper.":"In Codex CLI, use /model to choose a model and its reasoning level. Restart the session after changing the catalog in the helper.",
+
 "Caché del contexto":"Context cache",
 "Tokens leídos de caché":"Tokens read from cache",
 "Tokens escritos en caché":"Tokens written to cache",

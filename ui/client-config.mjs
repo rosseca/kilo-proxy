@@ -2,7 +2,7 @@ import {claudeLaunch} from './claude-helper.mjs';
 import {validModelID} from './model-helper.mjs';
 export function clientConfig({client, baseURL, key, model, contextWindow=200000, language='es', catalogPath='', models=[], selectedModels=[], aliases={}}) {
  if (client === 'cursor') return cursorGuide(models.length ? models : model ? [model] : [],language);
- if (client === 'codex' || client === 'codex-cli') return `# ~/.codex-kilo-${client === 'codex' ? 'desktop' : 'cli'}/config.toml · ${language === 'en' ? 'save in this isolated profile' : 'guardar en este perfil independiente'}\nmodel = ${JSON.stringify(model)}${client === 'codex' && catalogPath ? '\nmodel_catalog_json = ' + JSON.stringify(catalogPath) : ''}\nmodel_provider = "kilo-local"\ncli_auth_credentials_store = "file"\n\n[model_providers.kilo-local]\nname = "Kilo Local"\nbase_url = ${JSON.stringify(baseURL)}\n# ${language === 'en' ? 'Keep this variable name unchanged. The launch command supplies the local key.' : 'Conserva este nombre de variable. El comando de arranque carga la clave local.'}\nenv_key = "KILO_LOCAL_API_KEY"\nenv_key_instructions = ${JSON.stringify(language === 'en' ? 'Close the Kilo instance and launch it with the command from the Kilo Local Codex helper.' : 'Cierra la instancia Kilo y ábrela con el comando del helper de Codex en Kilo Local.')}\nwire_api = "responses"\nrequires_openai_auth = false\nsupports_websockets = false`;
+ if (client === 'codex' || client === 'codex-cli') return `# ~/.codex-kilo-${client === 'codex' ? 'desktop' : 'cli'}/config.toml · ${language === 'en' ? 'save in this isolated profile' : 'guardar en este perfil independiente'}\nmodel = ${JSON.stringify(model)}${catalogPath ? '\nmodel_catalog_json = ' + JSON.stringify(catalogPath) : ''}\nmodel_provider = "kilo-local"\ncli_auth_credentials_store = "file"\n\n[model_providers.kilo-local]\nname = "Kilo Local"\nbase_url = ${JSON.stringify(baseURL)}\n# ${language === 'en' ? 'Keep this variable name unchanged. The launch command supplies the local key.' : 'Conserva este nombre de variable. El comando de arranque carga la clave local.'}\nenv_key = "KILO_LOCAL_API_KEY"\nenv_key_instructions = ${JSON.stringify(language === 'en' ? 'Close the Kilo instance and launch it with the command from the Kilo Local Codex helper.' : 'Cierra la instancia Kilo y ábrela con el comando del helper de Codex en Kilo Local.')}\nwire_api = "responses"\nrequires_openai_auth = false\nsupports_websockets = false`;
  const selected = [...new Map(selectedModels.filter(m => m && validModelID(m.id)).map(m => [m.id,m])).values()];
  if (!selected.length && validModelID(model)) selected.push({id:model,name:model});
  const initial = selected.some(m=>m.id===model) ? model : selected[0]?.id || '';
@@ -25,7 +25,7 @@ export function launchCommand({client,key,shell='unix',platform='macos',appPath=
  if(client==='claude') return claudeLaunch(shell,language);
  if(!['codex','codex-cli'].includes(client)) return '';
  const desktop = client === 'codex';
- const catalogCheck = desktop && catalog;
+ const catalogCheck = catalog;
  const saveCatalog = language === 'en' ? 'Save models.json in the Kilo profile first.' : 'Guarda primero models.json en el perfil de Kilo.';
  const profile = desktop ? '.codex-kilo-desktop' : '.codex-kilo-cli';
  const saveFirst = language === 'en' ? 'Save the configuration to this profile first:' : 'Guarda primero la configuración en este perfil:';

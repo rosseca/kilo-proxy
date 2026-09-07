@@ -74,7 +74,7 @@ func (a *app) adminHandler() http.Handler {
 			a.claudeProfile(w, r)
 			return
 		}
-		if (r.Method == "GET" || r.Method == "POST") && r.URL.Path == "/api/codex/catalog" {
+		if (r.Method == "GET" || r.Method == "POST") && (r.URL.Path == "/api/codex/catalog" || r.URL.Path == "/api/codex-cli/catalog") {
 			a.codexCatalog(w, r)
 			return
 		}

@@ -30,41 +30,42 @@ type event struct {
 }
 
 type app struct {
-	usageTotal       usageSummary
-	usageSessions    map[string]*usageSummary
-	captureEnabled   bool
-	activeTraces     int
-	nextEventID      uint64
-	activityEpoch    uint64
-	traces           map[string]*requestTrace
-	codexProfileDir  string
-	claudeProfileDir string
-	catalogRevision  uint64
-	accountURL       string
-	authPollInterval time.Duration
-	login            *loginSession
-	organizations    []organization
-	accountEmail     string
-	keySaved         bool
-	mu               sync.Mutex
-	dir              string
-	config           settings
-	apiKey           string
-	vault            credentialVault
-	vaultWarning     string
-	adminToken       string
-	adminHost        string
-	upstream         *url.URL
-	transport        http.RoundTripper
-	proxyServer      *http.Server
-	proxyListener    net.Listener
-	started          time.Time
-	requests         int
-	failures         int
-	active           int
-	events           []event
-	quit             chan struct{}
-	quitOnce         sync.Once
+	usageTotal         usageSummary
+	usageSessions      map[string]*usageSummary
+	captureEnabled     bool
+	activeTraces       int
+	nextEventID        uint64
+	activityEpoch      uint64
+	traces             map[string]*requestTrace
+	codexProfileDir    string
+	codexCLIProfileDir string
+	claudeProfileDir   string
+	catalogRevision    uint64
+	accountURL         string
+	authPollInterval   time.Duration
+	login              *loginSession
+	organizations      []organization
+	accountEmail       string
+	keySaved           bool
+	mu                 sync.Mutex
+	dir                string
+	config             settings
+	apiKey             string
+	vault              credentialVault
+	vaultWarning       string
+	adminToken         string
+	adminHost          string
+	upstream           *url.URL
+	transport          http.RoundTripper
+	proxyServer        *http.Server
+	proxyListener      net.Listener
+	started            time.Time
+	requests           int
+	failures           int
+	active             int
+	events             []event
+	quit               chan struct{}
+	quitOnce           sync.Once
 }
 
 func newApp(dir string, vault credentialVault) (*app, error) {

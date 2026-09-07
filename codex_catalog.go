@@ -21,19 +21,24 @@ func (a *app) codexCatalog(w http.ResponseWriter, r *http.Request) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	dir := a.codexProfileDir
+	profileName := ".codex-kilo-desktop"
+	if r.URL.Path == "/api/codex-cli/catalog" {
+		dir = a.codexCLIProfileDir
+		profileName = ".codex-kilo-cli"
+	}
 	if dir == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
 			jsonError(w, 500, "Cannot locate the home directory.")
 			return
 		}
-		dir = filepath.Join(home, ".codex-kilo-desktop")
+		dir = filepath.Join(home, profileName)
 	}
 	path := filepath.Join(dir, "models.json")
 	if r.Method == "GET" {
 		info, err := os.Lstat(dir)
 		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-			jsonError(w, 404, "No saved Codex Kilo profile yet. Select models and prepare Codex GUI first.")
+			jsonError(w, 404, "No saved Codex Kilo profile yet. Select models and prepare this Codex profile first.")
 			return
 		}
 		data, err := readCatalogFile(path)

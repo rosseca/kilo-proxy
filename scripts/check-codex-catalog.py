@@ -11,7 +11,7 @@ with tempfile.TemporaryDirectory(prefix='kilo-catalog-test-') as directory:
     generated=subprocess.check_output(['node','--input-type=module','-e', """
 import {codexCatalog} from './ui/codex-catalog.mjs';
 import {clientConfig} from './ui/client-config.mjs';
-console.log(JSON.stringify({catalog:codexCatalog([{id:'openai/gpt-5.6-sol-discounted',name:'Long original Sol name',displayName:'Sol',contextWindow:1050000},{id:'z-ai/glm-5.3',name:'Long original GLM name',displayName:'GLM',contextWindow:1048576}],'z-ai/glm-5.3'),config:clientConfig({client:'codex',baseURL:'http://127.0.0.1:1/v1',key:'unused',model:'z-ai/glm-5.3',catalogPath:'models.json'})}));
+console.log(JSON.stringify({catalog:codexCatalog([{id:'openai/gpt-5.6-sol-discounted',name:'Long original Sol name',displayName:'Sol',contextWindow:1050000},{id:'z-ai/glm-5.3',name:'Long original GLM name',displayName:'GLM',contextWindow:1048576}],'z-ai/glm-5.3'),config:clientConfig({client:process.env.KILO_TEST_CLIENT || 'codex',baseURL:'http://127.0.0.1:1/v1',key:'unused',model:'z-ai/glm-5.3',catalogPath:'models.json'})}));
 """],cwd=ROOT,text=True)
     data=json.loads(generated)
     (profile/'models.json').write_text(json.dumps(data['catalog']))

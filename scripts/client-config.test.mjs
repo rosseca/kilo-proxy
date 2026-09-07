@@ -45,9 +45,12 @@ test('CLI launcher scopes its environment and refuses an unconfigured profile', 
   writeFileSync(join(bin,'codex'),'#!/usr/bin/env node\nconsole.log(JSON.stringify({home:process.env.CODEX_HOME,key:process.env.KILO_LOCAL_API_KEY}))',{mode:0o755});
   const env={...process.env,PATH:bin+':'+process.env.PATH,KILO_TEST_HOME:dir};
   delete env.CODEX_HOME;delete env.KILO_LOCAL_API_KEY;
-  const command=launchCommand({client:'codex-cli',key:"local'key",shell:'unix'}).replaceAll('$HOME','$KILO_TEST_HOME');
+  const command=launchCommand({client:'codex-cli',key:"local'key",shell:'unix',catalog:true}).replaceAll('$HOME','$KILO_TEST_HOME');
   assert.notEqual(spawnSync('/bin/sh',['-c',command],{env}).status,0);
   mkdirSync(join(dir,'.codex-kilo-cli'));writeFileSync(join(dir,'.codex-kilo-cli/config.toml'),'# fixture');
+  const missing=spawnSync('/bin/sh',['-c',command],{env,encoding:'utf8'});
+  assert.notEqual(missing.status,0);assert.match(missing.stderr,/models.json/);
+  writeFileSync(join(dir,'.codex-kilo-cli/models.json'),'{}');
   const result=spawnSync('/bin/sh',['-c',command+"\nprintf '%s' \"${CODEX_HOME-unset}|${KILO_LOCAL_API_KEY-unset}\""],{env,encoding:'utf8'});
   assert.equal(result.status,0,result.stderr);
   const [child,parent]=result.stdout.split('\n');

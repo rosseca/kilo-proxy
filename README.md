@@ -36,7 +36,7 @@ Distribution binaries are **unsigned and not notarized**. macOS and Windows may 
 | Client | What the helper configures |
 | --- | --- |
 | Codex Desktop | Separate GUI profile, multiple models, short display names, native reasoning selector |
-| Codex CLI | Independent terminal profile, separate from the Desktop tab |
+| Codex CLI | Same automatic helper: independent multi-model profile, short names, reasoning levels and terminal launcher |
 | OpenCode | Multiple models and an initial model |
 | Claude Code | Automatic isolated profile, version-aware model picker, short names, native effort and terminal launcher |
 | Zed / Xcode | OpenAI-compatible provider settings |

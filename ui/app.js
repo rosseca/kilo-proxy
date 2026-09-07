@@ -36,20 +36,24 @@ if (token && /^[a-f0-9]{64}$/.test(token)) {
 let state, client = 'generic', busy = false, stopped = false, initialized = false, toastTimer;
 let lastAuthStatus, teamSignature = '';
 const clientModels = {};
-const desktopModels = new Map();
+const codexClients = Object.fromEntries(['codex','codex-cli'].map(id=>[id,{models:new Map(),initial:'',setup:null}]));
+const isCodexClient = () => ['codex','codex-cli'].includes(client);
+const codexSelection = () => codexClients[client] || codexClients.codex;
 const cursorModels = new Map();
 const multiClients = Object.fromEntries(['opencode','claude'].map(id=>[id,{models:new Map(),initial:'',aliases:{},signature:''}]));
 let claudeInstalled=claudeCapabilities(), claudeChecked=false, claudeSetup=null, claudeRendering='';
 let cursorSignature = '';
-let desktopDefault = '', desktopSignature = '';
-let codexSetup = null;
-function codexSetupSignature() { return JSON.stringify([state?.baseURL,codexCatalog([...desktopModels.values()],desktopDefault)]); }
+let desktopSignature = '';
+function codexSetupSignature(selection=codexSelection()) { return JSON.stringify([state?.baseURL,codexCatalog([...selection.models.values()],selection.initial)]); }
 function renderCodexSetup() {
-  $('save-codex-catalog').textContent=t($('save-codex-catalog').disabled ? 'Preparando perfil…' : '1. Preparar Codex GUI');
-  const ready=codexSetup?.signature===codexSetupSignature();
-  $('codex-setup-status').textContent=ready ? t('Perfil listo en {path}. Copia el arranque para abrir Codex Kilo. Si ya está abierto, ciérralo primero.',{path:codexSetup.path}) : t(codexSetup ? 'Hay cambios sin guardar. Pulsa «Preparar Codex GUI» antes de abrir Codex Kilo.' : 'Pulsa «Preparar Codex GUI» para guardar los modelos y la configuración.');
+  const cli=client==='codex-cli', setup=codexSelection().setup;
+  $('save-codex-catalog').textContent=t($('save-codex-catalog').disabled ? 'Preparando perfil…' : cli ? '1. Preparar Codex CLI' : '1. Preparar Codex GUI');
+  const ready=setup?.signature===codexSetupSignature();
+  $('codex-setup-status').textContent=ready ? t('Perfil listo en {path}. Copia el arranque para abrir Codex Kilo. Si ya está abierto, ciérralo primero.',{path:setup.path}) : t(setup ? 'Hay cambios sin guardar. Prepara este perfil antes de abrir Codex Kilo.' : 'Prepara este perfil para guardar los modelos y la configuración.');
+  $('codex-profile-help').textContent=t('Crea {path} y guarda config.toml y models.json en este ordenador. Actualiza los parámetros de Kilo, conserva los demás ajustes y guarda una copia .bak de cada archivo que cambia.',{path:cli ? '~/.codex-kilo-cli' : '~/.codex-kilo-desktop'});
+  $('codex-cli-switch-help').hidden=!cli;
 }
-function effectiveModel() { if(multiClients[client]?.models.size)return multiClients[client].initial; return client === 'codex' ? desktopDefault : $('model').value.trim(); }
+function effectiveModel() { if(multiClients[client]?.models.size)return multiClients[client].initial; return isCodexClient() ? codexSelection().initial : $('model').value.trim(); }
 let catalog = [], catalogRevision, catalogLoading = false, catalogError = '', catalogFetchedAt = '', catalogRequest = 0;
 const descriptions = {
   cursor: ['Cursor: varios modelos, con un requisito de red.', 'Prepara aquí los IDs que quieres añadir a Cursor. La conexión necesita un gateway HTTPS accesible desde sus servidores; Kilo Local no ofrece ese acceso en esta versión.', 'Guía de Cursor · conexión pendiente'],
@@ -57,7 +61,7 @@ const descriptions = {
   zed: ['Tu agente de Zed, con saldo de empresa.', 'En Agent Settings → LLM Providers, añade un proveedor compatible con OpenAI. Combina este bloque con tus ajustes y guarda la clave local en la interfaz del proveedor.', 'settings.json · combinar con tus ajustes'],
   opencode: ['OpenCode, conectado directamente.', 'Configuración para OpenCode v1. En /connect → Other usa el ID kilo-local y pega la clave local. Combina este bloque con tu configuración.', 'opencode.json · v1'],
   codex: ['Codex Desktop: dos instancias independientes.', 'Selecciona tus modelos y pulsa «Preparar Codex GUI». El helper crea el perfil aislado y guarda la configuración en este ordenador. Después copia el arranque para abrir una segunda instancia gráfica.', 'config.toml · plantilla opcional para otro ordenador'],
-  'codex-cli': ['Codex CLI en otra terminal.', 'Crea ~/.codex-kilo-cli y guarda este bloque en su config.toml (en Windows: %USERPROFILE%\\.codex-kilo-cli\\config.toml). Ejecuta el comando para abrir el CLI con Kilo; usa codex normalmente en otra terminal para tu proveedor habitual.', 'config.toml · perfil de Codex CLI para Kilo'],
+  'codex-cli': ['Codex CLI en otra terminal.', 'Selecciona modelos y pulsa «Preparar Codex CLI». El helper crea y actualiza su perfil independiente. Copia el arranque y usa /model en Codex para cambiar de modelo y razonamiento.', 'config.toml · plantilla opcional para otro ordenador'],
   claude: ['Claude Code: un perfil propio para Kilo.', 'Selecciona modelos, pulsa «Preparar Claude Code» y copia el arranque. El helper crea y actualiza ~/.claude-kilo/settings.json sin editar tu perfil habitual.', 'settings.json · plantilla opcional para otro ordenador'],
   xcode: ['Kilo dentro de Xcode.', 'En los ajustes de inteligencia, añade un proveedor de modelos compatible con OpenAI. Introduce estos valores; si pide una cabecera, usa Authorization con el valor Bearer seguido de la clave local.', 'Añadir proveedor de modelos']
 };
@@ -93,16 +97,16 @@ function snippet(reveal = false) {
   if (!state || !validModelID(effectiveModel())) return t('Selecciona un modelo para generar la configuración.');
   const model = effectiveModel();
   const key = reveal ? state.localKey : 'kl_local_••••••••••••••••';
-  return clientConfig({client,language,selectedModels:[...(multiClients[client]?.models.values() || [])],aliases:multiClients[client]?.aliases,catalogPath:client === 'codex' && desktopModels.size ? 'models.json' : '',baseURL:state.baseURL,key,model,contextWindow:Math.max(1024, Number($('context-window').value) || 200000)});
+  return clientConfig({client,language,selectedModels:[...(multiClients[client]?.models.values() || [])],aliases:multiClients[client]?.aliases,catalogPath:isCodexClient() && codexSelection().models.size ? 'models.json' : '',baseURL:state.baseURL,key,model,contextWindow:Math.max(1024, Number($('context-window').value) || 200000)});
 }
 function launch(key) {
-  return launchCommand({client,key,shell:$('launch-shell').value,platform:$('desktop-platform').value,appPath:$('desktop-app-path').value.trim(),language,catalog:client === 'codex' && desktopModels.size > 0});
+  return launchCommand({client,key,shell:$('launch-shell').value,platform:$('desktop-platform').value,appPath:$('desktop-app-path').value.trim(),language,catalog:isCodexClient() && codexSelection().models.size > 0});
 }
 function renderSnippet() {
   const isCodex = ['codex','codex-cli'].includes(client);
   $('codex-copy-help').hidden = !isCodex;
-  $('codex-copy-title').textContent=t(client==='codex' ? 'Configurar y abrir Codex GUI' : 'Codex necesita los dos pasos');
-  $('codex-copy-first').textContent=t(client==='codex' ? '1. Selecciona los modelos y pulsa «Preparar Codex GUI». Se crean la carpeta, config.toml y models.json; si ya existen, se actualizan.' : '1. Copia el bloque completo a config.toml sin sustituir KILO_LOCAL_API_KEY: es el nombre de una variable, no un hueco para pegar la clave.');
+  $('codex-copy-title').textContent=t(client==='codex' ? 'Configurar y abrir Codex GUI' : 'Configurar y abrir Codex CLI');
+  $('codex-copy-first').textContent=t(client==='codex' ? '1. Selecciona los modelos y pulsa «Preparar Codex GUI». Se crean la carpeta, config.toml y models.json; si ya existen, se actualizan.' : '1. Selecciona los modelos y pulsa «Preparar Codex CLI». Se crean la carpeta, config.toml y models.json; si ya existen, se actualizan.');
   $('copy-launch').textContent = t(isCodex || client==='claude' ? '2. Copiar arranque ↗' : 'Copiar comando ↗');
   renderDesktopModels();
   renderCursorModels();
@@ -119,7 +123,7 @@ function renderSnippet() {
   $('launch-preview-note').textContent = t(revealLaunch ? 'Comando completo: puedes seleccionar y copiar este texto. Contiene tu clave local.' : 'Vista previa: la clave está oculta. Usa «Copiar arranque» para copiar el comando completo con la clave real, o muéstrala aquí antes de seleccionar el texto.');
   $('launch-code').textContent = launch(revealLaunch ? state.localKey : 'kl_local_••••••••••••••••');
   $('copy-config').disabled = client !== 'cursor' && !validModelID(effectiveModel());
-  $('copy-config').textContent = t(client === 'cursor' ? 'Copiar guía ↗' : client==='claude' ? 'Copiar JSON (opcional) ↗' : client==='codex' ? 'Copiar TOML (opcional) ↗' : isCodex ? '1. Copiar config.toml ↗' : 'Copiar configuración ↗');
+  $('copy-config').textContent = t(client === 'cursor' ? 'Copiar guía ↗' : client==='claude' ? 'Copiar JSON (opcional) ↗' : isCodex ? 'Copiar TOML (opcional) ↗' : 'Copiar configuración ↗');
   $('copy-launch').disabled = $('copy-config').disabled || (client === 'codex' && !$('desktop-app-path').value.trim());
   if (client === 'codex') $('protocol-note').textContent = t('El perfil de Kilo tiene su propio config.toml y sus propios datos de interfaz. No copies auth.json ni cookies del perfil principal. El mecanismo de aislamiento se ha verificado en el código de la app instalada; puede variar entre versiones. Usa un modelo compatible con Responses.');
   $('client-heading').textContent = info[0]; $('client-description').textContent = info[1]; $('snippet-name').textContent = info[2];
@@ -333,21 +337,21 @@ $('add-cursor-model').addEventListener('click',()=>{
 $('copy-cursor-models').addEventListener('click',()=>cursorModels.size && copy([...cursorModels.keys()].join('\n')));
 function renderDesktopModels() {
   renderCodexSetup();
-  const active=['codex','claude'].includes(client);
-  $('codex-models').hidden=client!=='codex';
+  const active=['codex','codex-cli','claude'].includes(client);
+  $('codex-models').hidden=!isCodexClient();
   $('codex-bulk-controls').hidden=!active;
   $('manual-model-field').hidden=active;
   $('model-picker').setAttribute('role',active ? 'group' : 'radiogroup');
   $('model-picker').classList.toggle('codex-picker',active);
   const id=$('codex-manual-id').value.trim();
-  $('add-codex-model').disabled=!validModelID(id) || desktopModels.has(id) || desktopModels.size>=50;
-  const signature=JSON.stringify({models:[...desktopModels],default:desktopDefault,language});
+  $('add-codex-model').disabled=!validModelID(id) || codexSelection().models.has(id) || codexSelection().models.size>=50;
+  const signature=JSON.stringify({client,models:[...codexSelection().models],default:codexSelection().initial,language});
   if(signature===desktopSignature)return;
   desktopSignature=signature;
-  $('codex-selection-count').textContent=t(desktopModels.size===1 ? '1 modelo seleccionado' : '{count} modelos seleccionados',{count:desktopModels.size});
-  $('codex-catalog-actions').hidden=!desktopModels.size;
-  $('codex-catalog-preview').textContent=JSON.stringify(codexCatalog([...desktopModels.values()],desktopDefault),null,2);
-  if(client==='codex' && !document.activeElement?.classList.contains('codex-name-input'))renderModels();
+  $('codex-selection-count').textContent=t(codexSelection().models.size===1 ? '1 modelo seleccionado' : '{count} modelos seleccionados',{count:codexSelection().models.size});
+  $('codex-catalog-actions').hidden=!codexSelection().models.size;
+  $('codex-catalog-preview').textContent=JSON.stringify(codexCatalog([...codexSelection().models.values()],codexSelection().initial),null,2);
+  if(isCodexClient() && !document.activeElement?.classList.contains('codex-name-input'))renderModels();
 }
 function codexRowControls(model,expanded) {
   const id=model.id, current=reasoningFor(model), controls=document.createElement('div');
@@ -377,10 +381,10 @@ function codexRowControls(model,expanded) {
   initial.addEventListener('change',()=>{model.reasoningLevels=current.levels;model.defaultReasoning=initial.value;renderSnippet();});
   initialLabel.append(initial);controls.append(initialLabel);
   const defaultButton=document.createElement('button');defaultButton.type='button';defaultButton.className='codex-default-button';
-  defaultButton.textContent=t(desktopDefault===id ? '★ Modelo inicial' : 'Usar al iniciar');
-  defaultButton.setAttribute('aria-pressed',String(desktopDefault===id));
+  defaultButton.textContent=t(codexSelection().initial===id ? '★ Modelo inicial' : 'Usar al iniciar');
+  defaultButton.setAttribute('aria-pressed',String(codexSelection().initial===id));
   defaultButton.setAttribute('aria-label',t('Usar al iniciar: {model}',{model:model.name || id}));defaultButton.dataset.focus='default:'+id;
-  defaultButton.addEventListener('click',()=>{desktopDefault=id;renderSnippet();});controls.append(defaultButton);
+  defaultButton.addEventListener('click',()=>{codexSelection().initial=id;renderSnippet();});controls.append(defaultButton);
   const levels=document.createElement('details'), summary=document.createElement('summary');
   levels.dataset.model=id;levels.open=expanded.has(id);summary.textContent=t('Personalizar niveles');levels.append(summary);
   const choices=document.createElement('div');choices.className='reasoning-choices';
@@ -396,52 +400,54 @@ function codexVisibleModels() {
   if(client==='claude')return claudeVisibleModels();
   // Saved/manual selections stay reachable even when absent from Kilo's catalog.
   const available=new Map(catalog.map(model=>[model.id,model]));
-  for(const [id,model] of desktopModels)available.set(id,available.has(id) ? {...available.get(id),displayName:model.displayName} : model);
+  for(const [id,model] of codexSelection().models)available.set(id,available.has(id) ? {...available.get(id),displayName:model.displayName} : model);
   const selectedOnly=$('codex-selected-only').checked;
-  const candidates=[...available.values()].filter(model=>!selectedOnly || desktopModels.has(model.id));
-  return candidates.filter(model=>filterModels([{...model,name:(model.name || '')+' '+codexDisplayName(model)}],$('model-search').value,false).length).filter(model=>selectedOnly || desktopModels.has(model.id) || !$('coding-models').checked || (model.tools===true && model.outputModalities?.includes('text')));
+  const candidates=[...available.values()].filter(model=>!selectedOnly || codexSelection().models.has(model.id));
+  return candidates.filter(model=>filterModels([{...model,name:(model.name || '')+' '+codexDisplayName(model)}],$('model-search').value,false).length).filter(model=>selectedOnly || codexSelection().models.has(model.id) || !$('coding-models').checked || (model.tools===true && model.outputModalities?.includes('text')));
 }
 $('add-codex-model').addEventListener('click',()=>{
-  const id=$('codex-manual-id').value.trim();if(!validModelID(id) || desktopModels.has(id) || desktopModels.size>=50)return;
-  desktopModels.set(id,{...(catalog.find(m=>m.id===id) || {id,name:id})});
-  if(!desktopDefault) desktopDefault=id;
+  const id=$('codex-manual-id').value.trim();if(!validModelID(id) || codexSelection().models.has(id) || codexSelection().models.size>=50)return;
+  codexSelection().models.set(id,{...(catalog.find(m=>m.id===id) || {id,name:id})});
+  if(!codexSelection().initial) codexSelection().initial=id;
   $('model-search').value='';$('codex-selected-only').checked=true;$('codex-manual-id').value='';
   renderModels();renderSnippet();
 });
 $('select-codex-results').addEventListener('click',()=>{
   if(client==='claude'){const selection=multiClients.claude;for(const model of claudeVisibleModels()){if(selection.models.size>=50)break;selection.models.set(model.id,selection.models.get(model.id) || {...model});if(!selection.initial)selection.initial=model.id;}renderModels();renderSnippet();return;}
   for(const model of codexVisibleModels()){
-    if(desktopModels.has(model.id))continue;if(desktopModels.size>=50)break;desktopModels.set(model.id,{...model});if(!desktopDefault)desktopDefault=model.id;
+    if(codexSelection().models.has(model.id))continue;if(codexSelection().models.size>=50)break;codexSelection().models.set(model.id,{...model});if(!codexSelection().initial)codexSelection().initial=model.id;
   }
   renderModels();renderSnippet();
 });
-$('clear-codex-models').addEventListener('click',()=>{if(client==='claude'){multiClients.claude.models.clear();multiClients.claude.initial='';renderModels();renderSnippet();return;}desktopModels.clear();desktopDefault='';$('codex-selected-only').checked=false;renderModels();renderSnippet();});
+$('clear-codex-models').addEventListener('click',()=>{if(client==='claude'){multiClients.claude.models.clear();multiClients.claude.initial='';renderModels();renderSnippet();return;}codexSelection().models.clear();codexSelection().initial='';$('codex-selected-only').checked=false;renderModels();renderSnippet();});
 $('load-codex-catalog').addEventListener('click',async()=>{
+  const target=client, selection=codexSelection();
   try {
-    const data=await api('codex/catalog');desktopModels.clear();
-    for(const model of data.catalog.models){desktopModels.set(model.slug,{...catalog.find(entry=>entry.id===model.slug),id:model.slug,name:catalog.find(entry=>entry.id===model.slug)?.name || model.slug,displayName:model.display_name || '',contextWindow:model.context_window,inputModalities:model.input_modalities,reasoningLevels:(model.supported_reasoning_levels || []).map(r=>r.effort),defaultReasoning:model.default_reasoning_level});}
-    desktopDefault=desktopModels.has(data.defaultModel) ? data.defaultModel : desktopModels.keys().next().value || '';
-    $('codex-selected-only').checked=true;$('model-search').value='';
+    const data=await api(target+'/catalog');selection.models.clear();
+    for(const model of data.catalog.models){selection.models.set(model.slug,{...catalog.find(entry=>entry.id===model.slug),id:model.slug,name:catalog.find(entry=>entry.id===model.slug)?.name || model.slug,displayName:model.display_name || '',contextWindow:model.context_window,inputModalities:model.input_modalities,reasoningLevels:(model.supported_reasoning_levels || []).map(r=>r.effort),defaultReasoning:model.default_reasoning_level});}
+    selection.initial=selection.models.has(data.defaultModel) ? data.defaultModel : selection.models.keys().next().value || '';
+    if(client===target){$('codex-selected-only').checked=true;$('model-search').value='';}
     renderModels();renderSnippet();toast('Catálogo de Codex cargado');
   }catch(error){notify(error.message,true);}
 });
-$('suggest-codex-reasoning').addEventListener('click',()=>{for(const model of desktopModels.values()){model.reasoningEfforts=catalog.find(entry=>entry.id===model.id)?.reasoningEfforts;delete model.reasoningLevels;delete model.defaultReasoning;}renderSnippet();});
+$('suggest-codex-reasoning').addEventListener('click',()=>{for(const model of codexSelection().models.values()){model.reasoningEfforts=catalog.find(entry=>entry.id===model.id)?.reasoningEfforts;delete model.reasoningLevels;delete model.defaultReasoning;}renderSnippet();});
 $('save-codex-catalog').addEventListener('click',async()=>{
-  if(!desktopModels.size)return;
+  const target=client, selection=codexSelection();
+  if(!selection.models.size)return;
   const button=$('save-codex-catalog');button.disabled=true;
   button.textContent=t('Preparando perfil…');
-  const signature=codexSetupSignature();
+  const signature=codexSetupSignature(selection);
   try {
-    const result=await api('codex/catalog',{catalog:codexCatalog([...desktopModels.values()],desktopDefault)});
-    codexSetup={signature,path:result.profileDir};renderCodexSetup();toast('Perfil de Codex GUI preparado');
-  }catch(error){codexSetup=null;renderCodexSetup();notify(error.message,true);}
-  finally{button.disabled=false;button.textContent=t('1. Preparar Codex GUI');}
+    const result=await api(target+'/catalog',{catalog:codexCatalog([...selection.models.values()],selection.initial)});
+    selection.setup={signature,path:result.profileDir};renderCodexSetup();toast(target==='codex-cli' ? 'Perfil de Codex CLI preparado' : 'Perfil de Codex GUI preparado');
+  }catch(error){selection.setup=null;renderCodexSetup();notify(error.message,true);}
+  finally{button.disabled=false;renderCodexSetup();}
 });
 $('codex-manual-id').addEventListener('input',renderDesktopModels);
 $('codex-selected-only').addEventListener('change',renderModels);
 $('download-codex-catalog').addEventListener('click',()=>{
-  if(!desktopModels.size)return;
-  const blob=new Blob([JSON.stringify(codexCatalog([...desktopModels.values()],desktopDefault),null,2)+'\n'],{type:'application/json'});
+  if(!codexSelection().models.size)return;
+  const blob=new Blob([JSON.stringify(codexCatalog([...codexSelection().models.values()],codexSelection().initial),null,2)+'\n'],{type:'application/json'});
   const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='models.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 });
 function applyModelContext() {
@@ -449,7 +455,7 @@ function applyModelContext() {
   if (selected?.contextWindow) $('context-window').value = selected.contextWindow;
 }
 function renderModels() {
-  const matches = ['codex','claude'].includes(client) ? codexVisibleModels() : filterModels(catalog, $('model-search').value, $('coding-models').checked);
+  const matches = ['codex','codex-cli','claude'].includes(client) ? codexVisibleModels() : filterModels(catalog, $('model-search').value, $('coding-models').checked);
   const selectedID = $('model').value.trim();
   const selected = catalog.find(m => m.id === selectedID);
   $('load-models').disabled = catalogLoading || ['starting','pending'].includes(state?.auth?.status);
@@ -461,8 +467,8 @@ function renderModels() {
   picker.replaceChildren();
   for (const m of matches) {
     const row = document.createElement('label'), radio = document.createElement('input'), name = document.createElement('span'), prices = document.createElement('span');
-    row.className = 'model-option'; radio.type = ['codex','claude'].includes(client) ? 'checkbox' : 'radio'; radio.name = 'model-choice'; radio.value = m.id;radio.dataset.focus='model:'+m.id; radio.checked = client === 'codex' ? desktopModels.has(m.id) : client==='claude' ? multiClients.claude.models.has(m.id) : m.id === selectedID; radio.disabled = catalogLoading;
-    const shownName=client==='codex' ? codexDisplayName(m) : client==='claude' ? (m.displayName || m.name || m.id) : m.name;
+    row.className = 'model-option'; radio.type = ['codex','codex-cli','claude'].includes(client) ? 'checkbox' : 'radio'; radio.name = 'model-choice'; radio.value = m.id;radio.dataset.focus='model:'+m.id; radio.checked = isCodexClient() ? codexSelection().models.has(m.id) : client==='claude' ? multiClients.claude.models.has(m.id) : m.id === selectedID; radio.disabled = catalogLoading;
+    const shownName=isCodexClient() ? codexDisplayName(m) : client==='claude' ? (m.displayName || m.name || m.id) : m.name;
     radio.setAttribute('aria-label',shownName + ' · ' + m.id);
     const title = document.createElement('strong'), id = document.createElement('small'); title.textContent = shownName; id.textContent = m.id; name.append(title,id);
     prices.className = 'model-option-prices';
@@ -470,9 +476,9 @@ function renderModels() {
       const line = document.createElement('span'); line.textContent = `${t(label)} ${formatPrice(price,language) ?? t('Variable / sin dato')}`; prices.append(line);
     }
     row.append(radio,name,prices);
-    if(client==='codex'){
-      const entry=document.createElement('div');entry.className='codex-model-entry';entry.classList.toggle('is-selected',desktopModels.has(m.id));entry.append(row);
-      if(desktopModels.has(m.id))entry.append(codexRowControls(desktopModels.get(m.id),expanded));
+    if(isCodexClient()){
+      const entry=document.createElement('div');entry.className='codex-model-entry';entry.classList.toggle('is-selected',codexSelection().models.has(m.id));entry.append(row);
+      if(codexSelection().models.has(m.id))entry.append(codexRowControls(codexSelection().models.get(m.id),expanded));
       picker.append(entry);
     }else if(client==='claude'){const entry=document.createElement('div');entry.className='codex-model-entry';entry.classList.toggle('is-selected',multiClients.claude.models.has(m.id));entry.append(row);if(multiClients.claude.models.has(m.id))entry.append(claudeRowControls(multiClients.claude.models.get(m.id)));picker.append(entry);}
     else picker.append(row);
@@ -484,8 +490,8 @@ function renderModels() {
     ? t('Codex requiere Responses. Busca OpenAI como punto de partida; el catálogo no certifica esa compatibilidad.')
     : client === 'claude' ? t('Claude Code requiere Messages. Busca Anthropic como punto de partida; el catálogo no certifica esa compatibilidad.')
     : t('Selecciona un modelo y el helper completará su ID y la ventana de contexto de Zed.');
-  const details = $('model-details'); details.replaceChildren(); details.hidden = ['codex','claude'].includes(client) || !selectedID;
-  if(['codex','claude'].includes(client)){$('model-hint').textContent=t('Marca modelos, ajusta el razonamiento en su fila y guarda. La estrella indica el modelo inicial.');return;}
+  const details = $('model-details'); details.replaceChildren(); details.hidden = ['codex','codex-cli','claude'].includes(client) || !selectedID;
+  if(['codex','codex-cli','claude'].includes(client)){$('model-hint').textContent=t('Marca modelos, ajusta el razonamiento en su fila y guarda. La estrella indica el modelo inicial.');return;}
   if (!selected) {
     if (selectedID) details.textContent = t('ID manual o no encontrado en el catálogo actual. Revisa el modelo y su ventana de contexto.');
     return;
@@ -520,12 +526,12 @@ $('coding-models').addEventListener('change', renderModels);
 $('model-picker').addEventListener('change', event => {
   if(!event.target.matches('input[name="model-choice"]'))return;
   if(client==='claude'){const selection=multiClients.claude,id=event.target.value;if(event.target.checked){if(selection.models.size>=50){event.target.checked=false;return;}selection.models.set(id,{...(catalog.find(m=>m.id===id) || {id,name:id})});if(!selection.initial)selection.initial=id;}else{selection.models.delete(id);if(selection.initial===id)selection.initial=selection.models.keys().next().value || '';for(const alias of Object.keys(selection.aliases))if(selection.aliases[alias]===id)delete selection.aliases[alias];}renderModels();renderSnippet();return;}
-  if(client==='codex'){
+  if(isCodexClient()){
     const id=event.target.value;
-    if(event.target.checked){if(desktopModels.size>=50){event.target.checked=false;toast('Máximo 50 modelos');return;}desktopModels.set(id,{...(catalog.find(m=>m.id===id) || {id,name:id})});if(!desktopDefault)desktopDefault=id;}
-    else {desktopModels.delete(id);if(desktopDefault===id)desktopDefault=desktopModels.keys().next().value || '';}
+    if(event.target.checked){if(codexSelection().models.size>=50){event.target.checked=false;toast('Máximo 50 modelos');return;}codexSelection().models.set(id,{...(catalog.find(m=>m.id===id) || {id,name:id})});if(!codexSelection().initial)codexSelection().initial=id;}
+    else {codexSelection().models.delete(id);if(codexSelection().initial===id)codexSelection().initial=codexSelection().models.keys().next().value || '';}
   }
-  if (!event.target.matches(client==='codex' ? 'input[type=checkbox]' : 'input[type=radio]')) return;
+  if (!event.target.matches(isCodexClient() ? 'input[type=checkbox]' : 'input[type=radio]')) return;
   $('model').value = event.target.value; applyModelContext(); renderModels(); renderSnippet();
 });
 async function refresh() { if (!stopped) render(await api('state')); }

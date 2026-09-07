@@ -10,16 +10,16 @@ test('Codex catalog preserves multiple IDs and contexts without inventing reason
  assert.equal(catalog.models[1].context_window,undefined);
  for(const m of catalog.models){assert.equal(m.visibility,'list');assert.equal(m.supported_in_api,true);assert.deepEqual(m.supported_reasoning_levels,[]);assert.equal(m.prefer_websockets,false);assert.equal(m.use_responses_lite,false);}
 });
-test('GUI catalog reference is scoped to Desktop and launch requires both files',()=>{
+test('GUI and CLI catalog references use their isolated profiles and require both files',()=>{
  const args={baseURL:'http://127.0.0.1:8877/v1',key:'local',model:'vendor/two',catalogPath:'models.json'};
  assert.match(clientConfig({...args,client:'codex'}),/model = "vendor\/two"\nmodel_catalog_json = "models.json"/);
- assert.doesNotMatch(clientConfig({...args,client:'codex-cli'}),/model_catalog_json/);
+ assert.match(clientConfig({...args,client:'codex-cli'}),/model_catalog_json = "models.json"/);
  assert.doesNotMatch(clientConfig({...args,client:'codex',catalogPath:''}),/model_catalog_json/);
  for(const platform of ['macos','windows','linux']) {
   const launch=launchCommand({client:'codex',key:'local',appPath:'/path/Codex',platform,catalog:true});
   assert.match(launch,/models.json/);
  }
- assert.doesNotMatch(launchCommand({client:'codex-cli',key:'local',catalog:true}),/models.json/);
+ for(const shell of ['unix','powershell'])assert.match(launchCommand({client:'codex-cli',key:'local',catalog:true,shell}),/models.json/);
 });
 
 test('chosen GUI default is first in the catalog because model/list uses priority',()=>{

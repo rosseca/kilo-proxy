@@ -75,8 +75,9 @@
 <div id="codex-catalog-actions" hidden>
 <button id="save-codex-catalog" type="button" class="primary-button">1. Preparar Codex GUI</button>
 <button id="download-codex-catalog" type="button" class="secondary-button">Descargar models.json</button>
-<p>Crea ~/.codex-kilo-desktop y guarda config.toml y models.json en este ordenador. Actualiza los parámetros de Kilo, conserva los demás ajustes y guarda una copia .bak de cada archivo que cambia.</p>
+<p id="codex-profile-help">Crea ~/.codex-kilo-desktop y guarda config.toml y models.json en este ordenador. Actualiza los parámetros de Kilo, conserva los demás ajustes y guarda una copia .bak de cada archivo que cambia.</p>
 <p id="codex-setup-status" role="status"></p>
+<p id="codex-cli-switch-help" hidden>En Codex CLI, usa /model para elegir un modelo y su nivel de razonamiento. Reinicia la sesión después de cambiar el catálogo en el helper.</p>
 <details><summary>Opciones avanzadas</summary><button id="suggest-codex-reasoning" type="button" class="text-button">Usar niveles sugeridos</button><p>Ver catálogo de Codex</p><pre id="codex-catalog-preview"></pre></details>
 </div>
 <p>Los niveles se leen de las variantes publicadas por Kilo. Si faltan, se usan los niveles conocidos del proveedor o de Codex. Puedes personalizarlos en cada fila. Cada modelo debe admitir Responses.</p>

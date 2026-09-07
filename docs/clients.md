@@ -50,7 +50,18 @@ Local JSON Pointer references are relocated. Schemas with IDs, anchors, external
 
 ## Codex CLI
 
-The **Codex CLI** tab has its own model choice and terminal launcher using `~/.codex-kilo-cli`. Save its generated `config.toml` before running the command. It uses Responses and the local key, and does not replace either desktop profile. Select the Desktop tab whenever you want the GUI.
+The **Codex CLI** tab offers the same helper as Codex Desktop, with an independent model selection and profile:
+
+1. Check models in the catalog, or add exact IDs manually. Set short display names, the initial model and supported reasoning levels in each row.
+2. Click **Prepare Codex CLI**. Kilo Local creates `~/.codex-kilo-cli` (`%USERPROFILE%\.codex-kilo-cli` on Windows) and saves `config.toml` plus `models.json`. Existing Kilo settings are updated; unrelated settings and comments are retained, with exact `.bak` backups of changed files.
+3. Copy the launch command and run it from your project directory. Install Codex CLI first so `codex` is on your terminal's PATH. The command requires both saved files and scopes the local key and `CODEX_HOME` to the Kilo session.
+4. Use `/model` inside Codex CLI to select a model and its reasoning level. Restart the CLI session after changing the catalog in the helper. **Load saved catalog** restores this CLI profile's models, names and reasoning choices.
+
+GUI and CLI selections, saved catalogs and readiness indicators are independent. Codex Desktop continues to use `~/.codex-kilo-desktop`; ordinary Codex continues to use its usual profile. Both Kilo integrations use HTTP Responses and the same model capability catalog format. Optional TOML and JSON downloads remain available for another computer. Preparation always writes on the computer running Kilo Local.
+
+The generated CLI profile was checked against the Codex executable bundled with the installed desktop app: both selected models, short labels, the initial model and exact reasoning choices appeared in `model/list`, without inference. The separate npm CLI installation on the development machine could not be validated because its executable was missing, including after reinstalling the same version.
+
+Reference: [OpenAI configuration reference: model_catalog_json](https://learn.chatgpt.com/docs/config-file/config-reference).
 
 ## OpenCode
 
