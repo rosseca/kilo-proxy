@@ -90,6 +90,16 @@ This automates release publishing, not installation or updating on user machines
 
 ## Assets and verification
 
+### Windows ARM64 hosted-runner shell preparation
+
+The Windows native and package jobs first run an independent Win32 notification probe, using Python's standard-library `ctypes`. It records the actual process architecture, structure layout, window validity and notification registration results. This distinguishes an application failure from a runner shell that rejects ordinary `Shell_NotifyIconW(NIM_ADD)` calls.
+
+Some hosted Windows ARM64 images leave a first-login privacy/OOBE host active. The image issue is tracked in [actions/runner-images #14069](https://github.com/actions/runner-images/issues/14069); a related application documents the notification-area effect in [Tiny Clips #304](https://github.com/jamesmontemagno/tiny-clips/pull/304). Our independent probe reproduced the failure in native ARM64 Python with valid windows and notification structures, while equivalent Windows x64 registration worked.
+
+Recovery is a CI fixture restricted to GitHub-hosted Windows ARM64, a failed production-equivalent probe, and a known OOBE host in the runner's own interactive session. It stops only allowlisted OOBE hosts and restarts only that session's Explorer, then requires a successful native registration with a real icon, full structure size and callback. Recovery rejects local, self-hosted or non-ARM64 environments. Guard tests exercise these boundaries, and before/after reports remain CI artifacts. The production application never runs this fixture or modifies Explorer. All native lifecycle checks and extracted-archive tests remain mandatory after shell preparation.
+
+### Release files
+
 Each release contains:
 
 - `kilo-proxy-VERSION-darwin-arm64.zip`

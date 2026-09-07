@@ -16,6 +16,19 @@ import subprocess
 import uuid
 
 
+def registration_matches(report, added):
+    return any(row.get('stage') == 'no-com-initialization'
+               and row.get('window') == 'hidden-top-level'
+               and row.get('case') == 'icon-and-callback'
+               and row.get('size') == 976 and row.get('flags') == 3
+               and row.get('hwnd_valid') is True and row.get('added') is added
+               for row in report.get('registrations', []))
+
+
+def registration_succeeded(report):
+    return registration_matches(report, True)
+
+
 def probe(report):
     if platform.system() != 'Windows':
         raise RuntimeError('The notification probe requires Windows')
@@ -142,9 +155,14 @@ def probe(report):
         report.write_text(encoded, encoding='utf-8')
     print(encoded, flush=True)
     print('Diagnostic probe complete; the production native smoke must still pass.', flush=True)
+    return result
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--report', type=Path)
-    probe(parser.parse_args().report)
+    parser.add_argument('--require-success', action='store_true')
+    arguments = parser.parse_args()
+    result = probe(arguments.report)
+    if arguments.require_success and not registration_succeeded(result):
+        raise RuntimeError('The current Windows shell rejected a valid native notification registration')

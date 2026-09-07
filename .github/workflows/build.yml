@@ -119,11 +119,15 @@ jobs:
         if: runner.os == 'Windows'
         timeout-minutes: 2
         run: python scripts/probe_windows_tray.py --report native-probe/windows-tray.json
+      - name: Prepare and verify the hosted Windows notification area
+        if: runner.os == 'Windows'
+        timeout-minutes: 3
+        run: python scripts/prepare_windows_tray.py --before-report native-probe/windows-tray.json --after-report native-probe/windows-tray-ready.json
       - uses: actions/upload-artifact@v4
         if: always() && runner.os == 'Windows'
         with:
           name: windows-tray-probe-${{ matrix.arch }}
-          path: native-probe/windows-tray.json
+          path: native-probe/
           if-no-files-found: ignore
           retention-days: 7
       - name: Install Linux native graphics and graphical test dependencies
@@ -222,6 +226,21 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Probe the fresh Windows package runner notification area
+        if: runner.os == 'Windows'
+        timeout-minutes: 2
+        run: python scripts/probe_windows_tray.py --report native-probe/windows-tray.json
+      - name: Prepare and verify the hosted Windows notification area
+        if: runner.os == 'Windows'
+        timeout-minutes: 3
+        run: python scripts/prepare_windows_tray.py --before-report native-probe/windows-tray.json --after-report native-probe/windows-tray-ready.json
+      - uses: actions/upload-artifact@v4
+        if: always() && runner.os == 'Windows'
+        with:
+          name: windows-package-tray-probe-${{ matrix.arch }}
+          path: native-probe/
+          if-no-files-found: ignore
+          retention-days: 7
       - uses: actions/download-artifact@v4
         with:
           name: desktop-binary-${{ matrix.system }}-${{ matrix.arch }}
