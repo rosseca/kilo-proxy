@@ -1,5 +1,9 @@
 import copy
 import unittest
+from unittest import mock
+from pathlib import Path
+
+from capture_windows_desktop import capture
 
 from prepare_windows_tray import recovery_required
 from probe_windows_tray import registration_succeeded
@@ -28,6 +32,12 @@ class WindowsTrayFixtureTests(unittest.TestCase):
     def test_never_changes_an_already_working_shell(self):
         self.report['registrations'][0]['added'] = True
         self.assertFalse(recovery_required(self.report, {}, None))
+
+    def test_screenshot_capture_rejects_local_and_self_hosted_contexts(self):
+        for environment in [{}, {'GITHUB_ACTIONS': 'true', 'RUNNER_OS': 'Windows',
+                                'RUNNER_ENVIRONMENT': 'self-hosted'}]:
+            with self.subTest(environment=environment), mock.patch.dict('os.environ', environment, clear=True):
+                self.assertFalse(capture(Path('unused-local-desktop.png')))
 
     def test_missing_or_incomplete_probe_never_allows_recovery(self):
         for rows in [[], [{'added': False}], [{'size': 976, 'added': False}]]:

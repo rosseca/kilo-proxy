@@ -98,6 +98,8 @@ Some hosted Windows ARM64 images leave a first-login privacy/OOBE host active. T
 
 Recovery is a CI fixture restricted to GitHub-hosted Windows ARM64, a failed production-equivalent probe, and a known OOBE host in the runner's own interactive session. It stops only allowlisted OOBE hosts and restarts only that session's Explorer, then requires a successful native registration with a real icon, full structure size and callback. Recovery rejects local, self-hosted or non-ARM64 environments. Guard tests exercise these boundaries, and before/after reports remain CI artifacts. The production application never runs this fixture or modifies Explorer. All native lifecycle checks and extracted-archive tests remain mandatory after shell preparation.
 
+The guarded fixture first sets Microsoft's supported [DisablePrivacyExperience user policy](https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-privacy#disableprivacyexperience) in the disposable runner's `HKCU` to prevent the observed privacy host from relaunching. No machine-wide policy is changed. This policy prevents new launches; it does not itself guarantee dismissal of an already active flow, so the subsequent independent registration must still succeed. Failed probes can include a desktop screenshot captured using built-in GDI, restricted to GitHub-hosted Windows jobs, to make any remaining OOBE obstruction reviewable.
+
 ### Release files
 
 Each release contains:

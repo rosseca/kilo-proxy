@@ -76,7 +76,7 @@ The K menu shows running/stopped/configuration/login status, organization, port,
 
 The tray updates approximately once per second when the native menu processes events. macOS uses a template icon for light/dark menu bars; Windows may place the icon in the hidden-icons area. Linux requires a compatible StatusNotifierItem/AppIndicator host and D-Bus. No extension is installed automatically.
 
-Use `--no-tray` for headless operation and `--no-browser` to suppress automatic browser opening. With both enabled, open the printed panel URL manually. Quit from the panel or interrupt the process to stop all listeners. Native tray interaction and credential-store integration still need platform-specific manual verification.
+Use `--no-tray` for headless operation, with the printed panel URL available to open manually. In native mode, `--no-browser` starts with the window hidden and the tray available. Use `--browser` for the optional browser interface, or `--browser --no-browser` to print its URL without opening a tab. See [all launch modes](desktop.md#optional-launch-modes). Quit from the panel or interrupt a headless/browser process to stop all listeners. Native tray interaction and credential-store integration still need platform-specific manual verification.
 
 ## Implementation references
 

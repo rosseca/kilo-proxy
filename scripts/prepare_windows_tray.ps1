@@ -14,6 +14,14 @@ $blockers = @(Get-Process -Name $allowed -ErrorAction SilentlyContinue |
 if ($blockers.Count -eq 0) {
     throw 'No allowlisted OOBE host is active in the current runner session; shell unchanged.'
 }
+# Prevent the observed privacy host from relaunching in this disposable user
+# profile. Microsoft supports user scope; do not set a machine-wide policy.
+# https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-privacy#disableprivacyexperience
+$oobePolicy = 'HKCU:\Software\Policies\Microsoft\Windows\OOBE'
+if (-not (Test-Path -LiteralPath $oobePolicy)) {
+    New-Item -Path $oobePolicy -Force | Out-Null
+}
+New-ItemProperty -Path $oobePolicy -Name DisablePrivacyExperience -PropertyType DWord -Value 1 -Force | Out-Null
 foreach ($process in $blockers) {
     Write-Output "Stopping CI OOBE host: $($process.ProcessName)"
     Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue

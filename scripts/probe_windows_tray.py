@@ -149,6 +149,15 @@ def probe(report):
         if com_result in (0, 1):
             ole32.CoUninitialize()
     # LoadIconW returns a shared stock handle; DestroyIcon must not free it.
+    if report and not registration_succeeded(result):
+        from capture_windows_desktop import capture
+        try:
+            screenshot = report.with_suffix('.png')
+            if capture(screenshot):
+                result['screenshot'] = screenshot.name
+        except Exception as error:
+            # Screenshot diagnostics must not erase the independent API result.
+            result['screenshot_error'] = str(error)
     encoded = json.dumps(result, indent=2)
     if report:
         report.parent.mkdir(parents=True, exist_ok=True)
