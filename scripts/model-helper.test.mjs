@@ -25,7 +25,7 @@ test('published prices distinguish zero from missing or variable rates in both l
 test('catalog model ID and context produce client config without hardcoded model aliases',()=>{
  const m=models[0];
  const config=JSON.parse(clientConfig({client:'zed',baseURL:'http://127.0.0.1:8877/v1',key:'local',model:m.id,contextWindow:m.contextWindow}));
- assert.deepEqual(config.language_models.openai_compatible['kilo-local'].available_models,[{name:m.id,max_tokens:128000}]);
+ assert.deepEqual(config.language_models.openai_compatible['kilo-local'].available_models,[{name:m.id,display_name:m.id,max_tokens:128000}]);
  assert.equal(validModelID(m.id),true);
  for(const id of ['', 'a b','a\nb','x'.repeat(257)]) assert.equal(validModelID(id),false);
 });

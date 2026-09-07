@@ -65,7 +65,7 @@ Reference: [OpenAI configuration reference: model_catalog_json](https://learn.ch
 
 ## OpenCode
 
-Add multiple models in the **OpenCode** tab and choose the initial model. Merge the generated custom provider into your OpenCode configuration. Use `/connect`, choose **Other**, and supply the local key for the configured provider. Use `/models` to switch between configured models. This helper targets OpenCode v1 and the OpenAI-compatible Chat Completions path.
+The helper selects multiple models, short names, limits, and an initial model, then creates or updates `~/.opencode-kilo/opencode.json` with the local proxy credential. Copy the scoped launch command and use `/models` to switch models; `/connect` is not needed for this prepared profile. JSONC settings are preserved with exact backups. Global/project OpenCode configuration still merges. See [OpenCode and Zed setup](opencode-and-zed.md).
 
 ## Claude Code: automatic isolated setup
 
@@ -100,7 +100,7 @@ See [Claude Code compatibility verification](claude-code-compatibility.md).
 
 ## Zed
 
-Use the OpenAI-compatible provider, the panel’s `/v1` base URL, and the local key. Select the exact model ID. Merge the generated Zed settings and adjust its context window to the chosen model. Listing models alone does not verify generation access.
+Select several models and short names, then click **Prepare Zed** to update its user settings and Agent default model. The helper preserves comments, other providers, and unrelated settings, with backups. Copy the local key once into Zed's `kilo-local` provider settings so Zed stores it in its keychain. See [OpenCode and Zed setup](opencode-and-zed.md) for paths, limits, and verification.
 
 ## Xcode
 

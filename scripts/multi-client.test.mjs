@@ -10,8 +10,8 @@ test('OpenCode registers all exact IDs, selects the default and includes only kn
  assert.deepEqual(Object.keys(provider.models),['anthropic/model-a','anthropic/model-b']);
  assert.deepEqual(provider.models['anthropic/model-a'].limit,{context:200000,output:32000});
  assert.equal(provider.models['anthropic/model-b'].limit,undefined);
- assert.equal(provider.options.apiKey,undefined);
- assert.ok(!JSON.stringify(config).includes(base.key));
+ assert.equal(provider.options.apiKey,'local-fixture');
+ assert.equal(provider.options.apiKey,base.key); // The export now includes the local proxy credential.
 });
 test('Claude independently maps aliases and keeps startup model separate',()=>{
  const config=JSON.parse(clientConfig({...base,client:'claude',aliases:{sonnet:'anthropic/model-a',opus:'anthropic/model-b',haiku:'anthropic/model-a'}}));

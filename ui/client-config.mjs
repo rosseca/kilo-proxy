@@ -15,8 +15,8 @@ export function clientConfig({client, baseURL, key, model, contextWindow=200000,
   ANTHROPIC_DEFAULT_OPUS_MODEL:alias('opus'),
   ANTHROPIC_DEFAULT_HAIKU_MODEL:alias('haiku')
  }},null,2);
- if (client === 'zed') return JSON.stringify({language_models:{openai_compatible:{'kilo-local':{api_url:baseURL,available_models:[{name:model,max_tokens:contextWindow}]}}}},null,2);
- if (client === 'opencode') return JSON.stringify({$schema:'https://opencode.ai/config.json',model:'kilo-local/'+initial,provider:{'kilo-local':{npm:'@ai-sdk/openai-compatible',name:'Kilo Local',options:{baseURL},models:Object.fromEntries(selected.map(m=>[m.id,{name:m.name || m.id,...(Number.isSafeInteger(m.contextWindow) && m.contextWindow>0 && Number.isSafeInteger(m.maxOutputTokens) && m.maxOutputTokens>0 ? {limit:{context:m.contextWindow,output:m.maxOutputTokens}} : {})}]))}}},null,2);
+ if (client === 'zed') return JSON.stringify({agent:{default_model:{provider:'kilo-local',model:initial}},language_models:{openai_compatible:{'kilo-local':{api_url:baseURL,available_models:selected.map(m=>({name:m.id,display_name:m.name||m.id,max_tokens:m.contextWindow||contextWindow,...(m.maxOutputTokens>0?{max_output_tokens:m.maxOutputTokens}:{})}))}}}},null,2);
+ if (client === 'opencode') return JSON.stringify({$schema:'https://opencode.ai/config.json',model:'kilo-local/'+initial,provider:{'kilo-local':{npm:'@ai-sdk/openai-compatible',name:'Kilo Local',options:{baseURL,...(key?{apiKey:key}:{})},models:Object.fromEntries(selected.map(m=>[m.id,{name:m.name || m.id,...(Number.isSafeInteger(m.contextWindow) && m.contextWindow>0 && Number.isSafeInteger(m.maxOutputTokens) && m.maxOutputTokens>0 ? {limit:{context:m.contextWindow,output:m.maxOutputTokens}} : {})}]))}}},null,2);
  return `Base URL  ${baseURL}\nAPI key   ${key}\n${language === 'en' ? 'Model' : 'Modelo'}    ${model}`;
 }
 const shQuote = value => "'" + value.replaceAll("'", "'\\''") + "'";

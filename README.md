@@ -37,9 +37,9 @@ Distribution binaries are **unsigned and not notarized**. macOS and Windows may 
 | --- | --- |
 | Codex Desktop | Separate GUI profile, multiple models, short display names, native reasoning selector |
 | Codex CLI | Same automatic helper: independent multi-model profile, short names, reasoning levels and terminal launcher |
-| OpenCode | Multiple models and an initial model |
+| OpenCode | Automatic profile preparation, multiple models, names, limits, and scoped launcher |
 | Claude Code | Automatic isolated profile, version-aware model picker, short names, native effort and terminal launcher |
-| Zed | OpenAI-compatible provider settings |
+| Zed | Automatic JSONC settings updates, multiple models, names, and initial model |
 | Xcode | Independent Chat model list, automatic Codex/Claude agent profiles, version-aware Claude aliases and setup guidance |
 | Cursor | Managed ngrok HTTPS connection, dedicated key, selected models, and public connection check |
 
@@ -50,6 +50,8 @@ The catalog supports search, tool-capable text-model filtering, manual IDs, cont
 For Codex Desktop, check models directly in one list, choose the initial model and reasoning in each row, and edit **Name in Codex** to shorten labels. Click **Prepare Codex GUI** to create the isolated profile folder and save or update both `config.toml` and `models.json`, preserving unrelated settings and backing up changed files. Then copy the launch command; close the Kilo instance first if it is already running. The actual Kilo model IDs remain unchanged.
 
 Claude Code has the same select-and-prepare flow in its own tab. It detects the installed version, writes a separate profile with backups, and enables supported native model names and reasoning preferences. The GUI includes a comparison explaining the remaining differences from Codex Desktop. See [client setup](docs/clients.md) for profile isolation, saving, and compatibility limits.
+
+OpenCode and Zed now have the same select-and-prepare workflow, with saved selections and JSONC-preserving updates. OpenCode includes local authentication in its dedicated profile; Zed uses a one-time key paste into its keychain-backed provider settings. See [their setup guide](docs/opencode-and-zed.md).
 
 The control panel supports **English / Español**, remembers the selected language, and preserves your edits when switching. Documentation and release instructions are in English. The native tray menu currently uses Spanish labels.
 

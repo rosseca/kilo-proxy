@@ -30,6 +30,7 @@ type event struct {
 }
 
 type app struct {
+	editorTestRoot     string
 	cursor             *cursorSession
 	usageTotal         usageSummary
 	usageSessions      map[string]*usageSummary
