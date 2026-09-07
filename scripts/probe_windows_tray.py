@@ -7,9 +7,12 @@ It never replaces the mandatory production-app smoke test or alters the shell.
 import ctypes
 from ctypes import wintypes
 import argparse
+import csv
+import io
 import json
 from pathlib import Path
 import platform
+import subprocess
 import uuid
 
 
@@ -35,6 +38,12 @@ def probe(report):
     user32 = ctypes.WinDLL('user32', use_last_error=True)
     shell32 = ctypes.WinDLL('shell32', use_last_error=True)
     ole32 = ctypes.WinDLL('ole32', use_last_error=True)
+    kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+    kernel32.GetCurrentProcess.argtypes = []
+    kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+    kernel32.IsWow64Process2.argtypes = [wintypes.HANDLE,
+        ctypes.POINTER(wintypes.USHORT), ctypes.POINTER(wintypes.USHORT)]
+    kernel32.IsWow64Process2.restype = wintypes.BOOL
     user32.CreateWindowExW.argtypes = [wintypes.DWORD, wintypes.LPCWSTR, wintypes.LPCWSTR,
         wintypes.DWORD, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
         wintypes.HWND, wintypes.HMENU, wintypes.HINSTANCE, ctypes.c_void_p]
@@ -43,6 +52,12 @@ def probe(report):
     user32.DestroyWindow.restype = wintypes.BOOL
     user32.IsWindow.argtypes = [wintypes.HWND]
     user32.IsWindow.restype = wintypes.BOOL
+    user32.IsHungAppWindow.argtypes = [wintypes.HWND]
+    user32.IsHungAppWindow.restype = wintypes.BOOL
+    user32.FindWindowW.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR]
+    user32.FindWindowW.restype = wintypes.HWND
+    user32.FindWindowExW.argtypes = [wintypes.HWND, wintypes.HWND, wintypes.LPCWSTR, wintypes.LPCWSTR]
+    user32.FindWindowExW.restype = wintypes.HWND
     user32.LoadIconW.argtypes = [wintypes.HINSTANCE, ctypes.c_void_p]
     user32.LoadIconW.restype = wintypes.HICON
     shell32.Shell_NotifyIconW.argtypes = [wintypes.DWORD, ctypes.POINTER(NOTIFYICONDATAW)]
@@ -59,6 +74,23 @@ def probe(report):
                           for name in ('Wnd', 'Icon', 'Info', 'TimeoutOrVersion',
                                        'InfoTitle', 'InfoFlags', 'Guid', 'BalloonIcon')},
               'registrations': []}
+    process_machine, native_machine = wintypes.USHORT(), wintypes.USHORT()
+    if kernel32.IsWow64Process2(kernel32.GetCurrentProcess(),
+                              ctypes.byref(process_machine), ctypes.byref(native_machine)):
+        result['process_machine'] = hex(process_machine.value or native_machine.value)
+        result['native_machine'] = hex(native_machine.value)
+        result['emulated'] = process_machine.value != 0
+    taskbar = user32.FindWindowW('Shell_TrayWnd', None)
+    result['taskbar_hung'] = bool(user32.IsHungAppWindow(taskbar)) if taskbar else None
+    result['notification_child_present'] = bool(user32.FindWindowExW(taskbar, None, 'TrayNotifyWnd', None)) if taskbar else False
+    processes = subprocess.run(['tasklist', '/FO', 'CSV', '/NH'], check=True,
+                               capture_output=True, text=True, timeout=15)
+    shell_names = {'explorer.exe', 'msoobe.exe', 'cloudexperiencehostbroker.exe',
+                   'cloudexperiencehost.exe', 'wwahost.exe', 'shellhost.exe',
+                   'sihost.exe', 'shellexperiencehost.exe', 'useroobebroker.exe'}
+    result['shell_processes'] = [{'name': row[0], 'session': row[3]}
+        for row in csv.reader(io.StringIO(processes.stdout))
+        if len(row) >= 4 and row[0].lower() in shell_names]
     if not stock_icon:
         raise ctypes.WinError(ctypes.get_last_error())
 
