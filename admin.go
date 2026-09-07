@@ -59,7 +59,7 @@ func (a *app) adminHandler() http.Handler {
 			return
 		}
 		if !strings.HasPrefix(r.URL.Path, "/api/") {
-			if r.Method != "GET" || (r.URL.Path != "/" && r.URL.Path != "/app.js" && r.URL.Path != "/activity-helper.mjs" && r.URL.Path != "/usage-helper.mjs" && r.URL.Path != "/codex-catalog.mjs" && r.URL.Path != "/model-helper.mjs" && r.URL.Path != "/client-config.mjs" && r.URL.Path != "/claude-helper.mjs" && r.URL.Path != "/i18n.mjs" && r.URL.Path != "/style.css" && r.URL.Path != "/icon.svg") {
+			if r.Method != "GET" || (r.URL.Path != "/" && r.URL.Path != "/app.js" && r.URL.Path != "/xcode-helper.mjs" && r.URL.Path != "/activity-helper.mjs" && r.URL.Path != "/usage-helper.mjs" && r.URL.Path != "/codex-catalog.mjs" && r.URL.Path != "/model-helper.mjs" && r.URL.Path != "/client-config.mjs" && r.URL.Path != "/claude-helper.mjs" && r.URL.Path != "/i18n.mjs" && r.URL.Path != "/style.css" && r.URL.Path != "/icon.svg") {
 				http.NotFound(w, r)
 				return
 			}
@@ -68,6 +68,10 @@ func (a *app) adminHandler() http.Handler {
 		}
 		if !secureEqual(r.Header.Get("Authorization"), "Bearer "+a.adminToken) {
 			jsonError(w, 401, "Abre el panel desde la aplicación para recuperar el acceso.")
+			return
+		}
+		if (r.Method == "GET" && r.URL.Path == "/api/xcode/info") || ((r.Method == "GET" || r.Method == "POST") && (r.URL.Path == "/api/xcode/chat" || r.URL.Path == "/api/xcode/codex" || r.URL.Path == "/api/xcode/claude")) {
+			a.xcodeAPI(w, r)
 			return
 		}
 		if (r.Method == "GET" && r.URL.Path == "/api/claude/info") || ((r.Method == "GET" || r.Method == "POST") && r.URL.Path == "/api/claude/profile") {

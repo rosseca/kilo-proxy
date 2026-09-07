@@ -1,3 +1,4 @@
+import {createXcodeHelper} from './xcode-helper.mjs';
 import {claudeCapabilities,claudeEfforts,claudeSelection,claudeSettings} from './claude-helper.mjs';
 'use strict';
 import {reportedCost, usageCoverage, cacheStats, lastCacheStats} from './usage-helper.mjs';
@@ -102,7 +103,13 @@ function snippet(reveal = false) {
 function launch(key) {
   return launchCommand({client,key,shell:$('launch-shell').value,platform:$('desktop-platform').value,appPath:$('desktop-app-path').value.trim(),language,catalog:isCodexClient() && codexSelection().models.size > 0});
 }
+const xcodeHelper=createXcodeHelper({api,notify,refreshCatalog:loadModels});
 function renderSnippet() {
+ const xcodeActive=client==='xcode';
+ $('xcode-helper').hidden=!xcodeActive;
+ document.querySelector('#client-panel > .client-instructions').hidden=xcodeActive;
+ document.querySelector('#client-panel > .snippet-stack').hidden=xcodeActive;
+ if(xcodeActive)xcodeHelper.render({state,catalog,language});
   const isCodex = ['codex','codex-cli'].includes(client);
   $('codex-copy-help').hidden = !isCodex;
   $('codex-copy-title').textContent=t(client==='codex' ? 'Configurar y abrir Codex GUI' : 'Configurar y abrir Codex CLI');

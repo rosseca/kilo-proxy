@@ -98,9 +98,13 @@ Models must support Anthropic Messages, tools and the capabilities Claude sends.
 
 See [Claude Code compatibility verification](claude-code-compatibility.md).
 
-## Zed and Xcode
+## Zed
 
 Use the OpenAI-compatible provider, the panel’s `/v1` base URL, and the local key. Select the exact model ID. Merge the generated Zed settings and adjust its context window to the chosen model. Listing models alone does not verify generation access.
+
+## Xcode
+
+The **Xcode** tab has three independent variants: **Chat**, **Codex in Xcode** and **Claude in Xcode**. Chat saves a dedicated model list and copies the provider connection details; its URL ends in `/xcode`, without `/v1`. The agent variants prepare Apple's dedicated profile folders on macOS with backups. Claude options use Xcode's advertised agent version, not the terminal installation. See [Xcode setup and compatibility](xcode.md).
 
 ## Cursor
 

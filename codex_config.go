@@ -138,6 +138,9 @@ func prepareProfileFile(path string, data []byte) (profileFile, error) {
 	return f, nil
 }
 func saveCodexProfile(dir string, catalog []byte, port int) (bool, bool, error) {
+	return saveCodexProfileWithToken(dir, catalog, port, "")
+}
+func saveCodexProfileWithToken(dir string, catalog []byte, port int, token string) (bool, bool, error) {
 	info, err := os.Lstat(dir)
 	if errors.Is(err, os.ErrNotExist) {
 		if err = os.MkdirAll(dir, 0700); err != nil {
@@ -156,6 +159,12 @@ func saveCodexProfile(dir string, catalog []byte, port int) (bool, bool, error) 
 	config, err := mergeCodexConfig(oldConfig, catalog, port)
 	if err != nil {
 		return false, false, err
+	}
+	if token != "" {
+		config, err = codexXcodeAuth(config, token)
+		if err != nil {
+			return false, false, err
+		}
 	}
 	// Validate every destination before writing either file or either backup.
 	models, err := prepareProfileFile(filepath.Join(dir, "models.json"), append(bytes.TrimSpace(catalog), '\n'))

@@ -39,7 +39,8 @@ Distribution binaries are **unsigned and not notarized**. macOS and Windows may 
 | Codex CLI | Same automatic helper: independent multi-model profile, short names, reasoning levels and terminal launcher |
 | OpenCode | Multiple models and an initial model |
 | Claude Code | Automatic isolated profile, version-aware model picker, short names, native effort and terminal launcher |
-| Zed / Xcode | OpenAI-compatible provider settings |
+| Zed | OpenAI-compatible provider settings |
+| Xcode | Independent Chat model list, automatic Codex/Claude agent profiles, version-aware Claude aliases and setup guidance |
 | Cursor | Multiple model IDs and setup guidance; requires an externally reachable gateway |
 
 **Cursor cannot reach this loopback proxy through its backend.** Its helper prepares model IDs and explains the external HTTPS requirement; it does not enable a local Cursor connection or deploy a tunnel.
@@ -102,3 +103,5 @@ Automated tests cover authentication replacement, host/origin restrictions, life
 Codex catalog loading and reasoning/display-name metadata were checked against the installed app-server. Desktop isolation depends partly on version-specific application behavior: see [inspection notes](docs/codex-desktop-compatibility.md). Kilo must support the protocol and model you choose, and your organization must permit it.
 
 Dependency versions are pinned in `go.mod` and `go.sum`. Licensing notices are in [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt); local tray-library changes are documented in [PATCHES.md](third_party/systray/PATCHES.md).
+
+See [Xcode setup](docs/xcode.md) for Chat provider registration and the dedicated Codex/Claude agent profiles.

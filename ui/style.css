@@ -34,3 +34,7 @@
 #claude-setup-status{overflow-wrap:anywhere}#claude-models .primary-button,#claude-models .secondary-button{margin:8px 0}#claude-models table{font-size:11px;border-collapse:collapse;width:100%}#claude-models th,#claude-models td{padding:10px 6px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}.claude-version-row{display:flex;align-items:center;gap:16px}
 
 .cache-panel{border-top:1px solid var(--border);margin-top:18px;padding-top:14px}.cache-metrics{display:flex;flex-wrap:wrap;gap:16px 32px;margin:14px 0}.cache-metrics>div{min-width:145px}.cache-metrics strong{font-size:23px;display:block;font-weight:600}.cache-metrics span{font-size:11px;color:var(--muted)}#usage-session-table td:nth-child(n+6){white-space:nowrap}
+
+#xcode-helper{grid-column:1/-1;min-width:0}#xcode-helper .tabs{margin-bottom:18px}#xcode-picker{max-height:520px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:8px;margin:12px 0}#xcode-helper pre{white-space:pre-wrap;overflow-wrap:anywhere;background:var(--surface);padding:16px;border:1px solid var(--border);border-radius:8px}.xcode-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px}#xcode-status{overflow-wrap:anywhere}
+
+#xcode-search{display:block;width:100%;padding:12px 14px;border:1px solid var(--border);border-radius:6px;background:#fff;font:inherit;margin-top:10px}#xcode-helper .xcode-actions .primary-button{flex:0 1 auto}#xcode-helper pre{background:#f7f9f2}

@@ -39,6 +39,7 @@ type app struct {
 	traces             map[string]*requestTrace
 	codexProfileDir    string
 	codexCLIProfileDir string
+	xcodeTestRoot      string
 	claudeProfileDir   string
 	catalogRevision    uint64
 	accountURL         string
@@ -165,6 +166,14 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 		if !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") || !secureEqual(bearer, localKey) {
 			jsonError(w, http.StatusUnauthorized, "API key local incorrecta. Cópiala desde Kilo Local.")
 			return
+		}
+		if r.URL.RawPath == "" && r.URL.RawQuery == "" && r.URL.Path == "/xcode/v1/models" && r.Method == "GET" {
+			a.xcodeChatModels(w)
+			return
+		}
+		if r.URL.RawPath == "" && r.URL.Path == "/xcode/v1/chat/completions" && r.Method == "POST" {
+			r = r.Clone(r.Context())
+			r.URL.Path = "/v1/chat/completions"
 		}
 		if !validRoute(r.Method, r.URL.Path) || r.URL.RawPath != "" || !validQuery(r.URL) {
 			jsonError(w, http.StatusNotFound, "Endpoint no compatible. Usa la base URL terminada en /v1.")

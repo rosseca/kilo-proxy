@@ -31,6 +31,8 @@ The real device-flow start and pending polling were checked without approval. Au
 | Local endpoint | Kilo endpoint |
 | --- | --- |
 | `GET /v1/models` | `GET /api/gateway/models` |
+| `GET /xcode/v1/models` | Local saved Xcode Chat selection; authenticated |
+| `POST /xcode/v1/chat/completions` | `POST /api/gateway/chat/completions` |
 | `POST /v1/chat/completions` | `POST /api/gateway/chat/completions` |
 | `POST /v1/responses` | `POST /api/gateway/responses` |
 | `POST /v1/messages` | `POST /api/gateway/messages` |
@@ -107,3 +109,5 @@ The cumulative percentage divides the sum of cache reads by the sum of normalize
 The latest request is replaced even when it has no cache information, so a previous cache hit is not presented as current. Counters remain in memory until the app closes and survive clearing debug captures. They count processed tokens, including repeated context across requests, not unique conversation tokens, currently stored cache size, cache expiry or dollar savings.
 
 Primary references: [OpenAI prompt caching](https://developers.openai.com/api/docs/guides/prompt-caching) and [Anthropic prompt caching](https://platform.claude.com/docs/en/build-with-claude/prompt-caching).
+
+Xcode agent preparation writes only Apple's dedicated `CodingAssistant/codex` and `CodingAssistant/ClaudeAgentConfig` folders, preserves unrelated settings and backs up changed files. Codex in Xcode uses a file-protected local bearer token because it is not launched by the terminal helper. The Kilo account key is never written to these profiles. Xcode Chat selection filters discovery only; it does not restrict authorized inference model IDs. See [Xcode setup](xcode.md).
