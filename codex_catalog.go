@@ -29,13 +29,13 @@ func (a *app) codexCatalog(w http.ResponseWriter, r *http.Request) {
 		}
 		dir = filepath.Join(home, ".codex-kilo-desktop")
 	}
-	info, err := os.Lstat(dir)
-	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-		jsonError(w, 409, "Create ~/.codex-kilo-desktop and save config.toml there first.")
-		return
-	}
 	path := filepath.Join(dir, "models.json")
 	if r.Method == "GET" {
+		info, err := os.Lstat(dir)
+		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			jsonError(w, 404, "No saved Codex Kilo profile yet. Select models and prepare Codex GUI first.")
+			return
+		}
 		data, err := readCatalogFile(path)
 		if err != nil {
 			jsonError(w, 404, "Cannot read models.json in the isolated Codex Kilo profile.")
@@ -66,25 +66,12 @@ func (a *app) codexCatalog(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, 400, "Invalid catalog: use 1–50 unique models and valid reasoning levels.")
 		return
 	}
-	// Require an existing regular config, but leave all its settings untouched.
-	if info, err := os.Lstat(filepath.Join(dir, "config.toml")); err != nil || !info.Mode().IsRegular() {
-		jsonError(w, 409, "Save config.toml in the isolated Codex Kilo profile first.")
+	configChanged, catalogChanged, err := saveCodexProfile(dir, input.Catalog, a.config.Port)
+	if err != nil {
+		jsonError(w, 409, err.Error())
 		return
 	}
-	if old, err := readCatalogFile(path); err == nil {
-		if err = atomicCatalogFile(path+".bak", old); err != nil {
-			jsonError(w, 500, "Cannot back up models.json; no changes saved.")
-			return
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		jsonError(w, 409, "Cannot safely replace models.json.")
-		return
-	}
-	if err := atomicCatalogFile(path, append(input.Catalog, '\n')); err != nil {
-		jsonError(w, 500, "Cannot save models.json. Check profile permissions.")
-		return
-	}
-	jsonResponse(w, 200, map[string]bool{"ok": true})
+	jsonResponse(w, 200, map[string]any{"ok": true, "profileDir": dir, "configChanged": configChanged, "catalogChanged": catalogChanged})
 }
 
 func readCatalogFile(path string) ([]byte, error) {

@@ -4,6 +4,7 @@ go 1.26.0
 
 require (
 	github.com/gogpu/systray v0.3.0
+	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/zalando/go-keyring v0.2.6
 )
 

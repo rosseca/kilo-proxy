@@ -6,7 +6,7 @@ Start Kilo Local and use the control panel to generate configuration for your se
 
 The **Codex Desktop** tab launches the installed desktop application with separate configuration and interface data, allowing your normal Codex to remain open.
 
-1. Create `~/.codex-kilo-desktop` (`%USERPROFILE%\.codex-kilo-desktop` on Windows) and save the generated `config.toml` there.
+1. Select your models and click **1. Prepare Codex GUI**. The helper creates `~/.codex-kilo-desktop` (`%USERPROFILE%\.codex-kilo-desktop` on Windows) and saves both `config.toml` and `models.json` on this computer.
 2. Choose the operating system and actual installed app path in the helper. On macOS this may be `/Applications/ChatGPT.app` or `/Applications/Codex.app`; select the bundle that contains Codex.
 3. Copy and execute the generated launch command. It supplies `CODEX_HOME`, `CODEX_ELECTRON_USER_DATA_PATH`, `--user-data-dir`, and `KILO_LOCAL_API_KEY` to the new instance. macOS uses `open -n`.
 
@@ -21,10 +21,10 @@ The Electron isolation variable is version-dependent rather than a stable public
 1. Check models in the catalog, or select search results in bulk, up to 50. **Selected only** filters the same list. Manual IDs are under **Add by ID**.
 2. Adjust reasoning in the selected row and choose **Use on startup** for the initial model. **Customize levels** changes that model’s available efforts; **Use suggested levels** restores known defaults.
 3. Edit **Name in Codex** for a short display name such as Sol, GLM, or Fable. Clearing it restores the catalog label. Names are limited to 80 characters and searchable.
-4. Click **Save to Codex Kilo**, or download the catalog for another computer. Saving atomically updates only `~/.codex-kilo-desktop/models.json`, with a `.bak` backup. The profile’s `config.toml` must already exist.
-5. On initial setup, or when changing the initial model, also copy the generated `config.toml`. Restart Codex Kilo to load the changes.
+4. Click **1. Prepare Codex GUI**. The helper creates missing files and updates Kilo settings in an existing `config.toml`: initial model, reasoning, catalog path, local port, Responses protocol and environment-variable authentication. Other settings and comments are preserved; conflicting Kilo authentication settings are removed. A selected named profile is synchronized too.
+5. Use **2. Copy launch command** and run it in a terminal. Close the Kilo instance first if it is already open. Repeat Prepare after changing models, reasoning or the local port; no manual TOML copying is needed.
 
-**Load saved catalog** restores models, labels, and reasoning. Unsaved changes last only for the panel session. Saving does not modify credentials or `config.toml`. The config references `model_catalog_json = "models.json"`; the exporter puts the initial model first because the inspected app-server’s `model/list` default follows catalog order.
+**Load saved catalog** restores models, labels, and reasoning. Unsaved changes last only for the panel session. Saving updates both profile files without storing the local API key in TOML. Each changed existing file receives an exact `.bak` copy; saving unchanged files leaves backups intact. Invalid TOML and unsafe file destinations stop the save without replacing either profile file. The config references `model_catalog_json = "models.json"`; the exporter puts the initial model first because the inspected app-server’s `model/list` default follows catalog order.
 
 Model IDs remain unchanged. Renaming changes only `display_name`; reasoning is sent as `reasoning.effort`. Explicit efforts from Kilo’s `opencode.variants` metadata take priority over exact-ID fallback presets. Manual customizations take priority over both. Variant names and token budgets are not interpreted as effort levels. Unknown models receive no invented levels and can be configured manually.
 
@@ -32,9 +32,11 @@ Current exact-ID presets include Sol discounted (none/low/medium/high/xhigh/max,
 
 All models in this profile must support **Responses**. Catalog listing does not translate protocols or verify credits. Exported capabilities are conservative and coding instructions are original generic instructions, not vendor system prompts.
 
+The optional TOML template and catalog download remain available for another computer. Automatic preparation always targets the computer running Kilo Local, regardless of the launcher platform selected in the web panel.
+
 ### “Missing environment variable”
 
-Copy `env_key = "KILO_LOCAL_API_KEY"` literally. It names an environment variable; never replace it with the actual token. Save the TOML first, then use **Copy launch command** to pass the local key when opening Codex. Close a previously running Kilo instance before relaunching with updated environment values.
+Copy `env_key = "KILO_LOCAL_API_KEY"` literally. It names an environment variable; never replace it with the actual token. Use **Prepare Codex GUI** first, then **Copy launch command** to pass the local key when opening Codex. Close a previously running Kilo instance before relaunching with updated environment values.
 
 The on-screen launch preview masks the key and cannot be executed as displayed. The copy button uses the real key. **Show key in command** reveals the executable text for manual selection.
 

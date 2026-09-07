@@ -46,7 +46,7 @@ Distribution binaries are **unsigned and not notarized**. macOS and Windows may 
 
 The catalog supports search, tool-capable text-model filtering, manual IDs, context metadata, and input/output prices in USD per million tokens. Prices come from Kilo’s catalog, not your invoice; zero, variable, and missing prices are distinguished. Refreshing models does not run inference. Model selections are independent between client tabs and remain available during the panel session.
 
-For Codex Desktop, check models directly in one list, choose the initial model and reasoning in each row, and edit **Name in Codex** to shorten labels. Save the catalog and restart the isolated Codex instance. The actual Kilo model IDs remain unchanged. See [client setup](docs/clients.md) for profile isolation, saving, and compatibility limits.
+For Codex Desktop, check models directly in one list, choose the initial model and reasoning in each row, and edit **Name in Codex** to shorten labels. Click **Prepare Codex GUI** to create the isolated profile folder and save or update both `config.toml` and `models.json`, preserving unrelated settings and backing up changed files. Then copy the launch command; close the Kilo instance first if it is already running. The actual Kilo model IDs remain unchanged. See [client setup](docs/clients.md) for profile isolation, saving, and compatibility limits.
 
 The control panel supports **English / Español**, remembers the selected language, and preserves your edits when switching. Documentation and release instructions are in English. The native tray menu currently uses Spanish labels.
 

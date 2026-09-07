@@ -1,4 +1,17 @@
 export const translations = {
+"Selecciona tus modelos y pulsa «Preparar Codex GUI». El helper crea el perfil aislado y guarda la configuración en este ordenador. Después copia el arranque para abrir una segunda instancia gráfica.":"Select your models and click “Prepare Codex GUI”. The helper creates the isolated profile and saves the configuration on this computer. Then copy the launch command to open a second GUI instance.",
+"1. Preparar Codex GUI":"1. Prepare Codex GUI",
+"Preparando perfil…":"Preparing profile…",
+"Crea ~/.codex-kilo-desktop y guarda config.toml y models.json en este ordenador. Actualiza los parámetros de Kilo, conserva los demás ajustes y guarda una copia .bak de cada archivo que cambia.":"Creates ~/.codex-kilo-desktop and saves config.toml and models.json on this computer. Updates Kilo settings, preserves other settings, and keeps a .bak copy of each changed file.",
+"Perfil listo en {path}. Copia el arranque para abrir Codex Kilo. Si ya está abierto, ciérralo primero.":"Profile ready at {path}. Copy the launch command to open Codex Kilo. If it is already open, close it first.",
+"Pulsa «Preparar Codex GUI» para guardar los modelos y la configuración.":"Click “Prepare Codex GUI” to save your models and configuration.",
+"Hay cambios sin guardar. Pulsa «Preparar Codex GUI» antes de abrir Codex Kilo.":"There are unsaved changes. Click “Prepare Codex GUI” before opening Codex Kilo.",
+"Perfil de Codex GUI preparado":"Codex GUI profile prepared",
+"Configurar y abrir Codex GUI":"Set up and open Codex GUI",
+"1. Selecciona los modelos y pulsa «Preparar Codex GUI». Se crean la carpeta, config.toml y models.json; si ya existen, se actualizan.":"1. Select models and click “Prepare Codex GUI”. The folder, config.toml and models.json are created or updated if they already exist.",
+"Copiar TOML (opcional) ↗":"Copy TOML (optional) ↗",
+"config.toml · plantilla opcional para otro ordenador":"config.toml · optional template for another computer",
+
 "Modelo":"Model",
 "Gasto observado":"Observed spend",
 "Desde que abriste Kilo Local · USD reportados por el gateway":"Since opening Kilo Local · USD reported by the gateway",

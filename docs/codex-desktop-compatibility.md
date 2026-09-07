@@ -27,7 +27,7 @@ This proves backend catalog loading, not an end-to-end Kilo inference or automat
 
 Select catalog rows with checkboxes or select filtered results (up to 50). Per-model controls customize available efforts and the initial effort. Use suggested levels restores presets, including after loading a legacy catalog. Fable 5.1 uses low/medium/high/xhigh/max with high as default, based on [Anthropic effort documentation](https://platform.claude.com/docs/en/build-with-claude/effort). OpenAI presets use exact IDs from the installed Codex capability metadata.
 
-Save writes only the isolated profile's `models.json`, atomically with a `.bak` backup. Load restores saved selections. Save does not rewrite `config.toml`; copy the generated config on first setup and when changing the initial model. Restart the isolated desktop instance after saving. The catalog must be referenced by `model_catalog_json = "models.json"`.
+Before 0.14.0, Save wrote only the isolated profile's `models.json`, atomically with a `.bak` backup. Load restores saved selections. That older flow did not rewrite `config.toml`; it required copying the generated config on first setup and when changing the initial model. Version 0.14.0 replaces that manual step as described below. Restart the isolated desktop instance after saving. The catalog must be referenced by `model_catalog_json = "models.json"`.
 
 The installed app-server's `model/list` was checked for all selected efforts and the initial effort, without paid inference. The proxy preserves Responses `reasoning.effort`, including when adapting Anthropic tool schemas.
 
@@ -54,3 +54,16 @@ Validated with the installed app-server: displayName returns Sol and GLM while m
 Completed proxy requests can be inspected at four stages: original client request, adapted gateway request, original gateway response, and adapted client response. Capture starts enabled, can be paused, and stores at most 30 entries in memory, 128 KiB per body and 32 KiB per header set. At most 16 simultaneous requests are captured. Clear history also prevents earlier in-flight requests from restoring cleared entries. No trace is written to disk.
 
 Authentication headers, cookies and known local/upstream/admin keys are redacted in debug copies; actual traffic is unchanged. Arbitrary secrets embedded in prompts are not automatically detected. The authenticated details endpoint is separate from lightweight state polling. SSE continues flushing while copied, and JSON formatting preserves number lexemes and duplicate keys. Header snapshots represent the proxy HTTP objects rather than a wire-level TCP capture.
+
+
+## Automatic Desktop profile preparation (0.14.0)
+
+**Prepare Codex GUI** creates the isolated profile directory and saves both the catalog and TOML. It updates Kilo-managed defaults and provider settings, including the current local port and the selected initial reasoning effort. If the config selects a named profile, its model defaults are synchronized too. Other settings and comments are preserved using parsed TOML expression ranges; inline tables, dotted/quoted keys and multiline values are supported. The edited result is parsed again and compared with the intended settings before writing.
+
+Existing changed files receive exact `.bak` backups. Identical saves do not replace those backups. Destinations are validated before writing, and each file is replaced atomically; if the TOML write fails after the catalog write, the previous catalog is restored. This is not a crash-atomic transaction across two files. Invalid TOML is left untouched and reported without exposing its contents.
+
+The helper writes only to the fixed isolated profile on its own computer, not a browser-supplied destination. It stores `env_key = "KILO_LOCAL_API_KEY"`; the existing launch command supplies the local key. Conflicting Kilo bearer/command authentication, Authorization header overrides and query parameters are removed. The original Codex profile and the separate CLI setup flow are unchanged.
+
+Validation covers new profiles, repeated saves, exact backups, preservation of unrelated TOML, changed models/ports, selected named profiles, authentication repair, invalid settings and unsafe destinations. Browser checks exercise preparation and updates in English and Spanish. No paid inference is needed to prepare the profile.
+
+The actual helper-written files were also loaded with the installed Codex 0.153.4 app-server in a disposable profile: model/list returned both exact IDs, short names, native reasoning levels and the chosen initial model. No thread or inference was started.

@@ -40,6 +40,13 @@ const cursorModels = new Map();
 const multiClients = Object.fromEntries(['opencode','claude'].map(id=>[id,{models:new Map(),initial:'',aliases:{},signature:''}]));
 let cursorSignature = '';
 let desktopDefault = '', desktopSignature = '';
+let codexSetup = null;
+function codexSetupSignature() { return JSON.stringify([state?.baseURL,codexCatalog([...desktopModels.values()],desktopDefault)]); }
+function renderCodexSetup() {
+  $('save-codex-catalog').textContent=t($('save-codex-catalog').disabled ? 'Preparando perfil…' : '1. Preparar Codex GUI');
+  const ready=codexSetup?.signature===codexSetupSignature();
+  $('codex-setup-status').textContent=ready ? t('Perfil listo en {path}. Copia el arranque para abrir Codex Kilo. Si ya está abierto, ciérralo primero.',{path:codexSetup.path}) : t(codexSetup ? 'Hay cambios sin guardar. Pulsa «Preparar Codex GUI» antes de abrir Codex Kilo.' : 'Pulsa «Preparar Codex GUI» para guardar los modelos y la configuración.');
+}
 function effectiveModel() { if(multiClients[client]?.models.size)return multiClients[client].initial; return client === 'codex' ? desktopDefault : $('model').value.trim(); }
 let catalog = [], catalogRevision, catalogLoading = false, catalogError = '', catalogFetchedAt = '', catalogRequest = 0;
 const descriptions = {
@@ -47,7 +54,7 @@ const descriptions = {
   generic: ['Dos valores. Ninguna cabecera extra.', 'En tu herramienta, elige un proveedor compatible con OpenAI. Pega la URL y la clave local. El modelo mantiene su ID de Kilo.', 'Conexión compatible con OpenAI'],
   zed: ['Tu agente de Zed, con saldo de empresa.', 'En Agent Settings → LLM Providers, añade un proveedor compatible con OpenAI. Combina este bloque con tus ajustes y guarda la clave local en la interfaz del proveedor.', 'settings.json · combinar con tus ajustes'],
   opencode: ['OpenCode, conectado directamente.', 'Configuración para OpenCode v1. En /connect → Other usa el ID kilo-local y pega la clave local. Combina este bloque con tu configuración.', 'opencode.json · v1'],
-  codex: ['Codex Desktop: dos instancias independientes.', 'Crea la carpeta ~/.codex-kilo-desktop y guarda este bloque en su config.toml (en Windows: %USERPROFILE%\\.codex-kilo-desktop\\config.toml). Selecciona el sistema y la ruta de la app. El comando abre otra instancia gráfica con datos propios; conserva tu Codex habitual abierto.', 'config.toml · perfil de Codex Desktop para Kilo'],
+  codex: ['Codex Desktop: dos instancias independientes.', 'Selecciona tus modelos y pulsa «Preparar Codex GUI». El helper crea el perfil aislado y guarda la configuración en este ordenador. Después copia el arranque para abrir una segunda instancia gráfica.', 'config.toml · plantilla opcional para otro ordenador'],
   'codex-cli': ['Codex CLI en otra terminal.', 'Crea ~/.codex-kilo-cli y guarda este bloque en su config.toml (en Windows: %USERPROFILE%\\.codex-kilo-cli\\config.toml). Ejecuta el comando para abrir el CLI con Kilo; usa codex normalmente en otra terminal para tu proveedor habitual.', 'config.toml · perfil de Codex CLI para Kilo'],
   claude: ['Claude Code con tu organización.', 'Combina esta configuración en ~/.claude/settings.json (en Windows, %USERPROFILE%\\.claude\\settings.json). Guarda ahí solo la clave local. Al arrancar Claude, /status debe mostrar la URL del proxy.', 'settings.json · configuración de usuario'],
   xcode: ['Kilo dentro de Xcode.', 'En los ajustes de inteligencia, añade un proveedor de modelos compatible con OpenAI. Introduce estos valores; si pide una cabecera, usa Authorization con el valor Bearer seguido de la clave local.', 'Añadir proveedor de modelos']
@@ -91,6 +98,8 @@ function launch(key) {
 function renderSnippet() {
   const isCodex = ['codex','codex-cli'].includes(client);
   $('codex-copy-help').hidden = !isCodex;
+  $('codex-copy-title').textContent=t(client==='codex' ? 'Configurar y abrir Codex GUI' : 'Codex necesita los dos pasos');
+  $('codex-copy-first').textContent=t(client==='codex' ? '1. Selecciona los modelos y pulsa «Preparar Codex GUI». Se crean la carpeta, config.toml y models.json; si ya existen, se actualizan.' : '1. Copia el bloque completo a config.toml sin sustituir KILO_LOCAL_API_KEY: es el nombre de una variable, no un hueco para pegar la clave.');
   $('copy-launch').textContent = t(isCodex ? '2. Copiar arranque ↗' : 'Copiar comando ↗');
   renderDesktopModels();
   renderCursorModels();
@@ -107,7 +116,7 @@ function renderSnippet() {
   $('launch-preview-note').textContent = t(revealLaunch ? 'Comando completo: puedes seleccionar y copiar este texto. Contiene tu clave local.' : 'Vista previa: la clave está oculta. Usa «Copiar arranque» para copiar el comando completo con la clave real, o muéstrala aquí antes de seleccionar el texto.');
   $('launch-code').textContent = launch(revealLaunch ? state.localKey : 'kl_local_••••••••••••••••');
   $('copy-config').disabled = client !== 'cursor' && !validModelID(effectiveModel());
-  $('copy-config').textContent = t(client === 'cursor' ? 'Copiar guía ↗' : isCodex ? '1. Copiar config.toml ↗' : 'Copiar configuración ↗');
+  $('copy-config').textContent = t(client === 'cursor' ? 'Copiar guía ↗' : client==='codex' ? 'Copiar TOML (opcional) ↗' : isCodex ? '1. Copiar config.toml ↗' : 'Copiar configuración ↗');
   $('copy-launch').disabled = $('copy-config').disabled || (client === 'codex' && !$('desktop-app-path').value.trim());
   if (client === 'codex') $('protocol-note').textContent = t('El perfil de Kilo tiene su propio config.toml y sus propios datos de interfaz. No copies auth.json ni cookies del perfil principal. El mecanismo de aislamiento se ha verificado en el código de la app instalada; puede variar entre versiones. Usa un modelo compatible con Responses.');
   $('client-heading').textContent = info[0]; $('client-description').textContent = info[1]; $('snippet-name').textContent = info[2];
@@ -308,6 +317,7 @@ $('add-cursor-model').addEventListener('click',()=>{
 });
 $('copy-cursor-models').addEventListener('click',()=>cursorModels.size && copy([...cursorModels.keys()].join('\n')));
 function renderDesktopModels() {
+  renderCodexSetup();
   const active=client==='codex';
   $('codex-models').hidden=!active;
   $('codex-bulk-controls').hidden=!active;
@@ -402,8 +412,13 @@ $('suggest-codex-reasoning').addEventListener('click',()=>{for(const model of de
 $('save-codex-catalog').addEventListener('click',async()=>{
   if(!desktopModels.size)return;
   const button=$('save-codex-catalog');button.disabled=true;
-  try {await api('codex/catalog',{catalog:codexCatalog([...desktopModels.values()],desktopDefault)});toast('Catálogo guardado. Reinicia Codex Kilo.');}
-  catch(error){notify(error.message,true);}finally{button.disabled=false;}
+  button.textContent=t('Preparando perfil…');
+  const signature=codexSetupSignature();
+  try {
+    const result=await api('codex/catalog',{catalog:codexCatalog([...desktopModels.values()],desktopDefault)});
+    codexSetup={signature,path:result.profileDir};renderCodexSetup();toast('Perfil de Codex GUI preparado');
+  }catch(error){codexSetup=null;renderCodexSetup();notify(error.message,true);}
+  finally{button.disabled=false;button.textContent=t('1. Preparar Codex GUI');}
 });
 $('codex-manual-id').addEventListener('input',renderDesktopModels);
 $('codex-selected-only').addEventListener('change',renderModels);

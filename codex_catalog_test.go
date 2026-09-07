@@ -39,15 +39,15 @@ func TestCatalogSaveLoadAndBackup(t *testing.T) {
 	if w := catalogRequest(a, "GET", "", true); w.Code != 200 || !strings.Contains(w.Body.String(), `"effort":"high"`) {
 		t.Fatal(w.Code, w.Body.String())
 	}
-	for _, name := range []string{"models.json", "models.json.bak"} {
+	for _, name := range []string{"models.json"} {
 		data, err := os.ReadFile(filepath.Join(a.codexProfileDir, name))
 		if err != nil || !bytes.Equal(bytes.TrimSpace(data), []byte(testCatalog)) {
 			t.Fatal(name, err)
 		}
 	}
-	unchanged, _ := os.ReadFile(filepath.Join(a.codexProfileDir, "config.toml"))
+	unchanged, _ := os.ReadFile(filepath.Join(a.codexProfileDir, "config.toml.bak"))
 	if !bytes.Equal(config, unchanged) {
-		t.Fatal("config modified")
+		t.Fatal("original config not backed up")
 	}
 }
 func TestCatalogRejectsUnsafeWrites(t *testing.T) {
@@ -55,9 +55,10 @@ func TestCatalogRejectsUnsafeWrites(t *testing.T) {
 	a.adminHost = "127.0.0.1:1234"
 	a.codexProfileDir = t.TempDir()
 	body := `{"catalog":` + testCatalog + `}`
-	if w := catalogRequest(a, "POST", body, true); w.Code != 409 {
-		t.Fatal(w.Code)
+	if w := catalogRequest(a, "POST", body, true); w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
 	}
+	os.Remove(filepath.Join(a.codexProfileDir, "models.json"))
 	os.WriteFile(filepath.Join(a.codexProfileDir, "config.toml"), []byte(""), 0600)
 	external := filepath.Join(t.TempDir(), "untouched")
 	os.WriteFile(external, []byte("original"), 0600)
@@ -72,9 +73,9 @@ func TestCatalogRejectsUnsafeWrites(t *testing.T) {
 		t.Fatal("symlink followed")
 	}
 	os.Remove(filepath.Join(a.codexProfileDir, "models.json"))
-	os.WriteFile(filepath.Join(a.codexProfileDir, "models.json"), []byte(testCatalog), 0600)
+	os.WriteFile(filepath.Join(a.codexProfileDir, "models.json"), []byte("{}"), 0600)
 	os.Symlink(external, filepath.Join(a.codexProfileDir, "models.json.bak"))
-	if w := catalogRequest(a, "POST", body, true); w.Code != 500 {
+	if w := catalogRequest(a, "POST", body, true); w.Code != 409 {
 		t.Fatal(w.Code)
 	}
 }
