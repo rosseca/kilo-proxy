@@ -29,7 +29,9 @@ Closing the browser leaves the proxy running. The **K** menu can reopen the pane
 
 Every release includes six archives and `SHA256SUMS.txt`. Linux’s installer adds an application-menu entry for the current user without administrator privileges. Linux tray support requires a graphical session with D-Bus and StatusNotifierItem/AppIndicator support; GNOME may need an AppIndicator extension. Without a compatible tray, use the browser panel or `--no-tray`.
 
-Distribution binaries are **unsigned and not notarized**. macOS and Windows may show origin warnings. Company-wide managed distribution can add signing and macOS notarization separately. The project does not install an auto-updater or change system startup settings.
+macOS bundles have an **ad-hoc signature** covering the executable, bundle metadata, and resources. They are **not Developer ID signed or notarized**; Windows binaries are unsigned. macOS and Windows may show origin warnings. Company-wide managed distribution can add publisher signing and macOS notarization separately. The project does not install an auto-updater or change system startup settings.
+
+If macOS reports that Kilo Local does not respond when opening a `0.20.0` or older download, replace it with `0.20.1` or later. Older ZIPs contained a linker-signed executable without a complete app-bundle signature. The release pipeline now signs and verifies the complete bundle on macOS, verifies it again after extraction, and tests native app launch and graceful quit. Move the replacement app to Applications before opening it. If macOS shows an unidentified-developer warning, follow Apple's [Open Anyway instructions](https://support.apple.com/guide/mac-help/mh40616/mac); this is separate from a broken bundle signature.
 
 ## Editors and models
 

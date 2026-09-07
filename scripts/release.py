@@ -73,7 +73,8 @@ def publish(tag, version, directory):
                 'Portable apps for macOS, Windows, and Linux (x64 and ARM64). '
                 'Download the archive for your system and verify it with SHA256SUMS.txt. '
                 'Windows ZIPs include Kilo Local.exe; macOS ZIPs include Kilo Local.app. '
-                'Packages are unsigned and not notarized. Setup instructions are included in README.md.']
+                'macOS apps are ad-hoc signed for bundle integrity, but not Developer ID signed or notarized; '
+                'Windows binaries are unsigned. Setup instructions are included in README.md.']
         if '-' in version:
             args.append('--prerelease')
         gh(*args)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build unsigned, portable release archives. Requires Go >=1.26 and Python >=3.9."""
+"""Build portable archives with ad-hoc signed macOS bundles; no publisher signing."""
 import argparse
 import hashlib
 import os
@@ -9,12 +9,53 @@ import re
 import shutil
 import struct
 import subprocess
+import sys
 import tarfile
+import tempfile
 import zipfile
 import zlib
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGETS = [('darwin', 'arm64'), ('darwin', 'amd64'), ('linux', 'amd64'), ('linux', 'arm64'), ('windows', 'amd64'), ('windows', 'arm64')]
+
+
+def require_macos(targets):
+    if any(system == 'darwin' for system, _ in targets) and sys.platform != 'darwin':
+        raise ValueError('macOS app bundles must be packaged on macOS so their complete '
+                         'bundle can be signed and verified. Select non-macOS targets '
+                         'with --target (repeat it to build several targets).')
+
+
+def verify_macos_bundle(bundle):
+    subprocess.run(['/usr/bin/codesign', '--verify', '--deep', '--strict',
+                    '--verbose=2', str(bundle)], check=True)
+
+
+def sign_macos_bundle(bundle):
+    # Go's linker signs the executable alone. Once inside an app bundle that
+    # signature does not bind Info.plist or seal Resources; Finder can reject it.
+    # Sign the completed bundle, then fail packaging if its integrity is invalid.
+    # This is an ad-hoc integrity signature, not Developer ID or notarization.
+    subprocess.run(['/usr/bin/codesign', '--force', '--sign', '-',
+                    '--timestamp=none', str(bundle)], check=True)
+    verify_macos_bundle(bundle)
+
+
+def verify_macos_archives(directory, version):
+    require_macos([('darwin', 'arm64')])
+    for system, arch in TARGETS:
+        if system != 'darwin':
+            continue
+        name = f'kilo-local-{version}-{system}-{arch}'
+        archive = directory / (name + '.zip')
+        if not archive.is_file():
+            raise ValueError(f'Missing macOS archive: {archive.name}')
+        with tempfile.TemporaryDirectory(prefix='kilo-macos-archive-') as temporary:
+            # Exercise Apple's ZIP extraction, preserving executable permissions.
+            subprocess.run(['/usr/bin/ditto', '-x', '-k', str(archive), temporary], check=True)
+            bundle = Path(temporary) / name / 'Kilo Local.app'
+            verify_macos_bundle(bundle)
+        print(f'Verified extracted macOS app: {archive.name}', flush=True)
 
 
 def icon_png(size=512):
@@ -44,14 +85,29 @@ def icon_png(size=512):
 def main():
     p = argparse.ArgumentParser()
     p.add_argument('--version', default=(ROOT/'VERSION').read_text().strip())
-    p.add_argument('--target', choices=[f'{o}/{a}' for o,a in TARGETS])
+    p.add_argument('--target', action='append', choices=[f'{o}/{a}' for o,a in TARGETS],
+                   help='Build this target; repeat for several targets (default: all six)')
     p.add_argument('--output', type=Path, default=ROOT/'dist')
+    p.add_argument('--verify-macos-archives', action='store_true',
+                   help='Extract and verify both macOS ZIPs without rebuilding (macOS only)')
     args = p.parse_args()
     if not re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-(?:alpha|beta|rc)\.[1-9][0-9]*)?', args.version):
         p.error('version must be X.Y.Z or X.Y.Z-alpha.N / beta.N / rc.N')
+    if args.verify_macos_archives:
+        if args.target:
+            p.error('--verify-macos-archives verifies both macOS targets; omit --target')
+        try:
+            verify_macos_archives(args.output.resolve(), args.version)
+        except ValueError as error:
+            p.error(str(error))
+        return
+    targets = list(dict.fromkeys(tuple(target.split('/')) for target in args.target)) if args.target else TARGETS
+    try:
+        require_macos(targets)
+    except ValueError as error:
+        p.error(str(error))
     bundle_version = args.version.split('-')[0]
     out = args.output.resolve(); out.mkdir(parents=True, exist_ok=True)
-    targets = [tuple(args.target.split('/'))] if args.target else TARGETS
     archives = []
     for system, arch in targets:
         name = f'kilo-local-{args.version}-{system}-{arch}'
@@ -75,6 +131,8 @@ def main():
         env = dict(os.environ, GOOS=system, GOARCH=arch, CGO_ENABLED='0')
         subprocess.run(['go','build','-trimpath','-ldflags',ldflags,'-o',str(executable),'.'],cwd=ROOT,env=env,check=True)
         executable.chmod(0o755)
+        if system == 'darwin':
+            sign_macos_bundle(bundle.parent)
         shutil.copy2(ROOT/'README.md',stage/'README.md')
         shutil.copy2(ROOT/'THIRD-PARTY-NOTICES.txt',stage/'THIRD-PARTY-NOTICES.txt')
         if (ROOT/'docs').exists(): shutil.copytree(ROOT/'docs',stage/'docs')

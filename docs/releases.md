@@ -18,10 +18,19 @@ python3 -m unittest discover -s scripts -p 'test_*.py'
 Run the Node glob from a shell that expands it, such as Bash or zsh. CI uses Bash on all three operating systems.
 
 ```sh
+# Build all six targets on macOS:
 python3 scripts/package.py
 # Build one target only:
 python3 scripts/package.py --target windows/amd64
+# Build several non-macOS targets on Linux or Windows:
+python3 scripts/package.py --target linux/amd64 --target windows/amd64
+# Verify both macOS ZIPs after extracting them with Apple's ditto:
+python3 scripts/package.py --verify-macos-archives
+# Launch the native macOS archive with a temporary empty profile:
+python3 scripts/smoke_macos.py
 ```
+
+Darwin targets require a macOS host. The packager signs each completed app bundle with an ad-hoc signature and verifies it before creating the ZIP. Go's built-in executable signature alone does not seal an app bundle's `Info.plist` and resources; distributing that incomplete signature can prevent Finder from launching the downloaded app. The ad-hoc signature ensures bundle integrity but does not identify a trusted publisher or replace Developer ID signing and notarization.
 
 The default version comes from the root `VERSION` file. Go embeds that same file for development builds; packaging injects the selected version into the executable. The panel reads the running server’s version. `--version` can override the package version for local experiments; official releases must match `VERSION` and the pushed tag.
 
@@ -46,14 +55,16 @@ The **Release** workflow calls **Test and package**, which:
 
 1. Runs Go race tests, vet, module verification, every Node helper test, and Python release tests on macOS, Linux, and Windows.
 2. Checks that the tag exactly matches `VERSION` before packaging.
-3. Cross-compiles all six operating-system/architecture combinations on Linux with `CGO_ENABLED=0`.
-4. Creates and verifies the complete SHA-256 manifest and uploads a single `release-assets` workflow artifact.
+3. Builds all six operating-system/architecture combinations on macOS with `CGO_ENABLED=0`, including ad-hoc signing and strict verification of both macOS app bundles.
+4. Extracts both macOS ZIPs with Apple's `ditto` and verifies the extracted app signatures, catching missing signature resources or ZIP packaging damage before publication.
+5. Launches the native macOS archive through LaunchServices with a temporary empty profile, checks that native launch finishes and the authenticated control panel reports the expected version, and verifies a clean shutdown.
+6. Creates and verifies the complete SHA-256 manifest and uploads a single `release-assets` workflow artifact.
 
 Only after those jobs pass does the publishing job receive `contents: write`. It downloads and rechecks the assets, creates a draft with GitHub-generated notes, uploads all files, and publishes it. Stable versions become the latest release. Alpha/beta/RC tags are marked as prereleases and do not replace the latest stable release. Concurrent runs of the same tag are serialized.
 
 The repository’s built-in `GITHUB_TOKEN` is sufficient; enable GitHub Actions if your organization disables it. No personal access token, Kilo credential, signing certificate, or Homebrew token is required. Main-branch pushes and pull requests run checks and prepare downloadable workflow artifacts without publishing a release.
 
-This automates release publishing, not installation or updating on user machines. Signing, macOS notarization, Homebrew distribution, Windows MSI/EXE installers, and Linux package repositories are not configured. Windows users receive the standalone GUI application in ZIP for x64 and ARM64.
+This automates release publishing, not installation or updating on user machines. Publisher certificate signing, macOS notarization, Homebrew distribution, Windows MSI/EXE installers, and Linux package repositories are not configured. macOS bundles have local ad-hoc integrity signatures and may still display an unidentified-developer warning. Windows users receive the standalone GUI application in ZIP for x64 and ARM64.
 
 ## Assets and verification
 
