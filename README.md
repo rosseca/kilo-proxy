@@ -41,9 +41,9 @@ Distribution binaries are **unsigned and not notarized**. macOS and Windows may 
 | Claude Code | Automatic isolated profile, version-aware model picker, short names, native effort and terminal launcher |
 | Zed | OpenAI-compatible provider settings |
 | Xcode | Independent Chat model list, automatic Codex/Claude agent profiles, version-aware Claude aliases and setup guidance |
-| Cursor | Multiple model IDs and setup guidance; requires an externally reachable gateway |
+| Cursor | Managed ngrok HTTPS connection, dedicated key, selected models, and public connection check |
 
-**Cursor cannot reach this loopback proxy through its backend.** Its helper prepares model IDs and explains the external HTTPS requirement; it does not enable a local Cursor connection or deploy a tunnel.
+**Cursor connects through a dedicated HTTPS tunnel.** Install and configure ngrok once, select models in the Cursor helper, and click **Connect Cursor**. Copy its URL and dedicated key into Cursor. [Setup, privacy, and compatibility limits](docs/cursor.md).
 
 The catalog supports search, tool-capable text-model filtering, manual IDs, context metadata, and input/output prices in USD per million tokens. Prices come from Kilo’s catalog, not your invoice; zero, variable, and missing prices are distinguished. Refreshing models does not run inference. Model selections are independent between client tabs and remain available during the panel session.
 

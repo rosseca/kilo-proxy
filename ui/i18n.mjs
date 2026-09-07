@@ -1,4 +1,6 @@
 export const translations = {
+"Selecciona modelos y conecta el túnel HTTPS desde el helper de Cursor.":"Select models and connect the HTTPS tunnel from the Cursor helper.",
+"Guía de conexión de Cursor":"Cursor connection guide",
 "1. Preparar Codex CLI":"1. Prepare Codex CLI",
 "Configurar y abrir Codex CLI":"Set up and launch Codex CLI",
 "Perfil de Codex CLI preparado":"Codex CLI profile prepared",

@@ -57,7 +57,7 @@ function renderCodexSetup() {
 function effectiveModel() { if(multiClients[client]?.models.size)return multiClients[client].initial; return isCodexClient() ? codexSelection().initial : $('model').value.trim(); }
 let catalog = [], catalogRevision, catalogLoading = false, catalogError = '', catalogFetchedAt = '', catalogRequest = 0;
 const descriptions = {
-  cursor: ['Cursor: varios modelos, con un requisito de red.', 'Prepara aquí los IDs que quieres añadir a Cursor. La conexión necesita un gateway HTTPS accesible desde sus servidores; Kilo Local no ofrece ese acceso en esta versión.', 'Guía de Cursor · conexión pendiente'],
+  cursor: ['Cursor: varios modelos, con un requisito de red.', 'Selecciona modelos y conecta el túnel HTTPS desde el helper de Cursor.', 'Guía de conexión de Cursor'],
   generic: ['Dos valores. Ninguna cabecera extra.', 'En tu herramienta, elige un proveedor compatible con OpenAI. Pega la URL y la clave local. El modelo mantiene su ID de Kilo.', 'Conexión compatible con OpenAI'],
   zed: ['Tu agente de Zed, con saldo de empresa.', 'En Agent Settings → LLM Providers, añade un proveedor compatible con OpenAI. Combina este bloque con tus ajustes y guarda la clave local en la interfaz del proveedor.', 'settings.json · combinar con tus ajustes'],
   opencode: ['OpenCode, conectado directamente.', 'Configuración para OpenCode v1. En /connect → Other usa el ID kilo-local y pega la clave local. Combina este bloque con tu configuración.', 'opencode.json · v1'],
@@ -94,7 +94,7 @@ async function copy(text) {
 }
 function snippet(reveal = false) {
   if (client === 'claude') return JSON.stringify(claudeSettings(currentClaudeSelection(),currentClaudeCaps(),state?.baseURL || '',reveal ? state?.localKey || '' : 'kl_local_••••••••••••••••'),null,2);
-  if (client === 'cursor') return clientConfig({client,language,models:[...cursorModels.keys()]});
+  if (client === 'cursor') return cursorConnectionGuide(reveal);
   if (!state || !validModelID(effectiveModel())) return t('Selecciona un modelo para generar la configuración.');
   const model = effectiveModel();
   const key = reveal ? state.localKey : 'kl_local_••••••••••••••••';
@@ -324,21 +324,22 @@ for(const alias of ['sonnet','opus','haiku'])$('claude-alias-'+alias).addEventLi
 });
 
 function renderCursorModels() {
+  renderCursorConnection();
   $('cursor-guide').hidden = client !== 'cursor';
   const id=$('model').value.trim();
-  $('add-cursor-model').disabled = !validModelID(id) || cursorModels.has(id) || cursorModels.size>=50;
+  $('add-cursor-model').disabled = !validModelID(id) || cursorModels.has(id) || cursorModels.size>=50 || ['starting','running'].includes(state?.cursor?.status);
   $('copy-cursor-models').disabled = !cursorModels.size;
-  const signature=JSON.stringify({models:[...cursorModels],language});
+  const signature=JSON.stringify({models:[...cursorModels],language,locked:['starting','running'].includes(state?.cursor?.status)});
   if(signature===cursorSignature)return;
   cursorSignature=signature;$('cursor-selected-models').replaceChildren();
   for (const [id,name] of cursorModels) {
     const row=document.createElement('li'),label=document.createElement('span'),remove=document.createElement('button');
     label.textContent=id;remove.type='button';remove.className='text-button';remove.textContent=t('Quitar');remove.setAttribute('aria-label',t('Quitar de Cursor: {model}',{model:id}));
-    remove.addEventListener('click',()=>{cursorModels.delete(id);renderSnippet();});row.append(label,remove);$('cursor-selected-models').append(row);
+    remove.disabled=['starting','running'].includes(state?.cursor?.status);remove.addEventListener('click',()=>{cursorModels.delete(id);renderSnippet();});row.append(label,remove);$('cursor-selected-models').append(row);
   }
 }
 $('add-cursor-model').addEventListener('click',()=>{
-  const id=$('model').value.trim();if(!validModelID(id)||cursorModels.size>=50)return;
+  const id=$('model').value.trim();if(!validModelID(id)||cursorModels.size>=50||['starting','running'].includes(state?.cursor?.status))return;
   cursorModels.set(id,id);renderSnippet();
 });
 $('copy-cursor-models').addEventListener('click',()=>cursorModels.size && copy([...cursorModels.keys()].join('\n')));
@@ -493,7 +494,7 @@ function renderModels() {
   if (!matches.length && !catalogLoading) { const empty=document.createElement('p');empty.textContent=t('Sin resultados. Cambia la búsqueda o desactiva el filtro.');picker.append(empty); }
   if(restoreFocus){const control=[...picker.querySelectorAll('[data-focus]')].find(el=>el.dataset.focus===focusKey);control?.focus({preventScroll:true});if(caret && control?.classList.contains('codex-name-input'))control.setSelectionRange(...caret);}
   picker.scrollTop = scroll;
-  $('model-hint').textContent = client === 'cursor' ? t('Añade varios modelos a tu lista de Cursor. La lista no establece una conexión con el proxy.') : ['codex','codex-cli'].includes(client)
+  $('model-hint').textContent = client === 'cursor' ? (language==='en'?'Add models to the Cursor list, then connect below.':'Añade modelos a la lista de Cursor y conecta abajo.') : ['codex','codex-cli'].includes(client)
     ? t('Codex requiere Responses. Busca OpenAI como punto de partida; el catálogo no certifica esa compatibilidad.')
     : client === 'claude' ? t('Claude Code requiere Messages. Busca Anthropic como punto de partida; el catálogo no certifica esa compatibilidad.')
     : t('Selecciona un modelo y el helper completará su ID y la ventana de contexto de Zed.');
@@ -703,3 +704,46 @@ $('load-claude-profile').addEventListener('click',async()=>{
 });
 
 applyLanguage(language);
+
+function cursorConnectionGuide(reveal=false) {
+ const session=state?.cursor;
+ if(session?.status!=='running')return clientConfig({client:'cursor',language,models:[...cursorModels.keys()]});
+ return `Cursor → Settings → Models
+
+Override OpenAI Base URL: ${session.baseURL}
+OpenAI API Key: ${reveal ? session.key : '••••••••••••••••'}
+
+Add Custom Model:
+${session.models.join('\n')}
+
+${language==='en' ? 'Enable the OpenAI key and URL override. Add each model ID, then select it in chat. Disable the override to return to Cursor built-in models. Tab and Composer are not provided by Kilo.' : 'Activa la clave OpenAI y la URL alternativa. Añade cada ID y selecciónalo en el chat. Desactiva la URL alternativa para volver a los modelos propios de Cursor. Kilo no proporciona Tab ni Composer.'}`;
+}
+function renderCursorConnection() {
+ const en=language==='en',s=state?.cursor,active=['starting','running'].includes(s?.status);
+ if(active){cursorModels.clear();for(const id of s.models)cursorModels.set(id,id)}
+ const texts={
+ 'cursor-heading':en?'Cursor · HTTPS connection':'Cursor · conexión HTTPS',
+ 'cursor-intro':en?'Select models below, then connect. The app starts a dedicated ngrok tunnel for Cursor’s servers.':'Selecciona modelos y conecta. La app inicia un túnel ngrok propio para los servidores de Cursor.',
+ 'cursor-setup-title':en?'First time? Set up ngrok once':'¿Primera vez? Configura ngrok una vez',
+ 'cursor-setup-help':en?'Install ngrok 3 for your OS, create an account, and run the command below with your ngrok authtoken. This is a separate credential from Kilo. Restart Kilo Local after installation.':'Instala ngrok 3 para tu sistema, crea una cuenta y ejecuta el comando con tu authtoken de ngrok. Es una credencial distinta a la de Kilo. Reinicia Kilo Local después de instalarlo.',
+ 'cursor-privacy':en?'Connecting publishes an authenticated inference endpoint. Prompts and responses travel through Cursor, ngrok and Kilo. Local ngrok inspection is disabled; cloud logging follows your ngrok account settings. The admin panel stays private.':'Conectar publica un endpoint de IA autenticado. Los mensajes y respuestas pasan por Cursor, ngrok y Kilo. La inspección local de ngrok está desactivada; los registros en la nube dependen de tu cuenta ngrok. El panel de administración sigue siendo privado.',
+ 'cursor-connect':en?'Connect Cursor':'Conectar Cursor','cursor-disconnect':en?'Disconnect / revoke key':'Desconectar / revocar clave',
+ 'cursor-check':en?'Test public connection (no model charge)':'Probar conexión pública (sin gasto de modelo)',
+ 'cursor-copy-url':en?'Copy URL':'Copiar URL','cursor-copy-key':en?'Copy Cursor key':'Copiar clave de Cursor',
+ 'cursor-steps':en?'Paste these values into Cursor → Settings → Models. Enable the OpenAI key and base URL override. Add the model IDs below, then select one in chat. Turn the override off to use Cursor built-in models.':'Pega estos valores en Cursor → Settings → Models. Activa la clave OpenAI y la URL alternativa. Añade los IDs y selecciona uno en el chat. Desactiva la URL alternativa para usar los modelos propios de Cursor.'};
+ for(const [id,text] of Object.entries(texts))$(id).textContent=text;
+ $('cursor-connect').disabled=active||!state?.running||!cursorModels.size||busy;
+ $('cursor-disconnect').disabled=!s||busy;
+ $('cursor-check').disabled=s?.status!=='running'||busy;
+ $('cursor-status').textContent=s?.error || (s?.status==='running'?(en?'HTTPS tunnel connected. Paste the values below into Cursor.':'Túnel HTTPS conectado. Pega estos valores en Cursor.'):s?.status==='starting'?(en?'Connecting ngrok…':'Conectando ngrok…'):(en?'Disconnected. Start the proxy and select at least one model.':'Desconectado. Inicia el proxy y selecciona al menos un modelo.'));
+ $('cursor-connection').hidden=s?.status!=='running';$('cursor-url').value=s?.baseURL||'';$('cursor-key').value=s?.key||'';
+}
+for(const action of ['connect','disconnect'])$('cursor-'+action).addEventListener('click',async()=>{
+ busy=true;renderCursorConnection();
+ try {await api('cursor',{action:action==='connect'?'start':'stop',models:[...cursorModels.keys()]});render(await api('state'));}
+ catch(error){notify(error.message,true)}finally{busy=false;renderSnippet()}
+});
+$('cursor-copy-url').addEventListener('click',()=>copy(state?.cursor?.baseURL||''));
+$('cursor-copy-key').addEventListener('click',()=>copy(state?.cursor?.key||''));
+
+$('cursor-check').addEventListener('click',async()=>{busy=true;renderCursorConnection();try{await api('cursor',{action:'check'});notify(()=>language==='en'?'Public HTTPS and authentication verified. Now test a chat in Cursor.':'HTTPS público y autenticación verificados. Prueba ahora un chat en Cursor.')}catch(error){notify(error.message,true)}finally{busy=false;renderCursorConnection()}});

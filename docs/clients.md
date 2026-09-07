@@ -108,11 +108,11 @@ The **Xcode** tab has three independent variants: **Chat**, **Codex in Xcode** a
 
 ## Cursor
 
-The helper collects up to 50 model IDs, with search, prices, removal, and **Copy model IDs**. Add exact IDs individually under **Settings → Models → Add Custom Model / Add model**, then enable them in Cursor’s picker. This list is independent of Codex and is not a Codex `models.json` file.
+The helper manages a dedicated ngrok HTTPS tunnel, since Cursor's servers cannot reach localhost. Install ngrok 3 and configure its account once, start the local proxy, select up to 50 model IDs, and click **Connect Cursor**. Copy the public URL and dedicated Cursor key into **Settings → Models → OpenAI API Key / Override OpenAI Base URL**. Add the exact custom IDs and select one in chat.
 
-Cursor’s backend cannot reach your computer’s `127.0.0.1`. Its base-URL override needs an externally reachable HTTPS gateway. Kilo Local is loopback-only and validates Host, so pointing Cursor at its local URL or adding a default tunnel does not establish a supported connection. The helper deliberately leaves URL/credential fields for an organization-provided reachable gateway; it deploys no remote gateway or tunnel.
+**Test public connection** checks authentication and model-list reachability without inference charges. Disconnecting revokes the key. Only selected models and Chat Completions are exposed; the control panel remains local. Prompts pass through Cursor, ngrok, and Kilo. Cursor's BYOK limitations still apply, including Tab/Composer and model-dependent reasoning or Agent support.
 
-Model listing is not compatibility validation. Cursor BYOK coverage, reasoning support, and protocol routing depend on its version and model; Tab uses its own models. Preserve Kilo prefixes rather than assuming custom IDs match Cursor’s native IDs.
+See the [complete Cursor guide](cursor.md) for setup, account requirements, troubleshooting, and tested coverage.
 
 ## Sources
 

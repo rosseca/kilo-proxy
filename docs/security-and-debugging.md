@@ -43,6 +43,14 @@ Protocols are preserved, subject to the [Anthropic tool-schema bridge](clients.m
 
 The catalog is public and can be retrieved without login. When credentials and an organization are saved, both are included in the backend request. Only normalized metadata reaches the browser. Changing the connection invalidates prior catalog requests. Catalog access and prices do not prove balance, negotiated discounts, or organization policy.
 
+## Optional Cursor HTTPS ingress
+
+**Connect Cursor** starts a separate loopback listener and ngrok process. Only this listener is exposed through ngrok; the ordinary proxy and admin panel keep their existing network restrictions. Cursor uses an independent, in-memory `kl_cursor_…` bearer token and can request only selected models through Chat Completions. The public model list is generated locally. Requests are limited to 16 MiB and eight concurrent generations; browser-origin requests, arbitrary query strings, and other routes are rejected.
+
+Stopping Cursor, stopping the main proxy, or quitting the app closes the ingress and cancels the tunnel process. Reconnecting generates a fresh key. The public connection check sends the Cursor token to the session's HTTPS URL, refuses redirects, and verifies the selected model list without calling Kilo. This check is not paid inference or native Cursor validation.
+
+Messages pass through Cursor and ngrok before reaching the local proxy. Local ngrok inspection is disabled, while cloud logging follows the ngrok account configuration. Kilo Local discards raw ngrok process logs and may display only a recognized `ERR_NGROK_…` code alongside its own diagnostic message. See [Cursor setup and privacy](cursor.md).
+
 ## Activity inspector
 
 **Inspect** opens four stages for a completed request:

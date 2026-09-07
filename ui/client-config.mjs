@@ -84,7 +84,7 @@ export function cursorGuide(models, language='es') {
 Kilo Local is loopback-only. Cursor's servers cannot reach it.
 Do not paste its localhost URL or local key into Cursor.
 
-Once an approved gateway is available:
+Connect the ngrok tunnel in the Cursor helper to obtain the public URL and Cursor key. Then:
 1. Cursor Settings > Models: enable OpenAI API Key.
 2. Override OpenAI Base URL: use that gateway's public HTTPS API URL.
 3. API key: use the credential issued for that gateway.
@@ -101,7 +101,7 @@ Model IDs (add one at a time):
 Kilo Local solo escucha en loopback. Los servidores de Cursor no pueden acceder.
 No pegues su URL localhost ni su clave local en Cursor.
 
-Cuando dispongas de un gateway aprobado:
+Conecta el túnel ngrok del helper de Cursor para obtener la URL pública y la clave de Cursor. Después:
 1. Cursor Settings > Models: activa OpenAI API Key.
 2. Override OpenAI Base URL: usa la URL HTTPS pública de la API de ese gateway.
 3. API key: usa la credencial emitida para ese gateway.

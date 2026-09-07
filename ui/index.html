@@ -67,9 +67,10 @@
 <p class="field-help">El catálogo es público. Los permisos de tu organización y la compatibilidad con cada API se comprueban al generar.</p>
 <p class="field-help">Precios publicados por Kilo, sin impuestos ni posibles ajustes por caché, contexto o proveedor. Los modelos Auto pueden tener precio variable.</p>
 </div><section id="cursor-guide" class="model-details" hidden>
-<h4>Cursor · requiere acceso HTTPS externo</h4>
-<p>Las peticiones de Cursor pasan por sus servidores. No pueden acceder a la URL local de este proxy. Esta versión prepara la guía y la lista; la conexión con Cursor todavía no está habilitada.</p>
-<p>Para conectar Kilo con saldo de empresa hace falta un gateway HTTPS accesible por Cursor que añada la cabecera de organización. Publicar un túnel sin más tampoco basta: este proxy valida el Host y está diseñado para uso local.</p>
+<h4 id="cursor-heading"></h4><p id="cursor-intro"></p>
+<details><summary id="cursor-setup-title"></summary><p id="cursor-setup-help"></p><pre>ngrok config add-authtoken YOUR_NGROK_AUTHTOKEN</pre><a href="https://ngrok.com/download" target="_blank" rel="noreferrer">Install ngrok ↗</a> · <a href="https://dashboard.ngrok.com/get-started/your-authtoken" target="_blank" rel="noreferrer">ngrok account ↗</a></details>
+<p id="cursor-privacy"></p><div class="xcode-actions"><button id="cursor-connect" type="button" class="primary-button"></button><button id="cursor-disconnect" type="button" class="secondary-button"></button></div><button id="cursor-check" type="button" class="secondary-button"></button><p id="cursor-status" role="status"></p>
+<div id="cursor-connection" hidden><label for="cursor-url">Override OpenAI Base URL</label><input id="cursor-url" readonly><button id="cursor-copy-url" type="button" class="text-button"></button><label for="cursor-key">OpenAI API Key</label><input id="cursor-key" type="password" readonly><button id="cursor-copy-key" type="button" class="text-button"></button><p id="cursor-steps"></p></div>
 <p>Cursor permite añadir varios IDs en Settings → Models → Add Custom Model / Add model, activarlos y elegirlos desde su selector. Conserva el ID completo de Kilo.</p>
 <button id="add-cursor-model" type="button" class="secondary-button">Añadir a la lista de Cursor</button>
 <ul id="cursor-selected-models"></ul>
