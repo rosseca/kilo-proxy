@@ -18,9 +18,9 @@
       <div class="main-grid">
         <section class="card connection-card" id="connection" aria-labelledby="connection-title">
           <div class="card-heading"><div><div class="step-label">01 / CONEXIÓN</div><h2 id="connection-title">Tu cuenta de Kilo</h2></div><span class="card-symbol">↗</span></div>
-          <div class="sso-section"><button type="button" id="sso-login" class="sso-button">Conectar con Kilo <span>↗</span></button><p>Entra desde Kilo con tu cuenta o el SSO de tu empresa.</p><div id="login-progress" class="auth-status" role="status" hidden><p id="login-message"></p><div id="login-verification" hidden><span>Código: <strong id="login-code"></strong></span><a id="login-link" target="_blank" rel="noopener noreferrer">Abrir login de Kilo ↗</a></div><button id="cancel-login" class="text-button" type="button" hidden>Cancelar login</button></div><p id="account-email" hidden></p></div>
+          <div class="sso-section"><button type="button" id="sso-login" class="sso-button" disabled>Conectar con Kilo <span>↗</span></button><p>Entra desde Kilo con tu cuenta o el SSO de tu empresa.</p><div id="login-progress" class="auth-status" role="status" hidden><p id="login-message"></p><div id="login-verification" hidden><span>Código: <strong id="login-code"></strong></span><a id="login-link" target="_blank" rel="noopener noreferrer">Abrir login de Kilo ↗</a></div><button id="cancel-login" class="text-button" type="button" hidden>Cancelar login</button></div><p id="account-email" hidden></p></div>
           <form id="connection-form">
-            <fieldset id="credentials-fields">
+            <fieldset id="credentials-fields" disabled>
               <label for="api-key">API key manual (alternativa) <span class="label-note" id="key-state">Sin login</span></label>
               <div class="input-wrap"><input id="api-key" type="password" placeholder="Pega tu API key de Kilo" autocomplete="off" spellcheck="false"><button type="button" id="toggle-key" class="input-action" aria-label="Mostrar API key" aria-pressed="false">Ver</button></div>
               <p class="field-help">Disponible en tu perfil personal de Kilo → API keys.</p>
@@ -29,7 +29,7 @@
               <div class="port-row"><div><label for="port">Puerto local</label><input id="port" type="number" min="1024" max="65535" value="8877" required></div><div class="port-caption"><span class="device-dot"></span> Escucha solo en tu equipo.<br>La organización se añade automáticamente.</div></div>
               <label class="checkbox-label"><input type="checkbox" id="remember"><span>Recordar API key en este equipo<small>Usa el almacén de credenciales de tu sistema.</small></span></label>
             </fieldset>
-            <div class="form-actions"><button id="start-stop" class="primary-button" type="submit"><span id="start-icon">▶</span><span id="start-label">Guardar y arrancar</span></button><button type="button" id="check" class="secondary-button">Comprobar gateway</button></div>
+            <div class="form-actions"><button id="start-stop" class="primary-button" type="submit" disabled><span id="start-icon">▶</span><span id="start-label">Guardar y arrancar</span></button><button type="button" id="check" class="secondary-button" disabled>Comprobar gateway</button></div>
             <div class="form-foot"><span id="connection-foot">La clave de Kilo nunca se copia a tu editor.</span><button id="forget" type="button" class="text-button" hidden>Olvidar clave</button></div>
           </form>
         </section>

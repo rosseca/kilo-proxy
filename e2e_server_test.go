@@ -41,6 +41,7 @@ func TestE2EServer(t *testing.T) {
 	launchControl := filepath.Join(root, "launch-control.json")
 	launchRecords := filepath.Join(root, "launch-records.json")
 	prepareWaiting := filepath.Join(root, "prepare-waiting")
+	stateWaiting := filepath.Join(root, "state-waiting")
 	readLaunchControl := func() map[string]any {
 		var control map[string]any
 		data, _ := os.ReadFile(launchControl)
@@ -141,6 +142,16 @@ func TestE2EServer(t *testing.T) {
 	admin := a.adminHandler()
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		control := readLaunchControl()
+		if r.URL.Path == "/api/state" && control["holdState"] == true {
+			_ = os.WriteFile(stateWaiting, []byte("waiting"), 0600)
+			for readLaunchControl()["holdState"] == true {
+				select {
+				case <-r.Context().Done():
+					return
+				case <-time.After(10 * time.Millisecond):
+				}
+			}
+		}
 		if r.Method == "POST" && (strings.HasSuffix(r.URL.Path, "/catalog") || strings.HasSuffix(r.URL.Path, "/profile") || strings.HasPrefix(r.URL.Path, "/api/xcode/") && r.URL.Path != "/api/xcode/info") {
 			if control["holdPrepare"] == true {
 				_ = os.WriteFile(prepareWaiting, []byte("waiting"), 0600)
@@ -166,7 +177,7 @@ func TestE2EServer(t *testing.T) {
 	data, err := json.Marshal(map[string]any{
 		"url": "http://" + a.adminHost + "/#" + a.adminToken, "token": a.adminToken,
 		"proxyPort": a.config.Port, "baseURL": "http://127.0.0.1:" + strconv.Itoa(a.config.Port) + "/v1", "root": root,
-		"launchControl": launchControl, "launchRecords": launchRecords, "prepareWaiting": prepareWaiting,
+		"launchControl": launchControl, "launchRecords": launchRecords, "prepareWaiting": prepareWaiting, "stateWaiting": stateWaiting,
 		"profiles": map[string]string{"codex": a.codexProfileDir, "codex-cli": a.codexCLIProfileDir, "claude": a.claudeProfileDir, "opencode": filepath.Join(root, ".opencode-kilo"), "zed": filepath.Join(root, ".config", "zed")},
 	})
 	if err != nil {

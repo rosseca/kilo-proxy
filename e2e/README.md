@@ -15,6 +15,7 @@ Each fixture uses a temporary profile root and an in-memory credential store. It
 Coverage includes:
 
 - Manual credentials, team selection, gateway checks, proxy start/stop, and forgetting credentials.
+- Initial connection controls wait for the first real state response, so saved settings cannot overwrite credentials entered during page startup.
 - English/Spanish switching and persistence, client tabs and keyboard navigation, and a narrow mobile viewport.
 - Independent Codex Desktop and CLI profiles, short names, reasoning metadata, and launch commands.
 - Claude model picker, provider aliases, configuration preservation, and reload.
