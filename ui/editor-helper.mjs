@@ -28,7 +28,7 @@ export function editorLaunch(path,model,shell='unix'){
 }`;
  return `(\n  kilo_config=${quote(path)}\n  [ -f "$kilo_config" ] || { printf '%s\\n' 'Prepare OpenCode first.' >&2; exit 1; }\n  unset OPENCODE_CONFIG_CONTENT\n  OPENCODE_CONFIG="$kilo_config" opencode --model ${quote('kilo-local/'+model)}\n)`;
 }
-export function createEditorHelper({api,notify,copy,refreshCatalog}){
+export function createEditorHelper({api,notify,copy,refreshCatalog,onChange=()=>{}}){
  const $=id=>document.getElementById(id),selections=Object.fromEntries(['opencode','zed'].map(id=>[id,{models:new Map(),initial:'',saved:null,path:''}]));
  let ctx={client:'opencode',language:'en',catalog:[]},working=false,signature='',renderedClient='';
  const L=(en,es)=>ctx.language==='en'?en:es,s=()=>selections[ctx.client];
@@ -42,9 +42,9 @@ export function createEditorHelper({api,notify,copy,refreshCatalog}){
    'editor-intro':zed?L('Save multiple models and short names directly to Zed settings. Other providers and settings are retained.','Guarda varios modelos y nombres cortos directamente en los ajustes de Zed. Se conservan otros proveedores y ajustes.'):L('Prepare a dedicated OpenCode configuration with your models and local authentication.','Prepara una configuración propia de OpenCode con tus modelos y autenticación local.'),
    'editor-refresh':L('Refresh catalog','Actualizar catálogo'),'editor-load':L('Load saved selection','Cargar selección guardada'),'editor-save':working?L('Working…','Preparando…'):L('1. Prepare ','1. Preparar ')+name,
    'editor-add':L('Add model','Añadir modelo'),'editor-manual-title':L('Add by exact ID','Añadir por ID exacto'),'editor-selected-label':L('Selected only','Solo seleccionados'),
-   'editor-copy':zed?L('2. Copy key for Zed','2. Copiar clave para Zed'):L('2. Copy launch command','2. Copiar arranque'),
+   'editor-copy':zed?L('Copy key for Zed','Copiar clave para Zed'):L('Copy launch command (optional)','Copiar arranque (opcional)'),
    'editor-export':L('Copy configuration (optional)','Copiar configuración (opcional)'),
-   'editor-next':zed?L('After preparing: in Zed, open “agent: open settings”, find kilo-local and paste the copied local key once. Zed stores it in its keychain. Select a model in the Agent panel. This configures Zed Agent, not edit prediction or external agents.','Después de preparar: abre «agent: open settings» en Zed, busca kilo-local y pega la clave local una vez. Zed la guarda en su llavero. Elige modelo en el panel Agent. Configura Zed Agent, no la predicción de código ni agentes externos.'):L('Run the command in a project terminal. Use /models to switch models. No /connect is needed: the protected profile stores only the local proxy key. Global and project settings still merge; project settings can override this profile.','Ejecuta el comando en una terminal del proyecto. Cambia con /models. No hace falta /connect: el perfil protegido guarda solo la clave local del proxy. Se combinan los ajustes globales y del proyecto; los del proyecto pueden prevalecer.'),
+   'editor-next':zed?L('After opening: in Zed, open “agent: open settings”, find kilo-local and paste the copied local key once. Zed stores it in its keychain. Select a model in the Agent panel. This configures Zed Agent, not edit prediction or external agents.','Después de abrir: en Zed, abre «agent: open settings», busca kilo-local y pega la clave local una vez. Zed la guarda en su llavero. Elige modelo en el panel Agent. Configura Zed Agent, no la predicción de código ni agentes externos.'):L('Open above to start a project terminal, or copy the optional command. Use /models to switch models. No /connect is needed: the protected profile stores only the local proxy key. Global and project settings still merge; project settings can override this profile.','Abre desde el botón superior para iniciar una terminal del proyecto, o copia el comando opcional. Cambia con /models. No hace falta /connect: el perfil protegido guarda solo la clave local del proxy. Se combinan los ajustes globales y del proyecto; los del proyecto pueden prevalecer.'),
    'editor-limit-note':L('Uses Chat Completions. Model lists and saved settings do not verify generation or tool support. Context defaults to 200,000 for unknown models: review limits below. Changed files receive .bak backups.','Usa Chat Completions. La lista y los ajustes guardados no verifican generación ni herramientas. El contexto de modelos desconocidos se inicia en 200.000: revisa sus límites abajo. Los archivos modificados reciben copia .bak.')};
   for(const [id,text]of Object.entries(labels))$(id).textContent=text;
   $('editor-search').placeholder=L('Search model, provider or saved name','Buscar modelo, proveedor o nombre guardado');
@@ -57,6 +57,7 @@ export function createEditorHelper({api,notify,copy,refreshCatalog}){
   $('editor-shell').hidden=zed;
   $('editor-status').textContent=prepared()?L('Configuration saved: ','Configuración guardada: ')+s().path:s().saved?L('Unsaved changes. Prepare this editor again.','Cambios sin guardar. Prepara este editor de nuevo.'):L('Select models and prepare the configuration.','Selecciona modelos y prepara la configuración.');
   $('editor-preview').textContent=prepared()?(zed?L('Provider: kilo-local\nAPI key: ••••••••••••••••','Proveedor: kilo-local\nAPI key: ••••••••••••••••'):editorLaunch(s().path,s().initial,$('editor-shell').value)):'';
+  onChange();
  }
  function render(context,force=false){
   if(ctx.client!==context.client){$('editor-search').value='';$('editor-selected').checked=false;}
@@ -96,15 +97,17 @@ export function createEditorHelper({api,notify,copy,refreshCatalog}){
  $('editor-shell').addEventListener('change',controls);
  $('editor-refresh').addEventListener('click',()=>refreshCatalog());
  $('editor-add').addEventListener('click',()=>{const id=$('editor-id').value.trim();if(!validModelID(id)||s().models.size>=50)return;s().models.set(id,ctx.catalog.find(m=>m.id===id)||{id,name:id});if(!s().initial)s().initial=id;$('editor-search').value='';$('editor-selected').checked=true;$('editor-id').value='';render(ctx)});
- $('editor-save').addEventListener('click',async()=>{
+ async function prepare(){
+  if(working)throw new Error(L('This editor is already being prepared.','Este editor ya se está preparando.'));
   const client=ctx.client,selection=s(),fp=fingerprint(),body=payload();working=true;render(ctx);
-  try{const result=await api('editors/'+client+'/profile',body);selection.path=result.configPath;selection.saved=fp;notify(()=>L('Editor configuration saved.','Configuración del editor guardada.'))}catch(e){notify(e.message,true)}finally{working=false;render(ctx)}
- });
+  try{const result=await api('editors/'+client+'/profile',body);selection.path=result.configPath;selection.saved=fp;notify(()=>L('Editor configuration saved.','Configuración del editor guardada.'))}finally{working=false;render(ctx)}
+ }
+ $('editor-save').addEventListener('click',()=>prepare().catch(e=>notify(e.message,true)));
  $('editor-load').addEventListener('click',async()=>{
   const client=ctx.client,selection=s();working=true;render(ctx);
   try{const result=await api('editors/'+client+'/profile');selection.models=new Map(result.selection.models.map(m=>[m.id,m]));selection.initial=result.selection.initial;selection.path=result.configPath;selection.saved=null;$('editor-selected').checked=true;$('editor-search').value='';notify(()=>L('Selection loaded. Prepare again to apply current connection settings.','Selección cargada. Prepara de nuevo para aplicar la conexión actual.'))}catch(e){notify(e.message,true)}finally{working=false;render(ctx)}
  });
  $('editor-copy').addEventListener('click',()=>prepared()&&copy(ctx.client==='zed'?ctx.state.localKey:editorLaunch(s().path,s().initial,$('editor-shell').value)));
  $('editor-export').addEventListener('click',()=>copy(clientConfig({client:ctx.client,language:ctx.language,baseURL:ctx.state?.baseURL,key:ctx.state?.localKey,model:s().initial,selectedModels:payload().models})));
- return {render};
+ return {render,launchState:()=>({id:ctx.client,count:s().models.size,ready:prepared(),fingerprint:fingerprint(),working,prepare})};
 }

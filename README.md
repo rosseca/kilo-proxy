@@ -15,7 +15,7 @@ Connect with your personal Kilo account, choose your organization, and copy a lo
 1. Download the archive for your operating system and architecture from **Releases**, then extract it.
 2. Open **Kilo Proxy.app** on macOS, **Kilo Proxy.exe** on Windows, or run `./kilo-proxy` on Linux.
 3. Click **Sign in with Kilo / SSO** and approve the device code on Kilo’s website using your usual login or SSO. Choose your organization, then click **Save & start**. Manual API key and organization ID entry is also available.
-4. Open **Clients & models** and choose your editor. Select models, click **1. Prepare profile** where available, then copy its launch or connection instructions.
+4. Open **Clients & models** and choose your editor. Select models, choose a project folder if needed, and click **Launch**. The helper prepares pending changes and opens the installed client. Zed, Cursor and Xcode retain their one-time connection setup.
 
 The default API URL is `http://127.0.0.1:8877/v1`. The editor uses a randomly generated **local API key**, not your personal Kilo key. Enable **Remember** to save the upstream credential in the operating system’s credential store when saving the connection.
 
@@ -55,7 +55,7 @@ The model helpers support catalog search, manual IDs, context metadata, and inpu
 
 Filter every model picker by **lab**, using publishers from your catalog and saved manual models, then sort by **Code Mode Rank**, **Coding Index**, **Speed**, **Price**, or **Name**. The default is Kilo's seven-day Code mode usage rank; price ordering uses input cost. Missing metrics appear last, and filtering and sorting preserve your selections and initial model. [Sources and sorting behavior](docs/clients.md#sort-the-model-catalog).
 
-For Codex Desktop, select models, choose an initial model and reasoning level, and edit display names to shorten labels. Click **1. Prepare profile** to create the isolated profile folder and save or update both `config.toml` and `models.json`, preserving unrelated settings and backing up changed files. Then copy the launch command; close the Kilo instance first if it is already running. The actual Kilo model IDs remain unchanged.
+For Codex Desktop, select models, choose an initial model and reasoning level, and edit display names to shorten labels. Click **Launch** to prepare the isolated profile folder, save or update both `config.toml` and `models.json`, and open Codex with separate interface data. Unrelated settings are preserved and changed files are backed up. Close the Kilo instance before relaunching if its environment settings changed. Manual preparation and command exports remain available. The actual Kilo model IDs remain unchanged.
 
 Claude Code has the same select-and-prepare flow in its own tab. It detects the installed version, writes a separate profile with backups, and enables supported native model names and reasoning preferences. See [client setup](docs/clients.md) for profile isolation, saving, and compatibility limits.
 

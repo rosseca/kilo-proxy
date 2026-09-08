@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -9,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -35,6 +38,40 @@ func TestE2EServer(t *testing.T) {
 	a.claudeProfileDir = filepath.Join(root, ".claude-kilo")
 	a.xcodeTestRoot = filepath.Join(root, "xcode")
 	a.config.Language = "en"
+	launchControl := filepath.Join(root, "launch-control.json")
+	launchRecords := filepath.Join(root, "launch-records.json")
+	prepareWaiting := filepath.Join(root, "prepare-waiting")
+	readLaunchControl := func() map[string]any {
+		var control map[string]any
+		data, _ := os.ReadFile(launchControl)
+		_ = json.Unmarshal(data, &control)
+		return control
+	}
+	var launchRecordMu sync.Mutex
+	records := []map[string]string{}
+	a.launcher = &clientLaunchRuntime{
+		platform: "macos", home: root,
+		resolve: func(client, custom string) (string, error) {
+			if readLaunchControl()["unavailable"] == client && custom == "" {
+				return "", errors.New("Synthetic application unavailable.")
+			}
+			if custom != "" {
+				return custom, nil
+			}
+			return "/synthetic/" + client, nil
+		},
+		terminal: func() (bool, string) { return true, "" },
+		start: func(plan clientLaunchPlan) error {
+			if readLaunchControl()["fail"] == true {
+				return errors.New("synthetic launch failure")
+			}
+			launchRecordMu.Lock()
+			defer launchRecordMu.Unlock()
+			records = append(records, map[string]string{"client": plan.Client, "directory": plan.Directory, "executable": plan.Executable, "kind": plan.Kind})
+			data, _ := json.Marshal(records)
+			return os.WriteFile(launchRecords, data, 0600)
+		},
+	}
 	port, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -99,12 +136,35 @@ func TestE2EServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.adminHost = listener.Addr().String()
-	server := &http.Server{Handler: a.adminHandler(), ReadHeaderTimeout: 5 * time.Second}
+	admin := a.adminHandler()
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		control := readLaunchControl()
+		if r.Method == "POST" && (strings.HasSuffix(r.URL.Path, "/catalog") || strings.HasSuffix(r.URL.Path, "/profile") || strings.HasPrefix(r.URL.Path, "/api/xcode/") && r.URL.Path != "/api/xcode/info") {
+			if control["holdPrepare"] == true {
+				_ = os.WriteFile(prepareWaiting, []byte("waiting"), 0600)
+				for readLaunchControl()["holdPrepare"] == true {
+					select {
+					case <-r.Context().Done():
+						return
+					case <-time.After(10 * time.Millisecond):
+					}
+				}
+			}
+		}
+		if r.URL.Path == "/api/state" && control["cursorRunning"] == true {
+			a.mu.Lock()
+			a.cursor = &cursorSession{Status: "running", URL: "https://synthetic.example/v1", Key: "synthetic-cursor-local-key", Models: []string{"vendor/one"}}
+			a.mu.Unlock()
+		}
+		admin.ServeHTTP(w, r)
+	})
+	server := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second}
 	go server.Serve(listener)
 	defer server.Close()
 	data, err := json.Marshal(map[string]any{
 		"url": "http://" + a.adminHost + "/#" + a.adminToken, "token": a.adminToken,
 		"proxyPort": a.config.Port, "baseURL": "http://127.0.0.1:" + strconv.Itoa(a.config.Port) + "/v1", "root": root,
+		"launchControl": launchControl, "launchRecords": launchRecords, "prepareWaiting": prepareWaiting,
 		"profiles": map[string]string{"codex": a.codexProfileDir, "codex-cli": a.codexCLIProfileDir, "claude": a.claudeProfileDir, "opencode": filepath.Join(root, ".opencode-kilo"), "zed": filepath.Join(root, ".config", "zed")},
 	})
 	if err != nil {

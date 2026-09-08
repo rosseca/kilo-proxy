@@ -30,6 +30,8 @@ type event struct {
 }
 
 type app struct {
+	launcher           *clientLaunchRuntime
+	launchMu           sync.Mutex
 	desktop            desktopBridge
 	desktopProbes      chan desktopProbe
 	editorTestRoot     string

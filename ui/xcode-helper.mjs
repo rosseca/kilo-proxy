@@ -17,7 +17,7 @@ export function xcodeSelectionPayload(variant,models,initial,aliases={}) {
  if(variant==='claude'){const ids=[initial,...models.map(m=>m.id).filter(id=>id!==initial)];aliases=Object.fromEntries(['sonnet','opus','haiku'].map((name,i)=>[name,aliases[name] || ids[i] || initial]));}
  return claudeSelection(models,initial,aliases,'installed');
 }
-export function createXcodeHelper({api,notify,refreshCatalog}) {
+export function createXcodeHelper({api,notify,refreshCatalog,onChange=()=>{}}) {
  const $=id=>document.getElementById(id), states=Object.fromEntries(['chat','codex','claude'].map(id=>[id,{models:new Map(),initial:'',aliases:{},saved:null}]));
  let variant='chat',context={catalog:[],language:'en'},installation=null,loading=false,saving=false,signature='',detected=false;
  const L=(en,es)=>context.language==='en'?en:es;
@@ -32,6 +32,7 @@ export function createXcodeHelper({api,notify,refreshCatalog}) {
   $('xcode-status').textContent=ready?L('Saved: ','Guardado: ')+s.saved.path: s.saved?L('Unsaved changes. Prepare this variant again.','Hay cambios sin guardar. Prepara esta variante de nuevo.'):L('Choose models and prepare this variant.','Elige modelos y prepara esta variante.');
   $('xcode-guide').textContent=variant==='chat'?xcodeChatGuide(context.state?.baseURL||'http://127.0.0.1:8877/v1','kl_local_••••••••••••••••',context.language):L('Close Xcode before preparing its agent profile. Then reopen Xcode, enable/install the agent in Settings → Intelligence and start a new conversation. Keep Kilo Proxy running.\n\nThe profile contains only the local proxy key; no terminal environment is required. These settings affect the agent inside Xcode. Existing unrelated settings are kept, with .bak backups.\n\nXcode may override the active model or restrict its picker. A saved profile is not proof of a successful gateway request.','Cierra Xcode antes de preparar el perfil del agente. Después abre Xcode, activa/instala el agente en Settings → Intelligence e inicia una conversación nueva. Mantén Kilo Proxy abierto.\n\nEl perfil contiene solo la clave local del proxy; no requiere variables de terminal. Estos ajustes afectan al agente dentro de Xcode. Conservamos los demás ajustes con copias .bak.\n\nXcode puede imponer el modelo activo o limitar su selector. Un perfil guardado no verifica una petición al gateway.')+'\n\n'+(variant==='codex'?'~/Library/Developer/Xcode/CodingAssistant/codex/config.toml\n~/Library/Developer/Xcode/CodingAssistant/codex/models.json':'~/Library/Developer/Xcode/CodingAssistant/ClaudeAgentConfig/settings.json');
   $('xcode-copy').hidden=variant!=='chat';$('xcode-copy').disabled=!s.models.size;
+  onChange();
  }
  function render(next=context){
   context=next;
@@ -54,7 +55,7 @@ export function createXcodeHelper({api,notify,refreshCatalog}) {
   $('xcode-add').textContent=L('Add','Añadir');$('xcode-load').textContent=L('Load saved selection','Cargar selección guardada');
   $('xcode-detect').textContent=loading?L('Checking…','Comprobando…'):L('Detect Xcode','Detectar Xcode');
   $('xcode-detect').disabled=loading;
-  $('xcode-copy').textContent=L('2. Copy connection details','2. Copiar conexión');
+  $('xcode-copy').textContent=L('Copy connection details','Copiar conexión');
   $('xcode-compatibility').textContent=!installation?L('Detect Xcode before preparing agent profiles. Chat works through the local proxy.','Detecta Xcode antes de preparar los perfiles de agentes. Chat funciona a través del proxy local.'):!installation.available?L('Xcode was not found on this computer. Agent preparation requires macOS and Xcode.','No se encontró Xcode en este ordenador. Preparar agentes requiere macOS y Xcode.'):`Xcode ${installation.version} · Codex ${installation.codexVersion||'?'} · Claude ${caps().version||'?'} — `+L('versions advertised by Xcode; downloaded agents may differ.','versiones anunciadas por Xcode; los agentes descargados pueden variar.');
   $('xcode-limit-note').textContent=variant==='claude'&&!caps().picker?L('This Claude version uses up to three aliases (Sonnet, Opus, Haiku). Map them below. Xcode may show its built-in labels. Only the initial model can set global reasoning.','Esta versión de Claude usa hasta tres alias (Sonnet, Opus, Haiku). Asígnalos abajo. Xcode puede mostrar sus nombres propios. Solo el modelo inicial puede fijar el razonamiento global.'):variant==='chat'?L('Up to 50 models. Exact gateway IDs are preserved. Short names are hints; Xcode may display IDs. Provider registration in Xcode is manual.','Hasta 50 modelos. Se conservan los IDs exactos del gateway. Los nombres cortos son orientativos; Xcode puede mostrar los IDs. El alta del proveedor en Xcode es manual.'):L('Up to 50 models. The profile includes names and supported reasoning. Xcode controls which choices appear in its own interface. Its verified Codex catalog supports levels up to xhigh; max and ultra are omitted.','Hasta 50 modelos. El perfil incluye nombres y razonamiento compatible. Xcode controla qué opciones aparecen en su interfaz. Su catálogo de Codex verificado admite niveles hasta xhigh; se omiten max y ultra.');
   document.querySelectorAll('[data-xcode-variant]').forEach(b=>{b.setAttribute('aria-selected',String(b.dataset.xcodeVariant===variant));b.textContent=b.dataset.xcodeVariant==='chat'?'Chat':b.dataset.xcodeVariant==='codex'?L('Codex in Xcode','Codex en Xcode'):L('Claude in Xcode','Claude en Xcode')});
@@ -96,8 +97,13 @@ export function createXcodeHelper({api,notify,refreshCatalog}) {
  $('xcode-add').addEventListener('click',()=>{const id=$('xcode-id').value.trim(),s=selection();if(!validModelID(id)){notify(L('Enter a valid model ID','Introduce un ID de modelo válido'),true);return}const max=variant==='claude'&&!caps().picker?3:50;if(!s.models.has(id)&&s.models.size>=max){notify(L('Model limit reached','Límite de modelos alcanzado'),true);return}s.models.set(id,s.models.get(id)||{...context.catalog.find(m=>m.id===id),id});if(!s.initial)s.initial=id;$('xcode-id').value='';$('xcode-search').value='';render()});
  async function detect(){loading=true;render();try{installation=await api('xcode/info')}catch(e){notify(e.message,true)}finally{loading=false;render()}}
  $('xcode-detect').addEventListener('click',detect);
- $('xcode-save').addEventListener('click',async()=>{const target=variant,s=selection(),sent=fingerprint();saving=true;render();try{const result=await api('xcode/'+target,payload(target,s));s.saved={signature:sent,path:result.profileDir}}catch(e){notify(e.message,true)}finally{saving=false;render()}});
+ async function prepare(){
+  if(saving)throw new Error(L('This variant is already being prepared.','Esta variante ya se está preparando.'));
+  const target=variant,s=selection(),sent=fingerprint();saving=true;render();
+  try{const result=await api('xcode/'+target,payload(target,s));s.saved={signature:sent,path:result.profileDir}}finally{saving=false;render()}
+ }
+ $('xcode-save').addEventListener('click',()=>prepare().catch(e=>notify(e.message,true)));
  $('xcode-load').addEventListener('click',async()=>{const target=variant,s=selection();try{const data=await api('xcode/'+target);s.models.clear();if(target==='codex'){for(const m of data.models)s.models.set(m.slug,{id:m.slug,displayName:m.display_name,contextWindow:m.context_window,inputModalities:m.input_modalities,reasoningLevels:(m.supported_reasoning_levels||[]).map(r=>r.effort),defaultReasoning:m.default_reasoning_level});s.initial=data.models[0]?.slug||''}else{for(const m of data.models)s.models.set(m.id,m);s.initial=data.initial;s.aliases=data.aliases||{}}s.saved=null;render()}catch(e){notify(e.message,true)}});
  $('xcode-copy').addEventListener('click',async()=>{try{await writeClipboard(xcodeChatGuide(context.state?.baseURL||'',context.state?.localKey||'',context.language));notify(L('Connection copied with the local key','Conexión copiada con la clave local'))}catch(e){notify(L('Clipboard unavailable','Portapapeles no disponible'),true)}});
- return {render};
+ return {render,launchState:()=>({id:'xcode-'+variant,count:selection().models.size,ready:selection().saved?.signature===fingerprint(),fingerprint:fingerprint(),working:saving||loading,prepare})};
 }

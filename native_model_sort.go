@@ -127,7 +127,12 @@ func (u *nativeUI) modelMenu(gtx layout.Context, id, current string, options []m
 			}
 		}
 	})(gtx)
-	op.Defer(gtx.Ops, drawing.Stop())
+	trigger := drawing.Stop()
+	if u.expanded[id] {
+		op.Defer(gtx.Ops, trigger)
+	} else {
+		trigger.Add(gtx.Ops)
+	}
 	if u.expanded[id] {
 		width := unit.Dp(216)
 		if scroll {

@@ -1,4 +1,11 @@
 export const translations = {
+"Copiar arranque (opcional) ↗":"Copy launch command (optional) ↗",
+"Perfil listo en {path}. Ábrelo con el botón superior. El comando de arranque es opcional.":"Profile ready at {path}. Open it with the button above. The launch command is optional.",
+"Hay cambios sin guardar. Se guardarán antes de abrir.":"There are unsaved changes. They will be saved before opening.",
+"Selecciona modelos y abre el cliente. Su perfil se prepara automáticamente.":"Select models and open the client. Its profile is prepared automatically.",
+"Selecciona modelos y abre el cliente con el botón superior. La carpeta, config.toml y models.json se crean o actualizan automáticamente.":"Select models and open the client with the button above. The folder, config.toml and models.json are created or updated automatically.",
+"Selecciona modelos y abre el cliente desde el botón superior. Se prepara su perfil aislado con la configuración actual. Los comandos y archivos de abajo son exportaciones opcionales.":"Select models and open the client with the button above. Its isolated profile is prepared with the current settings. The commands and files below are optional exports.",
+"Opcional: copia el comando para abrir el cliente desde otra terminal. La configuración de exportación no cambia cómo se abre desde el botón superior.":"Optional: copy the command to open the client from another terminal. Export settings do not change how the button above opens it.",
 "Ordenar por":"Sort by",
 "Laboratorio":"Lab",
 "Selecciona modelos y conecta el túnel HTTPS desde el helper de Cursor.":"Select models and connect the HTTPS tunnel from the Cursor helper.",
