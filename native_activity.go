@@ -64,7 +64,7 @@ func (u *nativeUI) responseStats(summary usageSummary) string {
 	return fmt.Sprintf(u.tr("Response stats: %d interrupted or limited", "Estadísticas de respuesta: %d interrumpidas o limitadas"), summary.Incomplete)
 }
 func (u *nativeUI) reportedSpend(summary usageSummary) (label, amount string) {
-	label = u.tr("Session cost", "Coste de sesión")
+	label = u.tr("Reported inference cost", "Coste de inferencia informado")
 	if summary.Priced > 0 && summary.Priced < summary.Requests {
 		label = u.tr("Reported subtotal", "Subtotal informado")
 	}
@@ -73,6 +73,20 @@ func (u *nativeUI) reportedSpend(summary usageSummary) (label, amount string) {
 		amount = nativeMoney(summary.CostUSD)
 	}
 	return label, amount
+}
+func (u *nativeUI) inferenceCostNote() string {
+	return u.tr("Inference costs reported by the provider (including BYOK) or gateway. They may differ from your Kilo organization’s charges; these are not estimates.", "Costes de inferencia informados por el proveedor (incluido BYOK) o el gateway. Pueden diferir de los cargos de tu organización en Kilo; no son estimaciones.")
+}
+func (u *nativeUI) costSourceLabel(source string) string {
+	switch source {
+	case "usage.cost_details.upstream_inference_cost":
+		return u.tr("Provider inference", "Inferencia del proveedor")
+	case "provider_metadata.gateway.marketCost", "response.provider_metadata.gateway.marketCost":
+		return u.tr("Gateway market cost", "Coste de mercado del gateway")
+	case "usage.cost_microdollars", "usage.cost":
+		return u.tr("Gateway-reported cost", "Coste informado por el gateway")
+	}
+	return ""
 }
 func (u *nativeUI) cacheCaption(s usageSummary, read bool) string {
 	n := s.WithCacheWrite
@@ -92,7 +106,7 @@ func (u *nativeUI) activityPanel() layout.Widget {
 	total := usage.Total
 	costLabel, cost := u.reportedSpend(total)
 	panels := []layout.Widget{
-		u.card(u.topRow(u.metric(costLabel, cost, u.coverage(total)), u.metric(u.tr("Requests", "Peticiones"), fmt.Sprintf("%.0f", nativeNumber(u.state, "requests")), fmt.Sprintf(u.tr("%.0f active · %.0f errors", "%.0f activas · %.0f errores"), nativeNumber(u.state, "active"), nativeNumber(u.state, "failures"))), u.metric(u.tr("Tokens", "Tokens"), nativeReportedCount(total.Input+total.Output, total.WithTokens, total.Requests), fmt.Sprintf(u.tr("%s input · %s output", "%s entrada · %s salida"), nativeCount(total.Input), nativeCount(total.Output)))), u.note(u.responseStats(total))),
+		u.card(u.topRow(u.metric(costLabel, cost, u.coverage(total)), u.metric(u.tr("Requests", "Peticiones"), fmt.Sprintf("%.0f", nativeNumber(u.state, "requests")), fmt.Sprintf(u.tr("%.0f active · %.0f errors", "%.0f activas · %.0f errores"), nativeNumber(u.state, "active"), nativeNumber(u.state, "failures"))), u.metric(u.tr("Tokens", "Tokens"), nativeReportedCount(total.Input+total.Output, total.WithTokens, total.Requests), fmt.Sprintf(u.tr("%s input · %s output", "%s entrada · %s salida"), nativeCount(total.Input), nativeCount(total.Output)))), u.note(u.responseStats(total)), u.note(u.inferenceCostNote())),
 		u.card(u.heading(u.tr("Cache reuse", "Reutilización de caché")), u.topRow(u.metric(u.tr("Read from cache", "Leído de caché"), nativeReportedCount(total.Cached, total.WithCacheRead, total.Requests), u.cacheCaption(total, true)), u.metric(u.tr("Written to cache", "Escrito en caché"), nativeReportedCount(total.CacheWrite, total.WithCacheWrite, total.Requests), u.cacheCaption(total, false)), u.metric(u.tr("Prompt reused", "Prompt reutilizado"), nativeCacheRatio(total), fmt.Sprintf(u.tr("Ratio available for %d requests", "Ratio disponible en %d peticiones"), total.CacheRatioRequests))), u.note(u.tr("Missing usage is not counted as zero. Totals cover this Kilo Proxy process and use values returned by the gateway.", "Los datos ausentes no se cuentan como cero. Los totales cubren este proceso de Kilo Proxy y usan los valores devueltos por el gateway."))),
 	}
 	sessions := []layout.Widget{u.heading(u.tr("Conversations", "Conversaciones")), u.note(u.tr("Grouped by client session headers. Requests without an identifier appear as unassigned.", "Agrupadas por cabeceras de sesión del cliente. Las peticiones sin identificador aparecen sin asignar."))}
@@ -143,6 +157,13 @@ func (u *nativeUI) activityPanel() layout.Widget {
 			}))
 		} else {
 			activity = append(activity, u.note(label+u.tr(" · No capture", " · Sin captura")))
+		}
+		if e.Usage != nil && e.Usage.CostUSD != nil {
+			cost := u.tr("Reported inference cost: ", "Coste de inferencia informado: ") + nativeMoney(*e.Usage.CostUSD)
+			if source := u.costSourceLabel(e.Usage.CostSource); source != "" {
+				cost += " · " + source
+			}
+			activity = append(activity, u.note(cost))
 		}
 	}
 	panels = append(panels, u.card(activity...))

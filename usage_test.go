@@ -53,11 +53,11 @@ func TestUsageUnknownFreeCacheAndPreciseMoney(t *testing.T) {
 	if u.usage.CostUSD != nil || *u.usage.Cached != 8 || *u.usage.Reasoning != 3 {
 		t.Fatalf("missing cost treated as free or token details lost: %+v", u.usage)
 	}
-	u = observeUsage(t, false, `{"usage":{"cost":0,"cost_details":{"upstream_inference_cost":99}}}`)
+	u = observeUsage(t, false, `{"usage":{"cost":0}}`)
 	if u.usage.CostUSD == nil || *u.usage.CostUSD != "0.000000000" {
-		t.Fatal("zero cost replaced with provider/BYOK charges")
+		t.Fatal("explicit free request lost its reported zero cost")
 	}
-	for _, bad := range []string{"-1", "1e10000", "null", "\"0.12\""} {
+	for _, bad := range []string{"-1", "1e10000", "null", `"not-a-number"`} {
 		u = observeUsage(t, false, `{"usage":{"cost":`+bad+`}}`)
 		if u.usage.CostUSD != nil {
 			t.Fatalf("accepted invalid cost %s", bad)
@@ -262,25 +262,149 @@ func TestCacheUnknownZeroAndPartial(t *testing.T) {
 }
 
 func TestUsageValidCostFallbackAndPriority(t *testing.T) {
-	for _, invalid := range []string{"null", "-1", `"25"`, "false", "{}", "1e10000"} {
+	for _, invalid := range []string{"null", "-1", `"invalid"`, "false", "{}", "1e10000"} {
 		t.Run(invalid, func(t *testing.T) {
-			u := observeUsage(t, false, `{"usage":{"cost_microdollars":`+invalid+`,"cost":0.25,"cost_details":{"upstream_inference_cost":99}}}`)
+			u := observeUsage(t, false, `{"usage":{"cost_microdollars":`+invalid+`,"cost":0.25}}`)
 			if u.usage.CostUSD == nil || *u.usage.CostUSD != "0.250000000" || u.usage.CostSource != "usage.cost" {
 				t.Fatalf("invalid microdollars hid valid USD: %+v", u.usage)
 			}
 		})
 	}
-	for _, tc := range []struct{ micro, want string }{{"0", "0.000000000"}, {"25", "0.000025000"}} {
-		u := observeUsage(t, false, `{"usage":{"cost_microdollars":`+tc.micro+`,"cost":99}}`)
+	for _, tc := range []struct{ micro, want string }{{"0", "0.000000000"}, {"25", "0.000025000"}, {`"25"`, "0.000025000"}} {
+		u := observeUsage(t, false, `{"usage":{"cost_microdollars":`+tc.micro+`,"cost":99,"cost_details":{"upstream_inference_cost":12}},"provider_metadata":{"gateway":{"marketCost":42}}}`)
 		if u.usage.CostUSD == nil || *u.usage.CostUSD != tc.want || u.usage.CostSource != "usage.cost_microdollars" {
 			t.Fatalf("valid microdollars lost priority: %+v", u.usage)
 		}
 	}
-	for _, fields := range []string{`"cost_microdollars":null`, `"cost_microdollars":null,"cost":"0.25"`, `"cost_microdollars":-1,"cost":-1`} {
-		u := observeUsage(t, false, `{"usage":{`+fields+`,"cost_details":{"upstream_inference_cost":99}}}`)
+	for _, fields := range []string{`"cost_microdollars":null`, `"cost_microdollars":null,"cost":"invalid"`, `"cost_microdollars":-1,"cost":-1`} {
+		u := observeUsage(t, false, `{"usage":{`+fields+`,"cost_details":{"upstream_inference_cost":null}}}`)
 		if u.usage.CostUSD != nil || u.usage.CostSource != "" {
-			t.Fatal("invalid gateway costs became a provider charge")
+			t.Fatal("unreported or invalid costs became a priced request")
 		}
+	}
+}
+
+func TestUsageKiloCapturedImageInferenceCost021976(t *testing.T) {
+	// Sanitized actual image response: cost is the zero marketplace fee. The
+	// provider reports $0.21976 for inference, with components that must not be
+	// added a second time. Model/tokens/costs contain no credentials or content.
+	const captured = `{"model":"openai/gpt-5-image","usage":{"prompt_tokens":3076,"completion_tokens":6375,"total_tokens":9451,"cost":0,"is_byok":true,"prompt_tokens_details":{"cached_tokens":0,"cache_write_tokens":0,"audio_tokens":0,"video_tokens":0},"cost_details":{"upstream_inference_cost":0.21976,"upstream_inference_prompt_cost":0.03076,"upstream_inference_completions_cost":0.189},"completion_tokens_details":{"reasoning_tokens":1792,"image_tokens":4175,"audio_tokens":0}}}`
+	for _, tc := range []struct{ name, body string }{
+		{"actual numeric capture reports 0.219760000 USD", captured},
+		{"numeric string equivalent reports 0.219760000 USD", strings.Replace(captured, `"upstream_inference_cost":0.21976`, `"upstream_inference_cost":"0.21976"`, 1)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			u := observeUsage(t, false, tc.body)
+			if u.usage.CostUSD == nil || *u.usage.CostUSD != "0.219760000" || u.usage.CostSource != "usage.cost_details.upstream_inference_cost" {
+				t.Fatalf("actual upstream inference cost hidden by zero fee: %+v", u.usage)
+			}
+			if u.usage.Input == nil || *u.usage.Input != 3076 || u.usage.Output == nil || *u.usage.Output != 6375 || u.usage.Reasoning == nil || *u.usage.Reasoning != 1792 || !u.usage.Complete {
+				t.Fatalf("cost selection lost captured tokens or completion: %+v", u.usage)
+			}
+			var summary usageSummary
+			summary.add(u)
+			if summary.CostUSD != "0.219760000" || summary.Priced != 1 || summary.Requests != 1 {
+				t.Fatalf("provider cost/components counted more than once: %+v", summary)
+			}
+		})
+	}
+}
+
+func TestUsageKiloInferenceCostPathsAndFallback(t *testing.T) {
+	for _, tc := range []struct{ name, body, want, source string }{
+		{"chat upstream", `{"usage":{"cost":0,"cost_details":{"upstream_inference_cost":"0.125"}}}`, "0.125000000", "usage.cost_details.upstream_inference_cost"},
+		{"Responses upstream", `{"type":"response.completed","response":{"usage":{"cost":0,"cost_details":{"upstream_inference_cost":0.125}}}}`, "0.125000000", "usage.cost_details.upstream_inference_cost"},
+		{"Messages upstream", `{"type":"message_start","message":{"usage":{"cost":0,"cost_details":{"upstream_inference_cost":0.125}}}}`, "0.125000000", "usage.cost_details.upstream_inference_cost"},
+		{"upstream explicit zero", `{"usage":{"cost":4,"cost_details":{"upstream_inference_cost":0}},"provider_metadata":{"gateway":{"marketCost":2}}}`, "0.000000000", "usage.cost_details.upstream_inference_cost"},
+		{"invalid micro falls through to upstream", `{"usage":{"cost_microdollars":null,"cost":0,"cost_details":{"upstream_inference_cost":0.125}}}`, "0.125000000", "usage.cost_details.upstream_inference_cost"},
+		{"upstream precedes market and fee", `{"usage":{"cost":4,"cost_details":{"upstream_inference_cost":1}},"provider_metadata":{"gateway":{"marketCost":2}}}`, "1.000000000", "usage.cost_details.upstream_inference_cost"},
+		{"outer market without usage", `{"provider_metadata":{"gateway":{"marketCost":"1.25e-1"}}}`, "0.125000000", "provider_metadata.gateway.marketCost"},
+		{"nested market without usage", `{"type":"response.completed","response":{"provider_metadata":{"gateway":{"marketCost":0.125}}}}`, "0.125000000", "response.provider_metadata.gateway.marketCost"},
+		{"market precedes fee", `{"response":{"usage":{"cost":0}},"provider_metadata":{"gateway":{"marketCost":0.125}}}`, "0.125000000", "provider_metadata.gateway.marketCost"},
+		{"outer market precedes nested", `{"provider_metadata":{"gateway":{"marketCost":1}},"response":{"provider_metadata":{"gateway":{"marketCost":2}}}}`, "1.000000000", "provider_metadata.gateway.marketCost"},
+		{"invalid outer falls through to nested", `{"provider_metadata":{"gateway":{"marketCost":"NaN"}},"response":{"provider_metadata":{"gateway":{"marketCost":"0.125"}}}}`, "0.125000000", "response.provider_metadata.gateway.marketCost"},
+		{"invalid upstream falls through to market", `{"usage":{"cost":0,"cost_details":{"upstream_inference_cost":-1}},"provider_metadata":{"gateway":{"marketCost":0.125}}}`, "0.125000000", "provider_metadata.gateway.marketCost"},
+		{"invalid metadata falls through to USD string", `{"usage":{"cost":"0.125","cost_details":{"upstream_inference_cost":{}}},"provider_metadata":{"gateway":{"marketCost":false}}}`, "0.125000000", "usage.cost"},
+		{"missing costs stay unknown", `{"usage":{"input_tokens":12}}`, "", ""},
+		{"unverified root cost ignored", `{"cost":12}`, "", ""},
+		{"components alone do not invent total", `{"usage":{"cost_details":{"upstream_inference_prompt_cost":0.1,"upstream_inference_completions_cost":0.2}}}`, "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, sse := range []bool{false, true} {
+				body := tc.body
+				if sse {
+					body = "data: " + body + "\n\ndata: [DONE]\n\n"
+				}
+				u := observeUsage(t, sse, body)
+				got := ""
+				if u.usage.CostUSD != nil {
+					got = *u.usage.CostUSD
+				}
+				if got != tc.want || u.usage.CostSource != tc.source {
+					t.Fatalf("sse=%v: got %q source %q, want %q source %q", sse, got, u.usage.CostSource, tc.want, tc.source)
+				}
+			}
+		})
+	}
+}
+
+func TestUsageCostAuthorityAcrossSnapshots(t *testing.T) {
+	for _, tc := range []struct {
+		name, want, source string
+		snapshots          []string
+	}{
+		{"upstream survives later fee", "0.200000000", "usage.cost_details.upstream_inference_cost", []string{`{"usage":{"cost":0,"cost_details":{"upstream_inference_cost":0.2}}}`, `{"usage":{"cost":0}}`}},
+		{"upstream replaces earlier fee", "0.200000000", "usage.cost_details.upstream_inference_cost", []string{`{"usage":{"cost":0}}`, `{"usage":{"cost_details":{"upstream_inference_cost":0.2}}}`}},
+		{"same-source cumulative update not addition", "0.200000000", "usage.cost_details.upstream_inference_cost", []string{`{"usage":{"cost_details":{"upstream_inference_cost":0.1}}}`, `{"usage":{"cost_details":{"upstream_inference_cost":0.2}}}`, `{"usage":{"cost_details":{"upstream_inference_cost":0.2}}}`}},
+		{"same-source final correction", "0.100000000", "usage.cost_details.upstream_inference_cost", []string{`{"usage":{"cost_details":{"upstream_inference_cost":0.2}}}`, `{"usage":{"cost_details":{"upstream_inference_cost":0.1}}}`}},
+		{"metadata survives later fee and invalid metadata", "0.200000000", "provider_metadata.gateway.marketCost", []string{`{"provider_metadata":{"gateway":{"marketCost":"0.2"}}}`, `{"usage":{"cost":0},"provider_metadata":{"gateway":{"marketCost":null}}}`}},
+		{"metadata followed by stronger upstream", "0.300000000", "usage.cost_details.upstream_inference_cost", []string{`{"provider_metadata":{"gateway":{"marketCost":"0.2"}}}`, `{"usage":{"cost_details":{"upstream_inference_cost":0.3}}}`}},
+		{"upstream followed by explicit micro zero", "0.000000000", "usage.cost_microdollars", []string{`{"usage":{"cost_details":{"upstream_inference_cost":0.2}}}`, `{"usage":{"cost_microdollars":0}}`, `{"usage":{"cost_details":{"upstream_inference_cost":0.3}}}`}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := ""
+			for _, snapshot := range tc.snapshots {
+				body += "data: " + snapshot + "\n\n"
+			}
+			u := observeUsage(t, true, body+"data: [DONE]\n\n")
+			if u.usage.CostUSD == nil || *u.usage.CostUSD != tc.want || u.usage.CostSource != tc.source || !u.usage.Complete {
+				t.Fatalf("cost snapshots lost priority or counted twice: %+v", u.usage)
+			}
+			var summary usageSummary
+			summary.add(u)
+			if summary.CostUSD != tc.want || summary.Priced != 1 {
+				t.Fatalf("snapshots counted as separate charges: %+v", summary)
+			}
+		})
+	}
+}
+
+func TestMoneyBoundedNumericStrings(t *testing.T) {
+	for value, want := range map[string]int64{
+		"0": 0, "0.21976": 219760000, "2.1976e-1": 219760000,
+		"1E+2": 100000000000, "0.0000000015": 2, "1e-18": 0,
+		"1000000": 1000000000000000,
+	} {
+		for _, input := range []any{value, json.Number(value)} {
+			got, ok := money(input, false)
+			if !ok || got != want {
+				t.Errorf("money(%#v) = %d/%v, want %d", input, got, ok, want)
+			}
+		}
+	}
+	for _, invalid := range []string{
+		"", " ", " 0.2", "0.2 ", "\t0.2", "NaN", "Infinity", "-1", "0x10", "0x1p-2", "1/2",
+		"+1", ".5", "1.", "01", "1_000", "1,25", "1e19", "1e-19", "1e10000", "1000000.01",
+		"true", "null", "[]", "{}", `"0.2"`, "1 2", strings.Repeat("0", 65),
+	} {
+		for _, input := range []any{invalid, json.Number(invalid)} {
+			if got, ok := money(input, false); ok {
+				t.Errorf("money(%#v) unexpectedly accepted: %d", input, got)
+			}
+		}
+	}
+	if got, ok := money("2500000", true); !ok || got != 2500000000 {
+		t.Fatal("valid numeric-string microdollars lost precision")
 	}
 }
 

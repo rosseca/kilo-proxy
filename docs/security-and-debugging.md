@@ -88,11 +88,20 @@ Use `--no-tray` for headless operation, with the printed panel URL available to 
 
 ## Passive spend tracking (0.13.0)
 
-Activity shows reported USD costs and token usage for inference requests observed since this application process started. The totals and session breakdown survive clearing the 30-entry trace history and pausing detail capture. Restarting the application resets them; accounting metadata is not saved to disk. Requests already completed before starting this version cannot be recovered.
+Activity shows **reported inference costs** in USD and token usage for requests observed since this application process started. Values may come from the provider, including BYOK requests, or from the gateway; they can differ from the charges on the organization's Kilo invoice. The totals and session breakdown survive clearing the 30-entry trace history and pausing detail capture. Restarting the application resets them; accounting metadata is not saved to disk. Requests already completed before starting this version cannot be recovered.
 
 The reader observes upstream response bytes without changing the request, forwarding session headers, delaying streaming, or making additional inference/billing calls. Chat Completions, Responses, and Messages are handled as JSON or SSE. Cumulative usage snapshots replace prior values within the same request instead of being summed repeatedly. Messages input/cache usage from `message_start` is combined with final output usage. Individual activity rows include the response model and reported cost.
 
-Valid numeric `usage.cost_microdollars` takes priority and is converted to USD. If it is absent, null, or invalid, a valid numeric `usage.cost` is used as the gateway-reported USD amount. Money is rounded to the nearest nanodollar and summed as integers. Explicit zero is retained. If neither field contains a supported value, cost remains **Not reported**; no catalog estimate is silently substituted. Provider/BYOK `cost_details.upstream_inference_cost` is not added to a Kilo charge. These observations are not a reconciliation of the organization invoice; cost semantics and availability depend on the Kilo route/provider.
+The reader selects one supported reported value per request, in this order:
+
+1. `usage.cost_microdollars`, converted from microdollars to USD.
+2. `usage.cost_details.upstream_inference_cost`, in USD. This is the provider's inference cost and can be present on BYOK requests.
+3. `provider_metadata.gateway.marketCost`, in USD, including `response.provider_metadata.gateway.marketCost` on wrapped Responses events.
+4. `usage.cost`, in USD.
+
+Absent, null, or invalid fields fall through to the next source. Finite, nonnegative JSON numbers and numeric strings are supported within the parser's bounds. Decimal values are converted using exact rational arithmetic, rounded to the nearest nanodollar, and accumulated as integers; binary floating-point sums are not used. Explicit zero remains valid. A later streaming snapshot from a lower-priority source cannot replace an already observed higher-priority cost. Request activity exposes the selected `costSource` and shows a readable provider/gateway label.
+
+For example, a BYOK response can report `usage.cost = 0` alongside `usage.cost_details.upstream_inference_cost = 0.21976`. The reader records `$0.21976` as the reported inference cost. The organization's Kilo charge can differ. Provider cost, gateway cost, and market cost are alternative observations, **never added together** for the same request; the proxy does not calculate provider charges plus gateway fees. If no supported value is present, cost remains **Not reported**. No catalog estimate or invoice reconciliation is performed.
 
 The UI labels a partially reported amount **Reported subtotal** and counts requests without a reported cost separately from interrupted or limited responses. A zero subtotal for two priced requests does not mean the remaining requests were free. Canceled requests can incur charges without delivering final usage; unknown requests do not count as free. When the client disconnects after a valid terminal event has already been observed, that event and its reported usage remain complete. Token counters retain provider-reported input/output/cache/reasoning values; cache can be included in input counts for one protocol and separate in another, so these categories must not be added indiscriminately. Models/catalog GET requests do not enter inference-spend totals.
 
@@ -100,7 +109,7 @@ Grouping prefers Codex `thread-id`, then `session-id` (or legacy `session_id`), 
 
 The usage parser buffers at most 1 MiB per JSON body or SSE data event, independently of the 128 KiB debug capture. Oversized frames are skipped and flagged; a later final SSE usage event can still be read. An interrupted or unterminated SSE frame is not treated as a completed response. The stream itself continues unchanged.
 
-Sources: [Kilo usage and billing](https://kilo.ai/docs/gateway/usage-and-billing), [Kilo streaming](https://kilo.ai/docs/gateway/streaming), and [Kilo client cost extraction](https://github.com/Kilo-Org/kilo/blob/main/packages/opencode/src/session/index.ts). Documentation confirms usage reporting; no paid inference was made to validate a specific model's returned billing fields. Automated tests use representative gateway fixtures.
+Sources: [Kilo usage and billing](https://kilo.ai/docs/gateway/usage-and-billing), [Kilo streaming](https://kilo.ai/docs/gateway/streaming), [Kilo client cost extraction](https://github.com/Kilo-Org/kilocode/blob/main/packages/opencode/src/kilocode/session/index.ts), and [Kilo gateway metadata handling](https://github.com/Kilo-Org/kilocode/blob/main/packages/kilo-gateway/src/gateway-metadata.ts). Field availability varies by route and provider. Automated tests use synthetic gateway fixtures and representative response shapes.
 
 
 ## Context cache statistics (0.16.0)

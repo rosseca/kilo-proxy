@@ -112,5 +112,6 @@
 .image-generation-options button{margin:0;white-space:normal}
 .image-generation-warning{color:#896026}
 #usage-session-table td:nth-child(5){min-width:200px;max-width:260px;white-space:pre-line}
+.cost-source{display:block;margin-top:3px;font:10px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--muted);white-space:normal}
 #codex-image-save-help{padding-top:12px;border-top:1px solid #e1e8d7;color:#637055}
 @media(max-width:650px){.image-generation-panel{padding:15px}.image-generation-heading{gap:12px;align-items:flex-start}.image-generation-options{grid-template-columns:minmax(0,1fr)}.image-generation-options button{justify-self:start}.image-generation-panel h4{font-size:15px}}

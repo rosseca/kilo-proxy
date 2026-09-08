@@ -58,9 +58,31 @@ type generatedImage struct {
 }
 
 type imageGenerationResult struct {
-	Model   string           `json:"model"`
-	Images  []generatedImage `json:"images"`
-	CostUSD *string          `json:"costUSD,omitempty"`
+	Model      string           `json:"model"`
+	Images     []generatedImage `json:"images"`
+	CostUSD    *string          `json:"costUSD,omitempty"`
+	CostSource string           `json:"costSource,omitempty"`
+}
+
+// Keep only the gateway's monetary scalar, preserving its decimal spelling.
+// Other provider metadata can contain large or sensitive image payloads and is
+// unnecessary for either accounting or Activity.
+func imageProviderCostMetadata(raw json.RawMessage) map[string]any {
+	var metadata, gateway map[string]json.RawMessage
+	if json.Unmarshal(raw, &metadata) != nil || json.Unmarshal(metadata["gateway"], &gateway) != nil {
+		return nil
+	}
+	value := gateway["marketCost"]
+	var cost any
+	decoder := json.NewDecoder(bytes.NewReader(value))
+	decoder.UseNumber()
+	if decoder.Decode(&cost) != nil {
+		return nil
+	}
+	if _, valid := money(cost, false); !valid {
+		return nil
+	}
+	return map[string]any{"gateway": map[string]any{"marketCost": value}}
 }
 
 type imageGenerationActivity struct {
@@ -253,9 +275,10 @@ func (a *app) generateImage(r *http.Request, args imageGenerationArguments, key,
 		return nil, errors.New("Kilo returned an incomplete or oversized image response.")
 	}
 	var output struct {
-		Model   string          `json:"model"`
-		Usage   json.RawMessage `json:"usage"`
-		Choices []struct {
+		Model            string          `json:"model"`
+		Usage            json.RawMessage `json:"usage"`
+		ProviderMetadata json.RawMessage `json:"provider_metadata"`
+		Choices          []struct {
 			Message struct {
 				Images []struct {
 					Type     string `json:"type"`
@@ -275,13 +298,19 @@ func (a *app) generateImage(r *http.Request, args imageGenerationArguments, key,
 	}
 	// Report the validated configured route, not arbitrary upstream strings.
 	output.Model = settings.Model
-	// Extract the small usage object before decoding images. The normal stream
-	// observer intentionally drops large frames, so feeding it base64 loses cost.
-	usageData, _ := json.Marshal(map[string]any{"model": output.Model, "usage": output.Usage})
+	// Extract usage and the gateway's inference price before decoding images.
+	// The normal stream observer intentionally drops large frames, so feeding it
+	// base64 or unrelated provider metadata loses cost.
+	observed := map[string]any{"model": output.Model, "usage": output.Usage}
+	if metadata := imageProviderCostMetadata(output.ProviderMetadata); metadata != nil {
+		observed["provider_metadata"] = metadata
+	}
+	usageData, _ := json.Marshal(observed)
 	activity.usage.feed(usageData)
 	activity.usage.eof()
 	if activity.capture != nil {
-		summary, _ := json.Marshal(map[string]any{"model": output.Model, "usage": output.Usage, "image_payloads": "omitted from activity details"})
+		observed["image_payloads"] = "omitted from activity details"
+		summary, _ := json.Marshal(observed)
 		activity.capture.upResponse.write(summary)
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
@@ -332,7 +361,8 @@ func (a *app) generateImage(r *http.Request, args imageGenerationArguments, key,
 		images[i].Path = filepath.Join(dir, name)
 	}
 	activity.status = 200
-	return &imageGenerationResult{Model: output.Model, Images: images, CostUSD: activity.usage.snapshot().usage.CostUSD}, nil
+	usage := activity.usage.snapshot().usage
+	return &imageGenerationResult{Model: output.Model, Images: images, CostUSD: usage.CostUSD, CostSource: usage.CostSource}, nil
 }
 
 func (a *app) generatedImagesRoot() (*os.Root, string, error) {

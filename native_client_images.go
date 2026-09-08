@@ -142,7 +142,7 @@ func (u *nativeUI) clientImagesPanel(key string, s *nativeClientSelection) layou
 		children = append(children, u.button(prefix+":refresh", u.tr("Refresh image models", "Actualizar modelos de imágenes"), u.refreshModels))
 	}
 	children = append(children,
-		u.note(u.tr("Uses your Kilo organization's balance. Generation is billed when Codex calls the tool; editing currently supports images created with this tool.", "Usa el saldo de tu organización de Kilo. Se factura cuando Codex llama a la herramienta; la edición admite por ahora imágenes creadas con ella.")),
+		u.note(u.tr("Uses your configured Kilo organization. Provider or gateway charges depend on its billing setup. Editing currently supports images created with this tool.", "Usa tu organización de Kilo configurada. Los cargos del proveedor o gateway dependen de su facturación. La edición admite por ahora imágenes creadas con esta herramienta.")),
 		u.note(u.tr("Saved with Prepare or Launch. This setting is shared by Codex GUI and CLI. Restart Codex after preparing to load the tool.", "Se guarda al Preparar o Abrir. El ajuste se comparte entre Codex GUI y CLI. Reinicia Codex después de preparar para cargar la herramienta.")),
 	)
 	return u.card(children...)

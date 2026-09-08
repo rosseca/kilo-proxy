@@ -3,7 +3,7 @@ import {configureDesktop, writeClipboard, openExternal, bindDesktopLinks} from '
 import {createXcodeHelper} from './xcode-helper.mjs';
 import {claudeCapabilities,claudeEfforts,claudeSelection,claudeSettings} from './claude-helper.mjs';
 'use strict';
-import {reportedCost, reportedSpend, cacheStats, lastCacheStats} from './usage-helper.mjs';
+import {reportedCost, reportedSpend, inferenceCostNote, costSourceLabel, cacheStats, lastCacheStats} from './usage-helper.mjs';
 import {formatTraceJSON} from './activity-helper.mjs';
 import {codexCatalog,codexDisplayName,reasoningFor,reasoningLevels} from './codex-catalog.mjs';
 import {filterModels, formatPrice, modelPriceDetails, validModelID, sortModels, configureModelSort, setModelSort, mergeModelSelection, filterModelLab, configureModelLab, setModelLab} from './model-helper.mjs';
@@ -85,7 +85,7 @@ function renderCodexImages() {
   $('codex-image-refresh').disabled=catalogLoading;
   $('codex-image-status').textContent=!enabled?L('Optional. Enable it when you want Codex to create images.','Opcional. Actívala cuando quieras que Codex cree imágenes.'):!chosen?L('Choose an image model before preparing or launching Codex.','Elige un modelo de imágenes antes de preparar o abrir Codex.'):!models.some(model=>model.id===chosen)?L('The saved image model is unavailable in the current catalog. Refresh, choose another model, or disable this tool.','El modelo guardado no está disponible en el catálogo actual. Actualiza, elige otro modelo o desactiva la herramienta.'):chosen;
   $('codex-image-status').classList.toggle('image-generation-warning',enabled&&!models.some(model=>model.id===chosen));
-  $('codex-image-billing').textContent=L("Uses your Kilo organization's balance. Generation is billed when Codex calls the tool; editing currently supports images created with this tool.",'Usa el saldo de tu organización de Kilo. Se factura cuando Codex llama a la herramienta; la edición admite por ahora imágenes creadas con ella.');
+  $('codex-image-billing').textContent=L("Uses your configured Kilo organization. Provider or gateway charges depend on its billing setup. Editing currently supports images created with this tool.",'Usa tu organización de Kilo configurada. Los cargos del proveedor o gateway dependen de su facturación. La edición admite por ahora imágenes creadas con esta herramienta.');
   $('codex-image-save-help').textContent=L('Saved with Prepare or Launch. This setting is shared by Codex GUI and CLI. Restart Codex after preparing to load the tool.','Se guarda al Preparar o Abrir. El ajuste se comparte entre Codex GUI y CLI. Reinicia Codex después de preparar para cargar la herramienta.');
 }
 function acceptCodexImageSettings(saved) {
@@ -314,6 +314,10 @@ function render(s) {
       const cell = document.createElement('td');
       if (i === 2) { const badge = document.createElement('span'); badge.className = 'status-code' + (e.status >= 400 ? ' error' : ''); badge.textContent = value; cell.append(badge); }
       else cell.textContent = value;
+      if(i===4 && reportedCost(e.usage?.costUSD)!==null){
+        const source=costSourceLabel(e.usage?.costSource,language);
+        if(source){const hint=document.createElement('small');hint.className='cost-source';hint.textContent=source;cell.append(hint);}
+      }
       row.append(cell);
     });
     const details=document.createElement('td');
@@ -335,6 +339,7 @@ function renderUsage(usage) {
  $('spend-title').textContent=spend.label;
  $('spend-total').textContent=spend.amount;
  $('spend-coverage').textContent=spend.coverage;
+ $('spend-semantics').textContent=inferenceCostNote(language);
  $('spend-tokens').textContent=t('{input} entrada total · {output} salida',{input:total.withPrompt>0 ? cacheNumber(total.prompt) : t('Coste desconocido'),output:total.withTokens>0 ? cacheNumber(total.output) : t('Coste desconocido')});
  const cache=cacheStats(total);
  $('cache-read-total').textContent=cacheNumber(cache.read);

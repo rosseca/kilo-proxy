@@ -161,6 +161,124 @@ func TestImageGenerationCreateEditAndRecordCost(t *testing.T) {
 	}
 }
 
+func TestImageGenerationInferenceCostIsRecordedOnce(t *testing.T) {
+	pngData := imageTestPNG(t)
+	for _, tc := range []struct {
+		name, cost, source string
+		usage              any
+		marketCost         json.RawMessage
+	}{
+		{
+			name:       "metadata without usage",
+			cost:       "0.125000001",
+			source:     "provider_metadata.gateway.marketCost",
+			marketCost: json.RawMessage(`0.125000001`),
+		},
+		{
+			name:       "decimal string metadata without usage",
+			cost:       "0.125000001",
+			source:     "provider_metadata.gateway.marketCost",
+			marketCost: json.RawMessage(`"0.125000001"`),
+		},
+		{
+			name:   "BYOK upstream cost instead of zero fee",
+			cost:   "0.219760000",
+			source: "usage.cost_details.upstream_inference_cost",
+			usage: map[string]any{
+				"cost": 0, "is_byok": true,
+				"cost_details": map[string]any{"upstream_inference_cost": json.Number("0.21976")},
+			},
+			// A second price is an alternative source, never an extra charge.
+			marketCost: json.RawMessage(`0.3`),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var calls atomic.Int32
+			a := imageTestApp(t, func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				response := imageTestResponse(pngData, tc.usage)
+				if tc.usage == nil {
+					delete(response, "usage")
+				}
+				response["provider_metadata"] = map[string]any{
+					"unrelated_private_metadata": "do-not-store-this-provider-value",
+					"gateway": map[string]any{
+						"marketCost":            tc.marketCost,
+						"image_payload":         imageTestDataURL(pngData),
+						"large_private_payload": strings.Repeat("x", usageBufferLimit+10),
+					},
+				}
+				jsonResponse(w, 200, response)
+			})
+			result, err := imageTestGenerate(a, imageGenerationArguments{Prompt: "Draw a small green square"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.CostUSD == nil || *result.CostUSD != tc.cost || result.CostSource != tc.source || len(result.Images) != 1 {
+				t.Fatalf("image result lost inference cost or source: %+v", result)
+			}
+			if calls.Load() != 1 || a.requests != 1 || a.active != 0 || a.activeTraces != 0 || a.failures != 0 {
+				t.Fatalf("generation repeated or activity remained active: calls=%d requests=%d active=%d traces=%d failures=%d", calls.Load(), a.requests, a.active, a.activeTraces, a.failures)
+			}
+			if a.usageTotal.CostUSD != tc.cost || a.usageTotal.Requests != 1 || a.usageTotal.Priced != 1 || a.usageTotal.WithTokens != 0 {
+				t.Fatalf("image inference cost was missing or counted twice: %+v", a.usageTotal)
+			}
+			if len(a.usageSessions) != 1 || len(a.events) != 1 {
+				t.Fatal("expected one image conversation and activity event")
+			}
+			for _, session := range a.usageSessions {
+				if session.CostUSD != tc.cost || session.Requests != 1 || session.Priced != 1 {
+					t.Fatalf("conversation cost was missing or counted twice: %+v", session)
+				}
+			}
+			eventUsage := a.events[0].Usage
+			if eventUsage == nil || eventUsage.CostUSD == nil || *eventUsage.CostUSD != tc.cost || eventUsage.CostSource != tc.source {
+				t.Fatalf("activity lost inference cost or source: %+v", eventUsage)
+			}
+			detail := a.traces[a.events[0].ID]
+			if detail == nil {
+				t.Fatal("image activity detail is missing")
+			}
+			var summary struct {
+				ProviderMetadata map[string]json.RawMessage `json:"provider_metadata"`
+			}
+			if err := json.Unmarshal([]byte(detail.UpstreamResponse.Body), &summary); err != nil {
+				t.Fatal(err)
+			}
+			var gateway map[string]json.RawMessage
+			if err := json.Unmarshal(summary.ProviderMetadata["gateway"], &gateway); err != nil {
+				t.Fatal(err)
+			}
+			if len(summary.ProviderMetadata) != 1 || len(gateway) != 1 || !bytes.Equal(gateway["marketCost"], tc.marketCost) {
+				t.Fatalf("activity metadata should retain only the exact raw market cost: %s", detail.UpstreamResponse.Body)
+			}
+			rawTrace, _ := json.Marshal(detail)
+			for _, omitted := range []string{"do-not-store-this-provider-value", "large_private_payload", imageTestDataURL(pngData)} {
+				if bytes.Contains(rawTrace, []byte(omitted)) {
+					t.Fatalf("activity retained unrelated provider metadata or image data: %q", omitted)
+				}
+			}
+			var recordedResult imageGenerationResult
+			if err := json.Unmarshal([]byte(detail.Response.Body), &recordedResult); err != nil || recordedResult.CostSource != tc.source {
+				t.Fatalf("MCP activity response lost cost provenance: %+v, %v", recordedResult, err)
+			}
+		})
+	}
+}
+
+func TestImageProviderCostMetadataOmitsNonMonetaryValues(t *testing.T) {
+	for _, raw := range []string{
+		`null`, `[]`, `{"gateway":[]}`,
+		`{"gateway":{"marketCost":{"image_payload":"private"}}}`,
+		`{"gateway":{"marketCost":"private"}}`,
+		`{"gateway":{"marketCost":-1}}`,
+	} {
+		if metadata := imageProviderCostMetadata(json.RawMessage(raw)); metadata != nil {
+			t.Fatalf("retained nonmonetary provider metadata from %s: %+v", raw, metadata)
+		}
+	}
+}
+
 func TestImageGenerationRejectsInvalidModelsAndReferencesBeforePaidCall(t *testing.T) {
 	var calls atomic.Int32
 	a := imageTestApp(t, func(w http.ResponseWriter, r *http.Request) {

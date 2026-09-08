@@ -54,6 +54,13 @@ func TestNativeReportedSpendCaptionFitsMetric(t *testing.T) {
 			if dims.Size.X > width || dims.Size.Y > 130 {
 				t.Fatalf("%s width %d: cost metric is clipped or overly tall: %v", language, width, dims.Size)
 			}
+			full := summary
+			full.Priced = full.Requests
+			fullLabel, fullAmount := u.reportedSpend(full)
+			fullDims := u.metric(fullLabel, fullAmount, u.coverage(full))(gtx)
+			if fullDims.Size.X > width || fullDims.Size.Y > 130 {
+				t.Fatalf("fully reported inference cost label does not fit: %v", fullDims.Size)
+			}
 			firstText := strings.SplitN(u.coverage(summary), "\n", 2)[0]
 			first := u.note(firstText)(gtx)
 			// Font line advance can be smaller than a glyph bounding box:
@@ -68,12 +75,36 @@ func TestNativeReportedSpendCaptionFitsMetric(t *testing.T) {
 	}
 }
 
+func TestNativeInferenceCostSourceSemantics(t *testing.T) {
+	for _, language := range []string{"en", "es"} {
+		u := &nativeUI{language: language}
+		for source, want := range map[string]string{
+			"usage.cost_details.upstream_inference_cost":    u.tr("Provider inference", "Inferencia del proveedor"),
+			"provider_metadata.gateway.marketCost":          u.tr("Gateway market cost", "Coste de mercado del gateway"),
+			"response.provider_metadata.gateway.marketCost": u.tr("Gateway market cost", "Coste de mercado del gateway"),
+			"usage.cost":              u.tr("Gateway-reported cost", "Coste informado por el gateway"),
+			"usage.cost_microdollars": u.tr("Gateway-reported cost", "Coste informado por el gateway"),
+			"":                        "", "unknown.field": "",
+		} {
+			if got := u.costSourceLabel(source); got != want {
+				t.Fatalf("%s %s: %q != %q", language, source, got, want)
+			}
+		}
+		note := u.inferenceCostNote()
+		for _, part := range []string{"BYOK", u.tr("may differ from your Kilo organization’s charges", "Pueden diferir de los cargos"), u.tr("not estimates", "no son estimaciones")} {
+			if !strings.Contains(note, part) {
+				t.Fatalf("inference cost note omitted %q: %s", part, note)
+			}
+		}
+	}
+}
+
 func TestNativeReportedSpendAllZeroAndUnknown(t *testing.T) {
 	for _, language := range []string{"en", "es"} {
 		u := &nativeUI{language: language}
 		summary := usageSummary{Requests: 38, Priced: 38, Incomplete: 19, CostUSD: "0.000000000"}
 		label, amount := u.reportedSpend(summary)
-		if label != u.tr("Session cost", "Coste de sesión") || amount != "$0" {
+		if label != u.tr("Reported inference cost", "Coste de inferencia informado") || amount != "$0" {
 			t.Fatal("response incompleteness invalidated explicitly reported zero")
 		}
 		if !strings.Contains(u.coverage(summary), u.tr("0 requests without reported cost", "0 peticiones sin coste informado")) {

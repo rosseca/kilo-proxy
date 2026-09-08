@@ -113,13 +113,13 @@ func (a *app) imageMCPHandler(w http.ResponseWriter, r *http.Request, key, orgID
 		if !supportedImageMCPProtocol(negotiated) {
 			negotiated = imageMCPProtocol
 		}
-		imageMCPReply(w, message.ID, map[string]any{"protocolVersion": negotiated, "capabilities": map[string]any{"tools": map[string]bool{"listChanged": false}}, "serverInfo": map[string]string{"name": "kilo-proxy-images", "version": version}, "instructions": "Use generate_image for image creation or editing. The configured image model uses your Kilo organization's credits. Only previous generated image paths may be used as references."})
+		imageMCPReply(w, message.ID, map[string]any{"protocolVersion": negotiated, "capabilities": map[string]any{"tools": map[string]bool{"listChanged": false}}, "serverInfo": map[string]string{"name": "kilo-proxy-images", "version": version}, "instructions": "Use generate_image for image creation or editing. Requests use your configured Kilo account and organization; charges depend on its provider or gateway billing setup. Only previous generated image paths may be used as references."})
 	case "ping":
 		imageMCPReply(w, message.ID, map[string]any{})
 	case "tools/list":
 		imageMCPReply(w, message.ID, map[string]any{"tools": []any{map[string]any{
 			"name": "generate_image", "title": "Generate an image with Kilo",
-			"description": "Generate an image from a text prompt using the image model selected in Kilo Proxy. Optionally edit a previously generated image by providing its returned absolute path as reference_image. Images are saved locally and charged to the configured Kilo organization. Do not retry automatically after a timeout; generation may already have been charged.",
+			"description": "Generate an image from a text prompt using the image model selected in Kilo Proxy. Optionally edit a previously generated image by providing its returned absolute path as reference_image. Images are saved locally. Requests use the configured Kilo organization; charges depend on its provider or gateway billing setup. Do not retry automatically after a timeout; generation may already have been charged.",
 			"inputSchema": map[string]any{"type": "object", "properties": map[string]any{"prompt": map[string]any{"type": "string", "minLength": 1, "maxLength": imagePromptLimit, "description": "Describe the image to generate or the changes to make."}, "reference_image": map[string]any{"type": "string", "maxLength": 8192, "description": "Optional absolute path returned by an earlier generate_image call. Arbitrary local files and URLs are not accepted."}}, "required": []string{"prompt"}, "additionalProperties": false},
 			"annotations": map[string]bool{"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": true},
 		}}})
