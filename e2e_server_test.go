@@ -69,7 +69,9 @@ func TestE2EServer(t *testing.T) {
 			defer launchRecordMu.Unlock()
 			records = append(records, map[string]string{"client": plan.Client, "directory": plan.Directory, "executable": plan.Executable, "kind": plan.Kind})
 			data, _ := json.Marshal(records)
-			return os.WriteFile(launchRecords, data, 0600)
+			// Playwright reads this concurrently from another process: publish a
+			// complete JSON snapshot instead of exposing a truncated file.
+			return atomicCatalogFile(launchRecords, data)
 		},
 	}
 	port, err := net.Listen("tcp4", "127.0.0.1:0")
