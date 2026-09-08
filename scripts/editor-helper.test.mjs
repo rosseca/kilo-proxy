@@ -23,8 +23,8 @@ test('OpenCode launcher quotes paths, clears inline override and scopes environm
   const run=spawnSync('sh',['-c',editorLaunch(config,'vendor/model')],{env:{...process.env,PATH:dir+':'+process.env.PATH,OPENCODE_CONFIG:'original',OPENCODE_CONFIG_CONTENT:'conflict',KILO_TEST_OUTPUT:output},encoding:'utf8'});
   assert.equal(run.status,0,run.stderr);assert.equal(readFileSync(output,'utf8'),config+'\nunset\n--model\nkilo-local/vendor/model\n');
   assert.equal(spawnSync('sh',['-c',editorLaunch(join(dir,'missing'),'vendor/model')]).status,1);
-  const ps=editorLaunch(config,'vendor/model','powershell');assert.match(ps,/finally/);assert.match(ps,/\$env:OPENCODE_CONFIG = \$kiloPrevious/);assert.doesNotMatch(ps,/apiKey|kl_local_/);
+  const ps=editorLaunch(config,'vendor/model','powershell');assert.match(ps,/finally/);assert.match(ps,/Set-Item -LiteralPath "Env:\$kiloName" -Value \$kiloPrevious\[\$kiloName\]/);assert.doesNotMatch(ps,/apiKey|kl_local_/);
  }finally{rmSync(dir,{recursive:true,force:true})}
 });
 
-test('OpenCode PowerShell launch restores prior configuration and escapes paths',()=>{const command=editorLaunch("C:\\Users\\Team's profile\\opencode.json",'vendor/model','powershell');assert.match(command,/Team''s profile/);assert.match(command,/finally/);assert.match(command,/\$env:OPENCODE_CONFIG_CONTENT = \$kiloInline/);assert.doesNotMatch(command,/kl_local_/)});
+test('OpenCode PowerShell launch restores prior configuration and escapes paths',()=>{const command=editorLaunch("C:\\Users\\Team's profile\\opencode.json",'vendor/model','powershell');assert.match(command,/Team''s profile/);assert.match(command,/finally/);assert.match(command,/Remove-Item -LiteralPath Env:OPENCODE_CONFIG_CONTENT/);assert.match(command,/if \(\$null -eq \$kiloPrevious\[\$kiloName\]\)/);assert.match(command,/Remove-Item -LiteralPath "Env:\$kiloName"/);assert.match(command,/Set-Item -LiteralPath "Env:\$kiloName" -Value \$kiloPrevious\[\$kiloName\]/);assert.doesNotMatch(command,/kl_local_/)});

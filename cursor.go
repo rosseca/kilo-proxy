@@ -137,7 +137,7 @@ func (a *app) startCursor(models []string) error {
 	}
 	binary := ngrokPath()
 	if binary == "" {
-		return errors.New("Install ngrok and configure its account authtoken first, then restart Kilo Local.")
+		return errors.New("Install ngrok and configure its account authtoken first, then restart Kilo Proxy.")
 	}
 	a.stopCursorLocked()
 	ln, err := net.Listen("tcp4", "127.0.0.1:0")
@@ -289,7 +289,7 @@ func cursorIngress(key string, models []string, delegate http.Handler) http.Hand
 			Model string `json:"model"`
 		}
 		if json.Unmarshal(body, &payload) != nil || !allowed[payload.Model] {
-			jsonError(w, 400, "Select a model enabled in the Kilo Local Cursor helper.")
+			jsonError(w, 400, "Select a model enabled in the Kilo Proxy Cursor helper.")
 			return
 		}
 		clone := r.Clone(r.Context())

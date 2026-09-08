@@ -36,4 +36,8 @@ test('Claude PowerShell launch scopes and restores environment without embedding
  const command=claudeLaunch('powershell');
  assert.match(command,/finally/);assert.match(command,/claude --settings \$kiloSettings/);
  assert.match(command,/\$kiloPrevious\[\$kiloName\]/);assert.match(command,/Test-Path -PathType Leaf/);
+ assert.match(command,/foreach \(\$kiloName in \$kiloNames\) { Remove-Item -LiteralPath "Env:\$kiloName"/);
+ assert.match(command,/if \(\$null -eq \$kiloPrevious\[\$kiloName\]\)/);
+ assert.match(command,/Set-Item -LiteralPath "Env:\$kiloName" -Value \$kiloPrevious\[\$kiloName\]/);
+ assert.doesNotMatch(command,/SetEnvironmentVariable/);
 });

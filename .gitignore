@@ -6,6 +6,11 @@
 /kilo-local.exe
 /Kilo Local.app/
 /Kilo Local.exe
+/kilo-proxy
+/kilo-proxy.exe
+/Kilo Proxy.app/
+/Kilo Proxy.exe
+/kilo_proxy_icon_windows_*.syso
 
 # Local credentials and captured traffic; never commit real profiles
 .env
@@ -44,3 +49,8 @@ node_modules/
 ._*
 Thumbs.db
 Desktop.ini
+
+# Frontend E2E and native visual reports
+test-results/
+playwright-report/
+native-screenshots/

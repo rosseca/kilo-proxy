@@ -262,7 +262,7 @@ func TestAdminAuthenticationAndOrigin(t *testing.T) {
 	r := httptest.NewRequest("GET", "http://"+a.adminHost+"/", nil)
 	w := httptest.NewRecorder()
 	a.adminHandler().ServeHTTP(w, r)
-	if w.Code != 200 || w.Header().Get("Content-Security-Policy") == "" || !strings.Contains(w.Body.String(), "Kilo Local") {
+	if w.Code != 200 || w.Header().Get("Content-Security-Policy") == "" || !strings.Contains(w.Body.String(), "Kilo Proxy") {
 		t.Fatal("embedded UI or CSP missing")
 	}
 }

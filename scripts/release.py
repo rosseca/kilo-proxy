@@ -26,7 +26,7 @@ def check_tag(tag, version):
 
 
 def asset_names(version):
-    return [f'kilo-local-{version}-{system}-{arch}' + ('.tar.gz' if system == 'linux' else '.zip')
+    return [f'kilo-proxy-{version}-{system}-{arch}' + ('.tar.gz' if system == 'linux' else '.zip')
             for system, arch in TARGETS]
 
 
@@ -69,10 +69,10 @@ def publish(tag, version, directory):
             raise ValueError('This release is already published; refusing to overwrite it')
     else:
         args = ['release', 'create', tag, '--verify-tag', '--draft', '--generate-notes',
-                '--title', f'Kilo Local {tag}', '--notes',
+                '--title', f'Kilo Proxy {tag}', '--notes',
                 'Portable apps for macOS, Windows, and Linux (x64 and ARM64). '
                 'Download the archive for your system and verify it with SHA256SUMS.txt. '
-                'Windows ZIPs include Kilo Local.exe; macOS ZIPs include Kilo Local.app. '
+                'Windows ZIPs include Kilo Proxy.exe; macOS ZIPs include Kilo Proxy.app. '
                 'macOS apps are ad-hoc signed for bundle integrity, but not Developer ID signed or notarized; '
                 'Windows binaries are unsigned. Setup instructions are included in README.md.']
         if '-' in version:

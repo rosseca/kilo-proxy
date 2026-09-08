@@ -43,7 +43,7 @@ const shQuote=value=>"'"+value.replaceAll("'","'\\''")+"'";
 const psQuote=value=>"'"+value.replaceAll("'","''")+"'";
 export const claudeResetEnv=['ANTHROPIC_API_KEY','ANTHROPIC_AUTH_TOKEN','ANTHROPIC_BASE_URL','ANTHROPIC_MODEL','CLAUDE_CODE_OAUTH_TOKEN','CLAUDE_CODE_USE_BEDROCK','CLAUDE_CODE_USE_VERTEX','CLAUDE_CODE_USE_FOUNDRY','CLAUDE_CODE_EFFORT_LEVEL','ANTHROPIC_CUSTOM_HEADERS','CLAUDE_CODE_SUBAGENT_MODEL','ANTHROPIC_SMALL_FAST_MODEL','CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY',...['SONNET','OPUS','HAIKU','FABLE'].flatMap(a=>['','_NAME','_DESCRIPTION','_SUPPORTED_CAPABILITIES'].map(s=>'ANTHROPIC_DEFAULT_'+a+'_MODEL'+s))];
 export function claudeLaunch(shell='unix',language='en') {
- const message=language==='en'?'Prepare Claude Code in Kilo Local first.':'Prepara Claude Code desde Kilo Local primero.';
+ const message=language==='en'?'Prepare Claude Code in Kilo Proxy first.':'Prepara Claude Code desde Kilo Proxy primero.';
  if(shell==='powershell')return `& {
   $kiloHome = Join-Path $env:USERPROFILE '.claude-kilo'
   $kiloSettings = Join-Path $kiloHome 'settings.json'
@@ -52,11 +52,17 @@ export function claudeLaunch(shell='unix',language='en') {
   $kiloPrevious = @{}
   foreach ($kiloName in $kiloNames) { $kiloPrevious[$kiloName] = [Environment]::GetEnvironmentVariable($kiloName, 'Process') }
   try {
-    foreach ($kiloName in $kiloNames) { [Environment]::SetEnvironmentVariable($kiloName, $null, 'Process') }
+    foreach ($kiloName in $kiloNames) { Remove-Item -LiteralPath "Env:$kiloName" -ErrorAction SilentlyContinue }
     $env:CLAUDE_CONFIG_DIR = $kiloHome
     claude --settings $kiloSettings
   } finally {
-    foreach ($kiloName in $kiloNames) { [Environment]::SetEnvironmentVariable($kiloName, $kiloPrevious[$kiloName], 'Process') }
+    foreach ($kiloName in $kiloNames) {
+      if ($null -eq $kiloPrevious[$kiloName]) {
+        Remove-Item -LiteralPath "Env:$kiloName" -ErrorAction SilentlyContinue
+      } else {
+        Set-Item -LiteralPath "Env:$kiloName" -Value $kiloPrevious[$kiloName]
+      }
+    }
   }
 }`;
  return `(

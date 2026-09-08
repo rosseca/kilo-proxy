@@ -125,7 +125,7 @@ func mergeEditorSettings(old []byte, client string, s editorSelection, baseURL, 
 		fields = []struct {
 			path  string
 			value any
-		}{{"/provider/kilo-local/npm", "@ai-sdk/openai-compatible"}, {"/provider/kilo-local/name", "Kilo Local"}, {"/provider/kilo-local/options/baseURL", baseURL}, {"/provider/kilo-local/options/apiKey", key}, {"/provider/kilo-local/models", models}, {"/model", "kilo-local/" + s.Initial}, {"/small_model", "kilo-local/" + s.Initial}}
+		}{{"/provider/kilo-local/npm", "@ai-sdk/openai-compatible"}, {"/provider/kilo-local/name", "Kilo Proxy"}, {"/provider/kilo-local/options/baseURL", baseURL}, {"/provider/kilo-local/options/apiKey", key}, {"/provider/kilo-local/models", models}, {"/model", "kilo-local/" + s.Initial}, {"/small_model", "kilo-local/" + s.Initial}}
 	} else {
 		models := []map[string]any{}
 		for _, m := range s.Models {

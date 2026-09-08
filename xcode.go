@@ -238,7 +238,7 @@ func (a *app) xcodeChatModels(w http.ResponseWriter) {
 	data, err := readCatalogFile(filepath.Join(a.dir, "xcode-chat.json"))
 	var s claudeSelection
 	if err != nil || json.Unmarshal(data, &s) != nil || validateClaudeSelection(s) != nil {
-		jsonError(w, 409, "Prepare Xcode Chat in Kilo Local first")
+		jsonError(w, 409, "Prepare Xcode Chat in Kilo Proxy first")
 		return
 	}
 	models := make([]map[string]any, 0, len(s.Models))

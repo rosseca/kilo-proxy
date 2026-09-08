@@ -1,12 +1,12 @@
 # OpenCode and Zed helpers
 
-Both tabs provide a searchable model picker with prices, up to 50 selected models, editable names, an initial model, and adjustable context/output limits. Each client has independent selections. Unknown models start with a 200,000-token context assumption; review it against provider metadata. Output limits left at zero are unspecified. These helpers use Chat Completions and do not invent reasoning settings or certify model compatibility.
+Both tabs provide a searchable model picker with prices, up to 50 selected models, editable names, an initial model, and adjustable context/output limits under **Advanced options**. Each client has independent selections. Unknown models start with a 200,000-token context assumption; review it against provider metadata. Output limits left at zero are unspecified. These helpers use Chat Completions and do not invent reasoning settings or certify model compatibility.
 
 ## OpenCode
 
-1. Install OpenCode separately, then start Kilo Local and its proxy.
+1. Install OpenCode separately, then start Kilo Proxy and its proxy.
 2. Open **OpenCode**, check models, edit their short names, and choose **Use on startup**.
-3. Click **Prepare OpenCode**. The helper creates or updates `~/.opencode-kilo/opencode.json` and `kilo-models.json` (`%USERPROFILE%\.opencode-kilo` on Windows).
+3. Click **1. Prepare profile**. The helper creates or updates `~/.opencode-kilo/opencode.json` and `kilo-models.json` (`%USERPROFILE%\.opencode-kilo` on Windows).
 4. Copy the launch command for your shell and run it from your project directory. It selects the profile through `OPENCODE_CONFIG`, clears an inherited inline configuration override for this child, and pins the initial model with `--model`.
 5. Use `/models` to switch models. Load the saved selection to edit it later, then prepare again.
 
@@ -18,9 +18,9 @@ The optional configuration export contains the local key; keep it private. The l
 
 ## Zed
 
-1. Open **Zed** in Kilo Local and select your models, names, limits, and initial model.
-2. Click **Prepare Zed**. It updates the `kilo-local` OpenAI-compatible provider and the Agent default model in your user settings, preserving other providers and unrelated settings.
-3. Click **Copy key for Zed**. In Zed, open `agent: open settings`, locate `kilo-local`, and paste the key once. Zed stores it in its system keychain; this helper does not put a key into Zed's settings.
+1. Open **Zed** in Kilo Proxy and select your models, names, limits, and initial model.
+2. Click **1. Prepare profile**. It updates the `kilo-local` OpenAI-compatible provider and the Agent default model in your user settings, preserving other providers and unrelated settings.
+3. Click **2. Copy key for Zed**. In Zed, open `agent: open settings`, locate `kilo-local`, and paste the key once. Zed stores it in its system keychain; this helper does not put a key into Zed's settings.
 4. Select a model in Zed's Agent panel and test a conversation with the proxy running.
 
 Settings locations are `~/.config/zed/settings.json` on macOS/Linux, `$XDG_CONFIG_HOME/zed/settings.json` when configured on Linux, and `%APPDATA%\Zed\settings.json` on Windows. A neighboring `kilo-models.json` stores the helper selection. Reload Zed if it does not pick up a change. This configures Zed Agent, not edit prediction or external agents.
@@ -31,7 +31,7 @@ Settings locations are `~/.config/zed/settings.json` on macOS/Linux, `$XDG_CONFI
 
 JSON comments, trailing commas, unrelated settings, and exact large-number literals are preserved. Only Kilo-managed fields and the selected default are updated. Changed files receive exact `.bak` backups; a no-op leaves existing backups intact. Invalid or duplicate-key JSON, non-object settings sections, symbolic-link destinations, and unsafe backups are rejected. Writes use temporary files and restore earlier writes if a later write fails; this is not a crash-atomic transaction. If your settings use symlinks, use the optional export to merge the configuration yourself.
 
-The saved model selections contain no credentials. Files written by Kilo Local use private file permissions on Unix and inherit the profile directory's ACL on Windows. Do not publish generated OpenCode profiles or backups containing local credentials.
+The saved model selections contain no credentials. Files written by Kilo Proxy use private file permissions on Unix and inherit the profile directory's ACL on Windows. Do not publish generated OpenCode profiles or backups containing local credentials.
 
 ## Verified coverage
 

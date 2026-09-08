@@ -1,6 +1,6 @@
 # Claude Code compatibility verification
 
-Investigated and verified on September 7, 2026, for Kilo Local 0.15.0.
+Investigated and verified on September 7, 2026, for version 0.15.0, then named Kilo Local and now called Kilo Proxy.
 
 ## Supported setup
 
@@ -20,7 +20,7 @@ Unknown models keep their exact IDs and receive no invented reasoning capabiliti
 
 ## Runtime evidence
 
-The actual helper-written settings were copied into a disposable profile, replacing only the URL and local credential with a loopback mock gateway. Claude Code 2.1.263 loaded that profile, made an Anthropic Messages request with `model: anthropic/claude-fable-5.1`, sent the selected `output_config.effort: low`, and authenticated with the mock local bearer token. The request included `x-claude-code-session-id`, which Kilo Local now recognizes for per-conversation usage groups.
+The actual helper-written settings were copied into a disposable profile, replacing only the URL and local credential with a loopback mock gateway. Claude Code 2.1.263 loaded that profile, made an Anthropic Messages request with `model: anthropic/claude-fable-5.1`, sent the selected `output_config.effort: low`, and authenticated with the mock local bearer token. The request included `x-claude-code-session-id`, which Kilo Proxy now recognizes for per-conversation usage groups.
 
 A separate stdio initialization returned the custom native model list with labels **Fable** and **Opus**. It advertised low/medium/high/xhigh/max for Fable and low/medium/high/max for Opus 4.6. The native Default row remains available, as documented; the lineup is not an access-control policy.
 

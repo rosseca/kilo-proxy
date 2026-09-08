@@ -1,0 +1,8 @@
+# Keep the upstream runtime collapsed in PRs; review our documented patch.
+third_party/gio/** linguist-vendored
+third_party/fyne-systray/** linguist-vendored
+# Unified patch context intentionally prefixes tabs and blank lines with a space.
+third_party/gio/*.patch -whitespace
+third_party/fyne-systray/*.patch -whitespace
+ui/icon.svg text eol=lf
+ui/logo-mark.svg text eol=lf

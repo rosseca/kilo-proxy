@@ -12,12 +12,12 @@ The [official configuration documentation](https://learn.chatgpt.com/docs/config
 
 Validation: the macOS command is executed against a mock `open` executable to verify exact arguments, whitespace/quote handling and isolation. The CLI command is executed against a mock `codex` executable to verify child environment values, rejection of missing config and preservation of the parent shell environment. PowerShell restoration is checked structurally. These are not claims of an end-to-end desktop run or successful Kilo inference. No main-profile auth, cookies or conversation databases are copied.
 
-The installed app bundle is not included in Kilo Local distributions. Install it separately from the vendor and select its actual path. The normal app retains its normal updates. Profiles isolate settings and history; they do not sandbox repositories shared between instances.
+The installed app bundle is not included in Kilo Proxy distributions. Install it separately from the vendor and select its actual path. The normal app retains its normal updates. Profiles isolate settings and history; they do not sandbox repositories shared between instances.
 
 
 ## Multiple model picker (0.6)
 
-The official `model_catalog_json` configuration option selects a JSON catalog at startup. Kilo Local exports `{ "models": [...] }`, with each entry using the Kilo ID as `slug`, a display name, `visibility: "list"`, `supported_in_api: true`, priority and conservative capabilities. It supplies its own generic coding instructions; it does not distribute the installed application's prompts. Context and image input are populated only from available Kilo metadata. Known exact model IDs have provider/Codex fallback reasoning presets. IDs without published effort variants or fallback presets default to no levels and can be configured manually. The native picker receives `supported_reasoning_levels` and `default_reasoning_level`; model IDs remain unchanged. Explicit efforts from Kilo `opencode.variants` now take precedence over fallback presets. Gateway acceptance still depends on the route.
+The official `model_catalog_json` configuration option selects a JSON catalog at startup. Kilo Proxy exports `{ "models": [...] }`, with each entry using the Kilo ID as `slug`, a display name, `visibility: "list"`, `supported_in_api: true`, priority and conservative capabilities. It supplies its own generic coding instructions; it does not distribute the installed application's prompts. Context and image input are populated only from available Kilo metadata. Known exact model IDs have provider/Codex fallback reasoning presets. IDs without published effort variants or fallback presets default to no levels and can be configured manually. The native picker receives `supported_reasoning_levels` and `default_reasoning_level`; model IDs remain unchanged. Explicit efforts from Kilo `opencode.variants` now take precedence over fallback presets. Gateway acceptance still depends on the route.
 
 Run `python3 scripts/check-codex-catalog.py /absolute/path/to/codex` to test an installed binary. This creates an isolated temporary CODEX_HOME, generates both files through the same frontend functions, starts app-server on stdio, initializes it and checks model/list. It uses a non-listening localhost provider and never starts a thread or inference. Tested with the application's bundled codex-cli 0.153.4 on 2026-09-07: both entries are visible; a relative models.json resolves against the config directory; model/list's default follows catalog order. The exporter therefore puts the chosen default first as well as setting the top-level model.
 
@@ -45,7 +45,7 @@ Exact fallbacks: `openai/gpt-5.6-sol-discounted` supports none/low/medium/high/x
 
 ## Editable display names (0.10.3)
 
-The Name in Codex field edits the selected row's display label (up to 80 characters). The exported `display_name` changes while `slug`, reasoning and initial-model identity remain unchanged. Clearing the field restores the catalog name. Search matches custom names as well as original names and IDs. Save/load preserves labels; restart Codex Kilo after saving to reload its catalog.
+The **Display name** field (formerly **Name in Codex**) edits the selected row's display label, up to 80 characters. The exported `display_name` changes while `slug`, reasoning and initial-model identity remain unchanged. Clearing the field restores the catalog name. Search matches custom names as well as original names and IDs. Save/load preserves labels; restart Codex Kilo after saving to reload its catalog.
 
 Validated with the installed app-server: displayName returns Sol and GLM while model retains the full Kilo IDs. Browser checks cover typing without losing focus, searching, saving/loading labels, and English/Spanish copy.
 
@@ -58,7 +58,7 @@ Authentication headers, cookies and known local/upstream/admin keys are redacted
 
 ## Automatic Desktop profile preparation (0.14.0)
 
-**Prepare Codex GUI** creates the isolated profile directory and saves both the catalog and TOML. It updates Kilo-managed defaults and provider settings, including the current local port and the selected initial reasoning effort. If the config selects a named profile, its model defaults are synchronized too. Other settings and comments are preserved using parsed TOML expression ranges; inline tables, dotted/quoted keys and multiline values are supported. The edited result is parsed again and compared with the intended settings before writing.
+**1. Prepare profile** creates the isolated profile directory and saves both the catalog and TOML. It updates Kilo-managed defaults and provider settings, including the current local port and the selected initial reasoning effort. If the config selects a named profile, its model defaults are synchronized too. Other settings and comments are preserved using parsed TOML expression ranges; inline tables, dotted/quoted keys and multiline values are supported. The edited result is parsed again and compared with the intended settings before writing.
 
 Existing changed files receive exact `.bak` backups. Identical saves do not replace those backups. Destinations are validated before writing, and each file is replaced atomically; if the TOML write fails after the catalog write, the previous catalog is restored. This is not a crash-atomic transaction across two files. Invalid TOML is left untouched and reported without exposing its contents.
 
