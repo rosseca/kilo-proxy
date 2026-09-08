@@ -6,7 +6,7 @@ import {claudeCapabilities,claudeEfforts,claudeSelection,claudeSettings} from '.
 import {reportedCost, usageCoverage, cacheStats, lastCacheStats} from './usage-helper.mjs';
 import {formatTraceJSON} from './activity-helper.mjs';
 import {codexCatalog,codexDisplayName,reasoningFor,reasoningLevels} from './codex-catalog.mjs';
-import {filterModels, formatPrice, validModelID} from './model-helper.mjs';
+import {filterModels, formatPrice, validModelID, sortModels, configureModelSort, setModelSort, mergeModelSelection} from './model-helper.mjs';
 import {clientConfig, launchCommand} from './client-config.mjs';
 import {chooseLanguage, translate, bindDocument} from './i18n.mjs';
 const $ = (id) => document.getElementById(id);
@@ -469,7 +469,8 @@ function applyModelContext() {
   if (selected?.contextWindow) $('context-window').value = selected.contextWindow;
 }
 function renderModels() {
-  const matches = ['codex','codex-cli','claude'].includes(client) ? codexVisibleModels() : filterModels(catalog, $('model-search').value, $('coding-models').checked);
+  configureModelSort($('model-sort'),language);
+  const matches = sortModels(['codex','codex-cli','claude'].includes(client) ? codexVisibleModels() : filterModels(catalog, $('model-search').value, $('coding-models').checked),$('model-sort').value);
   const selectedID = $('model').value.trim();
   const selected = catalog.find(m => m.id === selectedID);
   $('load-models').disabled = catalogLoading || ['starting','pending'].includes(state?.auth?.status);
@@ -536,6 +537,7 @@ async function loadModels() {
 }
 $('load-models').addEventListener('click', () => void loadModels());
 $('model-search').addEventListener('input', renderModels);
+$('model-sort').addEventListener('change', () => { setModelSort($('model-sort').value); $('model-picker').scrollTop=0; renderModels(); });
 $('coding-models').addEventListener('change', renderModels);
 $('model-picker').addEventListener('change', event => {
   if(!event.target.matches('input[name="model-choice"]'))return;
@@ -671,7 +673,7 @@ function renderClaudeSetup(){
 }
 function claudeVisibleModels(){
  const selection=multiClients.claude.models,available=new Map(catalog.map(m=>[m.id,m]));
- for(const [id,m] of selection)available.set(id,{...available.get(id),...m});
+ for(const [id,m] of selection)available.set(id,mergeModelSelection(available.get(id),m));
  const query=$('model-search').value.trim().toLowerCase();
  return [...available.values()].filter(m=>(!$('codex-selected-only').checked || selection.has(m.id)) && (m.id+' '+(m.name || '')+' '+(m.displayName || '')).toLowerCase().includes(query) && (selection.has(m.id) || !$('coding-models').checked || m.tools===true && m.outputModalities?.includes('text')));
 }

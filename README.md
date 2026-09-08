@@ -53,6 +53,8 @@ If macOS reports that **Kilo Local** does not respond when opening a `0.20.0` or
 
 The model helpers support catalog search, manual IDs, context metadata, and input/output prices in USD per million tokens. Prices come from Kilo’s catalog, not your invoice. Explicitly free prices show zero; variable or missing prices remain unavailable. Refreshing models does not run inference. Model selections are independent between client tabs and remain available during the application session.
 
+Sort every model picker by **Code Mode Rank**, **Coding Index**, **Speed**, **Price**, or **Name**. The default is Kilo's seven-day Code mode usage rank; price ordering uses input cost. Missing metrics appear last, and sorting preserves your selections and initial model. [Sources and sorting behavior](docs/clients.md#sort-the-model-catalog).
+
 For Codex Desktop, select models, choose an initial model and reasoning level, and edit display names to shorten labels. Click **1. Prepare profile** to create the isolated profile folder and save or update both `config.toml` and `models.json`, preserving unrelated settings and backing up changed files. Then copy the launch command; close the Kilo instance first if it is already running. The actual Kilo model IDs remain unchanged.
 
 Claude Code has the same select-and-prepare flow in its own tab. It detects the installed version, writes a separate profile with backups, and enables supported native model names and reasoning preferences. See [client setup](docs/clients.md) for profile isolation, saving, and compatibility limits.

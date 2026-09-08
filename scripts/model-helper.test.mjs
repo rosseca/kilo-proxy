@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {filterModels,formatPrice,validModelID} from '../ui/model-helper.mjs';
+import {filterModels,formatPrice,validModelID,sortModels,modelSortOptions,mergeModelSelection} from '../ui/model-helper.mjs';
 import {clientConfig} from '../ui/client-config.mjs';
 import {translate} from '../ui/i18n.mjs';
 const models = [
@@ -28,4 +28,58 @@ test('catalog model ID and context produce client config without hardcoded model
  assert.deepEqual(config.language_models.openai_compatible['kilo-local'].available_models,[{name:m.id,display_name:m.id,max_tokens:128000}]);
  assert.equal(validModelID(m.id),true);
  for(const id of ['', 'a b','a\nb','x'.repeat(257)]) assert.equal(validModelID(id),false);
+});
+test('all five model sorts use published directions and deterministic names and IDs',()=>{
+ const catalog=[
+  {id:'vendor/b',name:'Beta',codeModeRank:1,codingIndex:20,speed:0,inputPrice:0},
+  {id:'vendor/z',name:'Zulu',displayName:'Alpha',codeModeRank:2,codingIndex:60,speed:200,inputPrice:3},
+  {id:'vendor/a',name:'ALPHA',codeModeRank:2,codingIndex:60,speed:200,inputPrice:1},
+  {id:'vendor/missing',name:'A missing metric'}
+ ];
+ const ids=order=>sortModels(catalog,order).map(m=>m.id);
+ assert.deepEqual(ids('codeModeRank'),['vendor/b','vendor/a','vendor/z','vendor/missing']);
+ assert.deepEqual(ids('codingIndex'),['vendor/a','vendor/z','vendor/b','vendor/missing']);
+ assert.deepEqual(ids('speed'),['vendor/a','vendor/z','vendor/b','vendor/missing']);
+ assert.deepEqual(ids('price'),['vendor/b','vendor/a','vendor/z','vendor/missing']);
+ assert.deepEqual(ids('name'),['vendor/missing','vendor/a','vendor/z','vendor/b']);
+ assert.deepEqual(sortModels(catalog).map(m=>m.id),ids('codeModeRank'));
+ assert.deepEqual(sortModels(catalog,'unknown').map(m=>m.id),ids('codeModeRank'));
+});
+test('unavailable numeric metadata sorts last while explicit free price and zero measurements remain valid',()=>{
+ for(const [order,field] of [['codingIndex','codingIndex'],['speed','speed'],['price','inputPrice'],['codeModeRank','codeModeRank']]) {
+  const invalid=[undefined,null,'20',NaN,Infinity,-1,...(order==='codeModeRank'?[0,1.5]:[])];
+  const rows=invalid.map((value,i)=>({id:'missing/'+i,name:'A missing '+i,[field]:value}));
+  const known={id:'known',name:'Z known',[field]:order==='codeModeRank'?1:0};
+  assert.equal(sortModels([...rows,known],order)[0].id,'known',order);
+ }
+});
+test('sorting is a view operation that preserves selection order, initial model and custom names',()=>{
+ const first=Object.freeze({id:'one',name:'Catalog A',displayName:'Zebra',speed:50});
+ const second=Object.freeze({id:'two',name:'Catalog Z',displayName:'Apple',speed:100});
+ const selection=new Map([[first.id,first],[second.id,second]]),initial='one';
+ const rows=Object.freeze([...selection.values()]);
+ for(const {value} of modelSortOptions()) {
+  const sorted=sortModels(rows,value);
+  assert.notEqual(sorted,rows);
+  assert.deepEqual([...selection.keys()],['one','two']);
+  assert.equal(initial,'one');
+  assert.equal(selection.get('one').displayName,'Zebra');
+ }
+ assert.deepEqual(sortModels(rows,'name').map(m=>m.id),['two','one']);
+});
+test('sort choices have stable keys and English and Spanish labels',()=>{
+ assert.deepEqual(modelSortOptions().map(o=>o.label),['Code Mode Rank','Coding Index','Speed','Price','Name']);
+ assert.deepEqual(modelSortOptions('es').map(o=>o.label),['Ranking de Code Mode','Índice de programación','Velocidad','Precio','Nombre']);
+ assert.deepEqual(modelSortOptions().map(o=>o.value),modelSortOptions('es').map(o=>o.value));
+ assert.equal(translate('Ordenar por','en'),'Sort by');
+});
+test('catalog refresh replaces observed metrics without replacing saved model choices',()=>{
+ const saved=Object.freeze({id:'vendor/model',name:'Saved name',displayName:'Short',speed:200,codingIndex:90,codeModeRank:1,inputPrice:8,contextWindow:50000,effort:'high'});
+ const current=Object.freeze({id:saved.id,name:'Gateway name',speed:100,inputPrice:0});
+ const merged=mergeModelSelection(current,saved);
+ assert.equal(merged.speed,100);assert.equal(merged.inputPrice,0);
+ assert.equal(merged.codeModeRank,undefined);assert.equal(merged.codingIndex,undefined);
+ assert.equal(merged.displayName,'Short');assert.equal(merged.name,'Saved name');assert.equal(merged.contextWindow,50000);assert.equal(merged.effort,'high');
+ assert.equal(saved.speed,200);
+ assert.deepEqual(mergeModelSelection(undefined,saved),saved);
 });

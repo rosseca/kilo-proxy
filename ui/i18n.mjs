@@ -1,4 +1,5 @@
 export const translations = {
+"Ordenar por":"Sort by",
 "Selecciona modelos y conecta el túnel HTTPS desde el helper de Cursor.":"Select models and connect the HTTPS tunnel from the Cursor helper.",
 "Guía de conexión de Cursor":"Cursor connection guide",
 "1. Preparar Codex CLI":"1. Prepare Codex CLI",

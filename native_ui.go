@@ -25,10 +25,12 @@ import (
 // All view state is confined to the window event goroutine. Network requests
 // return through updates; polling never changes an editor the user is typing in.
 type nativeUI struct {
-	traceGeneration  uint64
-	modelsPending    bool
-	languageRevision uint64
-	languageTarget   string
+	traceGeneration     uint64
+	modelsPending       bool
+	languageRevision    uint64
+	languageTarget      string
+	modelSortDismissTag int
+	modelSortMenuTag    int
 
 	owner                          *app
 	invalidate                     func()

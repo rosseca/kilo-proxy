@@ -46,6 +46,8 @@ type app struct {
 	xcodeTestRoot      string
 	claudeProfileDir   string
 	catalogRevision    uint64
+	modelStatsURL      string
+	modelStatsCache    modelStatsCache
 	accountURL         string
 	authPollInterval   time.Duration
 	login              *loginSession

@@ -44,6 +44,11 @@ func TestE2EServer(t *testing.T) {
 
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case "/api/models/stats":
+			jsonResponse(w, 200, []any{
+				map[string]any{"openrouterId": "vendor/one", "chartData": map[string]any{"modeRankings": map[string]int{"code": 9}}, "codingIndex": 95, "speedTokensPerSec": 50},
+				map[string]any{"openrouterId": "anthropic/claude-sonnet-4.6", "chartData": map[string]any{"modeRankings": map[string]int{"code": 2}}, "codingIndex": 80, "speedTokensPerSec": 100},
+			})
 		case "/api/gateway/models":
 			jsonResponse(w, 200, map[string]any{"data": []any{
 				map[string]any{"id": "vendor/one", "name": "Very Long First Model Name", "context_length": 64000, "top_provider": map[string]int{"max_completion_tokens": 4000}, "pricing": map[string]string{"prompt": "0.000001", "completion": "0.000002"}, "supported_parameters": []string{"tools", "reasoning"}, "architecture": map[string]any{"output_modalities": []string{"text"}}, "opencode": map[string]any{"variants": map[string]any{"low": map[string]any{"reasoning": map[string]string{"effort": "low"}}, "high": map[string]any{"reasoning": map[string]string{"effort": "high"}}}}},
@@ -88,6 +93,7 @@ func TestE2EServer(t *testing.T) {
 	defer upstream.Close()
 	setUpstream(a, upstream.URL)
 	a.accountURL = upstream.URL
+	a.modelStatsURL = upstream.URL + "/api/models/stats"
 	listener, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)

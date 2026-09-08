@@ -2,6 +2,24 @@
 
 Start Kilo Proxy and open **Clients & models**. Select your editor and models, then use **1. Prepare profile** to create or update its configuration automatically. Optional exports are available when you need to configure another computer; merge those snippets into existing settings. The local key grants access to your organization’s credits while the proxy is running; do not commit generated credentials. The instructions below use the native interface's English labels; the optional browser interface has equivalent helpers with some different button names.
 
+## Sort the model catalog
+
+The selector beside model search offers the same five criteria as [Kilo's model browser](https://kilo.ai/leaderboard). Your choice stays active across editor tabs for the current app/browser session.
+
+| Sort | Order and meaning |
+| --- | --- |
+| Code Mode Rank (default) | Lowest rank first, based on Kilo usage in Code mode over the last seven days. This is a usage ranking, not a benchmark score. |
+| Coding Index | Highest Artificial Analysis coding score first. |
+| Speed | Highest median output tokens per second first. |
+| Price | Lowest **input** price per million tokens first. Output prices remain visible beside input prices. |
+| Name | A–Z using your custom display name when set, otherwise the catalog name. |
+
+Missing metrics sort last; an explicit zero price or score remains valid. Ties use name and model ID for a stable order. Selected models follow the chosen order too; **Selected only** filters them. Sorting only changes the view: it does not change your initial model, selections, reasoning settings, or prepared editor files.
+
+Rank, coding index, and speed come from [Kilo's public model statistics](https://kilo.ai/api/models/stats), matched by exact gateway model ID. Coverage varies and values are Kilo-published snapshots. The extra request sends no API key or organization header, uses a short timeout, and caches successful results for five minutes. An unavailable statistics service leaves the gateway catalog usable and retains the last successful statistics snapshot when available. Prices and availability always come from the gateway catalog. Custom gateways are not queried against Kilo's public statistics.
+
+![Native model sorting menu with synthetic example metadata](images/native-model-sorting.png)
+
 ## Codex Desktop: a second GUI instance
 
 The **Codex GUI** tab prepares a launcher for the installed desktop application with separate configuration and interface data, allowing your normal Codex to remain open.

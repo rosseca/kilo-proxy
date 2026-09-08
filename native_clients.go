@@ -179,7 +179,7 @@ func nativeSelectionFingerprint(key string, s *nativeClientSelection, base, keyV
 	return string(data)
 }
 
-func nativeVisibleModels(catalog []modelInfo, s *nativeClientSelection, query string, selectedOnly, codingOnly bool) []modelInfo {
+func nativeVisibleModels(catalog []modelInfo, s *nativeClientSelection, query string, selectedOnly, codingOnly bool, order string) []modelInfo {
 	all := map[string]modelInfo{}
 	for _, m := range catalog {
 		all[m.ID] = m
@@ -214,12 +214,14 @@ func nativeVisibleModels(catalog []modelInfo, s *nativeClientSelection, query st
 		}
 		out = append(out, m)
 	}
-	sort.Slice(out, func(i, j int) bool {
-		a, b := s.choice(out[i].ID) != nil, s.choice(out[j].ID) != nil
-		if a != b {
-			return a
+	displayName := func(id string) string {
+		if choice := s.choice(id); choice != nil {
+			return choice.DisplayName
 		}
-		return out[i].ID < out[j].ID
+		return ""
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return compareModelOrder(out[i], out[j], order, displayName(out[i].ID), displayName(out[j].ID)) < 0
 	})
 	return out
 }
@@ -495,8 +497,9 @@ func (u *nativeUI) clientPicker(key string, s *nativeClientSelection) layout.Wid
 		u.seedClientChoice(key, *s.choice(m.ID))
 		return true
 	}
-	available := nativeVisibleModels(u.models, s, u.value(prefix+"search"), u.checked(prefix+"selected"), u.checked(prefix+"coding"))
-	controls := []layout.Widget{u.actionRow(u.field(prefix+"search", u.tr("Search models or saved names", "Buscar modelos o nombres guardados"), "provider/model", false), u.button(prefix+"refresh", u.tr("Refresh catalog", "Actualizar catálogo"), u.refreshModels)), u.pills(u.check(prefix+"selected", u.tr("Selected only", "Solo seleccionados"), func(bool) {}), u.check(prefix+"coding", u.tr("Text models with tools only", "Solo texto con herramientas"), func(bool) {}), u.check(prefix+"advanced", u.tr("Advanced options", "Opciones avanzadas"), func(bool) {})), u.pills(u.button(prefix+"select-all", u.tr("Select results", "Marcar resultados"), func() {
+	order := modelSortOrder(u.value("models.sort"))
+	available := nativeVisibleModels(u.models, s, u.value(prefix+"search"), u.checked(prefix+"selected"), u.checked(prefix+"coding"), order)
+	controls := []layout.Widget{u.actionRow(u.field(prefix+"search", u.tr("Search models or saved names", "Buscar modelos o nombres guardados"), "provider/model", false), u.modelSortButton, u.button(prefix+"refresh", u.tr("Refresh catalog", "Actualizar catálogo"), u.refreshModels)), u.pills(u.check(prefix+"selected", u.tr("Selected only", "Solo seleccionados"), func(bool) {}), u.check(prefix+"coding", u.tr("Text models with tools only", "Solo texto con herramientas"), func(bool) {}), u.check(prefix+"advanced", u.tr("Advanced options", "Opciones avanzadas"), func(bool) {})), u.pills(u.button(prefix+"select-all", u.tr("Select results", "Marcar resultados"), func() {
 		for _, m := range available {
 			if len(s.Models) >= limit {
 				break
@@ -514,6 +517,7 @@ func (u *nativeUI) clientPicker(key string, s *nativeClientSelection) layout.Wid
 			u.setValue(prefix+"alias:"+alias, "")
 		}
 	})), u.note(fmt.Sprintf(u.tr("%d selected · %d matching · up to %d models", "%d seleccionados · %d resultados · hasta %d modelos"), len(s.Models), len(available), limit) + u.tr(" · Prices: input / output per 1M tokens", " · Precios: entrada / salida por 1M tokens"))}
+	controls = append(controls, u.note(u.modelSortHint(order)))
 	rows := []layout.Widget{}
 	for i, model := range available {
 		if i >= 150 {
@@ -537,6 +541,9 @@ func (u *nativeUI) clientPicker(key string, s *nativeClientSelection) layout.Wid
 				s.remove(id)
 			}
 		}), u.note(id + "  ·  " + nativeModelPrice(m))}
+		if metric := u.modelSortMetric(m, order); metric != "" {
+			row = append(row, u.note(metric))
+		}
 		if m.MayTrain != nil && *m.MayTrain {
 			row = append(row, u.note(u.tr("Kilo reports that this model may use prompts for training.", "Kilo indica que este modelo puede usar los mensajes para entrenamiento.")))
 		}

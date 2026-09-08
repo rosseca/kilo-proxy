@@ -83,9 +83,73 @@ test('Codex Desktop and CLI prepare independent profiles with names and reasonin
     const launch=await copied(page,'#copy-launch');
     expect(launch).toContain(client==='codex' ? '.codex-kilo-desktop':'.codex-kilo-cli');
     expect(launch).toMatch(/KILO_LOCAL_API_KEY=['"]?kl_local_/);
+    for(const order of ['name','speed','price','codingIndex','codeModeRank']) {
+      await page.locator('#model-sort').selectOption(order);
+      await expect(page.locator('#codex-setup-status')).toContainText('Profile ready');
+      await expect(page.locator(`[data-focus="default:${first}"]`)).toHaveAttribute('aria-pressed','true');
+    }
+    expect(await readJSON(path.join(dir,'models.json'))).toEqual(catalog);
     await page.locator('#clear-codex-models').click();
     await page.locator('#load-codex-catalog').click();
     await expect(page.locator(`[data-focus="name:${first}"]`)).toHaveValue(client==='codex'?'Short GUI':'Short CLI');
+  }
+});
+
+test('all model helpers share ranking, coding, speed, price and name sorting without promoting selections',async({page},testInfo)=>{
+  const expected={codeModeRank:[second,first],codingIndex:[first,second],speed:[second,first],price:[first,second],name:[second,first]};
+  let previous='codeModeRank';
+  for(const client of ['generic','codex','codex-cli','claude','opencode','zed','cursor','xcode']) {
+    await page.locator('#tab-'+client).click();
+    const prefix=['opencode','zed'].includes(client)?'editor':client==='xcode'?'xcode':'model';
+    const sort=page.locator('#'+prefix+'-sort');
+    await expect(sort).toBeVisible();
+    await expect(sort).toHaveAccessibleName('Sort by');
+    await expect(sort).toHaveValue(previous);
+    await expect(sort.locator('option')).toHaveText(['Code Mode Rank','Coding Index','Speed','Price','Name']);
+    const variants=client==='xcode'?['chat','codex','claude']:[null];
+    for(const variant of variants) {
+      if(variant) await page.locator(`[data-xcode-variant="${variant}"]`).click();
+      const choices=page.locator(prefix==='editor'?'#editor-picker [data-editor-id]':prefix==='xcode'?'#xcode-picker [data-xcode-focus^="choose:"]':'#model-picker input[name="model-choice"]');
+      await expect(choices).toHaveCount(2);
+      const firstChoice=prefix==='editor'?page.locator(`[data-editor-id="${first}"]`):prefix==='xcode'?page.locator(`[data-xcode-focus="choose:${first}"]`):model(page,first);
+      await firstChoice.check();
+      for(const [order,ids] of Object.entries(expected)) {
+        await sort.selectOption(order);
+        await expect.poll(()=>choices.evaluateAll((elements,prefix)=>elements.map(element=>prefix==='editor'?element.dataset.editorId:prefix==='xcode'?element.dataset.xcodeFocus.slice(7):element.value),prefix)).toEqual(ids);
+        await expect(firstChoice).toBeChecked();
+        previous=order;
+      }
+      const nameInput=prefix==='editor'?page.locator(`[data-editor-name="${first}"]`):prefix==='xcode'?page.locator(`[data-xcode-focus="name:${first}"]`):['codex','codex-cli','claude'].includes(client)?page.locator(`[data-focus="${client==='claude'?'claude-name':'name'}:${first}"]`):null;
+      if(nameInput) {
+        await nameInput.fill('A custom name');
+        await sort.selectOption('speed');
+        await sort.selectOption('name');
+        await expect.poll(()=>choices.evaluateAll((elements,prefix)=>elements.map(element=>prefix==='editor'?element.dataset.editorId:prefix==='xcode'?element.dataset.xcodeFocus.slice(7):element.value),prefix)).toEqual([first,second]);
+        await expect(nameInput).toHaveValue('A custom name');
+      }
+      if(variant) {
+        await page.locator('#xcode-selected').check();
+        await expect(choices).toHaveCount(1);
+        await expect(firstChoice).toBeChecked();
+        await page.locator('#xcode-selected').uncheck();
+        await expect(choices).toHaveCount(2);
+      }
+    }
+  }
+  await page.locator('#language').selectOption('es');
+  await expect(page.locator('#xcode-sort')).toHaveAccessibleName('Ordenar por');
+  await expect(page.locator('#xcode-sort option')).toHaveText(['Ranking de Code Mode','Índice de programación','Velocidad','Precio','Nombre']);
+  await page.screenshot({path:testInfo.outputPath('sort-xcode-desktop.png')});
+  for(const client of ['codex','opencode','xcode']) {
+    await page.locator('#tab-'+client).click();
+    const prefix=client==='opencode'?'editor':client==='xcode'?'xcode':'model';
+    await expect(page.locator('#'+prefix+'-sort')).toHaveValue('name');
+    await expect(page.locator('#'+prefix+'-sort')).toHaveAccessibleName('Ordenar por');
+    await page.setViewportSize({width:390,height:844});
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
+    await expect(page.locator('#'+prefix+'-sort')).toBeVisible();
+    await page.locator('#'+prefix+'-sort').scrollIntoViewIfNeeded();
+    await page.screenshot({path:testInfo.outputPath('sort-'+prefix+'-mobile.png')});
   }
 });
 

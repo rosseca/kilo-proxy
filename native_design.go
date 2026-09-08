@@ -106,6 +106,7 @@ func (u *nativeUI) pageTop(gtx layout.Context) layout.Dimensions {
 }
 func (u *nativeUI) Layout(gtx layout.Context) layout.Dimensions {
 	u.drain()
+	u.dismissModelSort(gtx)
 	u.laidOut = true
 	paint.Fill(gtx.Ops, u.theme.Bg)
 	wide := gtx.Constraints.Max.X >= gtx.Dp(940)
