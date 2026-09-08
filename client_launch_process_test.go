@@ -165,8 +165,14 @@ func TestClientLaunchProcessRunnerConsumesTicketAndUsesRealChildIO(t *testing.T)
 	if err := json.Unmarshal(output.Bytes(), &got); err != nil {
 		t.Fatalf("child output: %v\n%s", err, output.String())
 	}
-	resolvedDirectory, _ := filepath.EvalSymlinks(plan.Directory)
-	if got.Input != "interactive input\n" || got.Directory != resolvedDirectory || !reflect.DeepEqual(got.Args, plan.Args) || got.Token != "synthetic-local-key" || !got.Removed || !got.EmptyPresent || got.TicketPresent || stderr.String() != "synthetic stderr" {
+	// Windows may report the same directory using its short 8.3 spelling while
+	// EvalSymlinks returns the long name. Verify filesystem identity, not spelling.
+	wantDirectory, wantErr := os.Stat(plan.Directory)
+	gotDirectory, gotErr := os.Stat(got.Directory)
+	if wantErr != nil || gotErr != nil || !os.SameFile(wantDirectory, gotDirectory) {
+		t.Fatalf("child cwd %q is not requested directory %q: %v, %v", got.Directory, plan.Directory, gotErr, wantErr)
+	}
+	if got.Input != "interactive input\n" || !reflect.DeepEqual(got.Args, plan.Args) || got.Token != "synthetic-local-key" || !got.Removed || !got.EmptyPresent || got.TicketPresent || stderr.String() != "synthetic stderr" {
 		t.Fatalf("child arguments, cwd, environment, cleanup or IO differ: %+v; stderr=%q", got, stderr.String())
 	}
 	if _, err := os.Stat(filepath.Dir(ticket)); !os.IsNotExist(err) {

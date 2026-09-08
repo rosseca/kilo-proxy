@@ -74,9 +74,14 @@ func clientProcessCommand(plan clientLaunchPlan, environment []string) (*exec.Cm
 // Win32 directly lets Windows supply real handles for its new console instead
 // of inheriting the GUI application's null devices or test log pipes.
 func startWindowsClientConsole(binary string, args []string, directory string) error {
+	_, err := startWindowsClientConsoleProcess(binary, args, directory)
+	return err
+}
+
+func startWindowsClientConsoleProcess(binary string, args []string, directory string) (<-chan struct{}, error) {
 	application, err := windows.UTF16PtrFromString(binary)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	parts := []string{windows.EscapeArg(binary)}
 	for _, arg := range args {
@@ -84,26 +89,28 @@ func startWindowsClientConsole(binary string, args []string, directory string) e
 	}
 	command, err := windows.UTF16PtrFromString(strings.Join(parts, " "))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	var cwd *uint16
 	if directory != "" {
 		cwd, err = windows.UTF16PtrFromString(directory)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 	startup := windows.StartupInfo{Cb: uint32(unsafe.Sizeof(windows.StartupInfo{}))}
 	var process windows.ProcessInformation
 	if err := windows.CreateProcess(application, command, nil, nil, false, windows.CREATE_NEW_CONSOLE|windows.CREATE_UNICODE_ENVIRONMENT, nil, cwd, &startup, &process); err != nil {
-		return err
+		return nil, err
 	}
 	_ = windows.CloseHandle(process.Thread)
+	done := make(chan struct{})
 	go func() {
 		_, _ = windows.WaitForSingleObject(process.Process, windows.INFINITE)
 		_ = windows.CloseHandle(process.Process)
+		close(done)
 	}()
-	return nil
+	return done, nil
 }
 
 func startClientTerminal(binary, ticket, _ string) error {

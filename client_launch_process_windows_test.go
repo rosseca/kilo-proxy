@@ -92,16 +92,21 @@ func TestClientLaunchProcessWindowsConsoleHasInteractiveHandles(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer cleanup()
-	if err := startWindowsClientConsole(binary, []string{"-test.run=^TestClientLaunchProcessMainBootstrap$", "--", "--client-launch-ticket", ticket}, filepath.Dir(path)); err != nil {
+	done, err := startWindowsClientConsoleProcess(binary, []string{"-test.run=^TestClientLaunchProcessMainBootstrap$", "--", "--client-launch-ticket", ticket}, filepath.Dir(path))
+	if err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(15 * time.Second)
+	// A report proves the child ran, but its parent still owns the working
+	// directory until process exit. Wait before TempDir cleanup (also under -race).
+	select {
+	case <-done:
+	case <-time.After(15 * time.Second):
+		t.Fatal("synthetic console bootstrap did not exit")
+	}
 	var report map[string]any
-	for time.Now().Before(deadline) {
-		if data, err := os.ReadFile(path); err == nil && json.Unmarshal(data, &report) == nil {
-			break
-		}
-		time.Sleep(50 * time.Millisecond)
+	data, err := os.ReadFile(path)
+	if err != nil || json.Unmarshal(data, &report) != nil {
+		t.Fatalf("console report missing or invalid: %v; %q", err, data)
 	}
 	if report["stdin"] != true || report["stdout"] != true || report["stderr"] != true {
 		t.Fatalf("new console must expose interactive standard handles: %+v", report)
