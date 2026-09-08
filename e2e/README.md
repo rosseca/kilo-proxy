@@ -26,4 +26,6 @@ Coverage includes:
 
 The tests do not prove that every upstream model supports every client protocol, and do not launch the external editors. Browser E2E validates the UI/backend integration; native smoke checks validate each packaged OS application.
 
+Lab checks separate the cross-client filtering journey, manual-model profile persistence, and control layouts. Layout cases each cover one helper type, language, and viewport with a fresh fixture and one capture, keeping screenshot work independent of the functional journeys.
+
 Failures produce `test-results/` screenshots, traces, and Go fixture logs. Open the HTML report with `npx playwright show-report`. For a focused run, use `npm run test:e2e -- --project=webkit --grep 'OpenCode'`.

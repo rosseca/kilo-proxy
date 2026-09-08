@@ -100,7 +100,7 @@ test('Codex Desktop and CLI prepare independent profiles with names and reasonin
   }
 });
 
-test('lab filters combine with sorting and search across every helper while retaining hidden and manual selections',async({page,gateway},testInfo)=>{
+test('lab filters combine with sorting and search across every helper while retaining hidden selections',async({page})=>{
   let previous='';
   for(const client of ['generic','codex','codex-cli','claude','opencode','zed','cursor','xcode']) {
     await page.locator('#tab-'+client).click();
@@ -148,7 +148,23 @@ test('lab filters combine with sorting and search across every helper while reta
       previous='anthropic';
     }
   }
+});
+
+test('lab filters retain manual models, custom names and initial selections when saving profiles',async({page,gateway})=>{
+  for(const client of ['codex','opencode']) {
+    await page.locator('#tab-'+client).click();
+    if(client==='codex') {
+      await model(page,first).check();
+      await page.locator(`[data-focus="name:${first}"]`).fill('Preserved name');
+      await page.locator(`[data-focus="default:${first}"]`).click();
+    } else {
+      await page.locator(`[data-editor-id="${first}"]`).check();
+      await page.locator(`[data-editor-name="${first}"]`).fill('Preserved name');
+      await page.locator(`[data-editor-initial="${first}"]`).click();
+    }
+  }
   await page.locator('#tab-codex').click();
+  await page.locator('#model-lab').selectOption('anthropic');
   await page.locator('#codex-manual-entry > summary').click();
   for(const id of ['~anthropic/manual','future-lab/manual','constructor/manual','__proto__/manual']) {
     await page.locator('#codex-manual-id').fill(id);
@@ -187,22 +203,34 @@ test('lab filters combine with sorting and search across every helper while reta
   expect(saved.models[0].slug).toBe(first);
   expect(saved.models.map(m=>m.slug)).toContain('~anthropic/manual');
   expect(saved.models.map(m=>m.slug)).toContain('future-lab/manual');
-  for(const language of ['en','es']) {
-    await page.locator('#language').selectOption(language);
-    for(const client of ['codex','opencode','xcode']) {
-      await page.locator('#tab-'+client).click();
-      const prefix=client==='opencode'?'editor':client==='xcode'?'xcode':'model';
-      await expect(page.locator('#'+prefix+'-lab')).toHaveAccessibleName(language==='en'?'Lab':'Laboratorio');
-      await expect(page.locator('#'+prefix+'-lab option').first()).toHaveText(language==='en'?'All labs':'Todos los laboratorios');
-      for(const [size,width,height] of [['wide',1180,820],['mobile',390,844]]) {
+});
+
+// Isolate layout checks from the long cross-client journey. In particular,
+// WebKit on Linux must not spend the journey's remaining budget on 12 captures.
+for(const language of ['en','es']) {
+  for(const client of ['codex','opencode','xcode']) {
+    for(const [size,width,height] of [['wide',1180,820],['mobile',390,844]]) {
+      test(`lab control layout ${client} ${language} ${size}`,async({page},testInfo)=>{
         await page.setViewportSize({width,height});
-        await page.locator('#'+prefix+'-lab').scrollIntoViewIfNeeded();
+        await page.locator('#language').selectOption(language);
+        await page.locator('#tab-'+client).click();
+        if(client==='xcode') await page.locator('[data-xcode-variant="claude"]').click();
+        const prefix=client==='opencode'?'editor':client==='xcode'?'xcode':'model';
+        const firstChoice=prefix==='editor'?page.locator(`[data-editor-id="${first}"]`):prefix==='xcode'?page.locator(`[data-xcode-focus="choose:${first}"]`):model(page,first);
+        await firstChoice.check();
+        const nameInput=prefix==='editor'?page.locator(`[data-editor-name="${first}"]`):prefix==='xcode'?page.locator(`[data-xcode-focus="name:${first}"]`):page.locator(`[data-focus="name:${first}"]`);
+        await nameInput.fill('Preserved name');
+        await page.locator('#'+prefix+'-sort').selectOption('price');
+        const lab=page.locator('#'+prefix+'-lab');
+        await expect(lab).toHaveAccessibleName(language==='en'?'Lab':'Laboratorio');
+        await expect(lab.locator('option').first()).toHaveText(language==='en'?'All labs':'Todos los laboratorios');
+        await lab.scrollIntoViewIfNeeded();
         expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
         await page.screenshot({path:testInfo.outputPath('lab-'+prefix+'-'+language+'-'+size+'.png')});
-      }
+      });
     }
   }
-});
+}
 
 test('all model helpers share ranking, coding, speed, price and name sorting without promoting selections',async({page},testInfo)=>{
   const expected={codeModeRank:[second,first],codingIndex:[first,second],speed:[second,first],price:[first,second],name:[second,first]};
