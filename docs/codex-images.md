@@ -35,9 +35,23 @@ The helper preserves unrelated settings and MCP entries and creates profile back
 
 ## Generated files and editing
 
-`generate_image` accepts a text `prompt` and an optional `reference_image` path. It returns image content and the absolute path of the file saved under Kilo Proxy's `generated-images` directory inside its application data directory.
+`generate_image` accepts a text `prompt` and an optional `reference_image` path. It saves the full-resolution original under Kilo Proxy's `generated-images` directory inside its application data directory and returns its absolute path.
+
+From v0.23.1, the inline MCP image is a preview bounded to **1024 pixels on each side and 256 KiB of encoded image bytes per image**. Base64 encoding and the rest of the MCP response add to the transmitted size. The preview reduces the image data carried into later model requests; it does not replace or reduce the saved original.
+
+Previews preserve aspect ratio. Small PNG/JPEG images that already fit are returned unchanged; larger images are resized or re-encoded, with PNG transparency retained. In the result, `images[].path`, `mimeType`, `width`, and `height` describe the original file. `images[].preview` describes the inline image with its own `mimeType`, `width`, `height`, `bytes`, and `resized` fields. If a preview cannot be created safely, `preview.omitted` is `true` and the result explains that the original remains available at its saved path. Generation is not repeated to recover a preview.
 
 For an edit, pass a path returned by a previous successful generation. References are restricted to Kilo Proxy's own generated image files. Arbitrary local files and remote URLs are not accepted as references. The selected image model must also support image input for editing to succeed. You can ask Codex to copy a finished image into your project after generation.
+
+## Payload limits and 413 errors
+
+An **HTTP 413** means a request or response exceeded a body-size limit. The proxy's local upload allowance does not override limits enforced by Kilo, its hosting platform, or the model provider. For a Vercel-hosted route, Vercel documents a **4.5 MB** function request/response limit and the `FUNCTION_PAYLOAD_TOO_LARGE` error. See [Vercel's request body limits](https://vercel.com/docs/functions/limitations#request-body-size).
+
+Codex can send previous tool results again as conversation context. A history created before v0.23.1 may already contain full-size base64 images; updating Kilo Proxy does not rewrite that history. Multiple previews, other attachments, and text can also exceed an upstream limit. Bounded previews reduce new image payloads; they do not guarantee that every conversation fits.
+
+If a conversation receives a 413, explicitly compact its history using the client's supported controls, start a new conversation, or reduce its attachments. If compaction itself cannot send the existing history, start a new conversation with the necessary text summary and saved image paths. Avoid attaching the full original again merely to export it: copy the saved file into your project. Kilo Proxy does not silently delete context or automatically retry a rejected request.
+
+For an upstream 413 carrying the recognized `FUNCTION_PAYLOAD_TOO_LARGE` code, the proxy provides a clearer JSON diagnostic with `error.code = "upstream_payload_too_large"`, the outbound request size when known, and recovery guidance. Other 413 responses pass through unchanged. Activity preserves the original rejection in **Gateway response** and the diagnostic in **Client response**. A smaller inline preview applies to new image results, not images already stored in the client's history. See [diagnostic recognition limits](security-and-debugging.md#local-access-and-upstream-requests).
 
 ## Activity and cost
 

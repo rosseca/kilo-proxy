@@ -145,6 +145,7 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 			p.Out.Header.Set("User-Agent", "Kilo-Local/"+version)
 		},
 		ModifyResponse: func(r *http.Response) error {
+			normalizeUpstreamPayloadError(r)
 			if bridge, ok := r.Request.Context().Value(schemaBridgeContextKey{}).(*schemaBridge); ok {
 				if err := bridge.adaptResponse(r); err != nil {
 					return err

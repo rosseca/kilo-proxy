@@ -13,6 +13,10 @@ import (
 const imageMCPProtocol = "2025-11-25"
 const imageMCPRequestLimit = 64 << 10
 
+// Keep the generation permit through preview encoding and response assembly.
+// The inner generation limit alone ends as soon as the original files are saved.
+var imageMCPWorkSlots = make(chan struct{}, imageGenerationConcurrency)
+
 func supportedImageMCPProtocol(version string) bool {
 	return version == "2025-03-26" || version == "2025-06-18" || version == imageMCPProtocol
 }
@@ -119,7 +123,7 @@ func (a *app) imageMCPHandler(w http.ResponseWriter, r *http.Request, key, orgID
 	case "tools/list":
 		imageMCPReply(w, message.ID, map[string]any{"tools": []any{map[string]any{
 			"name": "generate_image", "title": "Generate an image with Kilo",
-			"description": "Generate an image from a text prompt using the image model selected in Kilo Proxy. Optionally edit a previously generated image by providing its returned absolute path as reference_image. Images are saved locally. Requests use the configured Kilo organization; charges depend on its provider or gateway billing setup. Do not retry automatically after a timeout; generation may already have been charged.",
+			"description": "Generate an image from a text prompt using the image model selected in Kilo Proxy. Optionally edit a previously generated image by providing its returned absolute path as reference_image. Full-resolution original files are saved locally; inline image content uses bounded previews when needed. Use the returned original paths for editing or copying. Requests use the configured Kilo organization; charges depend on its provider or gateway billing setup. Do not retry automatically after a timeout; generation may already have been charged.",
 			"inputSchema": map[string]any{"type": "object", "properties": map[string]any{"prompt": map[string]any{"type": "string", "minLength": 1, "maxLength": imagePromptLimit, "description": "Describe the image to generate or the changes to make."}, "reference_image": map[string]any{"type": "string", "maxLength": 8192, "description": "Optional absolute path returned by an earlier generate_image call. Arbitrary local files and URLs are not accepted."}}, "required": []string{"prompt"}, "additionalProperties": false},
 			"annotations": map[string]bool{"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": true},
 		}}})
@@ -143,17 +147,25 @@ func (a *app) imageMCPHandler(w http.ResponseWriter, r *http.Request, key, orgID
 			imageMCPError(w, 200, message.ID, -32602, err.Error())
 			return
 		}
+		select {
+		case imageMCPWorkSlots <- struct{}{}:
+			defer func() { <-imageMCPWorkSlots }()
+		default:
+			imageMCPReply(w, message.ID, map[string]any{"isError": true, "content": []any{map[string]string{"type": "text", "text": "Two images are already being generated or previewed. Wait for one to finish."}}})
+			return
+		}
 		result, err := a.generateImage(r, args, key, orgID, localKey)
 		if err != nil {
 			imageMCPReply(w, message.ID, map[string]any{"isError": true, "content": []any{map[string]string{"type": "text", "text": err.Error()}}})
 			return
 		}
-		summary, _ := json.Marshal(result)
+		structured, previews := imageMCPPreviews(result)
+		summary, _ := json.Marshal(structured)
 		content := []any{map[string]string{"type": "text", "text": string(summary)}}
-		for _, image := range result.Images {
-			content = append(content, map[string]string{"type": "image", "mimeType": image.MIME, "data": base64.StdEncoding.EncodeToString(image.data)})
+		for _, preview := range previews {
+			content = append(content, map[string]string{"type": "image", "mimeType": preview.MIME, "data": base64.StdEncoding.EncodeToString(preview.data)})
 		}
-		imageMCPReply(w, message.ID, map[string]any{"isError": false, "structuredContent": result, "content": content})
+		imageMCPReply(w, message.ID, map[string]any{"isError": false, "structuredContent": structured, "content": content})
 	default:
 		imageMCPError(w, 200, message.ID, -32601, "Method not found.")
 	}
