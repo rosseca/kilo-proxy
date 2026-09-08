@@ -162,7 +162,8 @@ func (a *app) state(w http.ResponseWriter) {
 		uptime = int64(time.Since(a.started).Seconds())
 	}
 	jsonResponse(w, 200, map[string]any{
-		"cursor": a.cursor, "language": a.config.Language, "catalogRevision": a.catalogRevision,
+		"imageGeneration": a.config.ImageGeneration,
+		"cursor":          a.cursor, "language": a.config.Language, "catalogRevision": a.catalogRevision,
 		"auth": a.login, "organizations": a.organizations, "accountEmail": a.accountEmail, "keySaved": a.keySaved,
 		"version": version, "desktop": a.desktop != nil, "port": a.config.Port, "orgId": a.config.OrgID,
 		"localKey": a.config.LocalKey, "hasKey": a.apiKey != "", "remember": a.config.Remember,

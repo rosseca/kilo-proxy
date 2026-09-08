@@ -34,12 +34,14 @@ type nativeClients struct {
 
 // A selection belongs to one editor/variant. Labels never replace gateway IDs.
 type nativeClientSelection struct {
-	Models  []nativeModelChoice
-	Initial string
-	Aliases map[string]string
-	Mode    string
-	Saved   string
-	Path    string
+	ImageGeneration         *imageGenerationSettings `json:"imageGeneration,omitempty"`
+	imageGenerationBaseline *imageGenerationSettings
+	Models                  []nativeModelChoice
+	Initial                 string
+	Aliases                 map[string]string
+	Mode                    string
+	Saved                   string
+	Path                    string
 }
 
 func (c *nativeClients) selection(key string) *nativeClientSelection {
@@ -129,7 +131,15 @@ func nativeClientEndpoint(key string) string {
 func nativeClientPayload(key string, s *nativeClientSelection) (any, error) {
 	if key == "codex" || key == "codex-cli" || key == "xcode-codex" {
 		catalog, err := buildCodexCatalog(s.Models, s.Initial, key == "xcode-codex")
-		return map[string]any{"catalog": json.RawMessage(catalog)}, err
+		payload := map[string]any{"catalog": json.RawMessage(catalog)}
+		if key != "xcode-codex" && s.ImageGeneration != nil {
+			images := *s.ImageGeneration
+			payload["imageGeneration"] = images
+			if images.Enabled && !catalogID.MatchString(images.Model) && err == nil {
+				err = errors.New("Choose an image model before enabling image generation.")
+			}
+		}
+		return payload, err
 	}
 	if key == "opencode" || key == "zed" {
 		selection := editorSelection{Initial: s.Initial}
@@ -286,6 +296,7 @@ func (u *nativeUI) seedClientChoice(key string, m nativeModelChoice) {
 }
 
 func (u *nativeUI) syncClientSelection(key string, s *nativeClientSelection) {
+	u.seedClientImages(key, s)
 	catalog := make(map[string]modelInfo, len(u.models))
 	for _, m := range u.models {
 		catalog[m.ID] = m
@@ -446,6 +457,9 @@ func (u *nativeUI) clientsPanel() layout.Widget {
 	}
 	widgets = append(widgets, u.note(protocol))
 	widgets = append(widgets, u.clientPicker(key, s))
+	if key == "codex" || key == "codex-cli" {
+		widgets = append(widgets, u.clientImagesPanel(key, s))
+	}
 	if key == "cursor" {
 		widgets = append(widgets, u.cursorClientPanel(s))
 		return u.column(widgets...)
@@ -679,6 +693,9 @@ func (u *nativeUI) clientActions(key string, s *nativeClientSelection) layout.Wi
 	_, validation := nativeClientPayload(key, s)
 	working := u.busy["POST"+nativeClientEndpoint(key)] || u.busy["GET"+nativeClientEndpoint(key)] || u.clientState().Launching != ""
 	canSave := len(s.Models) > 0 && validation == nil && !working
+	if (key == "codex" || key == "codex-cli") && !nativeClientImagesReady(s, u.models) {
+		canSave = false
+	}
 	if strings.HasPrefix(key, "xcode-") && key != "xcode-chat" && !u.clientState().Xcode.Available {
 		canSave = false
 	}
@@ -783,6 +800,7 @@ func (u *nativeUI) prepareClientAfter(key string, done func(error)) {
 	}
 	base, local, _ := u.clientBase()
 	fingerprint := nativeSelectionFingerprint(key, s, base, local, u.clientCaps(key))
+	imagesSent := cloneClientImageSettings(s.ImageGeneration)
 	u.clientRequest(http.MethodPost, nativeClientEndpoint(key), payload, func(data json.RawMessage, err error) {
 		if err != nil {
 			done(err)
@@ -805,6 +823,9 @@ func (u *nativeUI) prepareClientAfter(key string, done func(error)) {
 			s.Path = result.ConfigPath
 		}
 		s.Saved = fingerprint
+		if key == "codex" || key == "codex-cli" {
+			u.acceptClientImages(imagesSent)
+		}
 		u.notice = u.tr("Editor profile prepared.", "Perfil del editor preparado.")
 		done(nil)
 	})
@@ -828,6 +849,9 @@ func (u *nativeUI) loadClient(key string) {
 			return
 		}
 		u.clientState().Selections[key] = s
+		if key == "codex" || key == "codex-cli" {
+			u.acceptClientImages(s.ImageGeneration)
+		}
 		for _, m := range s.Models {
 			u.seedClientChoice(key, m)
 		}
@@ -855,10 +879,16 @@ func decodeNativeClientSelection(key string, data []byte, catalog []modelInfo) (
 	}
 	if key == "codex" || key == "codex-cli" || key == "xcode-codex" {
 		var envelope struct {
-			Catalog json.RawMessage `json:"catalog"`
+			Catalog         json.RawMessage          `json:"catalog"`
+			ImageGeneration *imageGenerationSettings `json:"imageGeneration"`
 		}
 		if err := json.Unmarshal(data, &envelope); err != nil {
 			return nil, err
+		}
+		if key != "xcode-codex" && envelope.ImageGeneration != nil {
+			images := *envelope.ImageGeneration
+			s.ImageGeneration = cloneClientImageSettings(&images)
+			s.imageGenerationBaseline = cloneClientImageSettings(&images)
 		}
 		if len(envelope.Catalog) > 0 {
 			data = envelope.Catalog
@@ -978,6 +1008,9 @@ func (u *nativeUI) clientExport(key string, s *nativeClientSelection, reveal boo
 			return "", err
 		}
 		data, err := mergeCodexConfig(nil, catalog, port)
+		if err == nil && s.ImageGeneration != nil {
+			data, err = mergeCodexImages(data, *s.ImageGeneration, port)
+		}
 		return string(data), err
 	}
 	if key == "xcode-codex" {

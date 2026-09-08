@@ -141,6 +141,10 @@ func saveCodexProfile(dir string, catalog []byte, port int) (bool, bool, error) 
 	return saveCodexProfileWithToken(dir, catalog, port, "")
 }
 func saveCodexProfileWithToken(dir string, catalog []byte, port int, token string) (bool, bool, error) {
+	return saveCodexProfileOptions(dir, catalog, port, token, nil, nil)
+}
+
+func saveCodexProfileOptions(dir string, catalog []byte, port int, token string, images *imageGenerationSettings, extra []profileFile) (bool, bool, error) {
 	info, err := os.Lstat(dir)
 	if errors.Is(err, os.ErrNotExist) {
 		if err = os.MkdirAll(dir, 0700); err != nil {
@@ -160,6 +164,12 @@ func saveCodexProfileWithToken(dir string, catalog []byte, port int, token strin
 	if err != nil {
 		return false, false, err
 	}
+	if images != nil {
+		config, err = mergeCodexImages(config, *images, port)
+		if err != nil {
+			return false, false, err
+		}
+	}
 	if token != "" {
 		config, err = codexXcodeAuth(config, token)
 		if err != nil {
@@ -175,32 +185,37 @@ func saveCodexProfileWithToken(dir string, catalog []byte, port int, token strin
 	if err != nil {
 		return false, false, err
 	}
-	for _, f := range []profileFile{models, settings} {
+	files := append([]profileFile{models, settings}, extra...)
+	for _, f := range files {
 		if f.changed && f.exists {
 			if err := atomicCatalogFile(f.path+".bak", f.old); err != nil {
 				return false, false, errors.New("Cannot back up " + filepath.Base(f.path) + "; no profile changes saved")
 			}
 		}
 	}
-	if models.changed {
-		if err := atomicCatalogFile(models.path, models.new); err != nil {
-			return false, false, errors.New("Cannot save models.json; config.toml was not changed")
+	for i, f := range files {
+		if !f.changed {
+			continue
 		}
-	}
-	if settings.changed {
-		if err := atomicCatalogFile(settings.path, settings.new); err != nil {
-			if models.changed {
-				var rollback error
-				if models.exists {
-					rollback = atomicCatalogFile(models.path, models.old)
+		if err := atomicCatalogFile(f.path, f.new); err != nil {
+			var restoreErr error
+			for j := i - 1; j >= 0; j-- {
+				previous := files[j]
+				if !previous.changed {
+					continue
+				}
+				var e error
+				if previous.exists {
+					e = atomicCatalogFile(previous.path, previous.old)
 				} else {
-					rollback = os.Remove(models.path)
+					e = os.Remove(previous.path)
 				}
-				if rollback != nil {
-					return false, false, errors.New("Cannot save config.toml or restore models.json; recover the previous catalog from models.json.bak if present")
-				}
+				restoreErr = errors.Join(restoreErr, e)
 			}
-			return false, false, errors.New("Cannot save config.toml; the previous catalog was restored")
+			if restoreErr != nil {
+				return false, false, errors.New("Cannot save the profile or restore all prior files; recover the previous files from their .bak copies if present")
+			}
+			return false, false, errors.New("Cannot save " + filepath.Base(f.path) + "; previous files were restored")
 		}
 	}
 	return settings.changed, models.changed, nil

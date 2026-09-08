@@ -279,8 +279,8 @@ func TestNativeLaunchPointerProjectControls(t *testing.T) {
 				u.setChecked("client:codex:selected", true)
 				h := &nativePointerHarness{t: t, u: u, size: size, now: time.Now()}
 				h.frame()
-				nativeMenuWheel(h, image.Pt(size.X-80, size.Y-100), 650)
 				label := u.tr("Launch", "Abrir")
+				nativeScrollClientControlIntoView(h, label, semantic.Button)
 				button := h.target(label, semantic.Button)
 				if !button.Desc.Bounds.In(image.Rectangle{Max: size}) {
 					t.Fatal("native Launch was clipped at project controls")

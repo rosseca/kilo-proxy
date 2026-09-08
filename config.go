@@ -31,12 +31,13 @@ func (systemVault) Delete(account string) error {
 
 // Only the local proxy key is stored here. The upstream API key never enters this file.
 type settings struct {
-	Language string `json:"language,omitempty"`
-	Port     int    `json:"port"`
-	OrgID    string `json:"orgId"`
-	LocalKey string `json:"localKey"`
-	Remember bool   `json:"remember"`
-	VaultID  string `json:"vaultId"`
+	ImageGeneration imageGenerationSettings `json:"imageGeneration"`
+	Language        string                  `json:"language,omitempty"`
+	Port            int                     `json:"port"`
+	OrgID           string                  `json:"orgId"`
+	LocalKey        string                  `json:"localKey"`
+	Remember        bool                    `json:"remember"`
+	VaultID         string                  `json:"vaultId"`
 }
 
 func readSettings(dir string) (settings, error) {
@@ -53,6 +54,9 @@ func readSettings(dir string) (settings, error) {
 	}
 	if s.Port < 1024 || s.Port > 65535 || len(s.LocalKey) < 32 || len(s.VaultID) < 32 {
 		return s, errors.New("invalid settings.json; restore a valid configuration")
+	}
+	if err := validateImageGenerationSettings(s.ImageGeneration); err != nil {
+		return s, errors.New("invalid image generation settings; restore a valid configuration")
 	}
 	return s, nil
 }

@@ -98,3 +98,18 @@
 @container(min-width:540px){.model-helper #model-picker.model-grid,#editor-picker.model-grid,#xcode-picker.model-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @container(min-width:830px){.model-helper #model-picker.model-grid,#editor-picker.model-grid,#xcode-picker.model-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:650px){.model-helper #model-picker.model-grid,#editor-picker.model-grid,#xcode-picker.model-grid{max-height:600px}}
+
+.image-generation-panel{margin:20px 0;padding:20px;border:1px solid #d7e0c8;border-radius:12px;background:linear-gradient(120deg,#f5f8ed,#fff)}
+.image-generation-heading{display:flex;align-items:center;justify-content:space-between;gap:20px}
+.image-generation-panel .image-generation-eyebrow{display:block;color:#6e8058;font-size:9px;font-weight:650;letter-spacing:.12em}
+.image-generation-panel h4{margin:5px 0 0;font-size:17px;font-weight:600}
+.image-generation-panel p{font-size:11px;line-height:1.7;margin:12px 0 0;overflow-wrap:anywhere}
+.image-generation-panel .image-generation-switch{display:flex;align-items:center;gap:8px;flex:none;margin:0;font-size:12px;cursor:pointer}
+.image-generation-switch input{width:18px;height:18px;margin:0;accent-color:#718845}
+.image-generation-options{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px 16px;margin-top:18px}
+.image-generation-options>label{grid-column:1/-1;margin:0;font-size:11px;font-weight:500}
+.image-generation-options select{min-width:0;width:100%;height:40px;border:1px solid #cdd8bd;border-radius:6px;background:#fff;padding:8px;font:inherit;font-size:12px}
+.image-generation-options button{margin:0;white-space:normal}
+.image-generation-warning{color:#896026}
+#codex-image-save-help{padding-top:12px;border-top:1px solid #e1e8d7;color:#637055}
+@media(max-width:650px){.image-generation-panel{padding:15px}.image-generation-heading{gap:12px;align-items:flex-start}.image-generation-options{grid-template-columns:minmax(0,1fr)}.image-generation-options button{justify-self:start}.image-generation-panel h4{font-size:15px}}

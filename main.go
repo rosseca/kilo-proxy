@@ -23,7 +23,15 @@ import (
 //go:embed VERSION
 var embeddedVersion string
 
-var version = strings.TrimSpace(embeddedVersion)
+// Leave the linker target uninitialized so -X main.version can override it
+// for a local preview without changing the checked-in release version.
+var version string
+
+func init() {
+	if version == "" {
+		version = strings.TrimSpace(embeddedVersion)
+	}
+}
 
 func randomKey(prefix string) string {
 	b := make([]byte, 32)

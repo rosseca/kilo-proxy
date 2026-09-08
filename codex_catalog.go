@@ -51,7 +51,7 @@ func (a *app) codexCatalog(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, 409, "The saved catalog is invalid or exceeds 50 models.")
 			return
 		}
-		jsonResponse(w, 200, map[string]any{"catalog": json.RawMessage(data), "defaultModel": first})
+		jsonResponse(w, 200, map[string]any{"catalog": json.RawMessage(data), "defaultModel": first, "imageGeneration": a.config.ImageGeneration})
 		return
 	}
 	if !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
@@ -59,7 +59,8 @@ func (a *app) codexCatalog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input struct {
-		Catalog json.RawMessage `json:"catalog"`
+		Catalog         json.RawMessage          `json:"catalog"`
+		ImageGeneration *imageGenerationSettings `json:"imageGeneration,omitempty"`
 	}
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, catalogLimit))
 	decoder.DisallowUnknownFields()
@@ -71,12 +72,12 @@ func (a *app) codexCatalog(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, 400, "Invalid catalog: use 1–50 unique models and valid reasoning levels.")
 		return
 	}
-	configChanged, catalogChanged, err := saveCodexProfile(dir, input.Catalog, a.config.Port)
+	configChanged, catalogChanged, err := a.saveCodexImageProfile(dir, input.Catalog, input.ImageGeneration)
 	if err != nil {
 		jsonError(w, 409, err.Error())
 		return
 	}
-	jsonResponse(w, 200, map[string]any{"ok": true, "profileDir": dir, "configChanged": configChanged, "catalogChanged": catalogChanged})
+	jsonResponse(w, 200, map[string]any{"ok": true, "profileDir": dir, "configChanged": configChanged, "catalogChanged": catalogChanged, "imageGeneration": a.config.ImageGeneration})
 }
 
 func readCatalogFile(path string) ([]byte, error) {

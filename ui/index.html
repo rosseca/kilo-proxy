@@ -92,6 +92,12 @@
 <p>Cambia «Nombre en Codex» para usar etiquetas cortas como Sol, GLM o Fable. Deja el campo vacío para recuperar el nombre original. Guarda y reinicia Codex Kilo para aplicarlo.</p>
 <button id="load-codex-catalog" type="button" class="secondary-button">Cargar catálogo guardado</button>
 <details id="codex-manual-entry"><summary>Añadir por ID</summary><label for="codex-manual-id">ID del modelo</label><div class="codex-manual-row"><input id="codex-manual-id" type="text" spellcheck="false" placeholder="proveedor/modelo"><button id="add-codex-model" type="button" class="secondary-button">Añadir</button></div></details>
+<section id="codex-image-generation" class="image-generation-panel" aria-labelledby="codex-image-title">
+<div class="image-generation-heading"><div><span id="codex-image-eyebrow" class="image-generation-eyebrow"></span><h4 id="codex-image-title"></h4></div><label class="image-generation-switch"><input id="codex-image-enabled" type="checkbox"><span id="codex-image-enable-label"></span></label></div>
+<p id="codex-image-intro"></p>
+<div id="codex-image-options" class="image-generation-options"><label for="codex-image-model" id="codex-image-model-label"></label><select id="codex-image-model"></select><button id="codex-image-refresh" class="text-button" type="button"></button></div>
+<p id="codex-image-status" role="status"></p><p id="codex-image-billing"></p><p id="codex-image-save-help"></p>
+</section>
 <div id="codex-catalog-actions" hidden>
 <button id="save-codex-catalog" type="button" class="secondary-button">1. Preparar Codex GUI</button>
 <button id="download-codex-catalog" type="button" class="secondary-button">Descargar models.json</button>

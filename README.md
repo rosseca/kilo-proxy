@@ -57,6 +57,8 @@ Browse models in a responsive **card grid**, with names, IDs and input/output pr
 
 For Codex Desktop, select models, choose an initial model and reasoning level, and edit display names to shorten labels. Click **Launch** to prepare the isolated profile folder, save or update both `config.toml` and `models.json`, and open Codex with separate interface data. Unrelated settings are preserved and changed files are backed up. Close the Kilo instance before relaunching if its environment settings changed. Manual preparation and command exports remain available. The actual Kilo model IDs remain unchanged.
 
+**Local preview: images in Codex.** The Codex Desktop and CLI helpers can optionally configure a `generate_image` MCP tool inside Kilo Proxy. Choose an image-output model independently of your coding models; Prepare and Launch save the setup. It uses the configured Kilo account and organization, saves images locally, and reports returned usage in Activity & costs. No additional runtime is needed. This feature is not included in the published v0.22.0 release. See [image setup and current editing limits](docs/codex-images.md).
+
 Claude Code has the same select-and-prepare flow in its own tab. It detects the installed version, writes a separate profile with backups, and enables supported native model names and reasoning preferences. See [client setup](docs/clients.md) for profile isolation, saving, and compatibility limits.
 
 OpenCode and Zed now have the same select-and-prepare workflow, with saved selections and JSONC-preserving updates. OpenCode includes local authentication in its dedicated profile; Zed uses a one-time key paste into its keychain-backed provider settings. See [their setup guide](docs/opencode-and-zed.md).
