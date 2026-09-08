@@ -1,5 +1,6 @@
 """Guard macOS bundle signing and release archive verification without native tools."""
 from pathlib import Path
+import json
 import os
 import plistlib
 import subprocess
@@ -234,6 +235,37 @@ class PackageTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Unsafe ZIP'):
             smoke_desktop.extract(archive, directory)
         self.assertEqual(list(directory.iterdir()), [])
+
+    def test_native_smoke_version_argument_defaults_and_overrides(self):
+        default = (Path(smoke_desktop.__file__).resolve().parents[1] / 'VERSION').read_text().strip()
+        for arguments, version in [([], default), (['--version', '0.23.0-alpha.1'], '0.23.0-alpha.1')]:
+            with self.subTest(version=version), \
+                 patch('sys.argv', ['smoke_desktop.py', '--binary', str(self.root / 'preview'), *arguments]), \
+                 patch.object(smoke_desktop, 'smoke') as run:
+                smoke_desktop.main()
+                self.assertEqual(run.call_args.args[2], version)
+
+    def test_native_smoke_preview_version_preserves_strict_report_checks(self):
+        report = {'passed': True, 'checks': sorted(smoke_desktop.REQUIRED),
+                  'os': 'linux', 'arch': 'amd64', 'version': '0.23.0-alpha.1'}
+
+        def execute(command, **kwargs):
+            Path(command[-1]).write_text(json.dumps(report))
+            return subprocess.CompletedProcess(command, 0, '', '')
+
+        with patch.object(smoke_desktop.platform, 'system', return_value='Linux'), \
+             patch.object(smoke_desktop.platform, 'machine', return_value='x86_64'), \
+             patch.object(smoke_desktop.subprocess, 'run', side_effect=execute):
+            smoke_desktop.smoke(self.root / 'preview', self.root, '0.23.0-alpha.1')
+            with self.assertRaisesRegex(RuntimeError, 'stale executable version'):
+                smoke_desktop.smoke(self.root / 'preview', self.root, '0.23.0-alpha.2')
+            report['arch'] = 'arm64'
+            with self.assertRaisesRegex(RuntimeError, 'wrong architecture'):
+                smoke_desktop.smoke(self.root / 'preview', self.root, '0.23.0-alpha.1')
+            report['arch'] = 'amd64'
+            report['checks'] = []
+            with self.assertRaisesRegex(RuntimeError, 'Native desktop check failed'):
+                smoke_desktop.smoke(self.root / 'preview', self.root, '0.23.0-alpha.1')
 
     def test_post_extraction_can_verify_one_matrix_target(self):
         self.build('--target', 'darwin/arm64')

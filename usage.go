@@ -20,20 +20,21 @@ const usageBufferLimit = 1 << 20
 const usageSessionLimit = 200
 
 type requestUsage struct {
-	Session    string  `json:"session"`
-	Source     string  `json:"source"`
-	Model      string  `json:"model,omitempty"`
-	Input      *int64  `json:"input,omitempty"`
-	Prompt     *int64  `json:"prompt,omitempty"`
-	Output     *int64  `json:"output,omitempty"`
-	Cached     *int64  `json:"cached,omitempty"`
-	CacheWrite *int64  `json:"cacheWrite,omitempty"`
-	Reasoning  *int64  `json:"reasoning,omitempty"`
-	CostUSD    *string `json:"costUSD,omitempty"`
-	CostSource string  `json:"costSource,omitempty"`
-	Complete   bool    `json:"complete"`
-	Limited    bool    `json:"limited"`
-	costNanos  int64
+	Session      string  `json:"session"`
+	Source       string  `json:"source"`
+	Model        string  `json:"model,omitempty"`
+	Input        *int64  `json:"input,omitempty"`
+	Prompt       *int64  `json:"prompt,omitempty"`
+	Output       *int64  `json:"output,omitempty"`
+	Cached       *int64  `json:"cached,omitempty"`
+	CacheWrite   *int64  `json:"cacheWrite,omitempty"`
+	Reasoning    *int64  `json:"reasoning,omitempty"`
+	CostUSD      *string `json:"costUSD,omitempty"`
+	CostSource   string  `json:"costSource,omitempty"`
+	Complete     bool    `json:"complete"`
+	Limited      bool    `json:"limited"`
+	costNanos    int64
+	costPriority int
 }
 
 type cacheSample struct {
@@ -222,12 +223,24 @@ func replaceInt(dst **int64, v any) {
 }
 
 // Accumulate money as integer nanodollars, never binary floating-point sums.
+// Providers also report decimal strings. Accept only bounded JSON number syntax,
+// not the wider hexadecimal, fraction, whitespace or non-finite formats accepted
+// by general-purpose number parsers.
 func money(v any, micro bool) (int64, bool) {
-	n, ok := v.(json.Number)
-	if !ok || len(n) > 64 {
+	var n string
+	switch value := v.(type) {
+	case json.Number:
+		n = string(value)
+	case string:
+		n = value
+	default:
 		return 0, false
 	}
-	f, err := strconv.ParseFloat(string(n), 64)
+	if len(n) == 0 || len(n) > 64 || strings.TrimSpace(n) != n ||
+		(n[0] != '-' && (n[0] < '0' || n[0] > '9')) || !json.Valid([]byte(n)) {
+		return 0, false
+	}
+	f, err := strconv.ParseFloat(n, 64)
 	limit := float64(1e6)
 	if micro {
 		limit = 1e12
@@ -236,13 +249,13 @@ func money(v any, micro bool) (int64, bool) {
 		return 0, false
 	}
 	// Bound exponent work before asking big.Rat to parse an untrusted decimal.
-	if i := strings.IndexAny(string(n), "eE"); i >= 0 {
-		e, err := strconv.Atoi(string(n)[i+1:])
+	if i := strings.IndexAny(n, "eE"); i >= 0 {
+		e, err := strconv.Atoi(n[i+1:])
 		if err != nil || e < -18 || e > 18 {
 			return 0, false
 		}
 	}
-	rat, ok := new(big.Rat).SetString(string(n))
+	rat, ok := new(big.Rat).SetString(n)
 	if !ok {
 		return 0, false
 	}
@@ -265,6 +278,40 @@ func dollars(n int64) string {
 	return strconv.FormatInt(n/1e9, 10) + "." + leftPad(strconv.FormatInt(n%1e9, 10), 9)
 }
 func leftPad(s string, n int) string { return strings.Repeat("0", n-len(s)) + s }
+
+func (u *usageObserver) parseCost(root, usage map[string]any) {
+	// Keep the explicit Kilo microdollar contract first. Otherwise follow Kilo's
+	// inference-cost semantics: an upstream or gateway market cost describes the
+	// inference spend, while usage.cost can be a zero marketplace fee (including
+	// BYOK requests). These are alternatives, never additive components.
+	// https://kilo.ai/docs/gateway/usage-and-billing
+	// https://github.com/Kilo-Org/kilocode/blob/main/packages/opencode/src/kilocode/session/index.ts
+	for _, candidate := range []struct {
+		value    any
+		source   string
+		priority int
+		micro    bool
+	}{
+		{usage["cost_microdollars"], "usage.cost_microdollars", 4, true},
+		{usageObject(usage["cost_details"])["upstream_inference_cost"], "usage.cost_details.upstream_inference_cost", 3, false},
+		{usageObject(usageObject(root["provider_metadata"])["gateway"])["marketCost"], "provider_metadata.gateway.marketCost", 2, false},
+		{usageObject(usageObject(usageObject(root["response"])["provider_metadata"])["gateway"])["marketCost"], "response.provider_metadata.gateway.marketCost", 2, false},
+		{usage["cost"], "usage.cost", 1, false},
+	} {
+		if cost, ok := money(candidate.value, candidate.micro); ok {
+			// SSE values are cumulative snapshots. Update the selected source,
+			// but never let a later fee-only snapshot erase an inference cost.
+			if candidate.priority >= u.usage.costPriority {
+				u.usage.costNanos = cost
+				value := dollars(cost)
+				u.usage.CostUSD = &value
+				u.usage.CostSource = candidate.source
+				u.usage.costPriority = candidate.priority
+			}
+			return
+		}
+	}
+}
 
 func (u *usageObserver) parse(data []byte) {
 	if bytes.Equal(bytes.TrimSpace(data), []byte("[DONE]")) {
@@ -324,22 +371,9 @@ func (u *usageObserver) parse(data []byte) {
 
 		replaceInt(&u.usage.Reasoning, usageObject(usage["output_tokens_details"])["reasoning_tokens"])
 		replaceInt(&u.usage.Reasoning, usageObject(usage["completion_tokens_details"])["reasoning_tokens"])
-		// Prefer Kilo's explicitly denominated field; never substitute BYOK provider charges.
-		cost, source, ok := int64(0), "", false
-		if v, present := usage["cost_microdollars"]; present {
-			cost, ok = money(v, true)
-			source = "usage.cost_microdollars"
-		} else if v, present := usage["cost"]; present {
-			cost, ok = money(v, false)
-			source = "usage.cost"
-		}
-		if ok {
-			u.usage.costNanos = cost
-			value := dollars(cost)
-			u.usage.CostUSD = &value
-			u.usage.CostSource = source
-		}
 	}
+	// Gateway metadata may arrive separately from token usage in Responses SSE.
+	u.parseCost(root, usage)
 	if (!u.sse && root != nil) || kind == "response.completed" || kind == "response.incomplete" || kind == "message_stop" {
 		u.usage.Complete = true
 	}

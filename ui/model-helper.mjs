@@ -2,6 +2,25 @@ export function filterModels(models, query = '', coding = true) {
   const terms = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
   return models.filter(m => (!coding || (m.tools === true && m.outputModalities?.includes('text'))) && terms.every(term => `${m.name} ${m.id}`.toLowerCase().includes(term)));
 }
+// Image tools use an independent catalog: image input and tool calling alone
+// do not make a model capable of producing an image.
+export function imageGenerationModels(models) {
+  return sortModels(models.filter(model=>model.outputModalities?.includes('image')),'name');
+}
+export function imageGenerationSelection(value) {
+  if(!value || typeof value.enabled!=='boolean' || typeof value.model!=='string')return null;
+  return {enabled:value.enabled,model:!value.enabled&&!imageModelID(value.model)?'':value.model};
+}
+const imageModelID = id => typeof id==='string' && /^[A-Za-z0-9~][A-Za-z0-9._:/~+-]{0,199}$/.test(id);
+export function imageGenerationValid(value, models) {
+  return !value?.enabled || (imageModelID(value.model) && (!models || imageGenerationModels(models).some(model=>model.id===value.model)));
+}
+export function codexImageMCPConfig(config, images, baseURL) {
+  if(!images?.enabled)return config;
+  const base=new URL(baseURL);
+  if(base.protocol!=='http:' || base.hostname!=='127.0.0.1' || Number(base.port)<1024 || Number(base.port)>65535 || base.username || base.password)throw new Error('A local proxy URL is required for image generation.');
+  return config.trimEnd()+`\n\n[mcp_servers.kilo_images]\nurl = "http://127.0.0.1:${base.port}/mcp/images"\nbearer_token_env_var = "KILO_LOCAL_API_KEY"\nstartup_timeout_sec = 15\ntool_timeout_sec = 360\n`;
+}
 const labNames = {
   openai:'OpenAI', anthropic:'Anthropic', google:'Google', deepseek:'DeepSeek',
   'meta-llama':'Meta', meta:'Meta', mistralai:'Mistral AI', mistral:'Mistral AI',

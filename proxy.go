@@ -30,51 +30,54 @@ type event struct {
 }
 
 type app struct {
-	launcher           *clientLaunchRuntime
-	launchMu           sync.Mutex
-	desktop            desktopBridge
-	desktopProbes      chan desktopProbe
-	editorTestRoot     string
-	cursor             *cursorSession
-	usageTotal         usageSummary
-	usageSessions      map[string]*usageSummary
-	captureEnabled     bool
-	activeTraces       int
-	nextEventID        uint64
-	activityEpoch      uint64
-	traces             map[string]*requestTrace
-	codexProfileDir    string
-	codexCLIProfileDir string
-	xcodeTestRoot      string
-	claudeProfileDir   string
-	catalogRevision    uint64
-	modelStatsURL      string
-	modelStatsCache    modelStatsCache
-	accountURL         string
-	authPollInterval   time.Duration
-	login              *loginSession
-	organizations      []organization
-	accountEmail       string
-	keySaved           bool
-	mu                 sync.Mutex
-	dir                string
-	config             settings
-	apiKey             string
-	vault              credentialVault
-	vaultWarning       string
-	adminToken         string
-	adminHost          string
-	upstream           *url.URL
-	transport          http.RoundTripper
-	proxyServer        *http.Server
-	proxyListener      net.Listener
-	started            time.Time
-	requests           int
-	failures           int
-	active             int
-	events             []event
-	quit               chan struct{}
-	quitOnce           sync.Once
+	imageGenerationURL    string
+	imageGenerationMu     sync.Mutex
+	imageGenerationActive int
+	launcher              *clientLaunchRuntime
+	launchMu              sync.Mutex
+	desktop               desktopBridge
+	desktopProbes         chan desktopProbe
+	editorTestRoot        string
+	cursor                *cursorSession
+	usageTotal            usageSummary
+	usageSessions         map[string]*usageSummary
+	captureEnabled        bool
+	activeTraces          int
+	nextEventID           uint64
+	activityEpoch         uint64
+	traces                map[string]*requestTrace
+	codexProfileDir       string
+	codexCLIProfileDir    string
+	xcodeTestRoot         string
+	claudeProfileDir      string
+	catalogRevision       uint64
+	modelStatsURL         string
+	modelStatsCache       modelStatsCache
+	accountURL            string
+	authPollInterval      time.Duration
+	login                 *loginSession
+	organizations         []organization
+	accountEmail          string
+	keySaved              bool
+	mu                    sync.Mutex
+	dir                   string
+	config                settings
+	apiKey                string
+	vault                 credentialVault
+	vaultWarning          string
+	adminToken            string
+	adminHost             string
+	upstream              *url.URL
+	transport             http.RoundTripper
+	proxyServer           *http.Server
+	proxyListener         net.Listener
+	started               time.Time
+	requests              int
+	failures              int
+	active                int
+	events                []event
+	quit                  chan struct{}
+	quitOnce              sync.Once
 }
 
 func newApp(dir string, vault credentialVault) (*app, error) {
@@ -176,6 +179,10 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 			jsonError(w, http.StatusUnauthorized, "API key local incorrecta. Cópiala desde Kilo Proxy.")
 			return
 		}
+		if r.URL.Path == "/mcp/images" && r.URL.RawPath == "" && r.URL.RawQuery == "" {
+			a.imageMCPHandler(w, r, key, orgID, localKey)
+			return
+		}
 		if r.URL.RawPath == "" && r.URL.RawQuery == "" && r.URL.Path == "/xcode/v1/models" && r.Method == "GET" {
 			a.xcodeChatModels(w)
 			return
@@ -213,19 +220,19 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 			if capture != nil {
 				a.activeTraces--
 			}
-			if r.Context().Err() != nil {
+			if usage != nil {
+				usage = usage.snapshot()
+			}
+			// Clients may close immediately after receiving the terminal event.
+			// That cannot invalidate final accounting already read upstream. A
+			// cancellation before completion remains an incomplete 499 request.
+			if r.Context().Err() != nil && (usage == nil || !usage.usage.Complete) {
 				recorder.status = 499
 			}
 			a.active--
 			a.requests++
 			if recorder.status >= 400 {
 				a.failures++
-			}
-			if usage != nil {
-				usage = usage.snapshot()
-				if r.Context().Err() != nil {
-					usage.usage.Complete = false
-				}
 			}
 			a.recordUsage(usage)
 			var usageDetail *requestUsage

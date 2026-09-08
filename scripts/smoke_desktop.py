@@ -64,7 +64,7 @@ def extract(archive, directory):
     return candidates[0]
 
 
-def smoke(binary, root):
+def smoke(binary, root, expected_version=None):
     report = root / 'desktop-report.json'
     command = [str(binary.resolve()), '--desktop-self-test', str(report)]
     if platform.system() == 'Windows':
@@ -87,7 +87,8 @@ def smoke(binary, root):
     expected_os = {'Darwin': 'darwin', 'Windows': 'windows', 'Linux': 'linux'}[platform.system()]
     if data.get('arch') != expected_arch or data.get('os') != expected_os:
         raise RuntimeError('Native smoke ran the wrong architecture')
-    expected_version = (Path(__file__).resolve().parents[1] / 'VERSION').read_text().strip()
+    if expected_version is None:
+        expected_version = (Path(__file__).resolve().parents[1] / 'VERSION').read_text().strip()
     if data.get('version') != expected_version:
         raise RuntimeError('Native smoke ran a stale executable version')
     print(f'Passed native {data["os"]}/{data["arch"]} desktop {data["version"]}: '
@@ -99,11 +100,13 @@ def main():
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument('--binary', type=Path)
     group.add_argument('--archive', type=Path)
+    parser.add_argument('--version', default=(Path(__file__).resolve().parents[1] / 'VERSION').read_text().strip(),
+                        help='Expected executable version (defaults to VERSION).')
     args = parser.parse_args()
     with tempfile.TemporaryDirectory(prefix='kilo-native-smoke-') as temporary:
         root = Path(temporary).resolve()
         binary = extract(args.archive.resolve(), root) if args.archive else args.binary
-        smoke(binary, root)
+        smoke(binary, root, args.version)
 
 
 if __name__ == '__main__':

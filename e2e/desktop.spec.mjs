@@ -396,6 +396,17 @@ test('real JSON and SSE proxy traffic reaches cost, cache and redacted activity 
     expect(response.status()).toBe(200);expect(await response.text()).toContain('SYNTHETIC_GATEWAY_REPLY');
   }
   await expect(page.locator('#spend-total')).toHaveText('$0.024600');
+  await expect(page.locator('#spend-title')).toHaveText('Reported inference cost');
+  await expect(page.locator('#spend-semantics')).toBeVisible();
+  await expect(page.locator('#spend-semantics')).toContainText('provider (including BYOK) or gateway');
+  await expect(page.locator('#spend-semantics')).toContainText('may differ from your Kilo organization’s charges');
+  await expect(page.locator('#event-rows .cost-source')).toHaveText(['Gateway-reported cost','Gateway-reported cost']);
+  await page.locator('#language').selectOption('es');
+  await expect(page.locator('#spend-title')).toHaveText('Coste de inferencia informado');
+  await expect(page.locator('#spend-semantics')).toContainText('Pueden diferir de los cargos de tu organización en Kilo');
+  await expect(page.locator('#event-rows .cost-source')).toHaveText(['Coste informado por el gateway','Coste informado por el gateway']);
+  await expect(page.locator('#spend-total')).toHaveText('$0.024600');
+  await page.locator('#language').selectOption('en');
   await expect(page.locator('#cache-read-total')).toHaveText('160');
   await expect(page.locator('#cache-write-total')).toHaveText('20');
   await expect(page.locator('#cache-ratio-total')).toHaveText('80%');

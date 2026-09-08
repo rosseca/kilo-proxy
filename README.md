@@ -57,6 +57,8 @@ Browse models in a responsive **card grid**, with names, IDs and input/output pr
 
 For Codex Desktop, select models, choose an initial model and reasoning level, and edit display names to shorten labels. Click **Launch** to prepare the isolated profile folder, save or update both `config.toml` and `models.json`, and open Codex with separate interface data. Unrelated settings are preserved and changed files are backed up. Close the Kilo instance before relaunching if its environment settings changed. Manual preparation and command exports remain available. The actual Kilo model IDs remain unchanged.
 
+**Images in Codex, available from v0.23.0.** The Codex Desktop and CLI helpers can optionally configure a `generate_image` MCP tool inside Kilo Proxy. Choose an image-output model independently of your coding models; Prepare and Launch save the setup. Requests go through the configured Kilo account and organization, images are saved locally, and Activity & costs shows returned usage and its cost source. Provider inference costs, including BYOK, can differ from the organization's Kilo charge. No additional runtime is needed. See [image setup and editing limits](docs/codex-images.md).
+
 Claude Code has the same select-and-prepare flow in its own tab. It detects the installed version, writes a separate profile with backups, and enables supported native model names and reasoning preferences. See [client setup](docs/clients.md) for profile isolation, saving, and compatibility limits.
 
 OpenCode and Zed now have the same select-and-prepare workflow, with saved selections and JSONC-preserving updates. OpenCode includes local authentication in its dedicated profile; Zed uses a one-time key paste into its keychain-backed provider settings. See [their setup guide](docs/opencode-and-zed.md).
@@ -71,11 +73,11 @@ The last 30 requests are kept in memory only. Capture starts enabled and can be 
 
 ## Track observed spend
 
-**Activity & costs** shows session cost in reported USD, input/output/cache tokens, and a conversation breakdown. It listens to responses passing through the proxy, including streaming, and keeps totals independently of the last 30 debug captures. Codex task IDs and Claude Code session IDs are used when present; requests without an identifier are marked unassigned.
+**Activity & costs** shows reported inference costs in USD, input/output/cache tokens, and a conversation breakdown. Reported provider costs, including BYOK requests, can differ from the organization's Kilo charge; each request identifies the selected cost source. It listens to responses passing through the proxy, including streaming, and keeps totals independently of the last 30 debug captures. Codex task IDs and Claude Code session IDs are used when present; requests without an identifier are marked unassigned.
 
 **Cache reuse** shows tokens read from cache, tokens written to cache, and the share of input reused. Conversation details include cumulative figures and the last request’s cache read / total input. Ratios use complete, comparable usage records; missing cache data is never treated as zero.
 
-Costs that are missing stay **Not reported**, with coverage shown alongside the total. A canceled response may not deliver final billing data. Totals last until the app closes and are gateway observations, not a Kilo invoice or catalog estimate. See [accounting fields and limits](docs/security-and-debugging.md#passive-spend-tracking-0130).
+Costs that are missing stay **Not reported**, with coverage shown alongside the total. A partially reported amount is labeled **Reported subtotal**; unknown requests are never assumed to be free. Provider and gateway price fields are alternatives and are never added together for one request. A canceled response may not deliver final billing data. Totals last until the app closes and are gateway observations, not a Kilo invoice or catalog estimate. See [accounting fields and limits](docs/security-and-debugging.md#passive-spend-tracking-0130).
 
 ## Develop and release
 

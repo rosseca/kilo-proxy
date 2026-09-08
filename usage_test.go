@@ -53,11 +53,11 @@ func TestUsageUnknownFreeCacheAndPreciseMoney(t *testing.T) {
 	if u.usage.CostUSD != nil || *u.usage.Cached != 8 || *u.usage.Reasoning != 3 {
 		t.Fatalf("missing cost treated as free or token details lost: %+v", u.usage)
 	}
-	u = observeUsage(t, false, `{"usage":{"cost":0,"cost_details":{"upstream_inference_cost":99}}}`)
+	u = observeUsage(t, false, `{"usage":{"cost":0}}`)
 	if u.usage.CostUSD == nil || *u.usage.CostUSD != "0.000000000" {
-		t.Fatal("zero cost replaced with provider/BYOK charges")
+		t.Fatal("explicit free request lost its reported zero cost")
 	}
-	for _, bad := range []string{"-1", "1e10000", "null", "\"0.12\""} {
+	for _, bad := range []string{"-1", "1e10000", "null", `"not-a-number"`} {
 		u = observeUsage(t, false, `{"usage":{"cost":`+bad+`}}`)
 		if u.usage.CostUSD != nil {
 			t.Fatalf("accepted invalid cost %s", bad)
@@ -258,5 +258,217 @@ func TestCacheUnknownZeroAndPartial(t *testing.T) {
 	s.add(partial)
 	if s.WithCacheRead != 1 || s.CacheRatioRequests != 0 || s.LastCache.Complete {
 		t.Fatal("partial response counted as complete")
+	}
+}
+
+func TestUsageValidCostFallbackAndPriority(t *testing.T) {
+	for _, invalid := range []string{"null", "-1", `"invalid"`, "false", "{}", "1e10000"} {
+		t.Run(invalid, func(t *testing.T) {
+			u := observeUsage(t, false, `{"usage":{"cost_microdollars":`+invalid+`,"cost":0.25}}`)
+			if u.usage.CostUSD == nil || *u.usage.CostUSD != "0.250000000" || u.usage.CostSource != "usage.cost" {
+				t.Fatalf("invalid microdollars hid valid USD: %+v", u.usage)
+			}
+		})
+	}
+	for _, tc := range []struct{ micro, want string }{{"0", "0.000000000"}, {"25", "0.000025000"}, {`"25"`, "0.000025000"}} {
+		u := observeUsage(t, false, `{"usage":{"cost_microdollars":`+tc.micro+`,"cost":99,"cost_details":{"upstream_inference_cost":12}},"provider_metadata":{"gateway":{"marketCost":42}}}`)
+		if u.usage.CostUSD == nil || *u.usage.CostUSD != tc.want || u.usage.CostSource != "usage.cost_microdollars" {
+			t.Fatalf("valid microdollars lost priority: %+v", u.usage)
+		}
+	}
+	for _, fields := range []string{`"cost_microdollars":null`, `"cost_microdollars":null,"cost":"invalid"`, `"cost_microdollars":-1,"cost":-1`} {
+		u := observeUsage(t, false, `{"usage":{`+fields+`,"cost_details":{"upstream_inference_cost":null}}}`)
+		if u.usage.CostUSD != nil || u.usage.CostSource != "" {
+			t.Fatal("unreported or invalid costs became a priced request")
+		}
+	}
+}
+
+func TestUsageKiloCapturedImageInferenceCost021976(t *testing.T) {
+	// Sanitized actual image response: cost is the zero marketplace fee. The
+	// provider reports $0.21976 for inference, with components that must not be
+	// added a second time. Model/tokens/costs contain no credentials or content.
+	const captured = `{"model":"openai/gpt-5-image","usage":{"prompt_tokens":3076,"completion_tokens":6375,"total_tokens":9451,"cost":0,"is_byok":true,"prompt_tokens_details":{"cached_tokens":0,"cache_write_tokens":0,"audio_tokens":0,"video_tokens":0},"cost_details":{"upstream_inference_cost":0.21976,"upstream_inference_prompt_cost":0.03076,"upstream_inference_completions_cost":0.189},"completion_tokens_details":{"reasoning_tokens":1792,"image_tokens":4175,"audio_tokens":0}}}`
+	for _, tc := range []struct{ name, body string }{
+		{"actual numeric capture reports 0.219760000 USD", captured},
+		{"numeric string equivalent reports 0.219760000 USD", strings.Replace(captured, `"upstream_inference_cost":0.21976`, `"upstream_inference_cost":"0.21976"`, 1)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			u := observeUsage(t, false, tc.body)
+			if u.usage.CostUSD == nil || *u.usage.CostUSD != "0.219760000" || u.usage.CostSource != "usage.cost_details.upstream_inference_cost" {
+				t.Fatalf("actual upstream inference cost hidden by zero fee: %+v", u.usage)
+			}
+			if u.usage.Input == nil || *u.usage.Input != 3076 || u.usage.Output == nil || *u.usage.Output != 6375 || u.usage.Reasoning == nil || *u.usage.Reasoning != 1792 || !u.usage.Complete {
+				t.Fatalf("cost selection lost captured tokens or completion: %+v", u.usage)
+			}
+			var summary usageSummary
+			summary.add(u)
+			if summary.CostUSD != "0.219760000" || summary.Priced != 1 || summary.Requests != 1 {
+				t.Fatalf("provider cost/components counted more than once: %+v", summary)
+			}
+		})
+	}
+}
+
+func TestUsageKiloInferenceCostPathsAndFallback(t *testing.T) {
+	for _, tc := range []struct{ name, body, want, source string }{
+		{"chat upstream", `{"usage":{"cost":0,"cost_details":{"upstream_inference_cost":"0.125"}}}`, "0.125000000", "usage.cost_details.upstream_inference_cost"},
+		{"Responses upstream", `{"type":"response.completed","response":{"usage":{"cost":0,"cost_details":{"upstream_inference_cost":0.125}}}}`, "0.125000000", "usage.cost_details.upstream_inference_cost"},
+		{"Messages upstream", `{"type":"message_start","message":{"usage":{"cost":0,"cost_details":{"upstream_inference_cost":0.125}}}}`, "0.125000000", "usage.cost_details.upstream_inference_cost"},
+		{"upstream explicit zero", `{"usage":{"cost":4,"cost_details":{"upstream_inference_cost":0}},"provider_metadata":{"gateway":{"marketCost":2}}}`, "0.000000000", "usage.cost_details.upstream_inference_cost"},
+		{"invalid micro falls through to upstream", `{"usage":{"cost_microdollars":null,"cost":0,"cost_details":{"upstream_inference_cost":0.125}}}`, "0.125000000", "usage.cost_details.upstream_inference_cost"},
+		{"upstream precedes market and fee", `{"usage":{"cost":4,"cost_details":{"upstream_inference_cost":1}},"provider_metadata":{"gateway":{"marketCost":2}}}`, "1.000000000", "usage.cost_details.upstream_inference_cost"},
+		{"outer market without usage", `{"provider_metadata":{"gateway":{"marketCost":"1.25e-1"}}}`, "0.125000000", "provider_metadata.gateway.marketCost"},
+		{"nested market without usage", `{"type":"response.completed","response":{"provider_metadata":{"gateway":{"marketCost":0.125}}}}`, "0.125000000", "response.provider_metadata.gateway.marketCost"},
+		{"market precedes fee", `{"response":{"usage":{"cost":0}},"provider_metadata":{"gateway":{"marketCost":0.125}}}`, "0.125000000", "provider_metadata.gateway.marketCost"},
+		{"outer market precedes nested", `{"provider_metadata":{"gateway":{"marketCost":1}},"response":{"provider_metadata":{"gateway":{"marketCost":2}}}}`, "1.000000000", "provider_metadata.gateway.marketCost"},
+		{"invalid outer falls through to nested", `{"provider_metadata":{"gateway":{"marketCost":"NaN"}},"response":{"provider_metadata":{"gateway":{"marketCost":"0.125"}}}}`, "0.125000000", "response.provider_metadata.gateway.marketCost"},
+		{"invalid upstream falls through to market", `{"usage":{"cost":0,"cost_details":{"upstream_inference_cost":-1}},"provider_metadata":{"gateway":{"marketCost":0.125}}}`, "0.125000000", "provider_metadata.gateway.marketCost"},
+		{"invalid metadata falls through to USD string", `{"usage":{"cost":"0.125","cost_details":{"upstream_inference_cost":{}}},"provider_metadata":{"gateway":{"marketCost":false}}}`, "0.125000000", "usage.cost"},
+		{"missing costs stay unknown", `{"usage":{"input_tokens":12}}`, "", ""},
+		{"unverified root cost ignored", `{"cost":12}`, "", ""},
+		{"components alone do not invent total", `{"usage":{"cost_details":{"upstream_inference_prompt_cost":0.1,"upstream_inference_completions_cost":0.2}}}`, "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, sse := range []bool{false, true} {
+				body := tc.body
+				if sse {
+					body = "data: " + body + "\n\ndata: [DONE]\n\n"
+				}
+				u := observeUsage(t, sse, body)
+				got := ""
+				if u.usage.CostUSD != nil {
+					got = *u.usage.CostUSD
+				}
+				if got != tc.want || u.usage.CostSource != tc.source {
+					t.Fatalf("sse=%v: got %q source %q, want %q source %q", sse, got, u.usage.CostSource, tc.want, tc.source)
+				}
+			}
+		})
+	}
+}
+
+func TestUsageCostAuthorityAcrossSnapshots(t *testing.T) {
+	for _, tc := range []struct {
+		name, want, source string
+		snapshots          []string
+	}{
+		{"upstream survives later fee", "0.200000000", "usage.cost_details.upstream_inference_cost", []string{`{"usage":{"cost":0,"cost_details":{"upstream_inference_cost":0.2}}}`, `{"usage":{"cost":0}}`}},
+		{"upstream replaces earlier fee", "0.200000000", "usage.cost_details.upstream_inference_cost", []string{`{"usage":{"cost":0}}`, `{"usage":{"cost_details":{"upstream_inference_cost":0.2}}}`}},
+		{"same-source cumulative update not addition", "0.200000000", "usage.cost_details.upstream_inference_cost", []string{`{"usage":{"cost_details":{"upstream_inference_cost":0.1}}}`, `{"usage":{"cost_details":{"upstream_inference_cost":0.2}}}`, `{"usage":{"cost_details":{"upstream_inference_cost":0.2}}}`}},
+		{"same-source final correction", "0.100000000", "usage.cost_details.upstream_inference_cost", []string{`{"usage":{"cost_details":{"upstream_inference_cost":0.2}}}`, `{"usage":{"cost_details":{"upstream_inference_cost":0.1}}}`}},
+		{"metadata survives later fee and invalid metadata", "0.200000000", "provider_metadata.gateway.marketCost", []string{`{"provider_metadata":{"gateway":{"marketCost":"0.2"}}}`, `{"usage":{"cost":0},"provider_metadata":{"gateway":{"marketCost":null}}}`}},
+		{"metadata followed by stronger upstream", "0.300000000", "usage.cost_details.upstream_inference_cost", []string{`{"provider_metadata":{"gateway":{"marketCost":"0.2"}}}`, `{"usage":{"cost_details":{"upstream_inference_cost":0.3}}}`}},
+		{"upstream followed by explicit micro zero", "0.000000000", "usage.cost_microdollars", []string{`{"usage":{"cost_details":{"upstream_inference_cost":0.2}}}`, `{"usage":{"cost_microdollars":0}}`, `{"usage":{"cost_details":{"upstream_inference_cost":0.3}}}`}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := ""
+			for _, snapshot := range tc.snapshots {
+				body += "data: " + snapshot + "\n\n"
+			}
+			u := observeUsage(t, true, body+"data: [DONE]\n\n")
+			if u.usage.CostUSD == nil || *u.usage.CostUSD != tc.want || u.usage.CostSource != tc.source || !u.usage.Complete {
+				t.Fatalf("cost snapshots lost priority or counted twice: %+v", u.usage)
+			}
+			var summary usageSummary
+			summary.add(u)
+			if summary.CostUSD != tc.want || summary.Priced != 1 {
+				t.Fatalf("snapshots counted as separate charges: %+v", summary)
+			}
+		})
+	}
+}
+
+func TestMoneyBoundedNumericStrings(t *testing.T) {
+	for value, want := range map[string]int64{
+		"0": 0, "0.21976": 219760000, "2.1976e-1": 219760000,
+		"1E+2": 100000000000, "0.0000000015": 2, "1e-18": 0,
+		"1000000": 1000000000000000,
+	} {
+		for _, input := range []any{value, json.Number(value)} {
+			got, ok := money(input, false)
+			if !ok || got != want {
+				t.Errorf("money(%#v) = %d/%v, want %d", input, got, ok, want)
+			}
+		}
+	}
+	for _, invalid := range []string{
+		"", " ", " 0.2", "0.2 ", "\t0.2", "NaN", "Infinity", "-1", "0x10", "0x1p-2", "1/2",
+		"+1", ".5", "1.", "01", "1_000", "1,25", "1e19", "1e-19", "1e10000", "1000000.01",
+		"true", "null", "[]", "{}", `"0.2"`, "1 2", strings.Repeat("0", 65),
+	} {
+		for _, input := range []any{invalid, json.Number(invalid)} {
+			if got, ok := money(input, false); ok {
+				t.Errorf("money(%#v) unexpectedly accepted: %d", input, got)
+			}
+		}
+	}
+	if got, ok := money("2500000", true); !ok || got != 2500000000 {
+		t.Fatal("valid numeric-string microdollars lost precision")
+	}
+}
+
+type usageMemoryTransport func(*http.Request) (*http.Response, error)
+
+func (f usageMemoryTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+type usageCancelAtEOF struct {
+	io.Reader
+	cancel context.CancelFunc
+}
+
+func (r *usageCancelAtEOF) Read(p []byte) (int, error) {
+	n, err := r.Reader.Read(p)
+	if err == io.EOF {
+		r.cancel()
+	}
+	return n, err
+}
+func (r *usageCancelAtEOF) Close() error { return nil }
+
+func TestUsageCancellationBeforeAndAfterTerminalEvent(t *testing.T) {
+	completed := "data: {\"type\":\"response.completed\",\"response\":{\"model\":\"openai/test\",\"usage\":{\"input_tokens\":10,\"output_tokens\":4,\"cost_microdollars\":25}}}\n\n"
+	for _, tc := range []struct {
+		name, body         string
+		complete, limited  bool
+		status             int
+		priced, incomplete int64
+	}{
+		{name: "before terminal", body: "data: {\"type\":\"response.in_progress\",\"response\":{\"model\":\"openai/test\",\"usage\":{\"input_tokens\":10}}}\n\n", status: 499, incomplete: 1},
+		{name: "after completed", body: completed, complete: true, status: 200, priced: 1},
+		{name: "after incomplete terminal", body: strings.Replace(completed, "response.completed", "response.incomplete", 1), complete: true, status: 200, priced: 1},
+		{name: "after terminal with limited earlier event", body: "data: " + strings.Repeat("x", usageBufferLimit+10) + "\n\n" + completed, complete: true, limited: true, status: 200, priced: 1, incomplete: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := testApp(t)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			// The complete production handler and usage reader run against memory,
+			// with no sockets, real credentials, or changes to a running proxy.
+			a.transport = usageMemoryTransport(func(r *http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: &usageCancelAtEOF{Reader: strings.NewReader(tc.body), cancel: cancel}, ContentLength: -1, Request: r}, nil
+			})
+			request := httptest.NewRequest("POST", "http://127.0.0.1:8877/v1/responses", strings.NewReader(`{"model":"openai/test","stream":true}`)).WithContext(ctx)
+			request.Header.Set("Authorization", "Bearer local-test-key")
+			request.Header.Set("Content-Type", "application/json")
+			response := httptest.NewRecorder()
+			a.inferenceHandler("synthetic-upstream-key", "synthetic-org", "local-test-key", "127.0.0.1:8877").ServeHTTP(response, request)
+			if ctx.Err() != context.Canceled || len(a.events) != 1 || response.Body.String() != tc.body {
+				t.Fatal("fixture did not cancel after the intended response bytes")
+			}
+			entry := a.events[0]
+			if entry.Status != tc.status || entry.Usage == nil || entry.Usage.Complete != tc.complete || entry.Usage.Limited != tc.limited {
+				t.Fatalf("incorrect terminal accounting: %+v usage=%+v", entry, entry.Usage)
+			}
+			if a.usageTotal.Priced != tc.priced || a.usageTotal.Incomplete != tc.incomplete || a.usageTotal.Requests != 1 || a.active != 0 {
+				t.Fatalf("incorrect totals after cancellation: %+v", a.usageTotal)
+			}
+			if tc.priced > 0 && a.usageTotal.CostUSD != "0.000025000" {
+				t.Fatal("terminal gateway cost was lost or counted twice")
+			}
+			if (tc.status == 499) != (a.failures == 1) {
+				t.Fatal("late close changed the request error count")
+			}
+		})
 	}
 }

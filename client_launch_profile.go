@@ -72,6 +72,11 @@ func (a *app) launchProfile(p *clientLaunchPlan, home string) error {
 			if e != nil {
 				return fail
 			}
+		} else {
+			updated, e = mergeCodexImages(updated, a.config.ImageGeneration, a.config.Port)
+			if e != nil {
+				return fail
+			}
 		}
 		var before, after map[string]any
 		if toml.Unmarshal(old, &before) != nil || toml.Unmarshal(updated, &after) != nil || !reflect.DeepEqual(before, after) {

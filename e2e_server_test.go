@@ -1,9 +1,13 @@
 package main
 
 import (
+	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
+	"image/png"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -42,6 +46,14 @@ func TestE2EServer(t *testing.T) {
 	launchRecords := filepath.Join(root, "launch-records.json")
 	prepareWaiting := filepath.Join(root, "prepare-waiting")
 	stateWaiting := filepath.Join(root, "state-waiting")
+	imageRecords := filepath.Join(root, "image-records.json")
+	var imageRecordMu sync.Mutex
+	imageRequests := []map[string]any{}
+	var imageBytes bytes.Buffer
+	if err := png.Encode(&imageBytes, image.NewNRGBA(image.Rect(0, 0, 1, 1))); err != nil {
+		t.Fatal(err)
+	}
+	imageBase64 := base64.StdEncoding.EncodeToString(imageBytes.Bytes())
 	readLaunchControl := func() map[string]any {
 		var control map[string]any
 		data, _ := os.ReadFile(launchControl)
@@ -90,10 +102,34 @@ func TestE2EServer(t *testing.T) {
 				map[string]any{"openrouterId": "anthropic/claude-sonnet-4.6", "chartData": map[string]any{"modeRankings": map[string]int{"code": 2}}, "codingIndex": 80, "speedTokensPerSec": 100},
 			})
 		case "/api/gateway/models":
-			jsonResponse(w, 200, map[string]any{"data": []any{
+			models := []any{
 				map[string]any{"id": "vendor/one", "name": "Very Long First Model Name", "context_length": 64000, "top_provider": map[string]int{"max_completion_tokens": 4000}, "pricing": map[string]string{"prompt": "0.000001", "completion": "0.000002"}, "supported_parameters": []string{"tools", "reasoning"}, "architecture": map[string]any{"output_modalities": []string{"text"}}, "opencode": map[string]any{"variants": map[string]any{"low": map[string]any{"reasoning": map[string]string{"effort": "low"}}, "high": map[string]any{"reasoning": map[string]string{"effort": "high"}}}}},
 				map[string]any{"id": "anthropic/claude-sonnet-4.6", "name": "Claude Sonnet", "context_length": 128000, "pricing": map[string]string{"prompt": "0.000003", "completion": "0.000015"}, "supported_parameters": []string{"tools"}, "architecture": map[string]any{"output_modalities": []string{"text"}}},
-			}})
+			}
+			if readLaunchControl()["imageModels"] == true {
+				models = append(models, map[string]any{"id": "image-lab/painter", "name": "Synthetic Image Painter", "architecture": map[string]any{"input_modalities": []string{"text", "image"}, "output_modalities": []string{"image"}}})
+			}
+			jsonResponse(w, 200, map[string]any{"data": models})
+		case "/api/gateway/images":
+			if r.Header.Get("Authorization") != "Bearer synthetic-kilo-personal-key" || r.Header.Get("X-KiloCode-OrganizationId") != "e2e-team" {
+				http.Error(w, "Image tool failed to inject synthetic credentials", 401)
+				return
+			}
+			var body map[string]any
+			if json.NewDecoder(r.Body).Decode(&body) != nil || body["model"] != "image-lab/painter" {
+				http.Error(w, "Invalid synthetic image request", 400)
+				return
+			}
+			imageRecordMu.Lock()
+			imageRequests = append(imageRequests, body)
+			data, _ := json.Marshal(imageRequests)
+			err := atomicCatalogFile(imageRecords, data)
+			imageRecordMu.Unlock()
+			if err != nil {
+				http.Error(w, "Cannot record synthetic image request", 500)
+				return
+			}
+			jsonResponse(w, 200, map[string]any{"model": body["model"], "choices": []any{map[string]any{"message": map[string]any{"images": []any{map[string]any{"type": "image_url", "image_url": map[string]string{"url": "data:image/png;base64," + imageBase64}}}}}}, "usage": map[string]any{"prompt_tokens": 12, "completion_tokens": 3, "cost": 0.0042}})
 		case "/api/profile":
 			if r.Header.Get("Authorization") != "Bearer synthetic-kilo-personal-key" {
 				http.Error(w, "Invalid synthetic account key", 401)
@@ -134,6 +170,7 @@ func TestE2EServer(t *testing.T) {
 	setUpstream(a, upstream.URL)
 	a.accountURL = upstream.URL
 	a.modelStatsURL = upstream.URL + "/api/models/stats"
+	a.imageGenerationURL = upstream.URL + "/api/gateway/images"
 	listener, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -177,6 +214,7 @@ func TestE2EServer(t *testing.T) {
 	data, err := json.Marshal(map[string]any{
 		"url": "http://" + a.adminHost + "/#" + a.adminToken, "token": a.adminToken,
 		"proxyPort": a.config.Port, "baseURL": "http://127.0.0.1:" + strconv.Itoa(a.config.Port) + "/v1", "root": root,
+		"imageRecords": imageRecords, "imageBase64": imageBase64,
 		"launchControl": launchControl, "launchRecords": launchRecords, "prepareWaiting": prepareWaiting, "stateWaiting": stateWaiting,
 		"profiles": map[string]string{"codex": a.codexProfileDir, "codex-cli": a.codexCLIProfileDir, "claude": a.claudeProfileDir, "opencode": filepath.Join(root, ".opencode-kilo"), "zed": filepath.Join(root, ".config", "zed")},
 	})
