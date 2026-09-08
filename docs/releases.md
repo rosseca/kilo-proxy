@@ -57,17 +57,17 @@ The default output is `dist/`. Version strings are `X.Y.Z`, optionally followed 
 
 ## Publish a release
 
-The native-interface and branding migration is a pull-request change only. It does not create a release, tag or version bump. The commands below describe a future release after separate authorization.
+Merge the reviewed and tested changes before preparing a release. The matching version tag triggers the full validation and publication workflow below.
 
-1. Update `VERSION`, for example to `0.20.2`, and commit the tested changes to `main`.
+1. Update `VERSION`, for example to `0.22.0`, and commit the tested changes to `main`.
 2. Push the commit, then an annotated matching tag:
 
 ```sh
 git add VERSION
-git commit -m "chore: prepare v0.20.2"
+git commit -m "chore: prepare v0.22.0"
 git push origin main
-git tag -a v0.20.2 -m "Kilo Proxy v0.20.2"
-git push origin v0.20.2
+git tag -a v0.22.0 -m "Kilo Proxy v0.22.0"
+git push origin v0.22.0
 ```
 
 The numbers above are examples; always use the version actually committed in `VERSION`. The historical first GitHub release was `v0.12.0`, published under the former Kilo Local name.
@@ -120,12 +120,12 @@ Download all six archives alongside the manifest, then verify on Linux:
 sha256sum -c SHA256SUMS.txt
 ```
 
-On macOS use `shasum -a 256 -c SHA256SUMS.txt`. For an individual Windows download, compare `Get-FileHash .\kilo-proxy-0.20.2-windows-amd64.zip -Algorithm SHA256` with its line in the manifest. A checksum detects file corruption; it is not a publisher signature.
+On macOS use `shasum -a 256 -c SHA256SUMS.txt`. For an individual Windows download, compare `Get-FileHash .\kilo-proxy-0.22.0-windows-amd64.zip -Algorithm SHA256` with its line in the manifest. A checksum detects file corruption; it is not a publisher signature.
 
 For local full-set verification:
 
 ```sh
-python3 scripts/release.py check-tag --tag v0.20.2
+python3 scripts/release.py check-tag --tag v0.22.0
 python3 scripts/release.py verify-assets
 ```
 

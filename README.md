@@ -6,7 +6,7 @@ Connect with your personal Kilo account, choose your organization, and copy a lo
 
 [Download the latest release](https://github.com/rosseca/kilo-proxy/releases/latest) · [Native desktop guide](docs/desktop.md) · [Client setup](docs/clients.md) · [Security and debugging](docs/security-and-debugging.md) · [Development and releases](docs/releases.md)
 
-**Native desktop migration:** this branch is under pull-request review. Existing published releases may still use the browser interface. This change does not publish a release or increment `VERSION`.
+**Native desktop app:** releases from v0.21.0 use the native window and system tray. The browser interface remains available as an optional helper.
 
 **Name change:** Kilo Proxy was previously called Kilo Local. New builds use `Kilo Proxy.app`, `Kilo Proxy.exe`, or `kilo-proxy`, and archive names begin with `kilo-proxy-`. Existing credentials, application configuration and editor profiles stay in their current locations. Keep provider IDs such as `kilo-local` and environment names such as `KILO_LOCAL_API_KEY` unchanged; the display-name change does not require signing in again or rebuilding profiles.
 
@@ -106,7 +106,7 @@ go test -tags desktop ./...
 python3 scripts/package.py --build-only
 ```
 
-Build outputs go to `dist/` and are excluded from Git. `VERSION` is the single default version source for the application and packages. A future matching version tag runs the reusable validation workflow and publishes six verified archives with checksums and generated notes. Packaging waits for the core, browser and native jobs, packages their tested executables, and checks the extracted archives before publication. The native-interface migration is delivered separately as a pull request; no tag is created for it. It uses the repository’s built-in `GITHUB_TOKEN`; no personal release token is required.
+Build outputs go to `dist/` and are excluded from Git. `VERSION` is the single default version source for the application and packages. A matching version tag runs the reusable validation workflow and publishes six verified archives with checksums and generated notes. Packaging waits for the core, browser and native jobs, packages their tested executables, and checks the extracted archives before publication. It uses the repository’s built-in `GITHUB_TOKEN`; no personal release token is required.
 
 See [the release guide](docs/releases.md) for the exact commands, prereleases, recovery, and verification.
 

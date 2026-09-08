@@ -1,6 +1,6 @@
 # Native desktop application
 
-The native desktop migration is being developed in a separate branch for pull-request review. It does not create a new release or change the current published version. Existing downloadable releases may still use the browser interface.
+Releases from v0.21.0 include the native desktop application. The browser interface remains available as an optional helper.
 
 The application is now named **Kilo Proxy** (formerly Kilo Local). Existing application configuration, system-store credentials and editor profile locations are preserved. Do not rename the `kilo-local` provider ID, `KILO_LOCAL_API_KEY`, or existing `.codex-kilo-*`, `.claude-kilo` and `.opencode-kilo` folders.
 
@@ -118,7 +118,7 @@ Validation separates the native interface from the optional browser frontend:
 4. **Real desktop:** `scripts/smoke_desktop.py` launches the production executable. It checks rendered native content, authenticated backend access, window/tray language changes, OS clipboard, proxy startup, close/reopen behavior, tray stop and clean process exit.
 5. **Packaging:** the workflow requires its core, browser and native jobs to pass before creating bundles. It packages the tested executable, then exercises the extracted archive. macOS also receives full bundle-signature and LaunchServices checks. The aggregate job validates six archives and their checksums.
 
-A future tag-triggered release remains gated on the reusable build workflow. The native migration itself is delivered as a branch and pull request, without publishing or changing `VERSION`. Check the workflow run for the commit being reviewed to see which checks have actually passed.
+Every tag-triggered release is gated on the reusable build workflow. Core, browser and native tests must pass before packaging, and each extracted archive must pass its platform smoke test before publication. Check the workflow run for a release tag to see its validation results.
 
 To run a native smoke test locally:
 
