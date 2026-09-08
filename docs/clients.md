@@ -4,6 +4,10 @@ Start Kilo Proxy and open **Clients & models**. Select your editor and models, t
 
 ## Sort the model catalog
 
+Use **All labs** beside search to filter by a publisher such as OpenAI, Anthropic, Google, or DeepSeek. Choices come from the gateway catalog and your saved manual models, including new publishers automatically. The filter combines with search, coding-capability and selected-only filters. Switching labs never removes a hidden selection or changes its initial-model setting; **Select results** adds only the visible results.
+
+In both the native app and browser helper, the chosen lab and sort order stay active across client tabs during the session. If a catalog refresh or another client has no matching models, the active lab remains available so **All labs** can always reset the view. Publisher names are derived from the gateway provider namespace (or the first segment of an exact manual model ID); a leading `~` is ignored for lab grouping only, while exact request IDs remain unchanged.
+
 The selector beside model search offers the same five criteria as [Kilo's model browser](https://kilo.ai/leaderboard). Your choice stays active across editor tabs for the current app/browser session.
 
 | Sort | Order and meaning |

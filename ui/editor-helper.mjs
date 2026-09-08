@@ -1,4 +1,4 @@
-import {validModelID,formatPrice,filterModels,sortModels,configureModelSort,setModelSort,mergeModelSelection} from './model-helper.mjs';
+import {validModelID,formatPrice,filterModels,sortModels,configureModelSort,setModelSort,mergeModelSelection,filterModelLab,configureModelLab,setModelLab} from './model-helper.mjs';
 import {clientConfig} from './client-config.mjs';
 export function editorPayload(models,initial) {
  return {models:models.map(m=>({id:m.id,name:(m.displayName||m.name||m.id).slice(0,80),contextWindow:m.contextWindow==null?200000:Number(m.contextWindow),maxOutputTokens:m.maxOutputTokens==null?0:Number(m.maxOutputTokens)})),initial};
@@ -49,6 +49,7 @@ export function createEditorHelper({api,notify,copy,refreshCatalog}){
   for(const [id,text]of Object.entries(labels))$(id).textContent=text;
   $('editor-search').placeholder=L('Search model, provider or saved name','Buscar modelo, proveedor o nombre guardado');
   $('editor-sort-label').textContent=L('Sort by','Ordenar por');
+  $('editor-lab-label').textContent=L('Lab','Laboratorio');
   configureModelSort($('editor-sort'),ctx.language);
   $('editor-save').disabled=working||!s().models.size||!ctx.state;
   $('editor-load').disabled=working;$('editor-refresh').disabled=working;$('editor-add').disabled=working;
@@ -62,7 +63,8 @@ export function createEditorHelper({api,notify,copy,refreshCatalog}){
   ctx=context;controls();
   const selected=s(),q=$('editor-search').value,only=$('editor-selected').checked;
   const all=new Map(ctx.catalog.map(m=>[m.id,m]));for(const [id,m]of selected.models)all.set(id,mergeModelSelection(all.get(id),m));
-  const matches=sortModels(filterModels([...all.values()],q,false).filter(m=>!only||selected.models.has(m.id)),$('editor-sort').value);
+  configureModelLab($('editor-lab'),[...all.values()],ctx.language);
+  const matches=sortModels(filterModels(filterModelLab([...all.values()],$('editor-lab').value),q,false).filter(m=>!only||selected.models.has(m.id)),$('editor-sort').value);
   const next=JSON.stringify([ctx.client,ctx.language,matches,payload(),working]);if(next===signature)return;
   if(!force&&renderedClient===ctx.client&&!working&&$('editor-picker').contains(document.activeElement)&&document.activeElement.matches('input[type=text],input[type=number]'))return;
   signature=next;renderedClient=ctx.client;
@@ -90,6 +92,7 @@ export function createEditorHelper({api,notify,copy,refreshCatalog}){
  }
  for(const id of ['editor-search','editor-selected'])$(id).addEventListener('input',()=>render(ctx));
  $('editor-sort').addEventListener('change',()=>{setModelSort($('editor-sort').value);$('editor-picker').scrollTop=0;render(ctx,true)});
+ $('editor-lab').addEventListener('change',()=>{setModelLab($('editor-lab').value);$('editor-picker').scrollTop=0;render(ctx,true)});
  $('editor-shell').addEventListener('change',controls);
  $('editor-refresh').addEventListener('click',()=>refreshCatalog());
  $('editor-add').addEventListener('click',()=>{const id=$('editor-id').value.trim();if(!validModelID(id)||s().models.size>=50)return;s().models.set(id,ctx.catalog.find(m=>m.id===id)||{id,name:id});if(!s().initial)s().initial=id;$('editor-search').value='';$('editor-selected').checked=true;$('editor-id').value='';render(ctx)});

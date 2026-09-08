@@ -1,7 +1,7 @@
 import {codexCatalog,reasoningFor,codexDisplayName} from './codex-catalog.mjs';
 import {writeClipboard} from './desktop-helper.mjs';
 import {claudeCapabilities,claudeEfforts,claudeSelection} from './claude-helper.mjs';
-import {validModelID,formatPrice,sortModels,configureModelSort,setModelSort,mergeModelSelection} from './model-helper.mjs';
+import {validModelID,formatPrice,sortModels,configureModelSort,setModelSort,mergeModelSelection,filterModelLab,configureModelLab,setModelLab} from './model-helper.mjs';
 
 export function xcodeChatGuide(baseURL,key,language='en') {
  const url=baseURL.replace(/\/v1\/?$/,'')+'/xcode';
@@ -36,9 +36,11 @@ export function createXcodeHelper({api,notify,refreshCatalog}) {
  function render(next=context){
   context=next;
   configureModelSort($('xcode-sort'),context.language);
+  const s=selection(),available=new Map(context.catalog.map(m=>[m.id,m]));for(const [id,m]of s.models)available.set(id,mergeModelSelection(available.get(id),m));
+  configureModelLab($('xcode-lab'),[...available.values()],context.language);
   if(!detected){detected=true;queueMicrotask(detect);}
   status();
-  const sig=JSON.stringify([context.catalog,context.language,variant,payload(),installation,loading,$('xcode-search').value,$('xcode-sort').value,$('xcode-selected').checked]);
+  const sig=JSON.stringify([context.catalog,context.language,variant,payload(),installation,loading,$('xcode-search').value,$('xcode-sort').value,$('xcode-selected').checked,$('xcode-lab').value]);
   if(sig===signature)return;signature=sig;
   $('xcode-title').textContent=L('Xcode: chat and coding agents','Xcode: chat y agentes de programación');
   $('xcode-intro').textContent=L('Chat Completions is the message API used by Xcode Chat. Codex uses Responses, and Claude uses Messages. Each variant has its own model selection.','Chat Completions es la API de mensajes que usa Xcode Chat. Codex usa Responses y Claude usa Messages. Cada variante tiene su propia selección de modelos.');
@@ -46,6 +48,7 @@ export function createXcodeHelper({api,notify,refreshCatalog}) {
   $('xcode-agent-warning').hidden=variant==='chat';$('xcode-agent-warning').textContent=L('Close Xcode before preparing an agent profile. Reopen it and start a new conversation after saving.','Cierra Xcode antes de preparar el perfil de un agente. Vuelve a abrirlo e inicia una conversación nueva después de guardar.');
   $('xcode-search').placeholder=L('Search model or provider','Buscar modelo o proveedor');
   $('xcode-sort-label').textContent=L('Sort by','Ordenar por');
+  $('xcode-lab-label').textContent=L('Lab','Laboratorio');
   $('xcode-selected-label').textContent=L('Selected only','Solo seleccionados');
   $('xcode-manual-label').textContent=L('Add an exact model ID','Añadir un ID de modelo exacto');
   $('xcode-add').textContent=L('Add','Añadir');$('xcode-load').textContent=L('Load saved selection','Cargar selección guardada');
@@ -55,10 +58,9 @@ export function createXcodeHelper({api,notify,refreshCatalog}) {
   $('xcode-compatibility').textContent=!installation?L('Detect Xcode before preparing agent profiles. Chat works through the local proxy.','Detecta Xcode antes de preparar los perfiles de agentes. Chat funciona a través del proxy local.'):!installation.available?L('Xcode was not found on this computer. Agent preparation requires macOS and Xcode.','No se encontró Xcode en este ordenador. Preparar agentes requiere macOS y Xcode.'):`Xcode ${installation.version} · Codex ${installation.codexVersion||'?'} · Claude ${caps().version||'?'} — `+L('versions advertised by Xcode; downloaded agents may differ.','versiones anunciadas por Xcode; los agentes descargados pueden variar.');
   $('xcode-limit-note').textContent=variant==='claude'&&!caps().picker?L('This Claude version uses up to three aliases (Sonnet, Opus, Haiku). Map them below. Xcode may show its built-in labels. Only the initial model can set global reasoning.','Esta versión de Claude usa hasta tres alias (Sonnet, Opus, Haiku). Asígnalos abajo. Xcode puede mostrar sus nombres propios. Solo el modelo inicial puede fijar el razonamiento global.'):variant==='chat'?L('Up to 50 models. Exact gateway IDs are preserved. Short names are hints; Xcode may display IDs. Provider registration in Xcode is manual.','Hasta 50 modelos. Se conservan los IDs exactos del gateway. Los nombres cortos son orientativos; Xcode puede mostrar los IDs. El alta del proveedor en Xcode es manual.'):L('Up to 50 models. The profile includes names and supported reasoning. Xcode controls which choices appear in its own interface. Its verified Codex catalog supports levels up to xhigh; max and ultra are omitted.','Hasta 50 modelos. El perfil incluye nombres y razonamiento compatible. Xcode controla qué opciones aparecen en su interfaz. Su catálogo de Codex verificado admite niveles hasta xhigh; se omiten max y ultra.');
   document.querySelectorAll('[data-xcode-variant]').forEach(b=>{b.setAttribute('aria-selected',String(b.dataset.xcodeVariant===variant));b.textContent=b.dataset.xcodeVariant==='chat'?'Chat':b.dataset.xcodeVariant==='codex'?L('Codex in Xcode','Codex en Xcode'):L('Claude in Xcode','Claude en Xcode')});
-  const s=selection(),available=new Map(context.catalog.map(m=>[m.id,m]));for(const [id,m]of s.models)available.set(id,mergeModelSelection(available.get(id),m));
   const list=$('xcode-picker'),scroll=list.scrollTop,focus=document.activeElement?.dataset.xcodeFocus;
   list.replaceChildren();const query=$('xcode-search').value.toLowerCase();
-  const matches=sortModels([...available.values()].filter(m=>(!$('xcode-selected').checked||s.models.has(m.id))&&(m.id+' '+(m.name||'')+' '+(m.displayName||'')).toLowerCase().includes(query)),$('xcode-sort').value);
+  const matches=sortModels(filterModelLab([...available.values()],$('xcode-lab').value).filter(m=>(!$('xcode-selected').checked||s.models.has(m.id))&&(m.id+' '+(m.name||'')+' '+(m.displayName||'')).toLowerCase().includes(query)),$('xcode-sort').value);
   for(const model of matches){
    const chosen=s.models.has(model.id),entry=document.createElement('div');entry.className='codex-model-entry'+(chosen?' is-selected':'');
    const row=document.createElement('label');row.className='model-option';const check=document.createElement('input');check.type='checkbox';check.checked=chosen;check.dataset.xcodeFocus='choose:'+model.id;
@@ -68,7 +70,7 @@ export function createXcodeHelper({api,notify,refreshCatalog}) {
    if(chosen){
     const m=s.models.get(model.id),controls=document.createElement('div');controls.className='codex-row-controls';
     const label=document.createElement('label');label.className='codex-name-label';label.textContent=L('Short name','Nombre corto');const input=document.createElement('input');input.type='text';input.value=m.displayName||'';input.maxLength=80;input.dataset.xcodeFocus='name:'+m.id;input.className='codex-name-input';label.append(input);controls.append(label);
-    input.addEventListener('input',()=>{m.displayName=input.value;strong.textContent=codexDisplayName(m);signature=JSON.stringify([context.catalog,context.language,variant,payload(),installation,loading,$('xcode-search').value,$('xcode-sort').value,$('xcode-selected').checked]);status()});
+    input.addEventListener('input',()=>{m.displayName=input.value;strong.textContent=codexDisplayName(m);signature=JSON.stringify([context.catalog,context.language,variant,payload(),installation,loading,$('xcode-search').value,$('xcode-sort').value,$('xcode-selected').checked,$('xcode-lab').value]);status()});
     const initial=document.createElement('button');initial.type='button';initial.className='codex-default-button';initial.setAttribute('aria-pressed',String(s.initial===m.id));initial.textContent=s.initial===m.id?L('★ Initial model','★ Modelo inicial'):L('Use first','Usar al iniciar');initial.dataset.xcodeFocus='initial:'+m.id;initial.addEventListener('click',()=>{s.initial=m.id;if(variant==='claude'&&!caps().perModelEffort)for(const other of s.models.values())if(other.id!==m.id)delete other.effort;render()});controls.append(initial);
     if(variant!=='chat'){
      const label=document.createElement('label');label.textContent=L('Reasoning','Razonamiento');const select=document.createElement('select');select.dataset.xcodeFocus='effort:'+m.id;
@@ -88,6 +90,7 @@ export function createXcodeHelper({api,notify,refreshCatalog}) {
  document.querySelectorAll('[data-xcode-variant]').forEach(b=>b.addEventListener('click',()=>{variant=b.dataset.xcodeVariant;$('xcode-search').value='';$('xcode-selected').checked=false;render()}));
  $('xcode-search').addEventListener('input',()=>render());
  $('xcode-sort').addEventListener('change',()=>{setModelSort($('xcode-sort').value);$('xcode-picker').scrollTop=0;render()});
+ $('xcode-lab').addEventListener('change',()=>{setModelLab($('xcode-lab').value);$('xcode-picker').scrollTop=0;render()});
  $('xcode-selected').addEventListener('change',()=>render());
  $('xcode-refresh').addEventListener('click',async()=>{$('xcode-refresh').disabled=true;try{await refreshCatalog()}finally{$('xcode-refresh').disabled=false;render()}});
  $('xcode-add').addEventListener('click',()=>{const id=$('xcode-id').value.trim(),s=selection();if(!validModelID(id)){notify(L('Enter a valid model ID','Introduce un ID de modelo válido'),true);return}const max=variant==='claude'&&!caps().picker?3:50;if(!s.models.has(id)&&s.models.size>=max){notify(L('Model limit reached','Límite de modelos alcanzado'),true);return}s.models.set(id,s.models.get(id)||{...context.catalog.find(m=>m.id===id),id});if(!s.initial)s.initial=id;$('xcode-id').value='';$('xcode-search').value='';render()});

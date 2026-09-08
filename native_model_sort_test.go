@@ -8,7 +8,9 @@ import (
 	"reflect"
 	"testing"
 
+	"gioui.org/f32"
 	"gioui.org/io/key"
+	"gioui.org/io/pointer"
 	"gioui.org/io/semantic"
 )
 
@@ -38,7 +40,7 @@ func TestNativeModelSortMenuPreservesProfile(t *testing.T) {
 			if string(before) != string(after) {
 				t.Fatal("changing view order modified the profile selection")
 			}
-			visible := nativeVisibleModels(models, selection, "", false, false, "speed")
+			visible := nativeVisibleModels(models, selection, "", false, false, "speed", "")
 			ids := make([]string, len(visible))
 			for i, model := range visible {
 				ids[i] = model.ID
@@ -52,7 +54,17 @@ func TestNativeModelSortMenuPreservesProfile(t *testing.T) {
 				t.Fatal("could not change sort twice")
 			}
 			h.click("Price  ▾", semantic.Button)
-			h.click("provider/model", semantic.Editor)
+			// At narrow widths the popup opens above and can cover the
+			// search center. Press its exposed left edge for a real outside click.
+			search := h.target("provider/model", semantic.Editor).Desc.Bounds
+			point := f32.Pt(float32(search.Min.X+10), float32(search.Min.Y+search.Dy()/2))
+			h.router.Queue(pointer.Event{Kind: pointer.Move, Source: pointer.Mouse, Position: point})
+			h.frame()
+			h.router.Queue(pointer.Event{Kind: pointer.Press, Source: pointer.Mouse, Buttons: pointer.ButtonPrimary, Position: point})
+			h.frame()
+			h.router.Queue(pointer.Event{Kind: pointer.Release, Source: pointer.Mouse, Position: point})
+			h.frame()
+			h.frame()
 			if h.u.expanded["models.sort"] || !h.router.Source().Focused(h.u.editor("client:codex:search")) {
 				t.Fatal("outside click did not dismiss the menu and focus search")
 			}

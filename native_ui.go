@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
 	"image/color"
 	"io"
 	"net/http"
@@ -31,6 +32,11 @@ type nativeUI struct {
 	languageTarget      string
 	modelSortDismissTag int
 	modelSortMenuTag    int
+	modelMenuPointerTag int
+	modelMenuPress      image.Point
+	modelMenuViewport   image.Point
+	modelMenuAnchors    map[string]image.Point
+	activeModelMenu     *nativeModelMenuState
 
 	owner                          *app
 	invalidate                     func()

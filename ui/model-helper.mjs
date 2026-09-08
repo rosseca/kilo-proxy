@@ -2,6 +2,46 @@ export function filterModels(models, query = '', coding = true) {
   const terms = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
   return models.filter(m => (!coding || (m.tools === true && m.outputModalities?.includes('text'))) && terms.every(term => `${m.name} ${m.id}`.toLowerCase().includes(term)));
 }
+const labNames = {
+  openai:'OpenAI', anthropic:'Anthropic', google:'Google', deepseek:'DeepSeek',
+  'meta-llama':'Meta', meta:'Meta', mistralai:'Mistral AI', mistral:'Mistral AI',
+  qwen:'Qwen', 'x-ai':'xAI', xai:'xAI', 'z-ai':'Z.ai', zai:'Z.ai',
+  minimax:'MiniMax', moonshotai:'Moonshot AI', moonshot:'Moonshot AI'
+};
+const normalizeLab = value => String(value || '').trim().replace(/^~+/, '').toLowerCase();
+let currentModelLab = '';
+export function modelLab(model) {
+  return normalizeLab(typeof model.provider === 'string' && model.provider.trim() ? model.provider : String(model.id || '').split('/')[0]);
+}
+function labLabel(key) {
+  if (Object.hasOwn(labNames,key)) return labNames[key];
+  const readable=key.replace(/[-_]+/g,' ').trim() || key;
+  return readable.replace(/\b\w/g,letter=>letter.toUpperCase());
+}
+export function modelLabOptions(models, language = 'en') {
+  const labs = [...new Set(models.map(modelLab).filter(Boolean))].map(value=>({value,label:labLabel(value)}));
+  const compare=(a,b)=>a<b?-1:a>b?1:0;
+  labs.sort((a,b)=>compare(a.label.toLowerCase(),b.label.toLowerCase())||compare(a.value,b.value));
+  return [{value:'',label:language==='es'?'Todos los laboratorios':'All labs'},...labs];
+}
+export function filterModelLab(models, lab = '') {
+  const key = normalizeLab(lab);
+  return models.filter(model=>!key || modelLab(model) === key);
+}
+export function setModelLab(lab) { currentModelLab = normalizeLab(lab); }
+export function configureModelLab(select, models, language = 'en') {
+  const options = modelLabOptions(currentModelLab ? [...models,{provider:currentModelLab}] : models,language);
+  const signature = JSON.stringify(options);
+  if (select.dataset.labOptions !== signature) {
+    select.replaceChildren();
+    for (const choice of options) {
+      const option = select.ownerDocument.createElement('option');
+      option.value = choice.value; option.textContent = choice.label; select.append(option);
+    }
+    select.dataset.labOptions = signature;
+  }
+  select.value = currentModelLab;
+}
 const modelSortChoices = [
   ['codeModeRank', 'Code Mode Rank', 'Ranking de Code Mode'],
   ['codingIndex', 'Coding Index', 'Índice de programación'],

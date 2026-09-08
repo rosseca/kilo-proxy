@@ -6,7 +6,7 @@ import {claudeCapabilities,claudeEfforts,claudeSelection,claudeSettings} from '.
 import {reportedCost, usageCoverage, cacheStats, lastCacheStats} from './usage-helper.mjs';
 import {formatTraceJSON} from './activity-helper.mjs';
 import {codexCatalog,codexDisplayName,reasoningFor,reasoningLevels} from './codex-catalog.mjs';
-import {filterModels, formatPrice, validModelID, sortModels, configureModelSort, setModelSort, mergeModelSelection} from './model-helper.mjs';
+import {filterModels, formatPrice, validModelID, sortModels, configureModelSort, setModelSort, mergeModelSelection, filterModelLab, configureModelLab, setModelLab} from './model-helper.mjs';
 import {clientConfig, launchCommand} from './client-config.mjs';
 import {chooseLanguage, translate, bindDocument} from './i18n.mjs';
 const $ = (id) => document.getElementById(id);
@@ -416,7 +416,7 @@ function codexVisibleModels() {
   const available=new Map(catalog.map(model=>[model.id,model]));
   for(const [id,model] of codexSelection().models)available.set(id,available.has(id) ? {...available.get(id),displayName:model.displayName} : model);
   const selectedOnly=$('codex-selected-only').checked;
-  const candidates=[...available.values()].filter(model=>!selectedOnly || codexSelection().models.has(model.id));
+  const candidates=filterModelLab([...available.values()],$('model-lab').value).filter(model=>!selectedOnly || codexSelection().models.has(model.id));
   return candidates.filter(model=>filterModels([{...model,name:(model.name || '')+' '+codexDisplayName(model)}],$('model-search').value,false).length).filter(model=>selectedOnly || codexSelection().models.has(model.id) || !$('coding-models').checked || (model.tools===true && model.outputModalities?.includes('text')));
 }
 $('add-codex-model').addEventListener('click',()=>{
@@ -470,11 +470,14 @@ function applyModelContext() {
 }
 function renderModels() {
   configureModelSort($('model-sort'),language);
-  const matches = sortModels(['codex','codex-cli','claude'].includes(client) ? codexVisibleModels() : filterModels(catalog, $('model-search').value, $('coding-models').checked),$('model-sort').value);
+  const manualModels=isCodexClient() ? [...codexSelection().models.values()] : client==='claude' ? [...multiClients.claude.models.values()] : client==='cursor' ? [...cursorModels.keys()].map(id=>({id})) : validModelID($('model').value.trim()) ? [{id:$('model').value.trim()}] : [];
+  configureModelLab($('model-lab'),[...catalog,...manualModels],language);
+  const availableCount=new Set([...catalog,...manualModels].map(model=>model.id)).size;
+  const matches = sortModels(['codex','codex-cli','claude'].includes(client) ? codexVisibleModels() : filterModels(filterModelLab(catalog,$('model-lab').value), $('model-search').value, $('coding-models').checked),$('model-sort').value);
   const selectedID = $('model').value.trim();
   const selected = catalog.find(m => m.id === selectedID);
   $('load-models').disabled = catalogLoading || ['starting','pending'].includes(state?.auth?.status);
-  $('catalog-status').textContent = catalogLoading ? t('Cargando modelos de Kilo…') : catalogError ? t(catalogError) : t('{shown} de {total} modelos · actualizado {time}', {shown:matches.length,total:catalog.length,time:catalogFetchedAt ? new Date(catalogFetchedAt).toLocaleTimeString(language, {hour:'2-digit',minute:'2-digit'}) : '—'});
+  $('catalog-status').textContent = catalogLoading ? t('Cargando modelos de Kilo…') : catalogError ? t(catalogError) : t('{shown} de {total} modelos · actualizado {time}', {shown:matches.length,total:availableCount,time:catalogFetchedAt ? new Date(catalogFetchedAt).toLocaleTimeString(language, {hour:'2-digit',minute:'2-digit'}) : '—'});
   const picker = $('model-picker'), restoreFocus = picker.contains(document.activeElement), scroll = picker.scrollTop;
   const focusKey=document.activeElement?.dataset.focus;
   const caret=document.activeElement?.classList.contains('codex-name-input') ? [document.activeElement.selectionStart,document.activeElement.selectionEnd] : null;
@@ -538,6 +541,7 @@ async function loadModels() {
 $('load-models').addEventListener('click', () => void loadModels());
 $('model-search').addEventListener('input', renderModels);
 $('model-sort').addEventListener('change', () => { setModelSort($('model-sort').value); $('model-picker').scrollTop=0; renderModels(); });
+$('model-lab').addEventListener('change', () => { setModelLab($('model-lab').value); $('model-picker').scrollTop=0; renderModels(); });
 $('coding-models').addEventListener('change', renderModels);
 $('model-picker').addEventListener('change', event => {
   if(!event.target.matches('input[name="model-choice"]'))return;
@@ -675,7 +679,7 @@ function claudeVisibleModels(){
  const selection=multiClients.claude.models,available=new Map(catalog.map(m=>[m.id,m]));
  for(const [id,m] of selection)available.set(id,mergeModelSelection(available.get(id),m));
  const query=$('model-search').value.trim().toLowerCase();
- return [...available.values()].filter(m=>(!$('codex-selected-only').checked || selection.has(m.id)) && (m.id+' '+(m.name || '')+' '+(m.displayName || '')).toLowerCase().includes(query) && (selection.has(m.id) || !$('coding-models').checked || m.tools===true && m.outputModalities?.includes('text')));
+ return filterModelLab([...available.values()],$('model-lab').value).filter(m=>(!$('codex-selected-only').checked || selection.has(m.id)) && (m.id+' '+(m.name || '')+' '+(m.displayName || '')).toLowerCase().includes(query) && (selection.has(m.id) || !$('coding-models').checked || m.tools===true && m.outputModalities?.includes('text')));
 }
 function claudeRowControls(model){
  const s=multiClients.claude,caps=currentClaudeCaps(),controls=document.createElement('div');controls.className='codex-row-controls';

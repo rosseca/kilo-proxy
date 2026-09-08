@@ -20,6 +20,7 @@ Coverage includes:
 - Claude model picker, provider aliases, configuration preservation, and reload.
 - OpenCode/Zed multi-model selection, initial models, context limits, short names, save/load, backups, and copied configuration.
 - Shared Code Mode Rank, Coding Index, Speed, Price and Name sorting in every helper, including the three Xcode variants. Checks retain custom names, initial models and prepared configurations, verify English/Spanish labels, and capture desktop/mobile control layouts.
+- Dynamic lab filtering combined with search, selected-only views and sorting; lab choices survive empty results and tab changes. Manual models contribute labs, `~anthropic` shares the Anthropic filter, and exact saved IDs remain unchanged.
 - Actual JSON/SSE traffic through the proxy, conversation spend, cache percentages, activity bodies, redacted credentials, capture pause/clear, and accounting retention.
 - Missing admin credentials and cross-origin mutation rejection.
 

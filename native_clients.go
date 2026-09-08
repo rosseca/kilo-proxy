@@ -179,7 +179,7 @@ func nativeSelectionFingerprint(key string, s *nativeClientSelection, base, keyV
 	return string(data)
 }
 
-func nativeVisibleModels(catalog []modelInfo, s *nativeClientSelection, query string, selectedOnly, codingOnly bool, order string) []modelInfo {
+func nativeVisibleModels(catalog []modelInfo, s *nativeClientSelection, query string, selectedOnly, codingOnly bool, order, lab string) []modelInfo {
 	all := map[string]modelInfo{}
 	for _, m := range catalog {
 		all[m.ID] = m
@@ -187,9 +187,13 @@ func nativeVisibleModels(catalog []modelInfo, s *nativeClientSelection, query st
 	for _, m := range s.Models {
 		all[m.Model.ID] = nativeCurrentModel(m.Model, all[m.Model.ID])
 	}
+	lab = normalizeModelLab(lab)
 	query = strings.ToLower(strings.TrimSpace(query))
 	var out []modelInfo
 	for _, m := range all {
+		if lab != "" && modelLab(m) != lab {
+			continue
+		}
 		choice := s.choice(m.ID)
 		name := m.Name
 		if choice != nil {
@@ -498,8 +502,8 @@ func (u *nativeUI) clientPicker(key string, s *nativeClientSelection) layout.Wid
 		return true
 	}
 	order := modelSortOrder(u.value("models.sort"))
-	available := nativeVisibleModels(u.models, s, u.value(prefix+"search"), u.checked(prefix+"selected"), u.checked(prefix+"coding"), order)
-	controls := []layout.Widget{u.actionRow(u.field(prefix+"search", u.tr("Search models or saved names", "Buscar modelos o nombres guardados"), "provider/model", false), u.modelSortButton, u.button(prefix+"refresh", u.tr("Refresh catalog", "Actualizar catálogo"), u.refreshModels)), u.pills(u.check(prefix+"selected", u.tr("Selected only", "Solo seleccionados"), func(bool) {}), u.check(prefix+"coding", u.tr("Text models with tools only", "Solo texto con herramientas"), func(bool) {}), u.check(prefix+"advanced", u.tr("Advanced options", "Opciones avanzadas"), func(bool) {})), u.pills(u.button(prefix+"select-all", u.tr("Select results", "Marcar resultados"), func() {
+	available := nativeVisibleModels(u.models, s, u.value(prefix+"search"), u.checked(prefix+"selected"), u.checked(prefix+"coding"), order, u.value("models.lab"))
+	controls := []layout.Widget{u.modelPickerToolbar(prefix, s), u.pills(u.check(prefix+"selected", u.tr("Selected only", "Solo seleccionados"), func(bool) {}), u.check(prefix+"coding", u.tr("Text models with tools only", "Solo texto con herramientas"), func(bool) {}), u.check(prefix+"advanced", u.tr("Advanced options", "Opciones avanzadas"), func(bool) {})), u.pills(u.button(prefix+"select-all", u.tr("Select results", "Marcar resultados"), func() {
 		for _, m := range available {
 			if len(s.Models) >= limit {
 				break
