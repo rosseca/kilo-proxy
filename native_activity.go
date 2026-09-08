@@ -57,7 +57,22 @@ func nativePretty(raw string) string {
 	return raw
 }
 func (u *nativeUI) coverage(summary usageSummary) string {
-	return fmt.Sprintf(u.tr("Cost reported for %d of %d requests · %d incomplete", "Coste informado en %d de %d peticiones · %d incompletas"), summary.Priced, summary.Requests, summary.Incomplete)
+	missing := max(int64(0), summary.Requests-summary.Priced)
+	return fmt.Sprintf(u.tr("Cost reported: %d/%d requests\n%d requests without reported cost", "Coste informado: %d/%d peticiones\n%d peticiones sin coste informado"), summary.Priced, summary.Requests, missing)
+}
+func (u *nativeUI) responseStats(summary usageSummary) string {
+	return fmt.Sprintf(u.tr("Response stats: %d interrupted or limited", "Estadísticas de respuesta: %d interrumpidas o limitadas"), summary.Incomplete)
+}
+func (u *nativeUI) reportedSpend(summary usageSummary) (label, amount string) {
+	label = u.tr("Session cost", "Coste de sesión")
+	if summary.Priced > 0 && summary.Priced < summary.Requests {
+		label = u.tr("Reported subtotal", "Subtotal informado")
+	}
+	amount = "—"
+	if summary.Priced > 0 {
+		amount = nativeMoney(summary.CostUSD)
+	}
+	return label, amount
 }
 func (u *nativeUI) cacheCaption(s usageSummary, read bool) string {
 	n := s.WithCacheWrite
@@ -75,12 +90,9 @@ func (u *nativeUI) activityPanel() layout.Widget {
 	var events []event
 	nativeDecode(u.state["events"], &events)
 	total := usage.Total
-	cost := nativeMoney(total.CostUSD)
-	if total.Requests > 0 && total.Priced == 0 {
-		cost = "—"
-	}
+	costLabel, cost := u.reportedSpend(total)
 	panels := []layout.Widget{
-		u.card(u.topRow(u.metric(u.tr("Session cost", "Coste de sesión"), cost, u.coverage(total)), u.metric(u.tr("Requests", "Peticiones"), fmt.Sprintf("%.0f", nativeNumber(u.state, "requests")), fmt.Sprintf(u.tr("%.0f active · %.0f errors", "%.0f activas · %.0f errores"), nativeNumber(u.state, "active"), nativeNumber(u.state, "failures"))), u.metric(u.tr("Tokens", "Tokens"), nativeReportedCount(total.Input+total.Output, total.WithTokens, total.Requests), fmt.Sprintf(u.tr("%s input · %s output", "%s entrada · %s salida"), nativeCount(total.Input), nativeCount(total.Output))))),
+		u.card(u.topRow(u.metric(costLabel, cost, u.coverage(total)), u.metric(u.tr("Requests", "Peticiones"), fmt.Sprintf("%.0f", nativeNumber(u.state, "requests")), fmt.Sprintf(u.tr("%.0f active · %.0f errors", "%.0f activas · %.0f errores"), nativeNumber(u.state, "active"), nativeNumber(u.state, "failures"))), u.metric(u.tr("Tokens", "Tokens"), nativeReportedCount(total.Input+total.Output, total.WithTokens, total.Requests), fmt.Sprintf(u.tr("%s input · %s output", "%s entrada · %s salida"), nativeCount(total.Input), nativeCount(total.Output)))), u.note(u.responseStats(total))),
 		u.card(u.heading(u.tr("Cache reuse", "Reutilización de caché")), u.topRow(u.metric(u.tr("Read from cache", "Leído de caché"), nativeReportedCount(total.Cached, total.WithCacheRead, total.Requests), u.cacheCaption(total, true)), u.metric(u.tr("Written to cache", "Escrito en caché"), nativeReportedCount(total.CacheWrite, total.WithCacheWrite, total.Requests), u.cacheCaption(total, false)), u.metric(u.tr("Prompt reused", "Prompt reutilizado"), nativeCacheRatio(total), fmt.Sprintf(u.tr("Ratio available for %d requests", "Ratio disponible en %d peticiones"), total.CacheRatioRequests))), u.note(u.tr("Missing usage is not counted as zero. Totals cover this Kilo Proxy process and use values returned by the gateway.", "Los datos ausentes no se cuentan como cero. Los totales cubren este proceso de Kilo Proxy y usan los valores devueltos por el gateway."))),
 	}
 	sessions := []layout.Widget{u.heading(u.tr("Conversations", "Conversaciones")), u.note(u.tr("Grouped by client session headers. Requests without an identifier appear as unassigned.", "Agrupadas por cabeceras de sesión del cliente. Las peticiones sin identificador aparecen sin asignar."))}
@@ -89,9 +101,9 @@ func (u *nativeUI) activityPanel() layout.Widget {
 	}
 	for _, s := range usage.Sessions {
 		s := s
-		price := nativeMoney(s.CostUSD)
-		if s.Priced == 0 {
-			price = "—"
+		label, price := u.reportedSpend(s)
+		if s.Priced > 0 && s.Priced < s.Requests {
+			price = label + ": " + price
 		}
 		last := u.tr("Last request: cache not reported", "Última petición: caché no informada")
 		if s.LastCache != nil {
@@ -104,7 +116,7 @@ func (u *nativeUI) activityPanel() layout.Widget {
 			}
 			last = fmt.Sprintf(u.tr("Last request · cache read %s · cache write %s", "Última petición · caché leída %s · caché escrita %s"), read, write)
 		}
-		sessions = append(sessions, u.card(u.row(u.label(s.Label), u.label(price+" · "+nativeCount(s.Requests)+u.tr(" requests", " peticiones"))), u.note(u.tr("Organization: ", "Organización: ")+s.OrgID+" · "+s.Source), u.note(fmt.Sprintf(u.tr("Input %s · Output %s · Cached %s · Written %s · Reused %s", "Entrada %s · Salida %s · Caché %s · Escrita %s · Reutilizada %s"), nativeCount(s.Input), nativeCount(s.Output), nativeReportedCount(s.Cached, s.WithCacheRead, s.Requests), nativeReportedCount(s.CacheWrite, s.WithCacheWrite, s.Requests), nativeCacheRatio(s))), u.note(u.coverage(s)), u.note(last)))
+		sessions = append(sessions, u.card(u.row(u.label(s.Label), u.label(price+" · "+nativeCount(s.Requests)+u.tr(" requests", " peticiones"))), u.note(u.tr("Organization: ", "Organización: ")+s.OrgID+" · "+s.Source), u.note(fmt.Sprintf(u.tr("Input %s · Output %s · Cached %s · Written %s · Reused %s", "Entrada %s · Salida %s · Caché %s · Escrita %s · Reutilizada %s"), nativeCount(s.Input), nativeCount(s.Output), nativeReportedCount(s.Cached, s.WithCacheRead, s.Requests), nativeReportedCount(s.CacheWrite, s.WithCacheWrite, s.Requests), nativeCacheRatio(s))), u.note(u.coverage(s)), u.note(u.responseStats(s)), u.note(last)))
 	}
 	panels = append(panels, u.card(sessions...))
 	u.setChecked("activity.capture", nativeBool(u.state, "captureEnabled"))

@@ -324,14 +324,19 @@ func (u *usageObserver) parse(data []byte) {
 
 		replaceInt(&u.usage.Reasoning, usageObject(usage["output_tokens_details"])["reasoning_tokens"])
 		replaceInt(&u.usage.Reasoning, usageObject(usage["completion_tokens_details"])["reasoning_tokens"])
-		// Prefer Kilo's explicitly denominated field; never substitute BYOK provider charges.
+		// Prefer valid microdollars, including explicit zero. A null or malformed
+		// microdollar field must not hide valid gateway-reported USD. Never
+		// substitute provider/BYOK charges for either gateway cost field.
 		cost, source, ok := int64(0), "", false
 		if v, present := usage["cost_microdollars"]; present {
 			cost, ok = money(v, true)
 			source = "usage.cost_microdollars"
-		} else if v, present := usage["cost"]; present {
-			cost, ok = money(v, false)
-			source = "usage.cost"
+		}
+		if !ok {
+			if v, present := usage["cost"]; present {
+				cost, ok = money(v, false)
+				source = "usage.cost"
+			}
 		}
 		if ok {
 			u.usage.costNanos = cost

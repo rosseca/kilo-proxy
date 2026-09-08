@@ -220,19 +220,19 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 			if capture != nil {
 				a.activeTraces--
 			}
-			if r.Context().Err() != nil {
+			if usage != nil {
+				usage = usage.snapshot()
+			}
+			// Clients may close immediately after receiving the terminal event.
+			// That cannot invalidate final accounting already read upstream. A
+			// cancellation before completion remains an incomplete 499 request.
+			if r.Context().Err() != nil && (usage == nil || !usage.usage.Complete) {
 				recorder.status = 499
 			}
 			a.active--
 			a.requests++
 			if recorder.status >= 400 {
 				a.failures++
-			}
-			if usage != nil {
-				usage = usage.snapshot()
-				if r.Context().Err() != nil {
-					usage.usage.Complete = false
-				}
 			}
 			a.recordUsage(usage)
 			var usageDetail *requestUsage

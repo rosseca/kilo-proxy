@@ -3,7 +3,7 @@ import {configureDesktop, writeClipboard, openExternal, bindDesktopLinks} from '
 import {createXcodeHelper} from './xcode-helper.mjs';
 import {claudeCapabilities,claudeEfforts,claudeSelection,claudeSettings} from './claude-helper.mjs';
 'use strict';
-import {reportedCost, usageCoverage, cacheStats, lastCacheStats} from './usage-helper.mjs';
+import {reportedCost, reportedSpend, cacheStats, lastCacheStats} from './usage-helper.mjs';
 import {formatTraceJSON} from './activity-helper.mjs';
 import {codexCatalog,codexDisplayName,reasoningFor,reasoningLevels} from './codex-catalog.mjs';
 import {filterModels, formatPrice, modelPriceDetails, validModelID, sortModels, configureModelSort, setModelSort, mergeModelSelection, filterModelLab, configureModelLab, setModelLab} from './model-helper.mjs';
@@ -331,9 +331,10 @@ function cacheNumber(value){return value===null || value===undefined ? t('Sin da
 function cachePercent(value){return value===null ? t('Sin dato de caché') : (value*100).toLocaleString(language,{maximumFractionDigits:1})+'%';}
 function renderUsage(usage) {
  const total=usage?.total || {};
- const coverage=usageCoverage(total);
- $('spend-total').textContent=reportedCost(total.costUSD,coverage.priced) ?? t('Coste desconocido');
- $('spend-coverage').textContent=t('Coste recibido en {priced} de {requests} peticiones',coverage);
+ const spend=reportedSpend(total,language);
+ $('spend-title').textContent=spend.label;
+ $('spend-total').textContent=spend.amount;
+ $('spend-coverage').textContent=spend.coverage;
  $('spend-tokens').textContent=t('{input} entrada total · {output} salida',{input:total.withPrompt>0 ? cacheNumber(total.prompt) : t('Coste desconocido'),output:total.withTokens>0 ? cacheNumber(total.output) : t('Coste desconocido')});
  const cache=cacheStats(total);
  $('cache-read-total').textContent=cacheNumber(cache.read);
@@ -341,7 +342,7 @@ function renderUsage(usage) {
  $('cache-ratio-total').textContent=cachePercent(cache.ratio);
  $('cache-coverage').textContent=t('Porcentaje calculado sobre {covered} de {requests} peticiones con datos completos de entrada y caché.',cache);
  $('cache-token-coverage').textContent=t('Caché leída reportada en {read} peticiones; escritura en {write}.',{read:total.withCacheRead||0,write:total.withCacheWrite||0});
- $('spend-partial').textContent=t('{count} peticiones incompletas o con lectura limitada',{count:coverage.incomplete});
+ $('spend-partial').textContent=spend.responseStats;
  $('usage-sessions').replaceChildren();
  for(const session of usage?.sessions || []){
   const row=document.createElement('tr');
@@ -349,9 +350,11 @@ function renderUsage(usage) {
   if(session.source==='unassigned') label=t('Peticiones sin sesión identificada');
   else if(session.source==='overflow') label=t('Otras sesiones');
   else label=label.replace('Codex task',t('Tarea de Codex')).replace('Claude session',t('Sesión de Claude')).replace('Client session',t('Sesión del cliente')).replace('Kilo task',t('Tarea de Kilo'));
-  const c=usageCoverage(session),cache=cacheStats(session),last=lastCacheStats(session.lastCache);
+  const spend=reportedSpend(session,language),cache=cacheStats(session),last=lastCacheStats(session.lastCache);
   const lastText=last.read===null ? t('Sin dato de caché') : cacheNumber(last.read)+(last.prompt!==null ? ' / '+cacheNumber(last.prompt) : '')+' · '+cachePercent(last.ratio);
-  for(const value of [label,session.orgId||'—',session.requests,reportedCost(session.costUSD,c.priced) ?? t('Coste desconocido'),`${c.priced}/${c.requests}`,cacheNumber(cache.read),cacheNumber(cache.write),cachePercent(cache.ratio)+' · '+cache.covered+'/'+cache.requests,lastText]){
+  const price=spend.partial?spend.label+': '+spend.amount:spend.amount;
+  const coverage=spend.coverage+'\n'+spend.responseStats;
+  for(const value of [label,session.orgId||'—',session.requests,price,coverage,cacheNumber(cache.read),cacheNumber(cache.write),cachePercent(cache.ratio)+' · '+cache.covered+'/'+cache.requests,lastText]){
    const cell=document.createElement('td');cell.textContent=value;row.append(cell);
   }
   $('usage-sessions').append(row);

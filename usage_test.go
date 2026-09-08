@@ -260,3 +260,91 @@ func TestCacheUnknownZeroAndPartial(t *testing.T) {
 		t.Fatal("partial response counted as complete")
 	}
 }
+
+func TestUsageValidCostFallbackAndPriority(t *testing.T) {
+	for _, invalid := range []string{"null", "-1", `"25"`, "false", "{}", "1e10000"} {
+		t.Run(invalid, func(t *testing.T) {
+			u := observeUsage(t, false, `{"usage":{"cost_microdollars":`+invalid+`,"cost":0.25,"cost_details":{"upstream_inference_cost":99}}}`)
+			if u.usage.CostUSD == nil || *u.usage.CostUSD != "0.250000000" || u.usage.CostSource != "usage.cost" {
+				t.Fatalf("invalid microdollars hid valid USD: %+v", u.usage)
+			}
+		})
+	}
+	for _, tc := range []struct{ micro, want string }{{"0", "0.000000000"}, {"25", "0.000025000"}} {
+		u := observeUsage(t, false, `{"usage":{"cost_microdollars":`+tc.micro+`,"cost":99}}`)
+		if u.usage.CostUSD == nil || *u.usage.CostUSD != tc.want || u.usage.CostSource != "usage.cost_microdollars" {
+			t.Fatalf("valid microdollars lost priority: %+v", u.usage)
+		}
+	}
+	for _, fields := range []string{`"cost_microdollars":null`, `"cost_microdollars":null,"cost":"0.25"`, `"cost_microdollars":-1,"cost":-1`} {
+		u := observeUsage(t, false, `{"usage":{`+fields+`,"cost_details":{"upstream_inference_cost":99}}}`)
+		if u.usage.CostUSD != nil || u.usage.CostSource != "" {
+			t.Fatal("invalid gateway costs became a provider charge")
+		}
+	}
+}
+
+type usageMemoryTransport func(*http.Request) (*http.Response, error)
+
+func (f usageMemoryTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+type usageCancelAtEOF struct {
+	io.Reader
+	cancel context.CancelFunc
+}
+
+func (r *usageCancelAtEOF) Read(p []byte) (int, error) {
+	n, err := r.Reader.Read(p)
+	if err == io.EOF {
+		r.cancel()
+	}
+	return n, err
+}
+func (r *usageCancelAtEOF) Close() error { return nil }
+
+func TestUsageCancellationBeforeAndAfterTerminalEvent(t *testing.T) {
+	completed := "data: {\"type\":\"response.completed\",\"response\":{\"model\":\"openai/test\",\"usage\":{\"input_tokens\":10,\"output_tokens\":4,\"cost_microdollars\":25}}}\n\n"
+	for _, tc := range []struct {
+		name, body         string
+		complete, limited  bool
+		status             int
+		priced, incomplete int64
+	}{
+		{name: "before terminal", body: "data: {\"type\":\"response.in_progress\",\"response\":{\"model\":\"openai/test\",\"usage\":{\"input_tokens\":10}}}\n\n", status: 499, incomplete: 1},
+		{name: "after completed", body: completed, complete: true, status: 200, priced: 1},
+		{name: "after incomplete terminal", body: strings.Replace(completed, "response.completed", "response.incomplete", 1), complete: true, status: 200, priced: 1},
+		{name: "after terminal with limited earlier event", body: "data: " + strings.Repeat("x", usageBufferLimit+10) + "\n\n" + completed, complete: true, limited: true, status: 200, priced: 1, incomplete: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := testApp(t)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			// The complete production handler and usage reader run against memory,
+			// with no sockets, real credentials, or changes to a running proxy.
+			a.transport = usageMemoryTransport(func(r *http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: &usageCancelAtEOF{Reader: strings.NewReader(tc.body), cancel: cancel}, ContentLength: -1, Request: r}, nil
+			})
+			request := httptest.NewRequest("POST", "http://127.0.0.1:8877/v1/responses", strings.NewReader(`{"model":"openai/test","stream":true}`)).WithContext(ctx)
+			request.Header.Set("Authorization", "Bearer local-test-key")
+			request.Header.Set("Content-Type", "application/json")
+			response := httptest.NewRecorder()
+			a.inferenceHandler("synthetic-upstream-key", "synthetic-org", "local-test-key", "127.0.0.1:8877").ServeHTTP(response, request)
+			if ctx.Err() != context.Canceled || len(a.events) != 1 || response.Body.String() != tc.body {
+				t.Fatal("fixture did not cancel after the intended response bytes")
+			}
+			entry := a.events[0]
+			if entry.Status != tc.status || entry.Usage == nil || entry.Usage.Complete != tc.complete || entry.Usage.Limited != tc.limited {
+				t.Fatalf("incorrect terminal accounting: %+v usage=%+v", entry, entry.Usage)
+			}
+			if a.usageTotal.Priced != tc.priced || a.usageTotal.Incomplete != tc.incomplete || a.usageTotal.Requests != 1 || a.active != 0 {
+				t.Fatalf("incorrect totals after cancellation: %+v", a.usageTotal)
+			}
+			if tc.priced > 0 && a.usageTotal.CostUSD != "0.000025000" {
+				t.Fatal("terminal gateway cost was lost or counted twice")
+			}
+			if (tc.status == 499) != (a.failures == 1) {
+				t.Fatal("late close changed the request error count")
+			}
+		})
+	}
+}
