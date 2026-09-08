@@ -6,7 +6,7 @@ import {claudeCapabilities,claudeEfforts,claudeSelection,claudeSettings} from '.
 import {reportedCost, usageCoverage, cacheStats, lastCacheStats} from './usage-helper.mjs';
 import {formatTraceJSON} from './activity-helper.mjs';
 import {codexCatalog,codexDisplayName,reasoningFor,reasoningLevels} from './codex-catalog.mjs';
-import {filterModels, formatPrice, validModelID, sortModels, configureModelSort, setModelSort, mergeModelSelection, filterModelLab, configureModelLab, setModelLab} from './model-helper.mjs';
+import {filterModels, formatPrice, modelPriceDetails, validModelID, sortModels, configureModelSort, setModelSort, mergeModelSelection, filterModelLab, configureModelLab, setModelLab} from './model-helper.mjs';
 import {clientConfig, launchCommand} from './client-config.mjs';
 import {chooseLanguage, translate, bindDocument} from './i18n.mjs';
 const $ = (id) => document.getElementById(id);
@@ -551,22 +551,19 @@ function renderModels() {
   const expanded=new Set([...picker.querySelectorAll('details[open]')].map(el=>el.dataset.model));
   picker.replaceChildren();
   for (const m of matches) {
-    const row = document.createElement('label'), radio = document.createElement('input'), name = document.createElement('span'), prices = document.createElement('span');
+    const row = document.createElement('label'), radio = document.createElement('input'), name = document.createElement('span');
     row.className = 'model-option'; radio.type = ['codex','codex-cli','claude'].includes(client) ? 'checkbox' : 'radio'; radio.name = 'model-choice'; radio.value = m.id;radio.dataset.focus='model:'+m.id; radio.checked = isCodexClient() ? codexSelection().models.has(m.id) : client==='claude' ? multiClients.claude.models.has(m.id) : m.id === selectedID; radio.disabled = catalogLoading;
     const shownName=isCodexClient() ? codexDisplayName(m) : client==='claude' ? (m.displayName || m.name || m.id) : m.name;
     radio.setAttribute('aria-label',shownName + ' · ' + m.id);
     const title = document.createElement('strong'), id = document.createElement('small'); title.textContent = shownName; id.textContent = m.id; name.append(title,id);
-    prices.className = 'model-option-prices';
-    for (const [label,price] of [['Entrada',m.inputPrice],['Salida',m.outputPrice]]) {
-      const line = document.createElement('span'); line.textContent = `${t(label)} ${formatPrice(price,language) ?? t('Variable / sin dato')}`; prices.append(line);
-    }
-    row.append(radio,name,prices);
+    name.className='model-option-title';
+    row.append(radio,name,modelPriceDetails(m,language));
     if(isCodexClient()){
       const entry=document.createElement('div');entry.className='codex-model-entry';entry.classList.toggle('is-selected',codexSelection().models.has(m.id));entry.append(row);
       if(codexSelection().models.has(m.id))entry.append(codexRowControls(codexSelection().models.get(m.id),expanded));
       picker.append(entry);
     }else if(client==='claude'){const entry=document.createElement('div');entry.className='codex-model-entry';entry.classList.toggle('is-selected',multiClients.claude.models.has(m.id));entry.append(row);if(multiClients.claude.models.has(m.id))entry.append(claudeRowControls(multiClients.claude.models.get(m.id)));picker.append(entry);}
-    else picker.append(row);
+    else {row.classList.add('model-card');picker.append(row);}
   }
   if (!matches.length && !catalogLoading) { const empty=document.createElement('p');empty.textContent=t('Sin resultados. Cambia la búsqueda o desactiva el filtro.');picker.append(empty); }
   if(restoreFocus){const control=[...picker.querySelectorAll('[data-focus]')].find(el=>el.dataset.focus===focusKey);control?.focus({preventScroll:true});if(caret && control?.classList.contains('codex-name-input'))control.setSelectionRange(...caret);}
@@ -576,7 +573,7 @@ function renderModels() {
     : client === 'claude' ? t('Claude Code requiere Messages. Busca Anthropic como punto de partida; el catálogo no certifica esa compatibilidad.')
     : t('Selecciona un modelo y el helper completará su ID y la ventana de contexto de Zed.');
   const details = $('model-details'); details.replaceChildren(); details.hidden = ['codex','codex-cli','claude'].includes(client) || !selectedID;
-  if(['codex','codex-cli','claude'].includes(client)){$('model-hint').textContent=t('Marca modelos, ajusta el razonamiento en su fila y guarda. La estrella indica el modelo inicial.');return;}
+  if(['codex','codex-cli','claude'].includes(client)){$('model-hint').textContent=t('Marca modelos, ajusta el razonamiento en su tarjeta y guarda. La estrella indica el modelo inicial.');return;}
   if (!selected) {
     if (selectedID) details.textContent = t('ID manual o no encontrado en el catálogo actual. Revisa el modelo y su ventana de contexto.');
     return;

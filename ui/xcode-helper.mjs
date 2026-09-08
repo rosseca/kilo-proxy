@@ -1,7 +1,7 @@
 import {codexCatalog,reasoningFor,codexDisplayName} from './codex-catalog.mjs';
 import {writeClipboard} from './desktop-helper.mjs';
 import {claudeCapabilities,claudeEfforts,claudeSelection} from './claude-helper.mjs';
-import {validModelID,formatPrice,sortModels,configureModelSort,setModelSort,mergeModelSelection,filterModelLab,configureModelLab,setModelLab} from './model-helper.mjs';
+import {validModelID,modelPriceDetails,sortModels,configureModelSort,setModelSort,mergeModelSelection,filterModelLab,configureModelLab,setModelLab} from './model-helper.mjs';
 
 export function xcodeChatGuide(baseURL,key,language='en') {
  const url=baseURL.replace(/\/v1\/?$/,'')+'/xcode';
@@ -66,7 +66,7 @@ export function createXcodeHelper({api,notify,refreshCatalog,onChange=()=>{}}) {
    const chosen=s.models.has(model.id),entry=document.createElement('div');entry.className='codex-model-entry'+(chosen?' is-selected':'');
    const row=document.createElement('label');row.className='model-option';const check=document.createElement('input');check.type='checkbox';check.checked=chosen;check.dataset.xcodeFocus='choose:'+model.id;
    const title=document.createElement('span'),strong=document.createElement('strong'),small=document.createElement('small');strong.textContent=codexDisplayName(model);small.textContent=model.id;title.append(strong,small);
-   const price=document.createElement('span');price.className='model-option-prices';price.textContent=(formatPrice(model.inputPrice,context.language)||'—')+' / '+(formatPrice(model.outputPrice,context.language)||'—')+' USD / 1M';row.append(check,title,price);entry.append(row);
+   title.className='model-option-title';row.append(check,title,modelPriceDetails(model,context.language));entry.append(row);
    check.addEventListener('change',()=>{if(check.checked){const max=variant==='claude'&&!caps().picker?3:50;if(s.models.size>=max){check.checked=false;notify(L('Maximum ','Máximo ')+max+L(' models',' modelos'),true);return}s.models.set(model.id,{...model});if(!s.initial)s.initial=model.id}else{s.models.delete(model.id);if(s.initial===model.id)s.initial=s.models.keys().next().value||'';for(const a of Object.keys(s.aliases))if(s.aliases[a]===model.id)s.aliases[a]=''}render()});
    if(chosen){
     const m=s.models.get(model.id),controls=document.createElement('div');controls.className='codex-row-controls';

@@ -33,3 +33,5 @@ Lab filtering runs in a separate case for each client. Sorting cases also isolat
 Launch fixture controls exist only in the test process and its temporary directory. Recorded launches contain the client, project directory, executable, and window type; credentials and environment values are never written to those records. The delayed-save case still executes the real authenticated profile endpoint.
 
 Failures produce `test-results/` screenshots, traces, and Go fixture logs. Open the HTML report with `npx playwright show-report`. For a focused run, use `npm run test:e2e -- --project=webkit --grep 'OpenCode'`.
+
+Model-card layout cases verify three, two and one columns at real helper widths in English and Spanish, including long model names and IDs. A larger mixed-selection case checks second-column hit targets, scrolling to lower cards, resizing, and saved name/reasoning/default persistence. Existing per-client sorting, lab filtering and launcher checks also run against the card layout.

@@ -13,10 +13,10 @@ import (
 	"strings"
 
 	"gioui.org/layout"
-	"gioui.org/unit"
 )
 
 type nativeClients struct {
+	Grids               map[string]*nativeModelGridState
 	Selections          map[string]*nativeClientSelection
 	Claude              claudeCapabilities
 	ClaudeChecked       bool
@@ -242,19 +242,6 @@ func nativeCurrentModel(saved, current modelInfo) modelInfo {
 	}
 	current.ContextWindow, current.MaxOutputTokens = saved.ContextWindow, saved.MaxOutputTokens
 	return current
-}
-
-func nativeModelPrice(m modelInfo) string {
-	price := func(v *float64) string {
-		if v == nil {
-			return "—"
-		}
-		if *v == 0 {
-			return "$0"
-		}
-		return "$" + strconv.FormatFloat(*v, 'f', -1, 64)
-	}
-	return price(m.InputPrice) + " / " + price(m.OutputPrice) + " USD / 1M"
 }
 
 func (u *nativeUI) clientState() *nativeClients {
@@ -530,7 +517,8 @@ func (u *nativeUI) clientPicker(key string, s *nativeClientSelection) layout.Wid
 		}
 	})), u.note(fmt.Sprintf(u.tr("%d selected · %d matching · up to %d models", "%d seleccionados · %d resultados · hasta %d modelos"), len(s.Models), len(available), limit) + u.tr(" · Prices: input / output per 1M tokens", " · Precios: entrada / salida por 1M tokens"))}
 	controls = append(controls, u.note(u.modelSortHint(order)))
-	rows := []layout.Widget{}
+	cards := []layout.Widget{}
+	cardIDs := []string{}
 	for i, model := range available {
 		if i >= 150 {
 			break
@@ -546,13 +534,14 @@ func (u *nativeUI) clientPicker(key string, s *nativeClientSelection) layout.Wid
 			label = id
 		}
 		u.setChecked(prefix+"choose:"+id, choice != nil)
-		row := []layout.Widget{u.check(prefix+"choose:"+id, label, func(checked bool) {
+		heading := []layout.Widget{u.eyebrow(modelLabLabel(modelLab(m))), u.check(prefix+"choose:"+id, label, func(checked bool) {
 			if checked {
 				add(m)
 			} else {
 				s.remove(id)
 			}
-		}), u.note(id + "  ·  " + nativeModelPrice(m))}
+		}), u.note(id)}
+		row := []layout.Widget{u.modelCardHeading(heading...), u.modelPriceCells(m)}
 		if metric := u.modelSortMetric(m, order); metric != "" {
 			row = append(row, u.note(metric))
 		}
@@ -655,15 +644,13 @@ func (u *nativeUI) clientPicker(key string, s *nativeClientSelection) layout.Wid
 				row = append(row, u.row(u.field(nativeClientField(key, id, "context"), u.tr("Context tokens", "Tokens de contexto"), "200000", false), u.field(nativeClientField(key, id, "output"), u.tr("Max output (0 = unspecified)", "Salida máxima (0 = sin especificar)"), "0", false)))
 			}
 		}
-		rows = append(rows, u.modelCard(choice != nil, row...))
+		cards = append(cards, u.modelCard(choice != nil, row...))
+		cardIDs = append(cardIDs, id)
 	}
-	if len(rows) == 0 {
-		rows = append(rows, u.note(u.tr("No matches. Refresh or add an exact model ID.", "Sin resultados. Actualiza o añade un ID exacto.")))
-	}
-	if len(rows) > 6 {
-		controls = append(controls, u.scroll(prefix+"models", unit.Dp(480), rows...))
+	if len(cards) == 0 {
+		controls = append(controls, u.note(u.tr("No matches. Refresh or add an exact model ID.", "Sin resultados. Actualiza o añade un ID exacto.")))
 	} else {
-		controls = append(controls, u.column(rows...))
+		controls = append(controls, u.modelGrid(prefix+"models", cardIDs, cards))
 	}
 	if len(available) > 150 {
 		controls = append(controls, u.note(u.tr("Showing the first 150 results. Search to narrow the catalog.", "Se muestran los primeros 150 resultados. Busca para acotar el catálogo.")))

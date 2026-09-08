@@ -16,6 +16,10 @@ Terminal handoff uses a short-lived private ticket consumed before the agent sta
 
 ## Sort the model catalog
 
+Models appear in a responsive card grid in both the native app and browser helper. Wider windows show several models side by side; narrow windows use one column. Each card keeps the model name, exact ID, and input/output prices together. Selecting a model reveals its settings inside the same card, including its display name and supported reasoning controls. Cards expand to fit these settings.
+
+![Native model card grid with synthetic example prices and rankings](images/native-model-grid.png)
+
 Use **All labs** beside search to filter by a publisher such as OpenAI, Anthropic, Google, or DeepSeek. Choices come from the gateway catalog and your saved manual models, including new publishers automatically. The filter combines with search, coding-capability and selected-only filters. Switching labs never removes a hidden selection or changes its initial-model setting; **Select results** adds only the visible results.
 
 In both the native app and browser helper, the chosen lab and sort order stay active across client tabs during the session. If a catalog refresh or another client has no matching models, the active lab remains available so **All labs** can always reset the view. Publisher names are derived from the gateway provider namespace (or the first segment of an exact manual model ID); a leading `~` is ignored for lab grouping only, while exact request IDs remain unchanged.

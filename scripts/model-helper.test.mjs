@@ -18,6 +18,9 @@ test('published prices distinguish zero from missing or variable rates in both l
  assert.equal(formatPrice(3,'en'),'$3.00');
  assert.equal(formatPrice(0,'en'),'$0.00');
  assert.equal(formatPrice(0.000001,'en'),'$0.000001');
+ assert.equal(formatPrice(0.799999999999,'en'),'$0.80');
+ assert.equal(formatPrice(0.0000001,'en'),'<$0.000001');
+ assert.match(formatPrice(0.0000001,'es'),/^<0,000001/);
  for(const value of [null,undefined,-1,NaN,Infinity,'3']) assert.equal(formatPrice(value),null);
  assert.match(formatPrice(3,'es'),/3,00/);
  assert.equal(translate('Variable / sin dato','en'),'Variable / unavailable');

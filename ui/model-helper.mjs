@@ -95,8 +95,20 @@ export function mergeModelSelection(catalogModel, selection) {
   return merged;
 }
 export function formatPrice(value, language = 'en') {
-  return typeof value === 'number' && Number.isFinite(value) && value >= 0
-    ? new Intl.NumberFormat(language, {style:'currency',currency:'USD',maximumFractionDigits:6}).format(value)
-    : null;
+  if(typeof value !== 'number' || !Number.isFinite(value) || value < 0)return null;
+  const format=number=>new Intl.NumberFormat(language,{style:'currency',currency:'USD',maximumFractionDigits:6}).format(number);
+  return value > 0 && value < 0.000001 ? '<'+format(0.000001) : format(value);
+}
+export function modelPriceDetails(model, language = 'en') {
+  const prices=document.createElement('span');
+  prices.className='model-option-prices';
+  for(const [label,value] of [[language==='es'?'Entrada':'Input',model.inputPrice],[language==='es'?'Salida':'Output',model.outputPrice]]) {
+    const item=document.createElement('span'),name=document.createElement('span'),amount=document.createElement('strong');
+    item.className='model-price';name.className='model-price-label';name.textContent=label;
+    amount.textContent=formatPrice(value,language)??(language==='es'?'Sin dato':'Not listed');
+    item.append(name,amount);prices.append(item);
+  }
+  const unit=document.createElement('span');unit.className='model-price-unit';unit.textContent='USD / 1M tokens';prices.append(unit);
+  return prices;
 }
 export function validModelID(id) { return !!id && id.length <= 256 && !/[\s\u0000-\u001f\u007f]/u.test(id); }

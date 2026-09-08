@@ -1,4 +1,4 @@
-import {validModelID,formatPrice,filterModels,sortModels,configureModelSort,setModelSort,mergeModelSelection,filterModelLab,configureModelLab,setModelLab} from './model-helper.mjs';
+import {validModelID,modelPriceDetails,filterModels,sortModels,configureModelSort,setModelSort,mergeModelSelection,filterModelLab,configureModelLab,setModelLab} from './model-helper.mjs';
 import {clientConfig} from './client-config.mjs';
 export function editorPayload(models,initial) {
  return {models:models.map(m=>({id:m.id,name:(m.displayName||m.name||m.id).slice(0,80),contextWindow:m.contextWindow==null?200000:Number(m.contextWindow),maxOutputTokens:m.maxOutputTokens==null?0:Number(m.maxOutputTokens)})),initial};
@@ -71,17 +71,17 @@ export function createEditorHelper({api,notify,copy,refreshCatalog,onChange=()=>
   signature=next;renderedClient=ctx.client;
   const scroll=$('editor-picker').scrollTop;$('editor-picker').replaceChildren();
   for(const m of matches.slice(0,200)){
-   const chosen=selected.models.has(m.id),entry=document.createElement('div');entry.className='codex-model-entry';
+   const chosen=selected.models.has(m.id),entry=document.createElement('div');entry.className='codex-model-entry'+(chosen?' is-selected':'');
    const label=document.createElement('label');label.className='model-option';
    const check=document.createElement('input');check.type='checkbox';check.checked=chosen;check.disabled=working||(!chosen&&selected.models.size>=50);check.dataset.editorId=m.id;check.setAttribute('aria-label',m.name||m.id);
    check.addEventListener('change',()=>{if(check.checked){selected.models.set(m.id,{...m,name:(m.name||m.id).slice(0,80)});if(!selected.initial)selected.initial=m.id}else{selected.models.delete(m.id);if(selected.initial===m.id)selected.initial=selected.models.keys().next().value||''}render(ctx)});
    const text=document.createElement('span'),title=document.createElement('strong'),id=document.createElement('small');title.textContent=m.name||m.id;id.textContent=m.id;text.append(title,id);
-   const price=document.createElement('small');price.textContent=(formatPrice(m.inputPrice,ctx.language)||'—')+' / '+(formatPrice(m.outputPrice,ctx.language)||'—')+' USD / 1M';label.append(check,text,price);entry.append(label);
+   text.className='model-option-title';label.append(check,text,modelPriceDetails(m,ctx.language));entry.append(label);
    if(chosen){
     const value=selected.models.get(m.id),row=document.createElement('div');row.className='codex-row-controls';
     const name=document.createElement('input');name.type='text';name.value=value.name||value.id;name.maxLength=80;name.setAttribute('aria-label',L('Display name: ','Nombre visible: ')+m.id);name.dataset.editorName=m.id;name.disabled=working;
     name.addEventListener('input',()=>{value.name=name.value;title.textContent=name.value||m.id;controls()});row.append(name);
-    const initial=document.createElement('button');initial.type='button';initial.className='codex-default-button';initial.textContent=selected.initial===m.id?L('★ Initial model','★ Modelo inicial'):L('Use on startup','Usar al iniciar');initial.dataset.editorInitial=m.id;initial.disabled=working;initial.addEventListener('click',()=>{selected.initial=m.id;render(ctx)});row.append(initial);
+    const initial=document.createElement('button');initial.type='button';initial.className='codex-default-button';initial.textContent=selected.initial===m.id?L('★ Initial model','★ Modelo inicial'):L('Use on startup','Usar al iniciar');initial.setAttribute('aria-pressed',String(selected.initial===m.id));initial.dataset.editorInitial=m.id;initial.disabled=working;initial.addEventListener('click',()=>{selected.initial=m.id;render(ctx)});row.append(initial);
     const limits=document.createElement('details'),summary=document.createElement('summary');summary.textContent=L('Context and output limits','Límites de contexto y salida');limits.append(summary);
     for(const [field,title,fallback]of [['contextWindow',L('Context tokens','Tokens de contexto'),200000],['maxOutputTokens',L('Max output tokens (0 = unspecified)','Salida máxima (0 = sin especificar)'),0]]){
      const l=document.createElement('label'),input=document.createElement('input');l.textContent=title;input.type='number';input.min=field==='contextWindow'?'1024':'0';input.max='100000000';input.value=value[field]||fallback;input.setAttribute('aria-label',title+': '+m.id);input.disabled=working;input.addEventListener('input',()=>{value[field]=Number(input.value);controls()});l.append(input);limits.append(l)
