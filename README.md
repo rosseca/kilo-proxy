@@ -59,6 +59,8 @@ For Codex Desktop, select models, choose an initial model and reasoning level, a
 
 **Images in Codex, available from v0.23.0.** The Codex Desktop and CLI helpers can optionally configure a `generate_image` MCP tool inside Kilo Proxy. Choose an image-output model independently of your coding models; Prepare and Launch save the setup. Requests go through the configured Kilo account and organization, images are saved locally, and Activity & costs shows returned usage and its cost source. Provider inference costs, including BYOK, can differ from the organization's Kilo charge. No additional runtime is needed. See [image setup and editing limits](docs/codex-images.md).
 
+From v0.23.1, image results include a preview bounded to **1024 pixels per side and 256 KiB per image**, while the full-resolution original stays saved locally for export and editing. Existing conversations can still contain large inline images; an upstream **413** may require client-side compaction, a new conversation, or fewer attachments. See [payload limits and recovery](docs/codex-images.md#payload-limits-and-413-errors).
+
 Claude Code has the same select-and-prepare flow in its own tab. It detects the installed version, writes a separate profile with backups, and enables supported native model names and reasoning preferences. See [client setup](docs/clients.md) for profile isolation, saving, and compatibility limits.
 
 OpenCode and Zed now have the same select-and-prepare workflow, with saved selections and JSONC-preserving updates. OpenCode includes local authentication in its dedicated profile; Zed uses a one-time key paste into its keychain-backed provider settings. See [their setup guide](docs/opencode-and-zed.md).

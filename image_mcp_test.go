@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"image"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -86,6 +88,94 @@ func TestImageMCPLifecycleAndToolResult(t *testing.T) {
 	}
 	if strings.Contains(stringMustJSON(t, response), "image-upstream-secret") {
 		t.Fatal("MCP exposed upstream credentials")
+	}
+}
+
+func TestImageMCPLargeTransparentOriginalReturnsBoundedPreview(t *testing.T) {
+	original := imagePreviewTestPNG(t, 1536, 1024)
+	if len(original) <= 4_500_000 {
+		t.Fatal("regression fixture must exceed the observed 4.5 MB request limit")
+	}
+	a := imageTestApp(t, func(w http.ResponseWriter, r *http.Request) {
+		jsonResponse(w, 200, imageTestResponse(original, map[string]any{"cost": 0.21976}))
+	})
+	w := imageMCPTestCall(a, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"generate_image","arguments":{"prompt":"A transparent synthetic texture"}}}`)
+	t.Logf("original PNG: %d bytes; complete MCP response: %d bytes", len(original), w.Body.Len())
+	if w.Body.Len() > base64.StdEncoding.EncodedLen(imagePreviewByteLimit)+8192 {
+		t.Fatalf("MCP response still contains an oversized image: %d bytes", w.Body.Len())
+	}
+	response := imageMCPTestObject(t, w)
+	result := response["result"].(map[string]any)
+	if result["isError"] != false {
+		t.Fatal("a successful generation became a tool error")
+	}
+	content := result["content"].([]any)
+	if len(content) != 2 {
+		t.Fatal("expected one bounded preview and its metadata")
+	}
+	inline := content[1].(map[string]any)
+	data, err := base64.StdEncoding.DecodeString(inline["data"].(string))
+	if err != nil || len(data) > imagePreviewByteLimit || inline["mimeType"] != "image/png" {
+		t.Fatal("MCP did not return a bounded PNG preview")
+	}
+	preview, format, err := image.Decode(bytes.NewReader(data))
+	if err != nil || format != "png" || preview.Bounds().Dx() > imagePreviewSideLimit || preview.Bounds().Dy() > imagePreviewSideLimit {
+		t.Fatal("MCP preview dimensions or format are invalid")
+	}
+	_, _, _, clearAlpha := preview.At(0, preview.Bounds().Dy()/2).RGBA()
+	_, _, _, partialAlpha := preview.At(preview.Bounds().Dx()/2, preview.Bounds().Dy()/2).RGBA()
+	if clearAlpha != 0 || partialAlpha == 0 || partialAlpha == 0xffff {
+		t.Fatalf("preview flattened transparency: clear=%d partial=%d", clearAlpha, partialAlpha)
+	}
+	structured := result["structuredContent"].(map[string]any)
+	metadata := structured["images"].([]any)[0].(map[string]any)
+	path := metadata["path"].(string)
+	saved, err := os.ReadFile(path)
+	if err != nil || !bytes.Equal(saved, original) || metadata["width"] != float64(1536) || metadata["height"] != float64(1024) || metadata["mimeType"] != "image/png" {
+		t.Fatal("MCP preview replaced the original file or its full-resolution metadata")
+	}
+	inlineMetadata := metadata["preview"].(map[string]any)
+	if inlineMetadata["resized"] != true || inlineMetadata["bytes"] != float64(len(data)) || inlineMetadata["width"] != float64(preview.Bounds().Dx()) || inlineMetadata["height"] != float64(preview.Bounds().Dy()) || inlineMetadata["mimeType"] != "image/png" {
+		t.Fatal("preview metadata does not describe the returned image content")
+	}
+	message, _ := structured["message"].(string)
+	if !strings.Contains(message, "previews") || !strings.Contains(message, "original full-resolution") {
+		t.Fatal("MCP did not disclose preview resizing and full-resolution files")
+	}
+	var text map[string]any
+	if json.Unmarshal([]byte(content[0].(map[string]any)["text"].(string)), &text) != nil || text["message"] != message {
+		t.Fatal("text result omitted the preview disclosure")
+	}
+	root, dir, err := a.generatedImagesRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	reference, mime, err := readGeneratedReference(root, dir, path)
+	if err != nil || mime != "image/png" || !bytes.Equal(reference, original) {
+		t.Fatal("editing would use the preview instead of the original")
+	}
+	if a.requests != 1 || a.usageTotal.Priced != 1 || a.usageTotal.CostUSD != "0.219760000" || structured["costSource"] != "usage.cost" {
+		t.Fatal("preview processing repeated generation or lost its observed cost")
+	}
+}
+
+func TestImageMCPBusyPreviewDoesNotGenerate(t *testing.T) {
+	for range cap(imageMCPWorkSlots) {
+		imageMCPWorkSlots <- struct{}{}
+	}
+	defer func() {
+		for range cap(imageMCPWorkSlots) {
+			<-imageMCPWorkSlots
+		}
+	}()
+	a := imageTestApp(t, func(http.ResponseWriter, *http.Request) {
+		t.Error("busy preview gate must reject before another upstream generation")
+	})
+	response := imageMCPTestObject(t, imageMCPTestCall(a, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"generate_image","arguments":{"prompt":"Draw"}}}`))
+	result := response["result"].(map[string]any)
+	if result["isError"] != true || !strings.Contains(stringMustJSON(t, result), "previewed") || a.requests != 0 {
+		t.Fatal("occupied generation/preview slots did not produce a safe busy response")
 	}
 }
 func stringMustJSON(t *testing.T, value any) string {

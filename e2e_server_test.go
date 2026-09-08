@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"image"
 	"image/png"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -143,6 +144,16 @@ func TestE2EServer(t *testing.T) {
 			}
 			if r.Header.Get("Thread-Id") != "" {
 				http.Error(w, "Local conversation header leaked upstream", 400)
+				return
+			}
+			if readLaunchControl()["payloadTooLarge"] == true {
+				size, err := io.Copy(io.Discard, r.Body)
+				if err != nil || size <= 4_500_000 {
+					http.Error(w, "Expected a synthetic oversized request", 400)
+					return
+				}
+				w.Header().Set("X-Vercel-Error", "FUNCTION_PAYLOAD_TOO_LARGE")
+				http.Error(w, "Request Entity Too Large\n\nFUNCTION_PAYLOAD_TOO_LARGE\n\nsynthetic::payload-limit", 413)
 				return
 			}
 			var body struct {
