@@ -30,6 +30,8 @@ type event struct {
 }
 
 type app struct {
+	launcher           *clientLaunchRuntime
+	launchMu           sync.Mutex
 	desktop            desktopBridge
 	desktopProbes      chan desktopProbe
 	editorTestRoot     string
@@ -46,6 +48,8 @@ type app struct {
 	xcodeTestRoot      string
 	claudeProfileDir   string
 	catalogRevision    uint64
+	modelStatsURL      string
+	modelStatsCache    modelStatsCache
 	accountURL         string
 	authPollInterval   time.Duration
 	login              *loginSession

@@ -13,10 +13,10 @@ import (
 	"strings"
 
 	"gioui.org/layout"
-	"gioui.org/unit"
 )
 
 type nativeClients struct {
+	Grids               map[string]*nativeModelGridState
 	Selections          map[string]*nativeClientSelection
 	Claude              claudeCapabilities
 	ClaudeChecked       bool
@@ -24,6 +24,11 @@ type nativeClients struct {
 	Xcode               xcodeInstallation
 	XcodeChecked        bool
 	XcodeDetectStarted  bool
+	LaunchInfo          nativeLaunchInfo
+	LaunchChecked       bool
+	LaunchDetectStarted bool
+	LaunchError         string
+	Launching           string
 	Variant             string
 }
 
@@ -179,7 +184,7 @@ func nativeSelectionFingerprint(key string, s *nativeClientSelection, base, keyV
 	return string(data)
 }
 
-func nativeVisibleModels(catalog []modelInfo, s *nativeClientSelection, query string, selectedOnly, codingOnly bool) []modelInfo {
+func nativeVisibleModels(catalog []modelInfo, s *nativeClientSelection, query string, selectedOnly, codingOnly bool, order, lab string) []modelInfo {
 	all := map[string]modelInfo{}
 	for _, m := range catalog {
 		all[m.ID] = m
@@ -187,9 +192,13 @@ func nativeVisibleModels(catalog []modelInfo, s *nativeClientSelection, query st
 	for _, m := range s.Models {
 		all[m.Model.ID] = nativeCurrentModel(m.Model, all[m.Model.ID])
 	}
+	lab = normalizeModelLab(lab)
 	query = strings.ToLower(strings.TrimSpace(query))
 	var out []modelInfo
 	for _, m := range all {
+		if lab != "" && modelLab(m) != lab {
+			continue
+		}
 		choice := s.choice(m.ID)
 		name := m.Name
 		if choice != nil {
@@ -214,12 +223,14 @@ func nativeVisibleModels(catalog []modelInfo, s *nativeClientSelection, query st
 		}
 		out = append(out, m)
 	}
-	sort.Slice(out, func(i, j int) bool {
-		a, b := s.choice(out[i].ID) != nil, s.choice(out[j].ID) != nil
-		if a != b {
-			return a
+	displayName := func(id string) string {
+		if choice := s.choice(id); choice != nil {
+			return choice.DisplayName
 		}
-		return out[i].ID < out[j].ID
+		return ""
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return compareModelOrder(out[i], out[j], order, displayName(out[i].ID), displayName(out[j].ID)) < 0
 	})
 	return out
 }
@@ -231,19 +242,6 @@ func nativeCurrentModel(saved, current modelInfo) modelInfo {
 	}
 	current.ContextWindow, current.MaxOutputTokens = saved.ContextWindow, saved.MaxOutputTokens
 	return current
-}
-
-func nativeModelPrice(m modelInfo) string {
-	price := func(v *float64) string {
-		if v == nil {
-			return "—"
-		}
-		if *v == 0 {
-			return "$0"
-		}
-		return "$" + strconv.FormatFloat(*v, 'f', -1, 64)
-	}
-	return price(m.InputPrice) + " / " + price(m.OutputPrice) + " USD / 1M"
 }
 
 func (u *nativeUI) clientState() *nativeClients {
@@ -359,6 +357,9 @@ func (u *nativeUI) clientBase() (string, string, int) {
 
 func (u *nativeUI) clientsPanel() layout.Widget {
 	c := u.clientState()
+	if !c.LaunchDetectStarted {
+		u.detectLaunchers()
+	}
 	if u.client == "claude" && !c.ClaudeDetectStarted {
 		c.ClaudeDetectStarted = true
 		u.call("GET", "/api/claude/info", nil, func(data json.RawMessage) {
@@ -495,8 +496,9 @@ func (u *nativeUI) clientPicker(key string, s *nativeClientSelection) layout.Wid
 		u.seedClientChoice(key, *s.choice(m.ID))
 		return true
 	}
-	available := nativeVisibleModels(u.models, s, u.value(prefix+"search"), u.checked(prefix+"selected"), u.checked(prefix+"coding"))
-	controls := []layout.Widget{u.actionRow(u.field(prefix+"search", u.tr("Search models or saved names", "Buscar modelos o nombres guardados"), "provider/model", false), u.button(prefix+"refresh", u.tr("Refresh catalog", "Actualizar catálogo"), u.refreshModels)), u.pills(u.check(prefix+"selected", u.tr("Selected only", "Solo seleccionados"), func(bool) {}), u.check(prefix+"coding", u.tr("Text models with tools only", "Solo texto con herramientas"), func(bool) {}), u.check(prefix+"advanced", u.tr("Advanced options", "Opciones avanzadas"), func(bool) {})), u.pills(u.button(prefix+"select-all", u.tr("Select results", "Marcar resultados"), func() {
+	order := modelSortOrder(u.value("models.sort"))
+	available := nativeVisibleModels(u.models, s, u.value(prefix+"search"), u.checked(prefix+"selected"), u.checked(prefix+"coding"), order, u.value("models.lab"))
+	controls := []layout.Widget{u.modelPickerToolbar(prefix, s), u.pills(u.check(prefix+"selected", u.tr("Selected only", "Solo seleccionados"), func(bool) {}), u.check(prefix+"coding", u.tr("Text models with tools only", "Solo texto con herramientas"), func(bool) {}), u.check(prefix+"advanced", u.tr("Advanced options", "Opciones avanzadas"), func(bool) {})), u.pills(u.button(prefix+"select-all", u.tr("Select results", "Marcar resultados"), func() {
 		for _, m := range available {
 			if len(s.Models) >= limit {
 				break
@@ -514,7 +516,9 @@ func (u *nativeUI) clientPicker(key string, s *nativeClientSelection) layout.Wid
 			u.setValue(prefix+"alias:"+alias, "")
 		}
 	})), u.note(fmt.Sprintf(u.tr("%d selected · %d matching · up to %d models", "%d seleccionados · %d resultados · hasta %d modelos"), len(s.Models), len(available), limit) + u.tr(" · Prices: input / output per 1M tokens", " · Precios: entrada / salida por 1M tokens"))}
-	rows := []layout.Widget{}
+	controls = append(controls, u.note(u.modelSortHint(order)))
+	cards := []layout.Widget{}
+	cardIDs := []string{}
 	for i, model := range available {
 		if i >= 150 {
 			break
@@ -530,13 +534,17 @@ func (u *nativeUI) clientPicker(key string, s *nativeClientSelection) layout.Wid
 			label = id
 		}
 		u.setChecked(prefix+"choose:"+id, choice != nil)
-		row := []layout.Widget{u.check(prefix+"choose:"+id, label, func(checked bool) {
+		heading := []layout.Widget{u.eyebrow(modelLabLabel(modelLab(m))), u.check(prefix+"choose:"+id, label, func(checked bool) {
 			if checked {
 				add(m)
 			} else {
 				s.remove(id)
 			}
-		}), u.note(id + "  ·  " + nativeModelPrice(m))}
+		}), u.note(id)}
+		row := []layout.Widget{u.modelCardHeading(heading...), u.modelPriceCells(m)}
+		if metric := u.modelSortMetric(m, order); metric != "" {
+			row = append(row, u.note(metric))
+		}
 		if m.MayTrain != nil && *m.MayTrain {
 			row = append(row, u.note(u.tr("Kilo reports that this model may use prompts for training.", "Kilo indica que este modelo puede usar los mensajes para entrenamiento.")))
 		}
@@ -636,15 +644,13 @@ func (u *nativeUI) clientPicker(key string, s *nativeClientSelection) layout.Wid
 				row = append(row, u.row(u.field(nativeClientField(key, id, "context"), u.tr("Context tokens", "Tokens de contexto"), "200000", false), u.field(nativeClientField(key, id, "output"), u.tr("Max output (0 = unspecified)", "Salida máxima (0 = sin especificar)"), "0", false)))
 			}
 		}
-		rows = append(rows, u.modelCard(choice != nil, row...))
+		cards = append(cards, u.modelCard(choice != nil, row...))
+		cardIDs = append(cardIDs, id)
 	}
-	if len(rows) == 0 {
-		rows = append(rows, u.note(u.tr("No matches. Refresh or add an exact model ID.", "Sin resultados. Actualiza o añade un ID exacto.")))
-	}
-	if len(rows) > 6 {
-		controls = append(controls, u.scroll(prefix+"models", unit.Dp(480), rows...))
+	if len(cards) == 0 {
+		controls = append(controls, u.note(u.tr("No matches. Refresh or add an exact model ID.", "Sin resultados. Actualiza o añade un ID exacto.")))
 	} else {
-		controls = append(controls, u.column(rows...))
+		controls = append(controls, u.modelGrid(prefix+"models", cardIDs, cards))
 	}
 	if len(available) > 150 {
 		controls = append(controls, u.note(u.tr("Showing the first 150 results. Search to narrow the catalog.", "Se muestran los primeros 150 resultados. Busca para acotar el catálogo.")))
@@ -671,14 +677,14 @@ func (u *nativeUI) clientActions(key string, s *nativeClientSelection) layout.Wi
 	fingerprint := nativeSelectionFingerprint(key, s, base, local, u.clientCaps(key))
 	ready := s.Saved != "" && s.Saved == fingerprint
 	_, validation := nativeClientPayload(key, s)
-	working := u.busy["POST"+nativeClientEndpoint(key)] || u.busy["GET"+nativeClientEndpoint(key)]
+	working := u.busy["POST"+nativeClientEndpoint(key)] || u.busy["GET"+nativeClientEndpoint(key)] || u.clientState().Launching != ""
 	canSave := len(s.Models) > 0 && validation == nil && !working
 	if strings.HasPrefix(key, "xcode-") && key != "xcode-chat" && !u.clientState().Xcode.Available {
 		canSave = false
 	}
-	status := u.tr("Choose models, then prepare this profile.", "Elige modelos y prepara este perfil.")
+	status := u.tr("Choose models, then launch. Your profile is prepared automatically.", "Elige modelos y abre el editor. El perfil se prepara automáticamente.")
 	if s.Saved != "" {
-		status = u.tr("Unsaved changes. Prepare again before launching.", "Cambios sin guardar. Prepara de nuevo antes de arrancar.")
+		status = u.tr("Unsaved changes will be prepared when you launch.", "Los cambios pendientes se prepararán al abrir.")
 	}
 	if ready {
 		status = u.tr("Saved: ", "Guardado: ") + s.Path
@@ -686,22 +692,26 @@ func (u *nativeUI) clientActions(key string, s *nativeClientSelection) layout.Wi
 	if validation != nil && len(s.Models) > 0 {
 		status = validation.Error()
 	}
-	widgets := []layout.Widget{u.row(u.disabled(canSave, u.button("client:"+key+":prepare", u.tr("1. Prepare profile", "1. Preparar perfil"), func() { u.prepareClient(key) })), u.disabled(!working, u.button("client:"+key+":load", u.tr("Load saved selection", "Cargar selección guardada"), func() { u.loadClient(key) }))), u.note(status), u.note(u.tr("Existing preferences are preserved. Changed files receive .bak backups. Loading a selection requires preparing it again for the current connection.", "Se conservan los ajustes existentes y se guardan copias .bak. Tras cargar una selección, prepárala de nuevo para aplicar la conexión actual."))}
-	if key == "codex" {
-		widgets = append(widgets, u.row(u.selectField("clients-platform", u.tr("Codex GUI operating system", "Sistema operativo de Codex GUI"), []string{"macos", "windows", "linux"}), u.field("clients-app-path", u.tr("Codex GUI application path", "Ruta de la aplicación Codex GUI"), "/Applications/ChatGPT.app", false)))
+	widgets := []layout.Widget{u.clientLauncherPanel(key, s, canSave), u.row(u.disabled(canSave, u.button("client:"+key+":prepare", u.tr("Prepare without launching", "Preparar sin abrir"), func() { u.prepareClient(key) })), u.disabled(!working, u.button("client:"+key+":load", u.tr("Load saved selection", "Cargar selección guardada"), func() { u.loadClient(key) }))), u.note(status), u.note(u.tr("Existing preferences are preserved. Changed files receive .bak backups. Loading a selection requires preparing it again for the current connection.", "Se conservan los ajustes existentes y se guardan copias .bak. Tras cargar una selección, prepárala de nuevo para aplicar la conexión actual."))}
+	widgets = append(widgets, u.check("client:"+key+":show-command", u.tr("Show launch command (optional)", "Mostrar comando de arranque (opcional)"), func(bool) {}))
+	showCommand := u.checked("client:" + key + ":show-command")
+	if showCommand {
+		if key == "codex" {
+			widgets = append(widgets, u.row(u.selectField("clients-platform", u.tr("Command operating system", "Sistema operativo del comando"), []string{"macos", "windows", "linux"}), u.field("clients-app-path", u.tr("Command application path", "Ruta de aplicación del comando"), "/Applications/ChatGPT.app", false)))
+		}
+		if key == "codex-cli" || key == "claude" || key == "opencode" {
+			widgets = append(widgets, u.selectField("clients-shell", u.tr("Command shell", "Shell del comando"), []string{"unix", "powershell"}))
+		}
 	}
-	if key == "codex-cli" || key == "claude" || key == "opencode" {
-		widgets = append(widgets, u.selectField("clients-shell", u.tr("Launch shell", "Shell de arranque"), []string{"unix", "powershell"}))
-	}
-	copyLabel := u.tr("2. Copy launch command", "2. Copiar comando de arranque")
+	copyLabel := u.tr("Copy launch command", "Copiar comando de arranque")
 	if key == "zed" {
-		copyLabel = u.tr("2. Copy key for Zed", "2. Copiar clave para Zed")
+		copyLabel = u.tr("Copy key for Zed (one-time setup)", "Copiar clave para Zed (configuración inicial)")
 	}
 	if key == "xcode-chat" {
-		copyLabel = u.tr("2. Copy Xcode connection", "2. Copiar conexión de Xcode")
+		copyLabel = u.tr("Copy Xcode connection (one-time setup)", "Copiar conexión de Xcode (configuración inicial)")
 	}
-	if key != "xcode-codex" && key != "xcode-claude" {
-		widgets = append(widgets, u.disabled(ready, u.button("client:"+key+":launch", copyLabel, func() {
+	if (showCommand || key == "zed" || key == "xcode-chat") && key != "xcode-codex" && key != "xcode-claude" {
+		widgets = append(widgets, u.disabled(ready, u.button("client:"+key+":copy-launch", copyLabel, func() {
 			u.syncClientSelection(key, s)
 			if s.Saved == "" || s.Saved != nativeSelectionFingerprint(key, s, base, local, u.clientCaps(key)) {
 				u.notice = u.tr("Prepare the changed profile before launching.", "Prepara el perfil modificado antes de arrancar.")
@@ -718,7 +728,7 @@ func (u *nativeUI) clientActions(key string, s *nativeClientSelection) layout.Wi
 		widgets = append(widgets, u.note(u.tr("In Zed, open agent: open settings, find kilo-local and paste the local key once. Zed saves it in its keychain. Select a model in the Agent panel.", "En Zed, abre agent: open settings, busca kilo-local y pega la clave local una vez. Zed la guarda en su llavero. Elige modelo en el panel Agent.")))
 	}
 	if key == "opencode" {
-		widgets = append(widgets, u.note(u.tr("Run the command from a project terminal, then use /models. No /connect needed. Global/project OpenCode settings still merge and may override this profile.", "Ejecuta el comando desde una terminal del proyecto y usa /models. No hace falta /connect. Los ajustes globales/del proyecto se combinan y pueden prevalecer.")))
+		widgets = append(widgets, u.note(u.tr("Launch opens a terminal in your project; then use /models. No /connect needed. Global/project OpenCode settings still merge and may override this profile.", "Abrir inicia una terminal en tu proyecto; después usa /models. No hace falta /connect. Los ajustes globales/del proyecto se combinan y pueden prevalecer.")))
 	}
 	if key == "codex" || key == "codex-cli" {
 		widgets = append(widgets, u.note(u.tr("The normal Codex profile stays separate. Restart the Kilo instance after preparing changes, then choose the model and reasoning in Codex.", "El perfil normal de Codex queda separado. Reinicia la instancia Kilo tras preparar cambios y elige modelo y razonamiento en Codex.")), u.disabled(len(s.Models) > 0, u.button("client:"+key+":catalog-copy", u.tr("Copy models.json", "Copiar models.json"), func() {
@@ -731,7 +741,7 @@ func (u *nativeUI) clientActions(key string, s *nativeClientSelection) layout.Wi
 			}
 		})))
 	}
-	if ready {
+	if ready && (showCommand || strings.HasPrefix(key, "xcode-") || key == "zed") {
 		if text, err := u.clientLaunch(key, s, false); err == nil && text != "" {
 			widgets = append(widgets, u.code("client:"+key+":launch-preview", text))
 		}
@@ -756,22 +766,38 @@ func (u *nativeUI) clientActions(key string, s *nativeClientSelection) layout.Wi
 }
 
 func (u *nativeUI) prepareClient(key string) {
+	u.prepareClientAfter(key, func(err error) {
+		if err != nil {
+			u.notice = nativeMessage(err.Error(), u.language)
+		}
+	})
+}
+
+func (u *nativeUI) prepareClientAfter(key string, done func(error)) {
 	s := u.clientState().selection(key)
 	u.syncClientSelection(key, s)
 	payload, err := nativeClientPayload(key, s)
 	if err != nil {
-		u.notice = err.Error()
+		done(err)
 		return
 	}
 	base, local, _ := u.clientBase()
 	fingerprint := nativeSelectionFingerprint(key, s, base, local, u.clientCaps(key))
-	u.call(http.MethodPost, nativeClientEndpoint(key), payload, func(data json.RawMessage) {
+	u.clientRequest(http.MethodPost, nativeClientEndpoint(key), payload, func(data json.RawMessage, err error) {
+		if err != nil {
+			done(err)
+			return
+		}
 		var result struct {
 			ProfileDir string `json:"profileDir"`
 			ConfigPath string `json:"configPath"`
 		}
-		if err := json.Unmarshal(data, &result); err != nil {
-			u.notice = err.Error()
+		if err = json.Unmarshal(data, &result); err != nil {
+			done(err)
+			return
+		}
+		if result.ProfileDir == "" && result.ConfigPath == "" {
+			done(errors.New("Prepared profile did not return a path"))
 			return
 		}
 		s.Path = result.ProfileDir
@@ -780,6 +806,7 @@ func (u *nativeUI) prepareClient(key string) {
 		}
 		s.Saved = fingerprint
 		u.notice = u.tr("Editor profile prepared.", "Perfil del editor preparado.")
+		done(nil)
 	})
 }
 
@@ -992,7 +1019,7 @@ func (u *nativeUI) cursorClientPanel(s *nativeClientSelection) layout.Widget {
 			status = session.Error
 		}
 	}
-	widgets := []layout.Widget{u.heading("Cursor"), u.note(u.tr("Cursor sends provider requests from its servers, so they cannot reach localhost. This helper starts a dedicated HTTPS ngrok tunnel with its own key and selected model list.", "Cursor envía las peticiones desde sus servidores y no puede alcanzar localhost. Este helper inicia un túnel HTTPS ngrok con su propia clave y lista de modelos.")), u.row(u.button("cursor-ngrok-download", u.tr("Install ngrok", "Instalar ngrok"), func() { u.open("https://ngrok.com/download") }), u.button("cursor-ngrok-account", u.tr("Get ngrok authtoken", "Obtener authtoken de ngrok"), func() { u.open("https://dashboard.ngrok.com/get-started/your-authtoken") })), u.code("cursor-ngrok-command", "ngrok config add-authtoken YOUR_NGROK_AUTHTOKEN"), u.button("cursor-copy-ngrok-command", u.tr("Copy ngrok command", "Copiar comando de ngrok"), func() { u.copy("ngrok config add-authtoken YOUR_NGROK_AUTHTOKEN") }), u.note(u.tr("The public tunnel carries prompts/responses through ngrok. Only inference is exposed; the control panel stays local. Disconnect revokes this Cursor key.", "El túnel público lleva mensajes/respuestas a través de ngrok. Solo se expone inferencia; el panel queda local. Desconectar revoca la clave de Cursor.")), u.row(u.disabled(running && !connected && len(s.Models) > 0, u.button("cursor-connect", u.tr("Connect HTTPS tunnel", "Conectar túnel HTTPS"), func() { invoke("start") })), u.disabled(session != nil, u.button("cursor-disconnect", u.tr("Disconnect", "Desconectar"), func() { invoke("stop") })), u.disabled(session != nil && session.Status == "running", u.button("cursor-check", u.tr("Test public connection", "Probar conexión pública"), func() { invoke("check") }))), u.note(status), u.button("cursor-copy-models", u.tr("Copy model IDs", "Copiar IDs de modelos"), func() { u.copy(strings.Join(s.ids(), "\n")) }), u.code("cursor-guide", cursorSetupGuide(session, s.ids(), u.language, false))}
+	widgets := []layout.Widget{u.heading("Cursor"), u.clientLauncherPanel("cursor", s, session != nil && session.Status == "running"), u.note(u.tr("Cursor sends provider requests from its servers, so they cannot reach localhost. This helper starts a dedicated HTTPS ngrok tunnel with its own key and selected model list.", "Cursor envía las peticiones desde sus servidores y no puede alcanzar localhost. Este helper inicia un túnel HTTPS ngrok con su propia clave y lista de modelos.")), u.row(u.button("cursor-ngrok-download", u.tr("Install ngrok", "Instalar ngrok"), func() { u.open("https://ngrok.com/download") }), u.button("cursor-ngrok-account", u.tr("Get ngrok authtoken", "Obtener authtoken de ngrok"), func() { u.open("https://dashboard.ngrok.com/get-started/your-authtoken") })), u.code("cursor-ngrok-command", "ngrok config add-authtoken YOUR_NGROK_AUTHTOKEN"), u.button("cursor-copy-ngrok-command", u.tr("Copy ngrok command", "Copiar comando de ngrok"), func() { u.copy("ngrok config add-authtoken YOUR_NGROK_AUTHTOKEN") }), u.note(u.tr("The public tunnel carries prompts/responses through ngrok. Only inference is exposed; the control panel stays local. Disconnect revokes this Cursor key.", "El túnel público lleva mensajes/respuestas a través de ngrok. Solo se expone inferencia; el panel queda local. Desconectar revoca la clave de Cursor.")), u.row(u.disabled(running && !connected && len(s.Models) > 0, u.button("cursor-connect", u.tr("Connect HTTPS tunnel", "Conectar túnel HTTPS"), func() { invoke("start") })), u.disabled(session != nil, u.button("cursor-disconnect", u.tr("Disconnect", "Desconectar"), func() { invoke("stop") })), u.disabled(session != nil && session.Status == "running", u.button("cursor-check", u.tr("Test public connection", "Probar conexión pública"), func() { invoke("check") }))), u.note(status), u.button("cursor-copy-models", u.tr("Copy model IDs", "Copiar IDs de modelos"), func() { u.copy(strings.Join(s.ids(), "\n")) }), u.code("cursor-guide", cursorSetupGuide(session, s.ids(), u.language, false))}
 	if session != nil && session.Status == "running" {
 		widgets = append(widgets, u.row(u.button("cursor-copy-url", u.tr("Copy Cursor URL", "Copiar URL de Cursor"), func() { u.copy(session.URL) }), u.button("cursor-copy-key", u.tr("Copy Cursor key", "Copiar clave de Cursor"), func() { u.copy(session.Key) }), u.button("cursor-copy-guide", u.tr("Copy complete connection", "Copiar conexión completa"), func() { u.copy(cursorSetupGuide(session, s.ids(), u.language, true)) })))
 	}

@@ -61,10 +61,11 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium webkit
       - run: npm run test:e2e
+      # Keep retry traces even if the job ultimately succeeds.
       - uses: actions/upload-artifact@v4
-        if: failure()
+        if: always()
         with:
-          name: browser-e2e-failure
+          name: browser-e2e-results
           if-no-files-found: ignore
           retention-days: 7
           path: |

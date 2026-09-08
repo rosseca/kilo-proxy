@@ -3,6 +3,9 @@ import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 
 const first='vendor/one', second='anthropic/claude-sonnet-4.6';
+const helperClients=['generic','codex','codex-cli','claude','opencode','zed','cursor','xcode'];
+const helperPrefix=client=>['opencode','zed'].includes(client)?'editor':client==='xcode'?'xcode':'model';
+const sortLabels={en:['Code Mode Rank','Coding Index','Speed','Price','Name'],es:['Ranking de Code Mode','Índice de programación','Velocidad','Precio','Nombre']};
 const model=(page,id)=>page.locator('input[name="model-choice"]').filter({visible:true}).and(page.locator(`[value="${id}"]`));
 const readJSON=async file=>JSON.parse(await readFile(file,'utf8'));
 async function seed(dir,name,text) { await mkdir(dir,{recursive:true});await writeFile(path.join(dir,name),text); }
@@ -83,11 +86,223 @@ test('Codex Desktop and CLI prepare independent profiles with names and reasonin
     const launch=await copied(page,'#copy-launch');
     expect(launch).toContain(client==='codex' ? '.codex-kilo-desktop':'.codex-kilo-cli');
     expect(launch).toMatch(/KILO_LOCAL_API_KEY=['"]?kl_local_/);
+    for(const order of ['name','speed','price','codingIndex','codeModeRank']) {
+      await page.locator('#model-sort').selectOption(order);
+      await expect(page.locator('#codex-setup-status')).toContainText('Profile ready');
+      await expect(page.locator(`[data-focus="default:${first}"]`)).toHaveAttribute('aria-pressed','true');
+    }
+    await page.locator('#model-lab').selectOption('anthropic');
+    await expect(model(page,first)).toHaveCount(0);
+    await expect(page.locator('#codex-setup-status')).toContainText('Profile ready');
+    await page.locator('#model-lab').selectOption('');
+    await expect(page.locator(`[data-focus="default:${first}"]`)).toHaveAttribute('aria-pressed','true');
+    expect(await readJSON(path.join(dir,'models.json'))).toEqual(catalog);
     await page.locator('#clear-codex-models').click();
     await page.locator('#load-codex-catalog').click();
     await expect(page.locator(`[data-focus="name:${first}"]`)).toHaveValue(client==='codex'?'Short GUI':'Short CLI');
   }
 });
+
+for(const client of helperClients) {
+  test(`lab filters combine with sorting and search in ${client} while retaining hidden selections`,async({page})=>{
+    await page.locator('#tab-'+client).click();
+    const prefix=helperPrefix(client);
+    const lab=page.locator('#'+prefix+'-lab'),sort=page.locator('#'+prefix+'-sort'),search=page.locator('#'+prefix+'-search');
+    await expect(lab).toBeVisible();
+    await expect(lab).toHaveAccessibleName('Lab');
+    await expect(lab).toHaveValue('');
+    await expect(lab.locator('option')).toHaveText(['All labs','Anthropic','Vendor']);
+    const variants=client==='xcode'?['chat','codex','claude']:[null];
+    for(const variant of variants) {
+      if(variant) await page.locator(`[data-xcode-variant="${variant}"]`).click();
+      await lab.selectOption('');
+      const choices=page.locator(prefix==='editor'?'#editor-picker [data-editor-id]':prefix==='xcode'?'#xcode-picker [data-xcode-focus^="choose:"]':'#model-picker input[name="model-choice"]');
+      const firstChoice=prefix==='editor'?page.locator(`[data-editor-id="${first}"]`):prefix==='xcode'?page.locator(`[data-xcode-focus="choose:${first}"]`):model(page,first);
+      await expect(choices).toHaveCount(2);
+      await firstChoice.check();
+      const nameInput=prefix==='editor'?page.locator(`[data-editor-name="${first}"]`):prefix==='xcode'?page.locator(`[data-xcode-focus="name:${first}"]`):['codex','codex-cli','claude'].includes(client)?page.locator(`[data-focus="${client==='claude'?'claude-name':'name'}:${first}"]`):null;
+      if(nameInput) await nameInput.fill('Preserved name');
+      await lab.selectOption('anthropic');
+      await expect(choices).toHaveCount(1);
+      await expect(firstChoice).toHaveCount(0);
+      await sort.selectOption('price');
+      await search.fill('vendor');
+      await expect(choices).toHaveCount(0);
+      await expect(lab).toHaveValue('anthropic');
+      await expect(lab.locator('option')).toHaveText(['All labs','Anthropic','Vendor']);
+      await search.fill('');
+      await expect(choices).toHaveCount(1);
+      const only=prefix==='editor'?page.locator('#editor-selected'):prefix==='xcode'?page.locator('#xcode-selected'):['codex','codex-cli','claude'].includes(client)?page.locator('#codex-selected-only'):null;
+      if(only) {
+        await only.check();
+        await expect(choices).toHaveCount(0);
+        await lab.selectOption('vendor');
+        await expect(choices).toHaveCount(1);
+        await expect(firstChoice).toBeChecked();
+        await only.uncheck();
+      }
+      await lab.selectOption('');
+      await expect(choices).toHaveCount(2);
+      await expect(firstChoice).toBeChecked();
+      if(nameInput) await expect(nameInput).toHaveValue('Preserved name');
+      await expect(sort).toHaveValue('price');
+      await lab.selectOption('anthropic');
+    }
+  });
+}
+
+test('lab and sort preferences persist across every helper tab',async({page})=>{
+  let previousLab='',previousSort='codeModeRank';
+  for(const [index,client] of helperClients.entries()) {
+    await page.locator('#tab-'+client).click();
+    const prefix=helperPrefix(client),lab=page.locator('#'+prefix+'-lab'),sort=page.locator('#'+prefix+'-sort');
+    await expect(lab).toHaveValue(previousLab);
+    await expect(sort).toHaveValue(previousSort);
+    previousLab=index%2?'vendor':'anthropic';
+    previousSort=index%2?'name':'price';
+    await lab.selectOption(previousLab);
+    await sort.selectOption(previousSort);
+    await expect(lab).toHaveValue(previousLab);
+    await expect(sort).toHaveValue(previousSort);
+  }
+  for(const variant of ['chat','codex','claude']) {
+    await page.locator(`[data-xcode-variant="${variant}"]`).click();
+    await expect(page.locator('#xcode-lab')).toHaveValue(previousLab);
+    await expect(page.locator('#xcode-sort')).toHaveValue(previousSort);
+  }
+  await page.locator('#language').selectOption('es');
+  for(const client of ['codex','opencode','xcode']) {
+    await page.locator('#tab-'+client).click();
+    const prefix=helperPrefix(client);
+    await expect(page.locator('#'+prefix+'-lab')).toHaveValue(previousLab);
+    await expect(page.locator('#'+prefix+'-sort')).toHaveValue(previousSort);
+  }
+});
+
+test('lab filters retain manual models, custom names and initial selections when saving profiles',async({page,gateway})=>{
+  for(const client of ['codex','opencode']) {
+    await page.locator('#tab-'+client).click();
+    if(client==='codex') {
+      await model(page,first).check();
+      await page.locator(`[data-focus="name:${first}"]`).fill('Preserved name');
+      await page.locator(`[data-focus="default:${first}"]`).click();
+    } else {
+      await page.locator(`[data-editor-id="${first}"]`).check();
+      await page.locator(`[data-editor-name="${first}"]`).fill('Preserved name');
+      await page.locator(`[data-editor-initial="${first}"]`).click();
+    }
+  }
+  await page.locator('#tab-codex').click();
+  await page.locator('#model-lab').selectOption('anthropic');
+  await page.locator('#codex-manual-entry > summary').click();
+  for(const id of ['~anthropic/manual','future-lab/manual','constructor/manual','__proto__/manual']) {
+    await page.locator('#codex-manual-id').fill(id);
+    await page.locator('#add-codex-model').click();
+  }
+  await expect(page.locator('#model-lab option[value="anthropic"]')).toHaveCount(1);
+  await expect(page.locator('#model-lab option[value="future-lab"]')).toHaveText('Future Lab');
+  await expect(page.locator('#model-lab option[value="constructor"]')).toHaveText('Constructor');
+  await expect(page.locator('#model-lab option[value="__proto__"]')).toHaveText('Proto');
+  // Rendering unknown labs must be safe even when an ID is unsupported by Codex's catalog format.
+  await page.locator('#model-lab').selectOption('__proto__');
+  await model(page,'__proto__/manual').click();
+  await expect(model(page,'__proto__/manual')).toHaveCount(0);
+  await page.locator('#codex-selected-only').uncheck();
+  await page.locator('#model-lab').selectOption('anthropic');
+  await expect(model(page,'~anthropic/manual')).toBeChecked();
+  await expect(model(page,second)).not.toBeChecked();
+  await page.locator('#select-codex-results').click();
+  await expect(model(page,second)).toBeChecked();
+  await page.locator('#model-lab').selectOption('future-lab');
+  await expect(model(page,'future-lab/manual')).toBeChecked();
+  await page.locator('#tab-opencode').click();
+  await expect(page.locator('#editor-lab')).toHaveValue('future-lab');
+  await expect(page.locator('#editor-lab option[value="future-lab"]')).toHaveText('Future Lab');
+  await expect(page.locator('#editor-picker [data-editor-id]')).toHaveCount(0);
+  await page.locator('#editor-lab').selectOption('');
+  await expect(page.locator('#editor-picker [data-editor-id]')).toHaveCount(2);
+  await expect(page.locator(`[data-editor-id="${first}"]`)).toBeChecked();
+  await page.locator('#tab-codex').click();
+  await expect(model(page,first)).toBeChecked();
+  await expect(page.locator(`[data-focus="name:${first}"]`)).toHaveValue('Preserved name');
+  await expect(page.locator(`[data-focus="default:${first}"]`)).toHaveAttribute('aria-pressed','true');
+  await page.locator('#save-codex-catalog').click();
+  await expect(page.locator('#codex-setup-status')).toContainText('Profile ready');
+  const saved=await readJSON(path.join(gateway.profiles.codex,'models.json'));
+  expect(saved.models[0].slug).toBe(first);
+  expect(saved.models.map(m=>m.slug)).toContain('~anthropic/manual');
+  expect(saved.models.map(m=>m.slug)).toContain('future-lab/manual');
+});
+
+// Keep each layout and functional case bounded, including on slower CI browsers.
+for(const language of ['en','es']) {
+  for(const client of ['codex','opencode','xcode']) {
+    for(const [size,width,height] of [['wide',1180,820],['mobile',390,844]]) {
+      test(`lab control layout ${client} ${language} ${size}`,async({page},testInfo)=>{
+        await page.setViewportSize({width,height});
+        await page.locator('#language').selectOption(language);
+        await page.locator('#tab-'+client).click();
+        if(client==='xcode') await page.locator('[data-xcode-variant="claude"]').click();
+        const prefix=helperPrefix(client);
+        const firstChoice=prefix==='editor'?page.locator(`[data-editor-id="${first}"]`):prefix==='xcode'?page.locator(`[data-xcode-focus="choose:${first}"]`):model(page,first);
+        await firstChoice.check();
+        const nameInput=prefix==='editor'?page.locator(`[data-editor-name="${first}"]`):prefix==='xcode'?page.locator(`[data-xcode-focus="name:${first}"]`):page.locator(`[data-focus="name:${first}"]`);
+        await nameInput.fill('Preserved name');
+        const sort=page.locator('#'+prefix+'-sort');
+        await sort.selectOption('name');
+        await expect(sort).toHaveValue('name');
+        await expect(sort).toBeVisible();
+        await expect(sort).toHaveAccessibleName(language==='en'?'Sort by':'Ordenar por');
+        await expect(sort.locator('option')).toHaveText(sortLabels[language]);
+        const lab=page.locator('#'+prefix+'-lab');
+        await expect(lab).toHaveAccessibleName(language==='en'?'Lab':'Laboratorio');
+        await expect(lab.locator('option').first()).toHaveText(language==='en'?'All labs':'Todos los laboratorios');
+        await lab.scrollIntoViewIfNeeded();
+        expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
+        await page.screenshot({path:testInfo.outputPath('lab-'+prefix+'-'+language+'-'+size+'.png')});
+      });
+    }
+  }
+}
+
+for(const client of helperClients) {
+  for(const variant of client==='xcode'?['chat','codex','claude']:[null]) {
+    test(`model sorting in ${client}${variant?' '+variant:''} preserves selections and custom names`,async({page})=>{
+      const expected={codeModeRank:[second,first],codingIndex:[first,second],speed:[second,first],price:[first,second],name:[second,first]};
+      await page.locator('#tab-'+client).click();
+      if(variant) await page.locator(`[data-xcode-variant="${variant}"]`).click();
+      const prefix=helperPrefix(client),sort=page.locator('#'+prefix+'-sort');
+      await expect(sort).toBeVisible();
+      await expect(sort).toHaveAccessibleName('Sort by');
+      await expect(sort).toHaveValue('codeModeRank');
+      await expect(sort.locator('option')).toHaveText(sortLabels.en);
+      const choices=page.locator(prefix==='editor'?'#editor-picker [data-editor-id]':prefix==='xcode'?'#xcode-picker [data-xcode-focus^="choose:"]':'#model-picker input[name="model-choice"]');
+      await expect(choices).toHaveCount(2);
+      const firstChoice=prefix==='editor'?page.locator(`[data-editor-id="${first}"]`):prefix==='xcode'?page.locator(`[data-xcode-focus="choose:${first}"]`):model(page,first);
+      await firstChoice.check();
+      for(const [order,ids] of Object.entries(expected)) {
+        await sort.selectOption(order);
+        await expect.poll(()=>choices.evaluateAll((elements,prefix)=>elements.map(element=>prefix==='editor'?element.dataset.editorId:prefix==='xcode'?element.dataset.xcodeFocus.slice(7):element.value),prefix)).toEqual(ids);
+        await expect(firstChoice).toBeChecked();
+      }
+      const nameInput=prefix==='editor'?page.locator(`[data-editor-name="${first}"]`):prefix==='xcode'?page.locator(`[data-xcode-focus="name:${first}"]`):['codex','codex-cli','claude'].includes(client)?page.locator(`[data-focus="${client==='claude'?'claude-name':'name'}:${first}"]`):null;
+      if(nameInput) {
+        await nameInput.fill('A custom name');
+        await sort.selectOption('speed');
+        await sort.selectOption('name');
+        await expect.poll(()=>choices.evaluateAll((elements,prefix)=>elements.map(element=>prefix==='editor'?element.dataset.editorId:prefix==='xcode'?element.dataset.xcodeFocus.slice(7):element.value),prefix)).toEqual([first,second]);
+        await expect(nameInput).toHaveValue('A custom name');
+      }
+      if(variant) {
+        await page.locator('#xcode-selected').check();
+        await expect(choices).toHaveCount(1);
+        await expect(firstChoice).toBeChecked();
+        await page.locator('#xcode-selected').uncheck();
+        await expect(choices).toHaveCount(2);
+      }
+    });
+  }
+}
 
 test('Claude prepares and reloads model picker, alias and reasoning without overwriting preferences',async({page,gateway})=>{
   const dir=gateway.profiles.claude,original=JSON.stringify({permissions:{defaultMode:'default'},env:{MY_TEAM_SETTING:'keep'}});

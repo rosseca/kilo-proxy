@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -9,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -35,6 +38,43 @@ func TestE2EServer(t *testing.T) {
 	a.claudeProfileDir = filepath.Join(root, ".claude-kilo")
 	a.xcodeTestRoot = filepath.Join(root, "xcode")
 	a.config.Language = "en"
+	launchControl := filepath.Join(root, "launch-control.json")
+	launchRecords := filepath.Join(root, "launch-records.json")
+	prepareWaiting := filepath.Join(root, "prepare-waiting")
+	stateWaiting := filepath.Join(root, "state-waiting")
+	readLaunchControl := func() map[string]any {
+		var control map[string]any
+		data, _ := os.ReadFile(launchControl)
+		_ = json.Unmarshal(data, &control)
+		return control
+	}
+	var launchRecordMu sync.Mutex
+	records := []map[string]string{}
+	a.launcher = &clientLaunchRuntime{
+		platform: "macos", home: root,
+		resolve: func(client, custom string) (string, error) {
+			if readLaunchControl()["unavailable"] == client && custom == "" {
+				return "", errors.New("Synthetic application unavailable.")
+			}
+			if custom != "" {
+				return custom, nil
+			}
+			return "/synthetic/" + client, nil
+		},
+		terminal: func() (bool, string) { return true, "" },
+		start: func(plan clientLaunchPlan) error {
+			if readLaunchControl()["fail"] == true {
+				return errors.New("synthetic launch failure")
+			}
+			launchRecordMu.Lock()
+			defer launchRecordMu.Unlock()
+			records = append(records, map[string]string{"client": plan.Client, "directory": plan.Directory, "executable": plan.Executable, "kind": plan.Kind})
+			data, _ := json.Marshal(records)
+			// Playwright reads this concurrently from another process: publish a
+			// complete JSON snapshot instead of exposing a truncated file.
+			return atomicCatalogFile(launchRecords, data)
+		},
+	}
 	port, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -44,6 +84,11 @@ func TestE2EServer(t *testing.T) {
 
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case "/api/models/stats":
+			jsonResponse(w, 200, []any{
+				map[string]any{"openrouterId": "vendor/one", "chartData": map[string]any{"modeRankings": map[string]int{"code": 9}}, "codingIndex": 95, "speedTokensPerSec": 50},
+				map[string]any{"openrouterId": "anthropic/claude-sonnet-4.6", "chartData": map[string]any{"modeRankings": map[string]int{"code": 2}}, "codingIndex": 80, "speedTokensPerSec": 100},
+			})
 		case "/api/gateway/models":
 			jsonResponse(w, 200, map[string]any{"data": []any{
 				map[string]any{"id": "vendor/one", "name": "Very Long First Model Name", "context_length": 64000, "top_provider": map[string]int{"max_completion_tokens": 4000}, "pricing": map[string]string{"prompt": "0.000001", "completion": "0.000002"}, "supported_parameters": []string{"tools", "reasoning"}, "architecture": map[string]any{"output_modalities": []string{"text"}}, "opencode": map[string]any{"variants": map[string]any{"low": map[string]any{"reasoning": map[string]string{"effort": "low"}}, "high": map[string]any{"reasoning": map[string]string{"effort": "high"}}}}},
@@ -88,17 +133,51 @@ func TestE2EServer(t *testing.T) {
 	defer upstream.Close()
 	setUpstream(a, upstream.URL)
 	a.accountURL = upstream.URL
+	a.modelStatsURL = upstream.URL + "/api/models/stats"
 	listener, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	a.adminHost = listener.Addr().String()
-	server := &http.Server{Handler: a.adminHandler(), ReadHeaderTimeout: 5 * time.Second}
+	admin := a.adminHandler()
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		control := readLaunchControl()
+		if r.URL.Path == "/api/state" && control["holdState"] == true {
+			_ = os.WriteFile(stateWaiting, []byte("waiting"), 0600)
+			for readLaunchControl()["holdState"] == true {
+				select {
+				case <-r.Context().Done():
+					return
+				case <-time.After(10 * time.Millisecond):
+				}
+			}
+		}
+		if r.Method == "POST" && (strings.HasSuffix(r.URL.Path, "/catalog") || strings.HasSuffix(r.URL.Path, "/profile") || strings.HasPrefix(r.URL.Path, "/api/xcode/") && r.URL.Path != "/api/xcode/info") {
+			if control["holdPrepare"] == true {
+				_ = os.WriteFile(prepareWaiting, []byte("waiting"), 0600)
+				for readLaunchControl()["holdPrepare"] == true {
+					select {
+					case <-r.Context().Done():
+						return
+					case <-time.After(10 * time.Millisecond):
+					}
+				}
+			}
+		}
+		if r.URL.Path == "/api/state" && control["cursorRunning"] == true {
+			a.mu.Lock()
+			a.cursor = &cursorSession{Status: "running", URL: "https://synthetic.example/v1", Key: "synthetic-cursor-local-key", Models: []string{"vendor/one"}}
+			a.mu.Unlock()
+		}
+		admin.ServeHTTP(w, r)
+	})
+	server := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second}
 	go server.Serve(listener)
 	defer server.Close()
 	data, err := json.Marshal(map[string]any{
 		"url": "http://" + a.adminHost + "/#" + a.adminToken, "token": a.adminToken,
 		"proxyPort": a.config.Port, "baseURL": "http://127.0.0.1:" + strconv.Itoa(a.config.Port) + "/v1", "root": root,
+		"launchControl": launchControl, "launchRecords": launchRecords, "prepareWaiting": prepareWaiting, "stateWaiting": stateWaiting,
 		"profiles": map[string]string{"codex": a.codexProfileDir, "codex-cli": a.codexCLIProfileDir, "claude": a.claudeProfileDir, "opencode": filepath.Join(root, ".opencode-kilo"), "zed": filepath.Join(root, ".config", "zed")},
 	})
 	if err != nil {

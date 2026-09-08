@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
 	"image/color"
 	"io"
 	"net/http"
@@ -25,10 +26,17 @@ import (
 // All view state is confined to the window event goroutine. Network requests
 // return through updates; polling never changes an editor the user is typing in.
 type nativeUI struct {
-	traceGeneration  uint64
-	modelsPending    bool
-	languageRevision uint64
-	languageTarget   string
+	traceGeneration     uint64
+	modelsPending       bool
+	languageRevision    uint64
+	languageTarget      string
+	modelSortDismissTag int
+	modelSortMenuTag    int
+	modelMenuPointerTag int
+	modelMenuPress      image.Point
+	modelMenuViewport   image.Point
+	modelMenuAnchors    map[string]image.Point
+	activeModelMenu     *nativeModelMenuState
 
 	owner                          *app
 	invalidate                     func()
@@ -169,7 +177,7 @@ func (u *nativeUI) button(id, label string, action func()) layout.Widget {
 		style.Inset = layout.Inset{Top: 11, Bottom: 11, Left: 14, Right: 14}
 		gtx.Constraints.Min.Y = max(gtx.Constraints.Min.Y, gtx.Dp(40))
 		style.Background = nativeColor(0xeff2e8)
-		if id == "connection.save-start" || id == "connection.login" || strings.Contains(id, "prepare") {
+		if id == "connection.save-start" || id == "connection.login" || strings.Contains(id, "prepare") && !strings.HasSuffix(id, ":prepare") || strings.HasSuffix(id, ":launch") {
 			style.Background = nativeColor(0xe8f36a)
 		}
 		if strings.HasPrefix(label, "● ") || strings.HasPrefix(label, "★ ") {

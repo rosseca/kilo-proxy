@@ -16,6 +16,9 @@ import (
 )
 
 type modelInfo struct {
+	CodeModeRank     *float64 `json:"codeModeRank"`
+	CodingIndex      *float64 `json:"codingIndex"`
+	Speed            *float64 `json:"speed"`
 	ReasoningEfforts []string `json:"reasoningEfforts,omitempty"`
 	ID               string   `json:"id"`
 	Name             string   `json:"name"`
@@ -88,6 +91,16 @@ func (a *app) fetchModels(ctx context.Context, requireAccount bool) ([]modelInfo
 	if err != nil {
 		return nil, revision, &catalogError{502, "Kilo devolvió un catálogo no válido."}
 	}
+	// Public rankings enrich available gateway models; they never determine
+	// availability, model identity, organization pricing, or capabilities.
+	metrics := a.publicModelMetrics(ctx)
+	for i := range models {
+		if metric, ok := metrics[models[i].ID]; ok {
+			models[i].CodeModeRank = metric.codeModeRank
+			models[i].CodingIndex = metric.codingIndex
+			models[i].Speed = metric.speed
+		}
+	}
 	a.mu.Lock()
 	changed := a.catalogRevision != revision
 	a.mu.Unlock()
@@ -95,6 +108,178 @@ func (a *app) fetchModels(ctx context.Context, requireAccount bool) ([]modelInfo
 		return nil, revision, &catalogError{409, "La conexión ha cambiado. Vuelve a cargar los modelos."}
 	}
 	return models, revision, nil
+}
+
+const modelStatsEndpoint = "https://kilo.ai/api/models/stats"
+const modelStatsTimeout = 3 * time.Second
+
+type modelMetric struct {
+	codeModeRank, codingIndex, speed *float64
+}
+
+// Protected by app.mu. Maps become immutable once published to callers.
+type modelStatsCache struct {
+	endpoint  string
+	expiresAt time.Time
+	data      map[string]modelMetric
+	loading   chan struct{}
+}
+
+func (a *app) publicModelMetrics(ctx context.Context) map[string]modelMetric {
+	a.mu.Lock()
+	endpoint := a.modelStatsURL
+	if endpoint == "" && a.upstream.Scheme == "https" && a.upstream.Host == "api.kilo.ai" {
+		endpoint = modelStatsEndpoint
+	}
+	// Synthetic/custom gateways stay self-contained unless their owner supplies
+	// an explicit public metadata endpoint. No endpoint is accepted from the UI.
+	if endpoint == "" {
+		a.mu.Unlock()
+		return nil
+	}
+	cache := &a.modelStatsCache
+	if cache.endpoint == endpoint && time.Now().Before(cache.expiresAt) {
+		data := cache.data
+		a.mu.Unlock()
+		return data
+	}
+	if cache.endpoint == endpoint && cache.loading != nil {
+		pending, previous := cache.loading, cache.data
+		a.mu.Unlock()
+		select {
+		case <-pending:
+			return a.publicModelMetrics(ctx)
+		case <-ctx.Done():
+			return previous
+		}
+	}
+	var previous map[string]modelMetric
+	if cache.endpoint == endpoint {
+		previous = cache.data
+	}
+	pending := make(chan struct{})
+	*cache = modelStatsCache{endpoint: endpoint, data: previous, loading: pending}
+	transport := a.transport
+	a.mu.Unlock()
+
+	metrics, err := fetchPublicModelMetrics(ctx, endpoint, transport)
+	if err != nil {
+		metrics = previous
+	}
+	a.mu.Lock()
+	if cache.loading == pending {
+		cache.data = metrics
+		cache.loading = nil
+		ttl := 5 * time.Minute
+		if err != nil {
+			ttl = 30 * time.Second
+		}
+		cache.expiresAt = time.Now().Add(ttl)
+	}
+	close(pending)
+	a.mu.Unlock()
+	return metrics
+}
+
+func fetchPublicModelMetrics(ctx context.Context, endpoint string, transport http.RoundTripper) (map[string]modelMetric, error) {
+	ctx, cancel := context.WithTimeout(ctx, modelStatsTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	if req.URL.User != nil {
+		return nil, errors.New("public model statistics must not contain credentials")
+	}
+	// This is a separate unauthenticated request, never a clone of the gateway
+	// request: no personal key, organization header, local key, or cookies.
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "Kilo-Proxy/"+version)
+	client := &http.Client{Transport: transport, Timeout: modelStatsTimeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, errors.New("public model statistics unavailable")
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, (4<<20)+1))
+	if err != nil || len(body) > 4<<20 {
+		return nil, errors.New("invalid public model statistics response")
+	}
+	return parsePublicModelMetrics(body)
+}
+
+func parsePublicModelMetrics(body []byte) (map[string]modelMetric, error) {
+	var rows []json.RawMessage
+	if err := json.Unmarshal(body, &rows); err != nil {
+		return nil, err
+	}
+	if rows == nil || len(rows) > 10000 {
+		return nil, errors.New("missing or oversized model statistics")
+	}
+	metrics := make(map[string]modelMetric, len(rows))
+	for _, row := range rows {
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(row, &fields) != nil || fields == nil {
+			continue
+		}
+		var id string
+		if json.Unmarshal(fields["openrouterId"], &id) != nil || id == "" || len(id) > 256 {
+			continue
+		}
+		if _, duplicate := metrics[id]; duplicate {
+			continue
+		}
+		if string(fields["isActive"]) == "false" {
+			continue
+		}
+		benchmarks := modelMetadataObject(fields["benchmarks"])
+		artificialAnalysis := modelMetadataObject(benchmarks["artificialAnalysis"])
+		chart := modelMetadataObject(fields["chartData"])
+		rankings := modelMetadataObject(chart["modeRankings"])
+		metric := modelMetric{
+			codeModeRank: modelMetricNumber(rankings["code"]),
+			codingIndex:  firstModelMetric(fields["codingIndex"], benchmarks["artificial_analysis_coding_index"], artificialAnalysis["codingIndex"]),
+			speed:        firstModelMetric(fields["speedTokensPerSec"], benchmarks["median_output_tokens_per_second"]),
+		}
+		if rank := metric.codeModeRank; rank != nil && (*rank < 1 || math.Trunc(*rank) != *rank) {
+			metric.codeModeRank = nil
+		}
+		metrics[id] = metric
+	}
+	return metrics, nil
+}
+
+func modelMetadataObject(raw json.RawMessage) map[string]json.RawMessage {
+	var object map[string]json.RawMessage
+	_ = json.Unmarshal(raw, &object)
+	return object
+}
+
+func firstModelMetric(values ...json.RawMessage) *float64 {
+	for _, raw := range values {
+		if value := modelMetricNumber(raw); value != nil {
+			return value
+		}
+	}
+	return nil
+}
+
+func modelMetricNumber(raw json.RawMessage) *float64 {
+	if len(raw) == 0 {
+		return nil
+	}
+	value := string(raw)
+	if raw[0] == '"' && json.Unmarshal(raw, &value) != nil {
+		return nil
+	}
+	number, err := strconv.ParseFloat(value, 64)
+	if err != nil || number < 0 || math.IsNaN(number) || math.IsInf(number, 0) {
+		return nil
+	}
+	return &number
 }
 
 func (a *app) models(w http.ResponseWriter, r *http.Request) {

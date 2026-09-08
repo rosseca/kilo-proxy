@@ -58,7 +58,7 @@ Authentication headers, cookies and known local/upstream/admin keys are redacted
 
 ## Automatic Desktop profile preparation (0.14.0)
 
-**1. Prepare profile** creates the isolated profile directory and saves both the catalog and TOML. It updates Kilo-managed defaults and provider settings, including the current local port and the selected initial reasoning effort. If the config selects a named profile, its model defaults are synchronized too. Other settings and comments are preserved using parsed TOML expression ranges; inline tables, dotted/quoted keys and multiline values are supported. The edited result is parsed again and compared with the intended settings before writing.
+**Prepare without launching** creates the isolated profile directory and saves both the catalog and TOML. It updates Kilo-managed defaults and provider settings, including the current local port and the selected initial reasoning effort. If the config selects a named profile, its model defaults are synchronized too. Other settings and comments are preserved using parsed TOML expression ranges; inline tables, dotted/quoted keys and multiline values are supported. The edited result is parsed again and compared with the intended settings before writing.
 
 Existing changed files receive exact `.bak` backups. Identical saves do not replace those backups. Destinations are validated before writing, and each file is replaced atomically; if the TOML write fails after the catalog write, the previous catalog is restored. This is not a crash-atomic transaction across two files. Invalid TOML is left untouched and reported without exposing its contents.
 

@@ -70,6 +70,10 @@ func (a *app) adminHandler() http.Handler {
 			jsonError(w, 401, "Abre el panel desde la aplicación para recuperar el acceso.")
 			return
 		}
+		if r.URL.Path == "/api/clients/launch" {
+			a.clientsLaunch(w, r)
+			return
+		}
 		if strings.HasPrefix(r.URL.Path, "/api/desktop/") {
 			a.desktopAPI(w, r)
 			return

@@ -1,0 +1,348 @@
+//go:build desktop
+
+package main
+
+import (
+	"errors"
+	"gioui.org/f32"
+	"gioui.org/gpu/headless"
+	"gioui.org/io/pointer"
+	"gioui.org/io/semantic"
+	"image"
+	"image/png"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+)
+
+type nativeLaunchRecorder struct {
+	mu             sync.Mutex
+	plans          []clientLaunchPlan
+	prepares       atomic.Int32
+	gets           atomic.Int32
+	launchRequests atomic.Int32
+	entered        chan struct{}
+	release        chan struct{}
+	once           sync.Once
+	failPrepare    bool
+	failLaunch     bool
+}
+
+func (r *nativeLaunchRecorder) count() int { r.mu.Lock(); defer r.mu.Unlock(); return len(r.plans) }
+func (r *nativeLaunchRecorder) unblock()   { r.once.Do(func() { close(r.release) }) }
+
+func nativeLaunchTestUI(t *testing.T, key string, delay, failPrepare bool) (*nativeUI, *nativeLaunchRecorder) {
+	t.Helper()
+	u := nativeTestUI(t)
+	recorder := &nativeLaunchRecorder{entered: make(chan struct{}, 1), release: make(chan struct{}), failPrepare: failPrepare}
+	if !delay {
+		recorder.unblock()
+	}
+	t.Cleanup(recorder.unblock)
+	u.owner.launcher = &clientLaunchRuntime{
+		platform: "macos", home: u.owner.editorTestRoot,
+		resolve: func(client, customPath string) (string, error) {
+			if customPath != "" {
+				return customPath, nil
+			}
+			return "/fake/client", nil
+		},
+		terminal: func() (bool, string) { return true, "" },
+		start: func(plan clientLaunchPlan) error {
+			recorder.mu.Lock()
+			defer recorder.mu.Unlock()
+			if recorder.failLaunch {
+				return errors.New("synthetic launch failure")
+			}
+			recorder.plans = append(recorder.plans, plan)
+			return nil
+		},
+	}
+	handler := u.owner.adminHandler()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !secureEqual(r.Header.Get("Authorization"), "Bearer "+u.owner.adminToken) {
+			t.Error("native request omitted admin authentication")
+			jsonError(w, 401, "missing auth")
+			return
+		}
+		if r.URL.Path == nativeLaunchEndpoint && r.Method == "GET" {
+			recorder.gets.Add(1)
+		}
+		if r.URL.Path == nativeClientEndpoint(key) && r.Method == "POST" {
+			recorder.prepares.Add(1)
+			select {
+			case recorder.entered <- struct{}{}:
+			default:
+			}
+			<-recorder.release
+			if recorder.failPrepare {
+				jsonError(w, 400, "synthetic preparation failure")
+				return
+			}
+		}
+		if r.URL.Path == nativeLaunchEndpoint && r.Method == "POST" {
+			recorder.launchRequests.Add(1)
+		}
+		handler.ServeHTTP(w, r)
+	}))
+	u.owner.adminHost = strings.TrimPrefix(server.URL, "http://")
+	t.Cleanup(func() { recorder.unblock(); server.Close() })
+	u.client = key
+	if strings.HasPrefix(key, "xcode-") {
+		u.client = "xcode"
+		u.clientState().Variant = strings.TrimPrefix(key, "xcode-")
+		u.clients.Xcode = u.owner.xcodeInfo()
+		u.clients.XcodeChecked = true
+		u.clients.XcodeDetectStarted = true
+	}
+	if key == "claude" {
+		u.setValue("clients-claude-mode", "modern")
+		u.clientState().ClaudeDetectStarted = true
+	}
+	u.models = nativeClientModelsForTest()
+	s := u.clientState().selection(key)
+	if err := s.add(u.models[0], 50); err != nil {
+		t.Fatal(err)
+	}
+	u.seedClientChoice(key, s.Models[0])
+	u.detectLaunchers()
+	nativeTestWait(t, u, func() bool { return u.clientState().LaunchChecked })
+	u.page = "clients"
+	return u, recorder
+}
+
+func TestNativeLaunchPreparesEveryClientAndKeepsCommandsSeparate(t *testing.T) {
+	for _, key := range []string{"codex", "codex-cli", "claude", "opencode", "zed", "xcode-chat", "xcode-codex", "xcode-claude"} {
+		t.Run(key, func(t *testing.T) {
+			u, r := nativeLaunchTestUI(t, key, false, false)
+			u.setValue("clients-platform", "windows")
+			u.setValue("clients-shell", "powershell")
+			u.setValue("clients-app-path", `C:\export-only\Codex.exe`)
+			nativeTestFrame(t, u)
+			u.clickable("client:" + key + ":launch").Click()
+			nativeTestFrame(t, u)
+			u.launchClient(key) // A second click before completion must not enqueue another run.
+			nativeTestWait(t, u, func() bool { return u.clientState().Launching == "" })
+			if r.count() != 1 {
+				t.Fatalf("launch did not reach the fake OS dispatcher once: %d; %s", r.count(), u.notice)
+			}
+			if r.prepares.Load() != 1 {
+				t.Fatal("dirty selection was not prepared exactly once")
+			}
+			s := u.clientState().selection(key)
+			if s.Saved == "" || s.Path == "" {
+				t.Fatal("successful automatic preparation was not remembered")
+			}
+			r.mu.Lock()
+			plan := r.plans[0]
+			r.mu.Unlock()
+			if plan.Client != key || plan.Directory != u.owner.editorTestRoot {
+				t.Fatalf("launch lost client/project: %+v", plan)
+			}
+			if strings.Contains(strings.Join(plan.Args, " "), "export-only") {
+				t.Fatal("command export settings reached native launch")
+			}
+			bridge := u.owner.desktop.(*nativeRecordingBridge)
+			bridge.mu.Lock()
+			copied := bridge.Text
+			bridge.mu.Unlock()
+			if copied != "" {
+				t.Fatal("native launch used clipboard credentials")
+			}
+			u.launchClient(key)
+			nativeTestWait(t, u, func() bool { return u.clientState().Launching == "" })
+			if r.count() != 2 || r.prepares.Load() != 1 {
+				t.Fatal("ready profile did not launch directly")
+			}
+			if r.gets.Load() != 1 {
+				t.Fatal("launcher detection polled on every frame/launch")
+			}
+		})
+	}
+}
+
+func TestNativeLaunchPreservesEditsWhilePreparing(t *testing.T) {
+	for _, field := range []string{"model", "directory", "appPath"} {
+		t.Run(field, func(t *testing.T) {
+			u, r := nativeLaunchTestUI(t, "codex", true, false)
+			nativeTestFrame(t, u)
+			u.clickable("client:codex:launch").Click()
+			nativeTestFrame(t, u)
+			<-r.entered
+			switch field {
+			case "model":
+				u.setValue(nativeClientField("codex", "vendor/one", "name"), "Newest name")
+			case "directory":
+				u.setValue("clients-project-directory", t.TempDir())
+			case "appPath":
+				u.setValue("clients-launch-app-path", "/different/Codex.app")
+			}
+			u.launchClient("codex")
+			r.unblock()
+			nativeTestWait(t, u, func() bool { return u.clientState().Launching == "" })
+			if r.count() != 0 || r.prepares.Load() != 1 {
+				t.Fatal("stale or duplicate launch escaped pending-edit guard")
+			}
+			if !strings.Contains(u.notice, "changed while preparing") {
+				t.Fatalf("pending edit was not explained: %s", u.notice)
+			}
+			if field == "model" && u.clientState().selection("codex").Models[0].DisplayName != "Newest name" {
+				t.Fatal("pending name edit was overwritten")
+			}
+		})
+	}
+}
+
+func TestNativeLaunchFailuresReleaseBusyState(t *testing.T) {
+	for _, failure := range []string{"prepare", "launch"} {
+		t.Run(failure, func(t *testing.T) {
+			u, r := nativeLaunchTestUI(t, "opencode", false, failure == "prepare")
+			r.failLaunch = failure == "launch"
+			u.launchClient("opencode")
+			nativeTestWait(t, u, func() bool { return u.clientState().Launching == "" })
+			expected := "synthetic preparation failure"
+			if failure == "launch" {
+				expected = "Could not open"
+			}
+			if r.count() != 0 || !strings.Contains(u.notice, expected) {
+				t.Fatalf("failure was hidden: %s", u.notice)
+			}
+			if failure == "prepare" && u.clientState().selection("opencode").Saved != "" {
+				t.Fatal("failed prepare enabled direct launch")
+			}
+			if u.busy["POST"+nativeLaunchEndpoint] || u.busy["POST"+nativeClientEndpoint("opencode")] {
+				t.Fatal("failure left Launch busy")
+			}
+		})
+	}
+}
+
+func TestNativeLaunchDetectionAndValidation(t *testing.T) {
+	u, r := nativeLaunchTestUI(t, "codex", false, false)
+	c := u.clientState()
+	info := c.LaunchInfo.Clients["codex"]
+	info.Available = false
+	c.LaunchInfo.Clients["codex"] = info
+	if u.nativeLaunchAvailable("codex") {
+		t.Fatal("missing client enabled launch")
+	}
+	u.setValue("clients-launch-app-path", filepath.Join(t.TempDir(), "Custom Codex.app"))
+	if !u.nativeLaunchAvailable("codex") {
+		t.Fatal("custom native Codex path could not recover detection")
+	}
+	u.clientState().selection("codex").Models = nil
+	u.launchClient("codex")
+	if r.count() != 0 || r.prepares.Load() != 0 || c.Launching != "" {
+		t.Fatal("empty selection dispatched a launch")
+	}
+}
+
+func TestNativeCursorLaunchRequiresRunningTunnel(t *testing.T) {
+	u, r := nativeLaunchTestUI(t, "cursor", false, false)
+	for _, status := range []string{"disconnected", "starting"} {
+		u.state["cursor"] = cursorSession{Status: status}
+		nativeTestFrame(t, u)
+		u.clickable("client:cursor:launch").Click()
+		nativeTestFrame(t, u)
+		if r.launchRequests.Load() != 0 || r.count() != 0 {
+			t.Fatal("Cursor launch started before its tunnel was running")
+		}
+	}
+	u.state["cursor"] = cursorSession{Status: "running", URL: "https://synthetic.invalid/v1"}
+	nativeTestFrame(t, u)
+	u.clickable("client:cursor:launch").Click()
+	nativeTestFrame(t, u)
+	nativeTestWait(t, u, func() bool { return u.clientState().Launching == "" })
+	if r.launchRequests.Load() != 1 || r.prepares.Load() != 0 {
+		t.Fatal("running Cursor UI did not use launch directly")
+	}
+	// The backend independently rejects this UI-only tunnel fixture. No public
+	// tunnel is ever created by a native Launch action or this test.
+	if r.count() != 0 {
+		t.Fatal("UI state bypassed backend tunnel validation")
+	}
+}
+
+func TestNativeLaunchPointerProjectControls(t *testing.T) {
+	for _, size := range []image.Point{{1180, 820}, {720, 700}} {
+		for _, lang := range []string{"en", "es"} {
+			t.Run(fmtSize(size)+"-"+lang, func(t *testing.T) {
+				u, r := nativeLaunchTestUI(t, "codex", false, false)
+				u.setLanguage(lang)
+				nativeTestWait(t, u, func() bool { return u.language == lang && u.languageTarget == "" && !u.busy["POST/api/language"] })
+				u.setChecked("client:codex:selected", true)
+				h := &nativePointerHarness{t: t, u: u, size: size, now: time.Now()}
+				h.frame()
+				nativeMenuWheel(h, image.Pt(size.X-80, size.Y-100), 650)
+				label := u.tr("Launch", "Abrir")
+				button := h.target(label, semantic.Button)
+				if !button.Desc.Bounds.In(image.Rectangle{Max: size}) {
+					t.Fatal("native Launch was clipped at project controls")
+				}
+				if out := os.Getenv("KILO_NATIVE_SCREENSHOTS"); out != "" {
+					if err := os.MkdirAll(out, 0755); err != nil {
+						t.Fatal(err)
+					}
+					window, err := headless.NewWindow(size.X, size.Y)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if err = window.Frame(&h.ops); err != nil {
+						window.Release()
+						t.Fatal(err)
+					}
+					pixels := image.NewRGBA(image.Rectangle{Max: size})
+					err = window.Screenshot(pixels)
+					window.Release()
+					if err != nil {
+						t.Fatal(err)
+					}
+					file, err := os.Create(filepath.Join(out, "native-launch-"+fmtSize(size)+"-"+lang+".png"))
+					if err != nil {
+						t.Fatal(err)
+					}
+					err = png.Encode(file, pixels)
+					file.Close()
+					if err != nil {
+						t.Fatal(err)
+					}
+				}
+				h.click(label, semantic.Button)
+				nativeTestWait(t, u, func() bool { return u.clientState().Launching == "" })
+				if r.count() != 1 {
+					t.Fatalf("real pointer did not launch prepared Codex: %s", u.notice)
+				}
+			})
+		}
+	}
+}
+
+func TestNativeClosedCatalogControlsStayInsidePage(t *testing.T) {
+	u, _ := nativeLaunchTestUI(t, "codex", false, false)
+	h := &nativePointerHarness{t: t, u: u, size: image.Pt(720, 700), now: time.Now()}
+	h.frame()
+	bounds := h.target("All labs  ▾", semantic.Button).Desc.Bounds
+	nativeMenuWheel(h, image.Pt(640, 600), 360)
+	offset := u.list("page.clients").Position.Offset
+	center := bounds.Min.Add(bounds.Size().Div(2)).Sub(image.Pt(0, offset))
+	if center.Y < 0 || center.Y >= 78 {
+		t.Fatalf("fixture did not move the old trigger over the fixed header: %v", center)
+	}
+	p := f32.Pt(float32(center.X), float32(center.Y))
+	h.router.Queue(pointer.Event{Kind: pointer.Move, Source: pointer.Mouse, Position: p})
+	h.frame()
+	h.router.Queue(pointer.Event{Kind: pointer.Press, Source: pointer.Mouse, Buttons: pointer.ButtonPrimary, Position: p})
+	h.frame()
+	h.router.Queue(pointer.Event{Kind: pointer.Release, Source: pointer.Mouse, Position: p})
+	h.frame()
+	h.frame()
+	if u.expanded["models.lab"] {
+		t.Fatal("scrolled-out filter trigger intercepted a click in the fixed header")
+	}
+}

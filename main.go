@@ -34,6 +34,9 @@ func randomKey(prefix string) string {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == clientLaunchRunnerFlag {
+		os.Exit(runClientLaunchMode(os.Args[2:]))
+	}
 	noBrowser := flag.Bool("no-browser", false, "Start with the window hidden (also suppresses --browser launch)")
 	noTray := flag.Bool("no-tray", false, "Run headlessly without a window or system tray")
 	useBrowser := flag.Bool("browser", false, "Use the system browser instead of the desktop window")

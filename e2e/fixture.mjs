@@ -54,12 +54,20 @@ export const test = base.extend({
 export {expect};
 
 export async function startProxy(page,gateway) {
-  await page.locator('#api-key').fill('synthetic-kilo-personal-key');
-  await page.locator('#org-id').fill('e2e-team');
-  await page.locator('#port').fill(String(gateway.proxyPort));
-  await page.locator('#remember').check();
-  await page.locator('#start-stop').click();
-  await expect(page.locator('#status-label')).toHaveText('Proxy running');
+  const responses=[];
+  const record=response=>{const endpoint=new URL(response.url()).pathname;if(response.request().method()==='POST'&&['/api/config','/api/start'].includes(endpoint))responses.push({endpoint,status:response.status()});};
+  page.on('response',record);
+  try {
+    await page.locator('#api-key').fill('synthetic-kilo-personal-key');
+    await page.locator('#org-id').fill('e2e-team');
+    await page.locator('#port').fill(String(gateway.proxyPort));
+    await page.locator('#remember').check();
+    await page.locator('#start-stop').click();
+    await expect(page.locator('#status-label')).toHaveText('Proxy running');
+  } catch(error) {
+    error.message+='\nProxy startup diagnostics: '+JSON.stringify({responses,notice:await page.locator('#notice').textContent(),port:await page.locator('#port').inputValue()});
+    throw error;
+  } finally {page.off('response',record);}
 }
 export async function state(request,gateway) {
   const response=await request.get(new URL('/api/state',gateway.url).href,{headers:{Authorization:'Bearer '+gateway.token}});

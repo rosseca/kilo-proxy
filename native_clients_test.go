@@ -127,13 +127,13 @@ func TestNativeClientsFilteringAndDirtyState(t *testing.T) {
 	s := (&nativeClients{}).selection("codex")
 	_ = s.add(catalog[0], 50)
 	s.Models[0].DisplayName = "Short"
-	if got := nativeVisibleModels(catalog, s, "short", false, true); len(got) != 1 || got[0].ID != "vendor/one" {
+	if got := nativeVisibleModels(catalog, s, "short", false, true, "codeModeRank", ""); len(got) != 1 || got[0].ID != "vendor/one" {
 		t.Fatal("saved-name search failed")
 	}
-	if got := nativeVisibleModels(catalog, s, "", true, false); len(got) != 1 {
+	if got := nativeVisibleModels(catalog, s, "", true, false, "codeModeRank", ""); len(got) != 1 {
 		t.Fatal("selected-only filter failed")
 	}
-	if got := nativeVisibleModels(catalog, s, "", false, true); len(got) != 2 {
+	if got := nativeVisibleModels(catalog, s, "", false, true, "codeModeRank", ""); len(got) != 2 {
 		t.Fatal("tool/text filter failed")
 	}
 	if nativeModelPrice(catalog[0]) != "$1 / $2 USD / 1M" || nativeModelPrice(catalog[2]) != "— / — USD / 1M" {
@@ -401,7 +401,7 @@ func TestNativeClientsCatalogRefreshPreservesEditsAndUpdatesMetadata(t *testing.
 	if !m.ReasoningCustom || !reflect.DeepEqual(levels, []string{"low", "high"}) || initial != "high" {
 		t.Fatal("catalog refresh discarded explicit reasoning customization")
 	}
-	visible := nativeVisibleModels(u.models, s, "My short name", true, false)
+	visible := nativeVisibleModels(u.models, s, "My short name", true, false, "codeModeRank", "")
 	if len(visible) != 1 || *visible[0].InputPrice != 4 {
 		t.Fatal("model row did not use refreshed pricing")
 	}

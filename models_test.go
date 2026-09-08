@@ -1,13 +1,242 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 )
+
+func TestPublicModelMetricsPublishedFieldsAndFallbacks(t *testing.T) {
+	metrics, err := parsePublicModelMetrics([]byte(`[
+	 {"openrouterId":"vendor/one","codingIndex":"73.40","speedTokensPerSec":"125.5","chartData":{"modeRankings":{"code":2}},"priceInput":"999"},
+	 {"openrouterId":"vendor/zero","codingIndex":0,"speedTokensPerSec":"0","chartData":{"modeRankings":{"code":0}},"benchmarks":{"artificial_analysis_coding_index":80}},
+	 {"openrouterId":"vendor/fallback","codingIndex":null,"benchmarks":{"artificial_analysis_coding_index":"65.5","median_output_tokens_per_second":40}},
+	 {"openrouterId":"vendor/nested","codingIndex":"NaN","speedTokensPerSec":"Inf","chartData":{"modeRankings":{"code":1.5}},"benchmarks":{"artificialAnalysis":{"codingIndex":55}}},
+	 {"openrouterId":"vendor/unknown","codingIndex":-1,"speedTokensPerSec":null,"chartData":42},
+	 {"openrouterId":"vendor/inactive","isActive":false,"codingIndex":99},
+	 {"openrouterId":"vendor/one","codingIndex":1},false,{},null
+	]`))
+	if err != nil || len(metrics) != 5 {
+		t.Fatalf("metrics=%v error=%v", metrics, err)
+	}
+	assertNumber := func(value *float64, want float64) {
+		t.Helper()
+		if value == nil || *value != want {
+			t.Fatalf("metric=%v, want %v", value, want)
+		}
+	}
+	assertNumber(metrics["vendor/one"].codeModeRank, 2)
+	assertNumber(metrics["vendor/one"].codingIndex, 73.4)
+	assertNumber(metrics["vendor/one"].speed, 125.5)
+	assertNumber(metrics["vendor/zero"].codingIndex, 0)
+	assertNumber(metrics["vendor/zero"].speed, 0)
+	assertNumber(metrics["vendor/fallback"].codingIndex, 65.5)
+	assertNumber(metrics["vendor/fallback"].speed, 40)
+	assertNumber(metrics["vendor/nested"].codingIndex, 55)
+	if metrics["vendor/zero"].codeModeRank != nil || metrics["vendor/nested"].codeModeRank != nil || metrics["vendor/nested"].speed != nil || metrics["vendor/unknown"].codingIndex != nil {
+		t.Fatal("invalid or unknown metrics became sortable values")
+	}
+	for _, invalid := range []string{`null`, `{}`, `{"models":[]}`, `[] trailing`, `[`} {
+		if _, err := parsePublicModelMetrics([]byte(invalid)); err == nil {
+			t.Errorf("accepted invalid metadata %q", invalid)
+		}
+	}
+	for _, invalid := range []string{`"NaN"`, `"-Inf"`, `"Infinity"`, `null`, `true`, `{}`, `[]`, `-1`, `""`} {
+		if modelMetricNumber(json.RawMessage(invalid)) != nil {
+			t.Errorf("accepted invalid numeric metric %q", invalid)
+		}
+	}
+}
+
+func TestPublicModelMetricsEnrichmentNeverChangesGatewayAccessOrPrices(t *testing.T) {
+	a := testApp(t)
+	a.apiKey, a.config.OrgID = "private-personal-key", "private-team"
+	var metadataCalls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/gateway/models":
+			if r.Header.Get("Authorization") != "Bearer private-personal-key" || r.Header.Get("X-KiloCode-OrganizationId") != "private-team" {
+				t.Error("gateway credentials lost")
+			}
+			io.WriteString(w, `{"data":[{"id":"vendor/one","name":"My gateway name","pricing":{"prompt":"0.000002","completion":"0.000005"}},{"id":"vendor/one:free"}]}`)
+		case "/api/models/stats":
+			metadataCalls.Add(1)
+			if r.Method != http.MethodGet || r.Header.Get("Authorization") != "" || r.Header.Get("X-KiloCode-OrganizationId") != "" || r.Header.Get("Cookie") != "" {
+				t.Error("public metadata request included private credentials")
+			}
+			io.WriteString(w, `[{"openrouterId":"vendor/one","name":"Public name","priceInput":"999","priceOutput":"999","codingIndex":"70","speedTokensPerSec":100,"chartData":{"modeRankings":{"code":3}},"private":"must-not-forward"},{"openrouterId":"vendor/unavailable","codingIndex":99}]`)
+		default:
+			t.Errorf("unexpected route %q", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	setUpstream(a, server.URL)
+	a.modelStatsURL = server.URL + "/api/models/stats"
+	for range 2 {
+		models, _, err := a.fetchModels(context.Background(), false)
+		if err != nil || len(models) != 2 {
+			t.Fatalf("models=%v error=%v", models, err)
+		}
+		var enriched, free modelInfo
+		for _, model := range models {
+			if model.ID == "vendor/one" {
+				enriched = model
+			} else {
+				free = model
+			}
+		}
+		if enriched.Name != "My gateway name" || *enriched.InputPrice != 2 || *enriched.OutputPrice != 5 || enriched.CodeModeRank == nil || *enriched.CodeModeRank != 3 || *enriched.CodingIndex != 70 || *enriched.Speed != 100 {
+			t.Fatalf("incorrect enrichment: %+v", enriched)
+		}
+		if free.CodeModeRank != nil || free.CodingIndex != nil || free.Speed != nil {
+			t.Fatal("metrics copied to a different model variant")
+		}
+		body, _ := json.Marshal(models)
+		for _, private := range []string{"private-personal-key", "private-team", "must-not-forward", "vendor/unavailable"} {
+			if strings.Contains(string(body), private) {
+				t.Fatalf("unexpected metadata leaked: %s", private)
+			}
+		}
+	}
+	if metadataCalls.Load() != 1 {
+		t.Fatal("public metadata was not cached")
+	}
+}
+
+type modelMetricTransport func(*http.Request) (*http.Response, error)
+
+func (f modelMetricTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestPublicModelMetricsFailureRetainsGatewayCatalog(t *testing.T) {
+	for _, mode := range []string{"offline", "invalid", "oversized", "server-error", "redirect", "cancelled"} {
+		t.Run(mode, func(t *testing.T) {
+			a := testApp(t)
+			a.modelStatsURL = "https://metadata.invalid/stats"
+			var calls atomic.Int32
+			a.transport = modelMetricTransport(func(r *http.Request) (*http.Response, error) {
+				status, body := http.StatusOK, `{"data":[{"id":"vendor/model"}]}`
+				header := make(http.Header)
+				if r.URL.Host == "metadata.invalid" {
+					calls.Add(1)
+					switch mode {
+					case "offline":
+						return nil, errors.New("private failure detail")
+					case "invalid":
+						body = `{"private":"never-forward"}`
+					case "oversized":
+						body = strings.Repeat(" ", (4<<20)+1)
+					case "server-error":
+						status, body = 503, "private failure detail"
+					case "redirect":
+						status = 302
+						header.Set("Location", "https://must-not-follow.invalid/")
+					case "cancelled":
+						deadline, ok := r.Context().Deadline()
+						if !ok || time.Until(deadline) > modelStatsTimeout {
+							t.Error("metadata request is not bounded")
+						}
+						return nil, context.DeadlineExceeded
+					}
+				} else if r.URL.Host != "api.kilo.ai" {
+					t.Errorf("unexpected network destination %s", r.URL.Host)
+				}
+				return &http.Response{StatusCode: status, Header: header, Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
+			})
+			for range 2 {
+				models, _, err := a.fetchModels(context.Background(), false)
+				if err != nil || len(models) != 1 || models[0].CodingIndex != nil {
+					t.Fatalf("optional stats failure discarded catalog: %v %v", models, err)
+				}
+			}
+			if calls.Load() != 1 {
+				t.Fatal("failed metadata fetch was not backed off")
+			}
+		})
+	}
+}
+
+func TestPublicModelMetricsConcurrentCacheAndLastGoodSnapshot(t *testing.T) {
+	a := testApp(t)
+	a.modelStatsURL = "https://metadata.invalid/stats"
+	started, release := make(chan struct{}), make(chan struct{})
+	var requests atomic.Int32
+	a.transport = modelMetricTransport(func(r *http.Request) (*http.Response, error) {
+		if requests.Add(1) > 1 {
+			return nil, errors.New("temporarily offline")
+		}
+		close(started)
+		<-release
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`[{"openrouterId":"vendor/one","codingIndex":70}]`)), Header: make(http.Header)}, nil
+	})
+	var wait sync.WaitGroup
+	results := make(chan map[string]modelMetric, 8)
+	for range 8 {
+		wait.Add(1)
+		go func() { defer wait.Done(); results <- a.publicModelMetrics(context.Background()) }()
+	}
+	<-started
+	close(release)
+	wait.Wait()
+	close(results)
+	for result := range results {
+		if result["vendor/one"].codingIndex == nil || *result["vendor/one"].codingIndex != 70 {
+			t.Fatal("inconsistent cached metrics")
+		}
+	}
+	if requests.Load() != 1 {
+		t.Fatal("concurrent requests were not combined")
+	}
+	a.mu.Lock()
+	a.modelStatsCache.expiresAt = time.Time{}
+	a.mu.Unlock()
+	if result := a.publicModelMetrics(context.Background()); result["vendor/one"].codingIndex == nil {
+		t.Fatal("last published snapshot lost during outage")
+	}
+	if requests.Load() != 2 {
+		t.Fatal("expired cache was not refreshed")
+	}
+	a.mu.Lock()
+	a.modelStatsURL = "https://different-metadata.invalid/stats"
+	a.mu.Unlock()
+	if result := a.publicModelMetrics(context.Background()); len(result) != 0 {
+		t.Fatal("cached metrics crossed metadata endpoint boundaries")
+	}
+}
+
+func TestPublicModelMetricsRejectsURLCredentialsAndHonorsCancellation(t *testing.T) {
+	transport := modelMetricTransport(func(r *http.Request) (*http.Response, error) {
+		t.Fatal("metadata URL credentials must fail before sending a request")
+		return nil, nil
+	})
+	if _, err := fetchPublicModelMetrics(context.Background(), "https://private:secret@metadata.invalid/stats", transport); err == nil || strings.Contains(err.Error(), "secret") {
+		t.Fatal("metadata URL credentials accepted or exposed")
+	}
+	a := testApp(t)
+	a.modelStatsURL = "https://metadata.invalid/stats"
+	started, release, complete := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	a.transport = modelMetricTransport(func(r *http.Request) (*http.Response, error) {
+		close(started)
+		<-release
+		return nil, context.Canceled
+	})
+	go func() { a.publicModelMetrics(context.Background()); close(complete) }()
+	<-started
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if metrics := a.publicModelMetrics(ctx); metrics != nil {
+		t.Fatal("cancelled waiter returned unexpected metadata")
+	}
+	close(release)
+	<-complete
+}
 
 func TestCatalogNormalizesPricesAndCapabilities(t *testing.T) {
 	models, err := parseModels([]byte(`{"data":[

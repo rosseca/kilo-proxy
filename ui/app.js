@@ -6,7 +6,7 @@ import {claudeCapabilities,claudeEfforts,claudeSelection,claudeSettings} from '.
 import {reportedCost, usageCoverage, cacheStats, lastCacheStats} from './usage-helper.mjs';
 import {formatTraceJSON} from './activity-helper.mjs';
 import {codexCatalog,codexDisplayName,reasoningFor,reasoningLevels} from './codex-catalog.mjs';
-import {filterModels, formatPrice, validModelID} from './model-helper.mjs';
+import {filterModels, formatPrice, modelPriceDetails, validModelID, sortModels, configureModelSort, setModelSort, mergeModelSelection, filterModelLab, configureModelLab, setModelLab} from './model-helper.mjs';
 import {clientConfig, launchCommand} from './client-config.mjs';
 import {chooseLanguage, translate, bindDocument} from './i18n.mjs';
 const $ = (id) => document.getElementById(id);
@@ -39,20 +39,22 @@ if (token && /^[a-f0-9]{64}$/.test(token)) {
 let state, client = 'generic', busy = false, stopped = false, initialized = false, toastTimer;
 let lastAuthStatus, teamSignature = '';
 const clientModels = {};
-const codexClients = Object.fromEntries(['codex','codex-cli'].map(id=>[id,{models:new Map(),initial:'',setup:null}]));
+const codexClients = Object.fromEntries(['codex','codex-cli'].map(id=>[id,{models:new Map(),initial:'',setup:null,preparing:false}]));
 const isCodexClient = () => ['codex','codex-cli'].includes(client);
 const codexSelection = () => codexClients[client] || codexClients.codex;
 const cursorModels = new Map();
 const multiClients = Object.fromEntries(['opencode','claude'].map(id=>[id,{models:new Map(),initial:'',aliases:{},signature:''}]));
-let claudeInstalled=claudeCapabilities(), claudeChecked=false, claudeSetup=null, claudeRendering='';
+let claudeInstalled=claudeCapabilities(), claudeChecked=false, claudeSetup=null, claudeRendering='',claudePreparing=false,claudeDetecting=false;
+let launchInfo=null,launchDetecting=false,launchDetected=false,launchBusy=false,launchMessage='',launchError=false,launchDirectoryEdited=false;
 let cursorSignature = '';
 let desktopSignature = '';
 function codexSetupSignature(selection=codexSelection()) { return JSON.stringify([state?.baseURL,codexCatalog([...selection.models.values()],selection.initial)]); }
 function renderCodexSetup() {
   const cli=client==='codex-cli', setup=codexSelection().setup;
-  $('save-codex-catalog').textContent=t($('save-codex-catalog').disabled ? 'Preparando perfil…' : cli ? '1. Preparar Codex CLI' : '1. Preparar Codex GUI');
+  $('save-codex-catalog').disabled=codexSelection().preparing;
+  $('save-codex-catalog').textContent=t(codexSelection().preparing ? 'Preparando perfil…' : cli ? '1. Preparar Codex CLI' : '1. Preparar Codex GUI');
   const ready=setup?.signature===codexSetupSignature();
-  $('codex-setup-status').textContent=ready ? t('Perfil listo en {path}. Copia el arranque para abrir Codex Kilo. Si ya está abierto, ciérralo primero.',{path:setup.path}) : t(setup ? 'Hay cambios sin guardar. Prepara este perfil antes de abrir Codex Kilo.' : 'Prepara este perfil para guardar los modelos y la configuración.');
+  $('codex-setup-status').textContent=ready ? t('Perfil listo en {path}. Ábrelo con el botón superior. El comando de arranque es opcional.',{path:setup.path}) : t(setup ? 'Hay cambios sin guardar. Se guardarán antes de abrir.' : 'Selecciona modelos y abre el cliente. Su perfil se prepara automáticamente.');
   $('codex-profile-help').textContent=t('Crea {path} y guarda config.toml y models.json en este ordenador. Actualiza los parámetros de Kilo, conserva los demás ajustes y guarda una copia .bak de cada archivo que cambia.',{path:cli ? '~/.codex-kilo-cli' : '~/.codex-kilo-desktop'});
   $('codex-cli-switch-help').hidden=!cli;
 }
@@ -105,8 +107,70 @@ function snippet(reveal = false) {
 function launch(key) {
   return launchCommand({client,key,shell:$('launch-shell').value,platform:$('desktop-platform').value,appPath:$('desktop-app-path').value.trim(),language,catalog:isCodexClient() && codexSelection().models.size > 0});
 }
-const editorHelper=createEditorHelper({api,notify,copy,refreshCatalog:loadModels});
-const xcodeHelper=createXcodeHelper({api,notify,refreshCatalog:loadModels});
+const editorHelper=createEditorHelper({api,notify,copy,refreshCatalog:loadModels,onChange:renderClientLaunch});
+const xcodeHelper=createXcodeHelper({api,notify,refreshCatalog:loadModels,onChange:renderClientLaunch});
+function clientLaunchSelection(){
+ if(isCodexClient()){
+  const selection=codexSelection(),fingerprint=codexSetupSignature(selection);
+  return {id:client,count:selection.models.size,ready:selection.setup?.signature===fingerprint,fingerprint,working:selection.preparing,prepare:prepareCodex};
+ }
+ if(client==='claude')return {id:client,count:multiClients.claude.models.size,ready:claudeSetup?.signature===claudeSetupSignature(),fingerprint:claudeSetupSignature(),working:claudePreparing||claudeDetecting,prepare:prepareClaude};
+ if(['opencode','zed'].includes(client))return editorHelper.launchState();
+ if(client==='xcode')return xcodeHelper.launchState();
+ if(client==='cursor')return {id:client,count:cursorModels.size,ready:true,fingerprint:JSON.stringify(state?.cursor),working:busy};
+ return null;
+}
+function renderClientLaunch(){
+ const L=(en,es)=>language==='en'?en:es,selection=clientLaunchSelection();
+ $('client-launch-bar').hidden=!selection;
+ if(!selection)return;
+ if(!launchDetected&&!launchDetecting)void detectLaunchClients();
+ const installed=launchInfo?.clients?.[selection.id],custom=selection.id==='codex'&&$('client-launch-app').value.trim();
+ const available=!!installed?.available||!!custom,terminal=installed?.kind==='terminal'||['codex-cli','claude','opencode'].includes(selection.id);
+ const name=installed?.name||({'codex':'Codex Desktop','codex-cli':'Codex CLI',claude:'Claude Code',opencode:'OpenCode',zed:'Zed',cursor:'Cursor'}[selection.id]||'Xcode');
+ $('client-launch-title').textContent=L('Open on this computer','Abrir en este ordenador');
+ $('client-launch-refresh').textContent=launchDetecting?L('Checking…','Comprobando…'):L('Check installed apps','Comprobar aplicaciones');
+ $('client-launch-refresh').disabled=launchDetecting||launchBusy;
+ $('client-launch-directory-label').textContent=L('Project folder (optional)','Carpeta del proyecto (opcional)');
+ $('client-launch-directory').placeholder=launchInfo?.directory||'';
+ $('client-launch-custom').hidden=selection.id!=='codex';
+ $('client-launch-custom-label').textContent=L('Custom Codex application','Aplicación de Codex personalizada');
+ $('client-launch-app-label').textContent=L('Application path on this computer','Ruta de la aplicación en este ordenador');
+ $('client-launch-app').placeholder=launchInfo?.clients?.codex?.path||L('Absolute application path','Ruta absoluta de la aplicación');
+ const runningTunnel=selection.id!=='cursor'||state?.cursor?.status==='running';
+ $('client-launch').textContent=launchBusy?L('Launching…','Abriendo…'):L('Launch ',terminal?'Iniciar ':'Abrir ')+name;
+ $('client-launch').disabled=launchBusy||launchDetecting||selection.working||!state||!selection.count||!available||!runningTunnel;
+ $('client-launch-help').textContent=L('Opens with the current models and Kilo configuration. Changes are saved first. Command export settings below apply only to copied commands.','Abre con los modelos y la configuración de Kilo actuales. Los cambios se guardan antes. Los ajustes de exportación inferiores solo afectan a los comandos copiados.')+(selection.id==='cursor'?L(' Connect the HTTPS tunnel first and keep the one-time provider setup in Cursor.',' Conecta primero el túnel HTTPS y mantén la configuración inicial del proveedor en Cursor.'):selection.id==='zed'?L(' Paste the local key into Zed once using the instructions below.',' Pega la clave local en Zed una vez siguiendo las instrucciones inferiores.'):selection.id==='xcode-chat'?L(' Add the chat provider in Xcode once using the connection details below.',' Añade el proveedor de chat en Xcode una vez con la conexión indicada abajo.'):'');
+ const reason=!runningTunnel?L('Connect the Cursor HTTPS tunnel before opening.','Conecta el túnel HTTPS de Cursor antes de abrir.'):!available&&!launchDetecting?(installed?.reason||L('Application not detected. Install it, then check again.','Aplicación no detectada. Instálala y vuelve a comprobar.')):!selection.count?L('Select at least one model.','Selecciona al menos un modelo.'):'';
+ $('client-launch-status').textContent=launchMessage||reason;
+ $('client-launch-status').classList.toggle('error',launchError);
+}
+async function detectLaunchClients(){
+ if(launchDetecting)return;
+ launchDetecting=true;launchDetected=true;renderClientLaunch();
+ try{
+  launchInfo=await api('clients/launch');
+  if(!launchDirectoryEdited)$('client-launch-directory').value=launchInfo.directory||'';
+ }catch(error){launchMessage=error.message;launchError=true;}
+ finally{launchDetecting=false;renderClientLaunch();}
+}
+function launchFingerprint(){const selection=clientLaunchSelection();return JSON.stringify([selection?.id,selection?.fingerprint,$('client-launch-directory').value.trim(),selection?.id==='codex'?$('client-launch-app').value.trim():'']);}
+async function openClient(){
+ if(launchBusy||$('client-launch').disabled)return;
+ const selection=clientLaunchSelection(),fingerprint=launchFingerprint();
+ const body={client:selection.id,directory:$('client-launch-directory').value.trim(),...(selection.id==='codex'&&$('client-launch-app').value.trim()?{appPath:$('client-launch-app').value.trim()}:{})};
+ launchBusy=true;launchMessage='';launchError=false;renderClientLaunch();
+ try{
+  if(!selection.ready)await selection.prepare();
+  if(fingerprint!==launchFingerprint())throw new Error(language==='en'?'Your selection changed while preparing. Review it and open again.':'La selección cambió durante la preparación. Revísala y vuelve a abrir.');
+  const result=await api('clients/launch',body);launchMessage=result.message;await refresh();
+ }catch(error){launchMessage=error.message;launchError=true;}
+ finally{launchBusy=false;renderClientLaunch();}
+}
+$('client-launch').addEventListener('click',openClient);
+$('client-launch-refresh').addEventListener('click',()=>{launchMessage='';launchError=false;void detectLaunchClients();});
+$('client-launch-directory').addEventListener('input',()=>{launchDirectoryEdited=true;launchMessage='';launchError=false;renderClientLaunch();});
+$('client-launch-app').addEventListener('input',()=>{launchMessage='';launchError=false;renderClientLaunch();});
 function renderSnippet() {
  const xcodeActive=client==='xcode',editorActive=['opencode','zed'].includes(client);
  $('editor-helper').hidden=!editorActive;
@@ -118,12 +182,13 @@ function renderSnippet() {
   const isCodex = ['codex','codex-cli'].includes(client);
   $('codex-copy-help').hidden = !isCodex;
   $('codex-copy-title').textContent=t(client==='codex' ? 'Configurar y abrir Codex GUI' : 'Configurar y abrir Codex CLI');
-  $('codex-copy-first').textContent=t(client==='codex' ? '1. Selecciona los modelos y pulsa «Preparar Codex GUI». Se crean la carpeta, config.toml y models.json; si ya existen, se actualizan.' : '1. Selecciona los modelos y pulsa «Preparar Codex CLI». Se crean la carpeta, config.toml y models.json; si ya existen, se actualizan.');
-  $('copy-launch').textContent = t(isCodex || client==='claude' ? '2. Copiar arranque ↗' : 'Copiar comando ↗');
+  $('codex-copy-first').textContent=t('Selecciona modelos y abre el cliente con el botón superior. La carpeta, config.toml y models.json se crean o actualizan automáticamente.');
+  $('copy-launch').textContent = t('Copiar arranque (opcional) ↗');
   renderDesktopModels();
   renderCursorModels();
   renderMultiClients();
   const info = descriptions[client].map(value => t(value));
+  if(isCodex||client==='claude')info[1]=t('Selecciona modelos y abre el cliente desde el botón superior. Se prepara su perfil aislado con la configuración actual. Los comandos y archivos de abajo son exportaciones opcionales.');
   $('context-setting').hidden = client !== 'zed';
   $('protocol-note').hidden = !['codex','codex-cli','claude'].includes(client);
   $('protocol-note').textContent = ['codex','codex-cli'].includes(client) ? t('Usa un modelo de Kilo compatible con Responses. El proxy transmite HTTP/SSE; no traduce Chat Completions a Responses.') : t('La URL de Claude no lleva /v1: el SDK lo añade. Cada modelo debe admitir Anthropic Messages. Los alias también se usan en tareas internas; elige modelos compatibles para los tres.');
@@ -140,6 +205,7 @@ function renderSnippet() {
   if (client === 'codex') $('protocol-note').textContent = t('El perfil de Kilo tiene su propio config.toml y sus propios datos de interfaz. No copies auth.json ni cookies del perfil principal. El mecanismo de aislamiento se ha verificado en el código de la app instalada; puede variar entre versiones. Usa un modelo compatible con Responses.');
   $('client-heading').textContent = info[0]; $('client-description').textContent = info[1]; $('snippet-name').textContent = info[2];
   $('snippet-code').textContent = snippet();
+  renderClientLaunch();
 }
 function render(s) {
   state = s;
@@ -416,7 +482,7 @@ function codexVisibleModels() {
   const available=new Map(catalog.map(model=>[model.id,model]));
   for(const [id,model] of codexSelection().models)available.set(id,available.has(id) ? {...available.get(id),displayName:model.displayName} : model);
   const selectedOnly=$('codex-selected-only').checked;
-  const candidates=[...available.values()].filter(model=>!selectedOnly || codexSelection().models.has(model.id));
+  const candidates=filterModelLab([...available.values()],$('model-lab').value).filter(model=>!selectedOnly || codexSelection().models.has(model.id));
   return candidates.filter(model=>filterModels([{...model,name:(model.name || '')+' '+codexDisplayName(model)}],$('model-search').value,false).length).filter(model=>selectedOnly || codexSelection().models.has(model.id) || !$('coding-models').checked || (model.tools===true && model.outputModalities?.includes('text')));
 }
 $('add-codex-model').addEventListener('click',()=>{
@@ -445,18 +511,19 @@ $('load-codex-catalog').addEventListener('click',async()=>{
   }catch(error){notify(error.message,true);}
 });
 $('suggest-codex-reasoning').addEventListener('click',()=>{for(const model of codexSelection().models.values()){model.reasoningEfforts=catalog.find(entry=>entry.id===model.id)?.reasoningEfforts;delete model.reasoningLevels;delete model.defaultReasoning;}renderSnippet();});
-$('save-codex-catalog').addEventListener('click',async()=>{
+async function prepareCodex(){
   const target=client, selection=codexSelection();
   if(!selection.models.size)return;
-  const button=$('save-codex-catalog');button.disabled=true;
-  button.textContent=t('Preparando perfil…');
+  if(selection.preparing)throw new Error(language==='en'?'This profile is already being prepared.':'Este perfil ya se está preparando.');
+  selection.preparing=true;renderCodexSetup();renderClientLaunch();
   const signature=codexSetupSignature(selection);
   try {
     const result=await api(target+'/catalog',{catalog:codexCatalog([...selection.models.values()],selection.initial)});
     selection.setup={signature,path:result.profileDir};renderCodexSetup();toast(target==='codex-cli' ? 'Perfil de Codex CLI preparado' : 'Perfil de Codex GUI preparado');
-  }catch(error){selection.setup=null;renderCodexSetup();notify(error.message,true);}
-  finally{button.disabled=false;renderCodexSetup();}
-});
+  }catch(error){selection.setup=null;throw error;}
+  finally{selection.preparing=false;renderCodexSetup();renderClientLaunch();}
+}
+$('save-codex-catalog').addEventListener('click',()=>prepareCodex().catch(error=>notify(error.message,true)));
 $('codex-manual-id').addEventListener('input',renderDesktopModels);
 $('codex-selected-only').addEventListener('change',renderModels);
 $('download-codex-catalog').addEventListener('click',()=>{
@@ -469,33 +536,34 @@ function applyModelContext() {
   if (selected?.contextWindow) $('context-window').value = selected.contextWindow;
 }
 function renderModels() {
-  const matches = ['codex','codex-cli','claude'].includes(client) ? codexVisibleModels() : filterModels(catalog, $('model-search').value, $('coding-models').checked);
+  configureModelSort($('model-sort'),language);
+  const manualModels=isCodexClient() ? [...codexSelection().models.values()] : client==='claude' ? [...multiClients.claude.models.values()] : client==='cursor' ? [...cursorModels.keys()].map(id=>({id})) : validModelID($('model').value.trim()) ? [{id:$('model').value.trim()}] : [];
+  configureModelLab($('model-lab'),[...catalog,...manualModels],language);
+  const availableCount=new Set([...catalog,...manualModels].map(model=>model.id)).size;
+  const matches = sortModels(['codex','codex-cli','claude'].includes(client) ? codexVisibleModels() : filterModels(filterModelLab(catalog,$('model-lab').value), $('model-search').value, $('coding-models').checked),$('model-sort').value);
   const selectedID = $('model').value.trim();
   const selected = catalog.find(m => m.id === selectedID);
   $('load-models').disabled = catalogLoading || ['starting','pending'].includes(state?.auth?.status);
-  $('catalog-status').textContent = catalogLoading ? t('Cargando modelos de Kilo…') : catalogError ? t(catalogError) : t('{shown} de {total} modelos · actualizado {time}', {shown:matches.length,total:catalog.length,time:catalogFetchedAt ? new Date(catalogFetchedAt).toLocaleTimeString(language, {hour:'2-digit',minute:'2-digit'}) : '—'});
+  $('catalog-status').textContent = catalogLoading ? t('Cargando modelos de Kilo…') : catalogError ? t(catalogError) : t('{shown} de {total} modelos · actualizado {time}', {shown:matches.length,total:availableCount,time:catalogFetchedAt ? new Date(catalogFetchedAt).toLocaleTimeString(language, {hour:'2-digit',minute:'2-digit'}) : '—'});
   const picker = $('model-picker'), restoreFocus = picker.contains(document.activeElement), scroll = picker.scrollTop;
   const focusKey=document.activeElement?.dataset.focus;
   const caret=document.activeElement?.classList.contains('codex-name-input') ? [document.activeElement.selectionStart,document.activeElement.selectionEnd] : null;
   const expanded=new Set([...picker.querySelectorAll('details[open]')].map(el=>el.dataset.model));
   picker.replaceChildren();
   for (const m of matches) {
-    const row = document.createElement('label'), radio = document.createElement('input'), name = document.createElement('span'), prices = document.createElement('span');
+    const row = document.createElement('label'), radio = document.createElement('input'), name = document.createElement('span');
     row.className = 'model-option'; radio.type = ['codex','codex-cli','claude'].includes(client) ? 'checkbox' : 'radio'; radio.name = 'model-choice'; radio.value = m.id;radio.dataset.focus='model:'+m.id; radio.checked = isCodexClient() ? codexSelection().models.has(m.id) : client==='claude' ? multiClients.claude.models.has(m.id) : m.id === selectedID; radio.disabled = catalogLoading;
     const shownName=isCodexClient() ? codexDisplayName(m) : client==='claude' ? (m.displayName || m.name || m.id) : m.name;
     radio.setAttribute('aria-label',shownName + ' · ' + m.id);
     const title = document.createElement('strong'), id = document.createElement('small'); title.textContent = shownName; id.textContent = m.id; name.append(title,id);
-    prices.className = 'model-option-prices';
-    for (const [label,price] of [['Entrada',m.inputPrice],['Salida',m.outputPrice]]) {
-      const line = document.createElement('span'); line.textContent = `${t(label)} ${formatPrice(price,language) ?? t('Variable / sin dato')}`; prices.append(line);
-    }
-    row.append(radio,name,prices);
+    name.className='model-option-title';
+    row.append(radio,name,modelPriceDetails(m,language));
     if(isCodexClient()){
       const entry=document.createElement('div');entry.className='codex-model-entry';entry.classList.toggle('is-selected',codexSelection().models.has(m.id));entry.append(row);
       if(codexSelection().models.has(m.id))entry.append(codexRowControls(codexSelection().models.get(m.id),expanded));
       picker.append(entry);
     }else if(client==='claude'){const entry=document.createElement('div');entry.className='codex-model-entry';entry.classList.toggle('is-selected',multiClients.claude.models.has(m.id));entry.append(row);if(multiClients.claude.models.has(m.id))entry.append(claudeRowControls(multiClients.claude.models.get(m.id)));picker.append(entry);}
-    else picker.append(row);
+    else {row.classList.add('model-card');picker.append(row);}
   }
   if (!matches.length && !catalogLoading) { const empty=document.createElement('p');empty.textContent=t('Sin resultados. Cambia la búsqueda o desactiva el filtro.');picker.append(empty); }
   if(restoreFocus){const control=[...picker.querySelectorAll('[data-focus]')].find(el=>el.dataset.focus===focusKey);control?.focus({preventScroll:true});if(caret && control?.classList.contains('codex-name-input'))control.setSelectionRange(...caret);}
@@ -505,7 +573,7 @@ function renderModels() {
     : client === 'claude' ? t('Claude Code requiere Messages. Busca Anthropic como punto de partida; el catálogo no certifica esa compatibilidad.')
     : t('Selecciona un modelo y el helper completará su ID y la ventana de contexto de Zed.');
   const details = $('model-details'); details.replaceChildren(); details.hidden = ['codex','codex-cli','claude'].includes(client) || !selectedID;
-  if(['codex','codex-cli','claude'].includes(client)){$('model-hint').textContent=t('Marca modelos, ajusta el razonamiento en su fila y guarda. La estrella indica el modelo inicial.');return;}
+  if(['codex','codex-cli','claude'].includes(client)){$('model-hint').textContent=t('Marca modelos, ajusta el razonamiento en su tarjeta y guarda. La estrella indica el modelo inicial.');return;}
   if (!selected) {
     if (selectedID) details.textContent = t('ID manual o no encontrado en el catálogo actual. Revisa el modelo y su ventana de contexto.');
     return;
@@ -536,6 +604,8 @@ async function loadModels() {
 }
 $('load-models').addEventListener('click', () => void loadModels());
 $('model-search').addEventListener('input', renderModels);
+$('model-sort').addEventListener('change', () => { setModelSort($('model-sort').value); $('model-picker').scrollTop=0; renderModels(); });
+$('model-lab').addEventListener('change', () => { setModelLab($('model-lab').value); $('model-picker').scrollTop=0; renderModels(); });
 $('coding-models').addEventListener('change', renderModels);
 $('model-picker').addEventListener('change', event => {
   if(!event.target.matches('input[name="model-choice"]'))return;
@@ -588,6 +658,7 @@ function selectClient(button) {
   clientModels[client] = $('model').value;
   $('model').value = clientModels[button.dataset.client] || '';
   client = button.dataset.client;
+  launchMessage='';launchError=false;
   document.querySelectorAll('[data-client]').forEach(b => { b.setAttribute('aria-selected', String(b === button)); b.tabIndex = b === button ? 0 : -1; });
   $('client-panel').setAttribute('aria-labelledby', button.id); applyModelContext(); renderModels(); renderSnippet();
 }
@@ -654,10 +725,11 @@ function renderClaudeSetup(){
  const s=multiClients.claude,caps=currentClaudeCaps();
  $('claude-models').hidden=client!=='claude';
  $('claude-model-actions').hidden=!s.models.size;
- $('save-claude-profile').textContent=t($('save-claude-profile').disabled ? 'Preparando perfil…' : '1. Preparar Claude Code');
+ $('save-claude-profile').disabled=claudePreparing;
+ $('save-claude-profile').textContent=t(claudePreparing ? 'Preparando perfil…' : '1. Preparar Claude Code');
  $('claude-version-status').textContent=t(claudeInstalled.version ? 'Claude Code {version} · compatible con la configuración de Kilo' : claudeChecked ? 'No se pudo detectar Claude Code. Se usa compatibilidad básica.' : 'Versión pendiente de comprobar.',{version:claudeInstalled.version});
  $('claude-capabilities-note').textContent=t(caps.perModelEffort ? 'Lista y nombres personalizados, con preferencias de razonamiento por modelo compatibles con Claude Code 2.1.251+.' : caps.picker ? 'Lista y nombres personalizados disponibles. El razonamiento inicial es global en esta versión.' : 'Esta versión usa alias y comandos /model. Los nombres cortos se guardan en el helper; el selector personalizado requiere 2.1.242+.');
- $('claude-setup-status').textContent=claudeSetup?.signature===claudeSetupSignature() ? t('Configuración guardada en {path}. Claude Code está listo para arrancar con Kilo.',{path:claudeSetup.path}) : t(claudeSetup ? 'Hay cambios sin guardar. Vuelve a preparar Claude Code.' : 'Pulsa «Preparar Claude Code» para guardar este perfil.');
+ $('claude-setup-status').textContent=claudeSetup?.signature===claudeSetupSignature() ? t('Configuración guardada en {path}. Claude Code está listo para arrancar con Kilo.',{path:claudeSetup.path}) : t(claudeSetup ? 'Hay cambios sin guardar. Se guardarán antes de abrir.' : 'Selecciona modelos y abre el cliente. Su perfil se prepara automáticamente.');
  if(client==='claude')$('codex-selection-count').textContent=t(s.models.size===1 ? '1 modelo seleccionado' : '{count} modelos seleccionados',{count:s.models.size});
  const id=$('claude-manual-id').value.trim();$('add-claude-model').disabled=!validModelID(id) || s.models.has(id) || s.models.size>=50;
  const signature=JSON.stringify([currentClaudeSelection(),caps,language]);
@@ -671,9 +743,9 @@ function renderClaudeSetup(){
 }
 function claudeVisibleModels(){
  const selection=multiClients.claude.models,available=new Map(catalog.map(m=>[m.id,m]));
- for(const [id,m] of selection)available.set(id,{...available.get(id),...m});
+ for(const [id,m] of selection)available.set(id,mergeModelSelection(available.get(id),m));
  const query=$('model-search').value.trim().toLowerCase();
- return [...available.values()].filter(m=>(!$('codex-selected-only').checked || selection.has(m.id)) && (m.id+' '+(m.name || '')+' '+(m.displayName || '')).toLowerCase().includes(query) && (selection.has(m.id) || !$('coding-models').checked || m.tools===true && m.outputModalities?.includes('text')));
+ return filterModelLab([...available.values()],$('model-lab').value).filter(m=>(!$('codex-selected-only').checked || selection.has(m.id)) && (m.id+' '+(m.name || '')+' '+(m.displayName || '')).toLowerCase().includes(query) && (selection.has(m.id) || !$('coding-models').checked || m.tools===true && m.outputModalities?.includes('text')));
 }
 function claudeRowControls(model){
  const s=multiClients.claude,caps=currentClaudeCaps(),controls=document.createElement('div');controls.className='codex-row-controls';
@@ -689,8 +761,8 @@ function claudeRowControls(model){
  return controls;
 }
 async function detectClaude(){
- $('detect-claude').disabled=true;
- try{claudeInstalled=await api('claude/info');claudeChecked=true;renderSnippet();}catch(error){notify(error.message,true);}finally{$('detect-claude').disabled=false;}
+ claudeDetecting=true;$('detect-claude').disabled=true;renderClientLaunch();
+ try{claudeInstalled=await api('claude/info');claudeChecked=true;renderSnippet();}catch(error){notify(error.message,true);}finally{claudeDetecting=false;$('detect-claude').disabled=false;renderClientLaunch();}
 }
 $('detect-claude').addEventListener('click',detectClaude);
 $('tab-claude').addEventListener('click',()=>{if(!claudeChecked)void detectClaude();});
@@ -701,12 +773,14 @@ $('add-claude-model').addEventListener('click',()=>{
  s.models.set(id,{...(catalog.find(m=>m.id===id) || {id,name:id})});if(!s.initial)s.initial=id;
  $('model-search').value='';$('codex-selected-only').checked=true;$('claude-manual-id').value='';renderModels();renderSnippet();
 });
-$('save-claude-profile').addEventListener('click',async()=>{
+async function prepareClaude(){
  if(!multiClients.claude.models.size)return;
- const signature=claudeSetupSignature(),button=$('save-claude-profile');button.disabled=true;renderClaudeSetup();
+ if(claudePreparing)throw new Error(language==='en'?'This profile is already being prepared.':'Este perfil ya se está preparando.');
+ const signature=claudeSetupSignature();claudePreparing=true;renderClaudeSetup();renderClientLaunch();
  try{const result=await api('claude/profile',currentClaudeSelection());claudeSetup={signature,path:result.profileDir};toast('Perfil de Claude preparado');}
- catch(error){claudeSetup=null;notify(error.message,true);}finally{button.disabled=false;renderClaudeSetup();}
-});
+ catch(error){claudeSetup=null;throw error;}finally{claudePreparing=false;renderClaudeSetup();renderClientLaunch();}
+}
+$('save-claude-profile').addEventListener('click',()=>prepareClaude().catch(error=>notify(error.message,true)));
 $('load-claude-profile').addEventListener('click',async()=>{
  try{const saved=await api('claude/profile'),s=multiClients.claude;s.models.clear();for(const m of saved.models)s.models.set(m.id,{...catalog.find(entry=>entry.id===m.id),...m,name:m.displayName || m.id});s.initial=saved.initial;s.aliases=saved.aliases || {};$('claude-mode').value=saved.mode;$('codex-selected-only').checked=true;$('model-search').value='';renderModels();renderSnippet();toast('Perfil de Claude cargado');}catch(error){notify(error.message,true);}
 });

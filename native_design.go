@@ -105,7 +105,10 @@ func (u *nativeUI) pageTop(gtx layout.Context) layout.Dimensions {
 	)
 }
 func (u *nativeUI) Layout(gtx layout.Context) layout.Dimensions {
+	u.beginModelMenus(gtx)
+	defer u.trackModelMenuPointer(gtx)
 	u.drain()
+	u.dismissModelSort(gtx)
 	u.laidOut = true
 	paint.Fill(gtx.Ops, u.theme.Bg)
 	wide := gtx.Constraints.Max.X >= gtx.Dp(940)
@@ -168,7 +171,9 @@ func (u *nativeUI) Layout(gtx layout.Context) layout.Dimensions {
 			)
 		})
 	}))
-	return layout.Flex{Axis: layout.Horizontal}.Layout(gtx, children...)
+	dims := layout.Flex{Axis: layout.Horizontal}.Layout(gtx, children...)
+	u.layoutActiveModelMenu(gtx)
+	return dims
 }
 
 // pills wraps compact controls at their natural width, avoiding a table of
