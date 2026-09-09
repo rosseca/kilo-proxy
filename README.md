@@ -20,7 +20,7 @@ The default API URL is `http://127.0.0.1:8877/v1`. The editor uses a randomly ge
 
 **Check gateway** retrieves the model catalog without paid inference. Catalog access does not prove organization balance or permission to generate with a model. Verify those with a request from your editor and its attribution in Kilo.
 
-Closing the application window leaves the proxy running. The system tray / menu bar can reopen the interface, show status and observed spend, start or stop the saved connection, and quit the application. **Settings → Appearance** saves your choice of **K icon** or **Session cost**; macOS can show the amount directly, while other tray hosts may use the icon, tooltip and menu. Stopping cancels active requests. The proxy does not start automatically when opening the application.
+Closing the application window leaves the proxy running. The system tray / menu bar can reopen the interface, show status and observed spend, start or stop the saved connection, and quit the application. **Settings → Appearance** saves your choice of **K icon** or **Session cost**; macOS shows the K icon and amount together in **Session cost**, while other tray hosts may use the K icon, tooltip and menu. Stopping cancels active requests. The proxy does not start automatically when opening the application.
 
 ## Downloads
 

@@ -271,13 +271,7 @@ func (d *nativeDesktop) updateTray() {
 	if s.display != d.last.display || s.display == trayDisplaySpend && s.amount != d.last.amount {
 		if s.display == trayDisplaySpend {
 			systray.SetTitle(s.amount)
-			if runtime.GOOS == "darwin" {
-				systray.ClearIcon()
-			}
 		} else {
-			if runtime.GOOS == "darwin" {
-				systray.SetTemplateIcon(trayIcon(true), trayIcon(false))
-			}
 			systray.SetTitle("")
 		}
 	}

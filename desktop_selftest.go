@@ -195,7 +195,7 @@ func (d *nativeDesktop) checkDesktop(checks *[]string) error {
 			}
 			if title, icon, supported := systray.TrayAppearance(); supported {
 				if mode == trayDisplaySpend {
-					return title == "$0.00" && !icon
+					return title == "$0.00" && icon
 				}
 				return title == "" && icon
 			}

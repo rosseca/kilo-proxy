@@ -440,11 +440,6 @@ void setIcon(const char* iconBytes, int length, bool template) {
   }
 }
 
-// Keep the status item and menu available when the title carries the content.
-void clearIcon(void) {
-  runInMainThread(@selector(setIcon:), nil);
-}
-
 char* copyTrayAppearance(bool *hasIcon) {
   @autoreleasepool {
     NSMutableDictionary *appearance = [[NSMutableDictionary alloc] init];

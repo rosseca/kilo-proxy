@@ -45,7 +45,7 @@ func (u *nativeUI) appearancePanel() layout.Widget {
 		}
 		choices = append(choices, u.disabled(!saving, u.button("appearance.tray."+choice.value, label, func() { u.saveTraySettings(choice.value) })))
 	}
-	platformNote := u.tr("The menu bar shows the amount in place of the K icon.", "La barra de menús muestra el importe en lugar del icono K.")
+	platformNote := u.tr("Session cost shows the K icon with the amount beside it in the menu bar.", "El modo Coste de esta sesión muestra el icono K con el importe a su lado en la barra de menús.")
 	switch runtime.GOOS {
 	case "windows":
 		platformNote = u.tr("Windows keeps the K icon. The amount appears on hover and in the tray menu.", "Windows mantiene el icono K. El importe aparece al pasar el cursor y en el menú de la bandeja.")

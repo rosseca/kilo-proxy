@@ -5,18 +5,11 @@ package systray
 /*
 #include <stdbool.h>
 #include <stdlib.h>
-void clearIcon(void);
 char* copyTrayAppearance(bool *hasIcon);
 */
 import "C"
 
 import "unsafe"
-
-// ClearIcon removes only the macOS status button image, preserving its title,
-// menu and click target. SetIcon or SetTemplateIcon restores it.
-func ClearIcon() {
-	C.clearIcon()
-}
 
 // TrayAppearance snapshots the real status button on Cocoa's main thread.
 // The last result reports whether this inspection is supported on this OS.

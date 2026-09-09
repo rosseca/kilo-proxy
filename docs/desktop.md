@@ -48,7 +48,7 @@ These images are rendered by Gio with synthetic test data, using the same layout
 - The tray menu shows the team, endpoint, request counts, reported cost coverage and connection state. **Start proxy** and **Stop proxy** control the same backend as the window.
 - **Stop proxy** cancels active requests. **Quit Kilo Proxy** stops the application and proxy.
 
-**Settings → Appearance** saves **K icon** or **Session cost** without restarting the proxy. macOS can replace the icon with the current amount. Windows retains a tray icon with the amount in its tooltip/menu; Linux title support depends on the shell, with tooltip/menu as the fallback. The menu remains usable in either mode.
+**Settings → Appearance** saves **K icon** or **Session cost** without restarting the proxy. On macOS, **Session cost** shows the K icon and the current amount together; **K icon** shows just the icon. Windows retains the K icon with the amount in its tooltip/menu; Linux shows the K icon and, where the shell supports a title, the amount beside it, with tooltip/menu as the fallback. The menu remains usable in either mode.
 
 Spend covers the current Kilo Proxy process, across all conversations and image calls. It survives hiding the window, stopping/restarting the proxy, changing organizations and clearing request captures. Quitting resets it. The display uses `$0.00` before any requests, `—` when requests have no reported costs, `<$0.01` for a positive sub-cent amount, and `*` for a subtotal with missing costs. The menu shows reported/total request coverage. These observations are not your organization's invoice or remaining balance.
 
