@@ -53,9 +53,11 @@ func testApp(t *testing.T) *app {
 		t.Fatal(err)
 	}
 	a.adminHost = "127.0.0.1:9999"
+	a.zedCredentialStore = fakeZedCredentialStore
 	t.Cleanup(a.stop)
 	return a
 }
+func fakeZedCredentialStore(context.Context, string, string, string) error { return nil }
 func adminRequest(a *app, path, body string) *httptest.ResponseRecorder {
 	method := "POST"
 	if body == "" {

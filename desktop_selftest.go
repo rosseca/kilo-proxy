@@ -11,10 +11,14 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
+	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
 	"time"
+
+	"fyne.io/systray"
 )
 
 func (a *app) desktopTestGateway() func() {
@@ -117,6 +121,20 @@ func (d *nativeDesktop) readClipboard() (string, error) {
 	}
 }
 
+func (d *nativeDesktop) sharedModelSmokeSaved(name string) bool {
+	state := d.owner.modelLibrary.snapshot()
+	data, err := readModelLibraryFile(filepath.Join(d.owner.dir, "models.json"))
+	if err != nil {
+		return false
+	}
+	disk, err := decodeModelLibrary(data)
+	if err != nil || !reflect.DeepEqual(disk, state.Library) || len(disk.Models) != 2 || disk.DefaultModel != modelSmokeDefault {
+		return false
+	}
+	choice := disk.Models[1]
+	return disk.Models[0].ID == modelSmokeFirst && choice.ID == modelSmokeDefault && choice.DisplayName == name && choice.ReasoningCustom && choice.ReasoningEffort == "high" && reflect.DeepEqual(choice.ReasoningLevels, []string{"low", "high"})
+}
+
 func (d *nativeDesktop) checkDesktop(checks *[]string) error {
 	passed := func(name string) {
 		*checks = append(*checks, name)
@@ -155,6 +173,70 @@ func (d *nativeDesktop) checkDesktop(checks *[]string) error {
 		}
 		passed("window-and-tray-language-" + language)
 	}
+	for step, mode := range []string{trayDisplayIcon, trayDisplaySpend, trayDisplayIcon} {
+		if err := d.withUI(func() error {
+			d.ui.saveTraySettings(mode)
+			return nil
+		}); err != nil {
+			return err
+		}
+		if err := desktopWait("persisted tray appearance "+mode, func() bool {
+			ready := false
+			err := d.withUI(func() error {
+				ready = !d.ui.busy["PUT/api/tray-settings"] && d.ui.value("appearance.tray") == mode
+				return nil
+			})
+			if err != nil || !ready {
+				return false
+			}
+			saved, err := readSettings(d.owner.dir)
+			if err != nil || saved.TrayDisplay != mode {
+				return false
+			}
+			if title, icon, supported := systray.TrayAppearance(); supported {
+				if mode == trayDisplaySpend {
+					return title == "$0.00" && icon
+				}
+				return title == "" && icon
+			}
+			return true
+		}); err != nil {
+			return err
+		}
+		checkMode := mode
+		if step == 2 {
+			checkMode = "icon-restored"
+		}
+		passed("tray-appearance-persisted-" + checkMode)
+		if runtime.GOOS == "darwin" {
+			passed("cocoa-tray-title-and-image-" + checkMode)
+		}
+	}
+	if err := d.withUI(func() error { return d.ui.SmokeAction("seed-shared-models", "") }); err != nil {
+		return err
+	}
+	if err := desktopWait("shared models, name, default and reasoning on disk", func() bool {
+		state, err := d.snapshot()
+		return err == nil && state["shared-model-saving"] == "false" && d.sharedModelSmokeSaved(modelSmokeName)
+	}); err != nil {
+		return err
+	}
+	passed("shared-model-library-autosave")
+	for _, page := range []string{"agents", "models", "activity", "settings"} {
+		if err := d.withUI(func() error { return d.ui.SmokeAction("navigate-primary", page) }); err != nil {
+			return err
+		}
+		if err := desktopWait("primary navigation to "+page, func() bool {
+			state, err := d.snapshot()
+			return err == nil && state["page"] == page && state["shared-model-count"] == "2" && state["shared-default"] == modelSmokeDefault && state["shared-default-name"] == modelSmokeName && state["shared-default-reasoning"] == "high"
+		}); err != nil {
+			return err
+		}
+	}
+	if err := d.withUI(func() error { return d.ui.SmokeAction("verify-shared-agents", modelSmokeName) }); err != nil {
+		return err
+	}
+	passed("primary-navigation-preserves-shared-models")
 	previous, readErr := d.readClipboard()
 	if readErr != nil {
 		return readErr
@@ -192,6 +274,9 @@ func (d *nativeDesktop) checkDesktop(checks *[]string) error {
 		return err
 	}
 	passed("proxy-start-via-ui")
+	if err := d.withUI(func() error { return d.ui.SmokeAction("edit-shared-name", modelSmokeRenamed) }); err != nil {
+		return err
+	}
 	d.mu.Lock()
 	previousFrames := d.frames
 	d.mu.Unlock()
@@ -202,6 +287,9 @@ func (d *nativeDesktop) checkDesktop(checks *[]string) error {
 		d.mu.Unlock()
 		return !d.windowVisible() && (runtime.GOOS != "darwin" || hidden)
 	}); err != nil {
+		return err
+	}
+	if err := desktopWait("final model edit to save while the window is closed", func() bool { return d.sharedModelSmokeSaved(modelSmokeRenamed) }); err != nil {
 		return err
 	}
 	client := http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{Proxy: nil}}
@@ -228,6 +316,13 @@ func (d *nativeDesktop) checkDesktop(checks *[]string) error {
 		return err
 	}
 	passed("tray-reopen-preserves-session")
+	if err := d.withUI(func() error { return d.ui.SmokeAction("verify-shared-agents", modelSmokeRenamed) }); err != nil {
+		return err
+	}
+	if state, err := d.snapshot(); err != nil || state["shared-default-name"] != modelSmokeRenamed || state["shared-default-reasoning"] != "high" {
+		return errors.New("reopening the native window lost the final shared model edit")
+	}
+	passed("model-edit-survives-window-close")
 	d.dispatch("stop")
 	if err := desktopWait("tray stop", func() bool { return !d.owner.trayState().running }); err != nil {
 		return err

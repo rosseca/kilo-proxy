@@ -74,6 +74,18 @@ func (a *app) adminHandler() http.Handler {
 			a.clientsLaunch(w, r)
 			return
 		}
+		if r.URL.Path == "/api/terminal/commands" {
+			a.terminalCommandsAPI(w, r)
+			return
+		}
+		if r.URL.Path == "/api/terminal/prepare" {
+			a.terminalPrepareAPI(w, r)
+			return
+		}
+		if r.URL.Path == "/api/model-library" {
+			a.modelLibraryAPI(w, r)
+			return
+		}
 		if strings.HasPrefix(r.URL.Path, "/api/desktop/") {
 			a.desktopAPI(w, r)
 			return
@@ -104,6 +116,10 @@ func (a *app) adminHandler() http.Handler {
 		}
 		if r.Method == "GET" && r.URL.Path == "/api/state" {
 			a.state(w)
+			return
+		}
+		if r.URL.Path == "/api/tray-settings" && (r.Method == "GET" || r.Method == "PUT") {
+			a.traySettings(w, r)
 			return
 		}
 		if r.Method != "POST" {
@@ -168,7 +184,8 @@ func (a *app) state(w http.ResponseWriter) {
 		"version": version, "desktop": a.desktop != nil, "port": a.config.Port, "orgId": a.config.OrgID,
 		"localKey": a.config.LocalKey, "hasKey": a.apiKey != "", "remember": a.config.Remember,
 		"running": a.proxyServer != nil, "baseURL": "http://127.0.0.1:" + strconv.Itoa(a.config.Port) + "/v1",
-		"requests": a.requests, "failures": a.failures, "active": a.active, "uptime": uptime,
+		"zedBaseURL": zedBaseURL("http://127.0.0.1:"+strconv.Itoa(a.config.Port)+"/v1", a.config.LocalKey),
+		"requests":   a.requests, "failures": a.failures, "active": a.active, "uptime": uptime,
 		"usage":          a.usageSnapshot(),
 		"captureEnabled": a.captureEnabled, "activityEpoch": a.activityEpoch,
 		"events": a.events, "warning": a.vaultWarning,

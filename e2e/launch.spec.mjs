@@ -39,7 +39,7 @@ for(const id of ['codex','codex-cli','claude','opencode','zed','xcode-chat','xco
   await expect.poll(async()=>(await records(gateway)).length).toBe(3);
   expect(prepares).toBe(2);
   await expect(page.locator('#client-launch-status')).not.toHaveClass(/error/);
-  if(id==='zed')await expect(page.locator('#editor-next')).toContainText('paste the copied local key once');
+  if(id==='zed')await expect(page.locator('#editor-next')).toContainText('Preparation saves the local key in the system credential store');
   if(id==='xcode-chat')await expect(page.locator('#xcode-guide')).toContainText('Add a Chat Provider');
   if(id==='codex'){
    await expect(page.locator('#client-launch')).toHaveText('Launch Codex Desktop');

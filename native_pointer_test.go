@@ -95,49 +95,38 @@ func TestNativePointerNavigationAndModelSelection(t *testing.T) {
 	for _, size := range []image.Point{{1180, 820}, {780, 700}, {720, 700}} {
 		t.Run(fmtSize(size), func(t *testing.T) {
 			h := newNativePointerHarness(t, size)
-			label := "Clients & models"
-			if size.X < 940 {
-				label = "Clients"
+			h.click("Models", semantic.Button)
+			if h.u.page != "models" {
+				t.Fatal("pointer did not open Models")
 			}
-			h.click(label, semantic.Button)
-			if h.u.page != "clients" {
-				t.Fatal("pointer did not open client page")
-			}
-			h.click("Codex CLI", semantic.Button)
-			if h.u.client != "codex-cli" {
-				t.Fatal("pointer did not activate Codex CLI pill")
-			}
-			if size.X == 720 {
-				first := h.target("● Codex CLI", semantic.Button)
-				last := h.target("Other clients", semantic.Button)
-				if last.Desc.Bounds.Min.Y <= first.Desc.Bounds.Min.Y {
-					t.Fatalf("minimum-width fixture did not exercise a wrapped pill row: first %v last %v", first.Desc.Bounds, last.Desc.Bounds)
-				}
-			}
-			h.click("Other clients", semantic.Button)
-			if h.u.client != "generic" {
-				t.Fatal("pointer did not activate the final wrapped editor pill")
-			}
-			h.click("Xcode", semantic.Button)
-			h.click("Claude", semantic.Button)
-			if h.u.client != "xcode" || h.u.clientState().Variant != "claude" {
-				t.Fatal("pointer did not activate the Xcode variant pill")
-			}
-			h.click("OpenCode", semantic.Button)
-			if h.u.client != "opencode" {
-				t.Fatal("pointer did not activate OpenCode pill")
-			}
+			h.click("Add models", semantic.Button)
 			h.click("provider/model", semantic.Editor)
-			if !h.router.Source().Focused(h.u.editor("client:opencode:search")) {
-				t.Fatal("real pointer press did not focus the model-search editor")
+			if !h.router.Source().Focused(h.u.editor("client:shared:search")) {
+				t.Fatal("real pointer did not focus shared catalog search")
 			}
 			h.typeText("vendor/one")
-			if h.u.value("client:opencode:search") != "vendor/one" {
-				t.Fatal("pointer focus did not send keyboard text to model search")
+			if h.u.value("client:shared:search") != "vendor/one" {
+				t.Fatal("keyboard text did not reach model search")
 			}
 			h.click("Very Long First Model Name", semantic.CheckBox)
-			if h.u.clientState().selection("opencode").Initial != "vendor/one" {
-				t.Fatal("pointer did not select the searched model")
+			if h.u.library.selection.Initial != "vendor/one" {
+				t.Fatal("pointer did not select the searched shared model")
+			}
+			h.click("Done", semantic.Button)
+			h.click("Edit", semantic.Button)
+			h.click("Very Long First Model Name", semantic.Editor)
+			h.typeText("My shared model")
+			if h.u.library.selection.choice("vendor/one").DisplayName != "My shared model" {
+				t.Fatal("per-card Edit did not update shared display name")
+			}
+			for _, page := range []struct{ label, key string }{{"Agents", "agents"}, {"Activity", "activity"}, {"Settings", "settings"}, {"Models", "models"}} {
+				h.click(page.label, semantic.Button)
+				if h.u.page != page.key {
+					t.Fatalf("pointer did not navigate to %s", page.label)
+				}
+			}
+			if h.u.library.selection.Initial != "vendor/one" || h.u.sharedClientSelection("opencode").choice("vendor/one").DisplayName != "My shared model" {
+				t.Fatal("navigation lost shared model or cross-agent propagation")
 			}
 		})
 	}

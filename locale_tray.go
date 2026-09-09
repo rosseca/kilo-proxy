@@ -6,6 +6,7 @@ type trayLabels struct {
 	tooltip, loading, teamEmpty, teamPrefix                     string
 	stopped, running, pending, unconfigured, endpoint, activity string
 	open, start, setup, stop, hint, exit, openError, startError string
+	spend, subtotal, coverage                                   string
 }
 
 func trayText(language string) trayLabels {
@@ -16,7 +17,8 @@ func trayText(language string) trayLabels {
 			stopped: "○ Proxy detenido", running: "● Proxy activo", pending: "○ Esperando login de Kilo…",
 			unconfigured: "○ Conexión pendiente de configurar", endpoint: "Endpoint: ",
 			activity: "%d en curso · %d peticiones · %d errores",
-			open:     "Abrir Kilo Proxy…", start: "Arrancar proxy", setup: "Configurar conexión…",
+			spend:    "Coste desde que abriste Kilo Proxy", subtotal: "Subtotal informado de esta sesión", coverage: "Coste informado: %d/%d peticiones",
+			open: "Abrir Kilo Proxy…", start: "Arrancar proxy", setup: "Configurar conexión…",
 			stop: "Detener proxy (cancela peticiones)", hint: "Cerrar la ventana no detiene el proxy", exit: "Salir de Kilo Proxy",
 			openError: "No se pudo abrir Kilo Proxy", startError: "No se pudo arrancar; revisa el puerto en la ventana",
 		}
@@ -27,7 +29,8 @@ func trayText(language string) trayLabels {
 		stopped: "○ Proxy stopped", running: "● Proxy running", pending: "○ Waiting for Kilo login…",
 		unconfigured: "○ Connection needs setup", endpoint: "Endpoint: ",
 		activity: "%d active · %d requests · %d errors",
-		open:     "Open Kilo Proxy…", start: "Start proxy", setup: "Set up connection…",
+		spend:    "Cost since opening Kilo Proxy", subtotal: "Reported subtotal this session", coverage: "Cost reported: %d/%d requests",
+		open: "Open Kilo Proxy…", start: "Start proxy", setup: "Set up connection…",
 		stop: "Stop proxy (cancels requests)", hint: "Closing the window keeps the proxy running", exit: "Quit Kilo Proxy",
 		openError: "Could not open Kilo Proxy", startError: "Could not start; check the port in the window",
 	}

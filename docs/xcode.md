@@ -1,10 +1,10 @@
 # Xcode: Chat, Codex and Claude
 
-Kilo Proxy offers three independent setups under **Xcode**. Chat uses the OpenAI-compatible Chat Completions API, Codex uses Responses, and Claude uses Anthropic Messages. These are request formats; a model appearing in the gateway catalog does not guarantee support for all three.
+Open **Agents → Set up Xcode** for Chat, Codex and Claude integration settings. All three derive model choices from the native **Models** library, while keeping their own generated profiles and provider setup. The optional browser helper retains separate selections in its Xcode variants. Chat uses the OpenAI-compatible Chat Completions API, Codex uses Responses, and Claude uses Anthropic Messages. These are request formats; a model appearing in the gateway catalog does not guarantee support for all three.
 
 ## Xcode Chat
 
-1. Select **Chat**, check models in the catalog or add exact gateway IDs, and optionally enter short names. Use **Refresh catalog** to fetch models without leaving Xcode's helper.
+1. Edit models and short names in **Models**, then open **Agents → Set up Xcode → Chat**. Shared-library edits save automatically; the generated Xcode list is updated by preparation.
 2. Click **Prepare without launching**. The selected list is saved in Kilo Proxy's configuration directory as `xcode-chat.json`. Changes receive a `.bak` backup.
 3. Click **Copy Xcode connection (one-time setup)**. In Xcode, open **Settings → Intelligence → Add a Chat Provider** (or **Add a Model Provider** in older versions). Choose **Internet Hosted** so you can enter an authentication header, even though this provider is local.
 4. Use the copied URL, for example `http://127.0.0.1:8877/xcode`, header `Authorization`, and value `Bearer <local-key>`. Do not append `/v1`: Xcode adds it. The preview hides the key; the copy button includes the real local key.
@@ -16,8 +16,8 @@ Provider registration in Xcode remains manual. No undocumented preference or Key
 
 ## Codex in Xcode
 
-1. Close Xcode before changing an agent profile. In the **Xcode** helper, select **Codex**.
-2. Select models, names, an initial model and supported reasoning defaults. The catalog uses the reasoning enum verified in Xcode's advertised Codex 0.106.0: `none`, `minimal`, `low`, `medium`, `high` and `xhigh`, intersected with each model's capabilities. `max` and `ultra` are omitted; if a model's default is unavailable, the helper chooses `high` when supported, otherwise the first supported level. Other Codex profiles keep their existing options.
+1. Close Xcode before changing an agent profile. Edit the shared library in **Models**, then open **Agents → Set up Xcode → Codex**.
+2. Review the shared models, names, default and supported reasoning preferences. The catalog uses the reasoning enum verified in Xcode's advertised Codex 0.106.0: `none`, `minimal`, `low`, `medium`, `high` and `xhigh`, intersected with each model's capabilities. `max` and `ultra` are omitted; if a model's default is unavailable, the helper chooses `high` when supported, otherwise the first supported level. Other Codex profiles keep their existing options.
 3. Click **Prepare without launching**. On the Mac running Kilo Proxy, it creates or updates:
    - `~/Library/Developer/Xcode/CodingAssistant/codex/config.toml`
    - `~/Library/Developer/Xcode/CodingAssistant/codex/models.json`
@@ -29,9 +29,9 @@ Xcode does not inherit the Kilo CLI launcher's environment. Its provider therefo
 
 ## Claude in Xcode
 
-1. Close Xcode and select **Claude** in the **Xcode** helper.
-2. Select models. The helper uses the Claude version advertised by the detected Xcode bundle, independently of the Claude Code installed in your terminal.
-3. For older versions, choose up to three models and review their Sonnet, Opus and Haiku alias assignments. The initial model can have a global reasoning preference. Newer advertised versions can receive native picker names and per-model reasoning settings.
+1. Close Xcode, edit the shared library in **Models**, then select **Claude** in **Agents → Set up Xcode**.
+2. Review the shared models. The helper uses the Claude version advertised by the detected Xcode bundle, independently of the Claude Code installed in your terminal.
+3. Older versions support up to three selected models through Sonnet, Opus and Haiku aliases. Reduce the shared library to a compatible selection if preparation reports that limit. The initial model can have a global reasoning preference. Newer advertised versions can receive native picker names and per-model reasoning settings.
 4. Click **Prepare without launching** to update:
    - `~/Library/Developer/Xcode/CodingAssistant/ClaudeAgentConfig/settings.json`
    - `~/Library/Developer/Xcode/CodingAssistant/ClaudeAgentConfig/kilo-models.json`
@@ -45,7 +45,7 @@ Detection checks the selected Xcode installation and then standard `/Application
 
 Xcode owns its model picker and can supply model overrides when starting an agent. Names, full model lists and reasoning controls in the agent configuration are not a promise that Xcode displays every option. Preparing a profile does not install agents, sign in to their products or prove a successful gateway request. Agent preparation is available only on macOS with Xcode; Chat selection can be prepared wherever the proxy runs.
 
-Verified with automated tests: independent profile writes and backups, authentication without a terminal variable for Codex, older Claude alias settings, the dedicated authenticated model list, Chat request routing with the organization header, English/Spanish UI and mobile layout. The generated Codex profile was loaded by the installed desktop app's Codex executable using `model/list`, confirming exact IDs, names, initial model and reasoning levels without inference. No paid gateway request or live conversation inside Xcode was performed; Xcode's downloaded agents were not installed on the development machine.
+Verified with automated tests: independent profile writes and backups, authentication without a terminal variable for Codex, older Claude alias settings, the dedicated authenticated model list, Chat request routing with the organization header, English/Spanish native controls and narrow browser layouts. Native tests also verify common-library propagation and separate generated profiles. The generated Codex profile was loaded by the installed desktop app's Codex executable using `model/list`, confirming exact IDs, names, initial model and reasoning levels without inference. No paid gateway request or live conversation inside Xcode was performed; Xcode's downloaded agents were not installed on the development machine.
 
 Sources: [Apple: setting up coding intelligence](https://developer.apple.com/documentation/xcode/setting-up-coding-intelligence), [Apple: customizing agent environments](https://developer.apple.com/documentation/xcode/extending-and-customizing-agents), and [OpenAI configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference).
 

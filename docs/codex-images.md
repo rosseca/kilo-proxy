@@ -7,14 +7,14 @@ Available in Kilo Proxy **v0.23.0 and later**.
 ## Enable the tool
 
 1. Connect Kilo Proxy with your Kilo credentials and organization.
-2. Open the Codex Desktop or Codex CLI helper and choose your coding models as usual.
+2. Choose coding models in the native **Models** library. Open **Models → Image generation for Codex**.
 3. Enable **Image generation** and choose an **Image model**. The image picker includes models whose catalog metadata advertises image output; image input alone does not qualify. The image model does not have to support coding tools.
-4. Use **Launch** to prepare the current profile and open Codex, or use **Prepare** to save it first. Restart an already open Codex instance so it reloads the MCP configuration.
+4. On **Agents**, use **Open Codex** for Desktop or **Open Codex CLI** for a terminal. This prepares the selected profile and saves the image settings. Manual **Prepare without launching** is under that agent's **Options → Integration settings**. Restart an already open Codex instance so it reloads the MCP configuration.
 5. Ask Codex to use `generate_image`, for example: “Use the Kilo image tool to create a small illustration of a lighthouse at sunset.”
 
 Keep Kilo Proxy running while using the tool. Choosing a catalog model does not verify your organization's access, available balance, or that model's support for a particular generation request. Requests go through Kilo with the configured organization; charges depend on its gateway and provider billing setup, including BYOK. The tool does not call the OpenAI image API directly or require a separate OpenAI API key.
 
-The image setting belongs to Kilo Proxy and is shared by its Codex helpers. Preparing another Codex profile applies the current setting there too. Changing the coding model does not change the selected image model.
+The image setting belongs to Kilo Proxy and is shared by its Codex integrations. It is saved when a Codex profile is opened/prepared, separately from the automatically saved coding-model library. The optional browser helper retains its image controls inside the Codex tabs. Preparing another Codex profile applies the current setting there too. Changing the coding model does not change the selected image model.
 
 ## What is configured
 
@@ -66,7 +66,7 @@ Conversation attribution depends on a recognized session header reaching the MCP
 - To disable the feature, clear its toggle and prepare the profile again. This removes the MCP entry managed by Kilo Proxy from that profile and disables the shared image setting. Restart Codex to refresh its tool list.
 - If no image model is listed, refresh the catalog. A coding model or a model that only accepts images as input cannot be selected for this tool.
 - If a saved model no longer appears in the image catalog, the helper keeps the saved ID visible as unavailable. Choose a listed image model or disable the feature before preparing again.
-- If Codex cannot connect to `kilo_images`, confirm Kilo Proxy is running and reopen Codex through **Launch** so it receives the local-key environment variable. Changing the proxy port also requires preparing the profile again.
+- If Codex cannot connect to `kilo_images`, confirm Kilo Proxy is running and reopen Codex through its **Open** action on Agents so it receives the local-key environment variable. Changing the proxy port also requires preparing the profile again.
 - If a generation times out, check its result before asking for another attempt: the upstream request may already have been billed.
 - A generation error from Kilo can reflect model availability, organization access, balance, or unsupported editing. The image tool does not replace Codex's built-in image feature or guarantee that a coding model will choose to call it.
 

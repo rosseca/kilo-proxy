@@ -95,7 +95,7 @@ func TestClientLaunchRejectsMissingStaleAndUnsafeProfiles(t *testing.T) {
 				t.Fatal("stale port accepted")
 			}
 			a.config.Port--
-			if client == "claude" || client == "opencode" || client == "xcode-codex" || client == "xcode-claude" {
+			if client == "claude" || client == "opencode" || client == "zed" || client == "xcode-codex" || client == "xcode-claude" {
 				a.config.LocalKey = "rotated-synthetic"
 				if _, e = a.planClientLaunch(request, a.launchRuntime()); e == nil {
 					t.Fatal("stale credential accepted")

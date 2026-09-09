@@ -3,6 +3,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -109,15 +110,87 @@ func (u *nativeUI) clientLauncherPanel(key string, s *nativeClientSelection, can
 }
 
 func (u *nativeUI) launchClient(key string) {
+	u.launchClientFrom(key, "clients-project-directory")
+}
+
+func (u *nativeUI) launchAgent(key string) {
+	u.agentsState()
+	field := agentProjectField(key)
+	if u.value(field) == "" {
+		u.setValue(field, u.agentProject(key))
+	}
+	u.launchClientFrom(key, field)
+}
+
+// Include the saved connection as well as displayed state: a connection save
+// may finish before the next UI state refresh arrives.
+func (u *nativeUI) launchConnectionFingerprint() [32]byte {
+	u.owner.mu.Lock()
+	data, _ := json.Marshal([]any{u.owner.config.Port, u.owner.config.OrgID, u.owner.config.LocalKey, u.owner.apiKey})
+	u.owner.mu.Unlock()
+	return sha256.Sum256(data)
+}
+
+// A save is part of the launch transaction. Snapshot the actual draft as well
+// as its exported payload so neither a newer library nor a malformed numeric
+// edit can silently replace what the user asked to open while disk IO is busy.
+func (u *nativeUI) launchSettingsFingerprint(key, directoryField string) [32]byte {
+	s := u.sharedClientSelection(key)
+	u.syncClientSelection(key, s)
+	base, local, _ := u.clientBase()
+	limits := make([]string, 0, len(u.library.selection.Models)*2)
+	for _, model := range u.library.selection.Models {
+		limits = append(limits, u.value(nativeClientField(sharedModelKey, model.Model.ID, "context")), u.value(nativeClientField(sharedModelKey, model.Model.ID, "output")))
+	}
+	appPath := ""
+	if key == "codex" {
+		appPath = u.value("clients-launch-app-path")
+	}
+	data, _ := json.Marshal([]any{nativeSelectionFingerprint(key, s, base, local, u.clientCaps(key)), u.modelLibraryValue(), limits, u.value(directoryField), appPath, u.launchConnectionFingerprint()})
+	return sha256.Sum256(data)
+}
+
+func (u *nativeUI) launchSettingsChangedMessage() string {
+	return u.tr("Your launch settings changed while preparing. Launch again to use the latest changes.", "Los ajustes cambiaron durante la preparación. Vuelve a abrir para aplicar los últimos cambios.")
+}
+
+func (u *nativeUI) launchClientFrom(key, directoryField string) {
+	a := u.agentsState()
 	c := u.clientState()
 	if c.Launching != "" {
+		return
+	}
+	u.persistLibraryEdits()
+	if status, ready := u.libraryStatus(); !ready {
+		w := u.library.writer
+		w.mu.Lock()
+		saving := w.running
+		w.mu.Unlock()
+		if saving {
+			pending := u.launchSettingsFingerprint(key, directoryField)
+			c.Launching = key
+			a.Phase = u.tr("Saving models…", "Guardando modelos…")
+			go func() {
+				w.flush()
+				u.enqueue(func() {
+					c.Launching, a.Phase = "", ""
+					if pending != u.launchSettingsFingerprint(key, directoryField) {
+						u.notice = u.launchSettingsChangedMessage()
+						return
+					}
+					u.launchClientFrom(key, directoryField)
+				})
+			}()
+		} else {
+			u.notice = status
+		}
 		return
 	}
 	if !u.nativeLaunchAvailable(key) {
 		u.notice = u.tr("Refresh installed apps or set a valid Codex application path.", "Actualiza las aplicaciones instaladas o indica una ruta válida de Codex.")
 		return
 	}
-	s := c.selection(key)
+	s := u.sharedClientSelection(key)
 	u.syncClientSelection(key, s)
 	if key == "cursor" {
 		var session cursorSession
@@ -134,12 +207,18 @@ func (u *nativeUI) launchClient(key string) {
 		}
 		return
 	}
-	base, local, _ := u.clientBase()
-	fingerprint := nativeSelectionFingerprint(key, s, base, local, u.clientCaps(key))
-	directory, appPath := u.value("clients-project-directory"), u.value("clients-launch-app-path")
+	directory, appPath := u.value(directoryField), u.value("clients-launch-app-path")
+	resolvedDirectory, err := launchPath(directory, c.LaunchInfo.Directory)
+	if err != nil {
+		u.notice = nativeMessage(err.Error(), u.language)
+		return
+	}
+	prepared := u.launchSettingsFingerprint(key, directoryField)
 	c.Launching = key
+	a.Phase = u.tr("Preparing…", "Preparando…")
 	finish := func(err error) {
 		c.Launching = ""
+		a.Phase = ""
 		if err != nil {
 			u.notice = nativeMessage(err.Error(), u.language)
 		}
@@ -149,14 +228,13 @@ func (u *nativeUI) launchClient(key string) {
 			finish(err)
 			return
 		}
-		current := c.selection(key)
-		u.syncClientSelection(key, current)
-		base, local, _ := u.clientBase()
-		if current != s || fingerprint != nativeSelectionFingerprint(key, current, base, local, u.clientCaps(key)) || directory != u.value("clients-project-directory") || key == "codex" && appPath != u.value("clients-launch-app-path") {
-			finish(errors.New(u.tr("Your launch settings changed while preparing. Launch again to use the latest changes.", "Los ajustes cambiaron durante la preparación. Vuelve a abrir para aplicar los últimos cambios.")))
+		current := u.sharedClientSelection(key)
+		if current != s || prepared != u.launchSettingsFingerprint(key, directoryField) {
+			finish(errors.New(u.launchSettingsChangedMessage()))
 			return
 		}
 		payload := map[string]string{"client": key, "directory": directory}
+		a.Phase = u.tr("Opening…", "Abriendo…")
 		if key == "codex" {
 			payload["appPath"] = appPath
 		}
@@ -178,6 +256,7 @@ func (u *nativeUI) launchClient(key string) {
 				return
 			}
 			finish(nil)
+			u.rememberAgentProject(key, resolvedDirectory)
 			u.notice = result.Message
 			if u.notice == "" {
 				u.notice = u.tr("Editor launched.", "Editor abierto.")
@@ -185,7 +264,9 @@ func (u *nativeUI) launchClient(key string) {
 			u.refreshState()
 		})
 	}
-	if key == "cursor" || s.Saved != "" && s.Saved == fingerprint {
+	// A managed profile can be edited externally between launches. Reapply the
+	// shared library each time; the backend preserves unrelated preferences.
+	if key == "cursor" {
 		launch(nil)
 	} else {
 		u.prepareClientAfter(key, launch)

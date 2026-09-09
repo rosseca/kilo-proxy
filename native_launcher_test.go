@@ -106,11 +106,8 @@ func nativeLaunchTestUI(t *testing.T, key string, delay, failPrepare bool) (*nat
 		u.clientState().ClaudeDetectStarted = true
 	}
 	u.models = nativeClientModelsForTest()
-	s := u.clientState().selection(key)
-	if err := s.add(u.models[0], 50); err != nil {
-		t.Fatal(err)
-	}
-	u.seedClientChoice(key, s.Models[0])
+	nativeSeedSharedForTest(t, u, u.models[0])
+	u.sharedClientSelection(key)
 	u.detectLaunchers()
 	nativeTestWait(t, u, func() bool { return u.clientState().LaunchChecked })
 	u.page = "clients"
@@ -157,8 +154,8 @@ func TestNativeLaunchPreparesEveryClientAndKeepsCommandsSeparate(t *testing.T) {
 			}
 			u.launchClient(key)
 			nativeTestWait(t, u, func() bool { return u.clientState().Launching == "" })
-			if r.count() != 2 || r.prepares.Load() != 1 {
-				t.Fatal("ready profile did not launch directly")
+			if r.count() != 2 || r.prepares.Load() != 2 {
+				t.Fatal("repeat Open did not reapply the shared library before launch")
 			}
 			if r.gets.Load() != 1 {
 				t.Fatal("launcher detection polled on every frame/launch")
@@ -177,7 +174,7 @@ func TestNativeLaunchPreservesEditsWhilePreparing(t *testing.T) {
 			<-r.entered
 			switch field {
 			case "model":
-				u.setValue(nativeClientField("codex", "vendor/one", "name"), "Newest name")
+				u.setValue(nativeClientField(sharedModelKey, "vendor/one", "name"), "Newest name")
 			case "directory":
 				u.setValue("clients-project-directory", t.TempDir())
 			case "appPath":
@@ -223,6 +220,162 @@ func TestNativeLaunchFailuresReleaseBusyState(t *testing.T) {
 	}
 }
 
+func nativeHoldLaunchLibrarySave(t *testing.T, u *nativeUI, fail bool) (<-chan struct{}, func()) {
+	t.Helper()
+	entered, release := make(chan struct{}), make(chan struct{})
+	var first, unblock sync.Once
+	u.owner.modelLibrary.write = func(path string, data []byte) error {
+		if filepath.Base(path) == "models.json" {
+			first.Do(func() { close(entered); <-release })
+			if fail {
+				return errors.New("synthetic library write failure")
+			}
+		}
+		return atomicCatalogFile(path, data)
+	}
+	finish := func() { unblock.Do(func() { close(release) }) }
+	t.Cleanup(func() { finish(); u.flushModelLibrary() })
+	return entered, finish
+}
+
+func TestNativeLaunchLibrarySaveWaitPreservesRequestedSettings(t *testing.T) {
+	for _, change := range []string{"none", "model", "directory", "appPath", "connection", "raw-limit"} {
+		t.Run(change, func(t *testing.T) {
+			u, r := nativeLaunchTestUI(t, "codex", false, false)
+			// An invalid numeric edit can still parse as the previous zero. The
+			// launch boundary must compare the raw draft, not only exported JSON.
+			if change == "raw-limit" {
+				u.setValue(nativeClientField(sharedModelKey, "vendor/one", "output"), "0")
+			}
+			entered, release := nativeHoldLaunchLibrarySave(t, u, false)
+			u.setValue(nativeClientField(sharedModelKey, "vendor/one", "name"), "Requested model name")
+			u.launchAgent("codex")
+			select {
+			case <-entered:
+			case <-time.After(3 * time.Second):
+				t.Fatal("launch did not wait for its library save")
+			}
+			if u.clients.Launching != "codex" || u.agents.Phase != "Saving models…" || r.prepares.Load() != 0 {
+				t.Fatal("profile preparation started before library persistence")
+			}
+			switch change {
+			case "model":
+				u.setValue(nativeClientField(sharedModelKey, "vendor/one", "name"), "Newer model name")
+			case "directory":
+				u.setValue(agentProjectField("codex"), t.TempDir())
+			case "appPath":
+				u.setValue("clients-launch-app-path", "/different/codex")
+			case "connection":
+				u.owner.mu.Lock()
+				u.owner.config.OrgID = "new-team"
+				u.owner.mu.Unlock()
+			case "raw-limit":
+				u.setValue(nativeClientField(sharedModelKey, "vendor/one", "output"), "not a number")
+			}
+			u.launchAgent("codex") // A second click cannot queue a second waiter.
+			release()
+			nativeTestWait(t, u, func() bool { return u.clients.Launching == "" })
+			if u.agents.Phase != "" {
+				t.Fatal("save completion left a busy phase")
+			}
+			if change == "none" {
+				if r.count() != 1 || r.prepares.Load() != 1 {
+					t.Fatalf("unchanged saved draft did not launch once: %s", u.notice)
+				}
+				return
+			}
+			if r.count() != 0 || r.prepares.Load() != 0 || !strings.Contains(u.notice, "changed while preparing") {
+				t.Fatalf("changed draft silently replaced requested launch: %s", u.notice)
+			}
+			if change == "model" {
+				if u.value(nativeClientField(sharedModelKey, "vendor/one", "name")) != "Newer model name" {
+					t.Fatal("save waiter overwrote the latest model edit")
+				}
+				u.launchAgent("codex")
+				nativeTestWait(t, u, func() bool { return u.clients.Launching == "" })
+				if r.count() != 1 || r.prepares.Load() != 1 {
+					t.Fatalf("explicit retry failed: %s", u.notice)
+				}
+			}
+		})
+	}
+}
+
+func TestNativeLaunchLibrarySaveFailureStopsBeforePreparationAndCanRetry(t *testing.T) {
+	u, r := nativeLaunchTestUI(t, "codex", false, false)
+	entered, release := nativeHoldLaunchLibrarySave(t, u, true)
+	u.setValue(nativeClientField(sharedModelKey, "vendor/one", "name"), "Keep this unsaved model")
+	u.launchAgent("codex")
+	select {
+	case <-entered:
+	case <-time.After(3 * time.Second):
+		t.Fatal("launch did not reach the pending library save")
+	}
+	release()
+	nativeTestWait(t, u, func() bool { return u.clients.Launching == "" })
+	if r.count() != 0 || r.prepares.Load() != 0 || u.agents.Phase != "" || !strings.Contains(u.notice, "Could not save") {
+		t.Fatalf("failed library save escaped launch gate: %s", u.notice)
+	}
+	if u.library.selection.Models[0].DisplayName != "Keep this unsaved model" {
+		t.Fatal("library save failure lost draft")
+	}
+	u.owner.modelLibrary.write = atomicCatalogFile
+	u.library.writer.queue(u.modelLibraryValue(), false)
+	u.flushModelLibrary()
+	u.launchAgent("codex")
+	nativeTestWait(t, u, func() bool { return u.clients.Launching == "" })
+	if r.count() != 1 || r.prepares.Load() != 1 {
+		t.Fatalf("save recovery could not launch: %s", u.notice)
+	}
+}
+
+func TestNativeLaunchRejectsInvalidRawLimitDuringProfilePreparation(t *testing.T) {
+	u, r := nativeLaunchTestUI(t, "codex", true, false)
+	u.setValue(nativeClientField(sharedModelKey, "vendor/one", "output"), "0")
+	u.persistLibraryEdits()
+	u.flushModelLibrary()
+	u.launchAgent("codex")
+	<-r.entered
+	u.setValue(nativeClientField(sharedModelKey, "vendor/one", "output"), "not a number")
+	r.unblock()
+	nativeTestWait(t, u, func() bool { return u.clients.Launching == "" })
+	if r.count() != 0 || !strings.Contains(u.notice, "changed while preparing") {
+		t.Fatalf("numeric parsing hid an invalid edit: %s", u.notice)
+	}
+}
+
+func TestNativeOpenReappliesLibraryAfterExternalProfileChange(t *testing.T) {
+	u, r := nativeLaunchTestUI(t, "codex", false, false)
+	u.launchAgent("codex")
+	nativeTestWait(t, u, func() bool { return u.clientState().Launching == "" })
+	if r.count() != 1 {
+		t.Fatalf("initial open failed: %s", u.notice)
+	}
+	other := &nativeClientSelection{Models: []nativeModelChoice{{Model: u.models[1]}}, Initial: u.models[1].ID}
+	payload, err := nativeClientPayload("codex", other)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A different helper can prepare this generated profile while the native
+	// window retains a Saved fingerprint for its unchanged shared library.
+	if _, err = nativeRequest(u.owner, "POST", nativeClientEndpoint("codex"), payload); err != nil {
+		t.Fatal(err)
+	}
+	u.launchAgent("codex")
+	nativeTestWait(t, u, func() bool { return u.clientState().Launching == "" })
+	raw, err := nativeRequest(u.owner, "GET", nativeClientEndpoint("codex"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored, err := decodeNativeClientSelection("codex", raw, u.models)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.count() != 2 || r.prepares.Load() != 3 || restored.Initial != u.library.selection.Initial || len(restored.Models) != 1 || restored.Models[0].Model.ID != u.library.selection.Models[0].Model.ID {
+		t.Fatalf("Open trusted stale profile readiness: %+v, %s", restored, u.notice)
+	}
+}
+
 func TestNativeLaunchDetectionAndValidation(t *testing.T) {
 	u, r := nativeLaunchTestUI(t, "codex", false, false)
 	c := u.clientState()
@@ -236,8 +389,10 @@ func TestNativeLaunchDetectionAndValidation(t *testing.T) {
 	if !u.nativeLaunchAvailable("codex") {
 		t.Fatal("custom native Codex path could not recover detection")
 	}
-	u.clientState().selection("codex").Models = nil
+	u.library.selection.Models = nil
+	u.library.selection.Initial = ""
 	u.launchClient("codex")
+	nativeTestWait(t, u, func() bool { return c.Launching == "" })
 	if r.count() != 0 || r.prepares.Load() != 0 || c.Launching != "" {
 		t.Fatal("empty selection dispatched a launch")
 	}
@@ -325,11 +480,15 @@ func TestNativeLaunchPointerProjectControls(t *testing.T) {
 
 func TestNativeClosedCatalogControlsStayInsidePage(t *testing.T) {
 	u, _ := nativeLaunchTestUI(t, "codex", false, false)
+	u.page = "models"
+	u.expanded["library.catalog"] = true
+	u.models = nativeGridModels()
 	h := &nativePointerHarness{t: t, u: u, size: image.Pt(720, 700), now: time.Now()}
 	h.frame()
 	bounds := h.target("All labs  ▾", semantic.Button).Desc.Bounds
-	nativeMenuWheel(h, image.Pt(640, 600), 360)
-	offset := u.list("page.clients").Position.Offset
+	u.list("page.models").Position.Offset = bounds.Min.Y + bounds.Size().Y/2 - 40
+	h.frame()
+	offset := u.list("page.models").Position.Offset
 	center := bounds.Min.Add(bounds.Size().Div(2)).Sub(image.Pt(0, offset))
 	if center.Y < 0 || center.Y >= 78 {
 		t.Fatalf("fixture did not move the old trigger over the fixed header: %v", center)

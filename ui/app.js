@@ -146,7 +146,7 @@ function snippet(reveal = false) {
   if (!state || !validModelID(effectiveModel())) return t('Selecciona un modelo para generar la configuración.');
   const model = effectiveModel();
   const key = reveal ? state.localKey : 'kl_local_••••••••••••••••';
-  const config=clientConfig({client,language,selectedModels:[...(multiClients[client]?.models.values() || [])],aliases:multiClients[client]?.aliases,catalogPath:isCodexClient() && codexSelection().models.size ? 'models.json' : '',baseURL:state.baseURL,key,model,contextWindow:Math.max(1024, Number($('context-window').value) || 200000)});
+  const config=clientConfig({client,language,selectedModels:[...(multiClients[client]?.models.values() || [])],aliases:multiClients[client]?.aliases,catalogPath:isCodexClient() && codexSelection().models.size ? 'models.json' : '',baseURL:state.baseURL,zedBaseURL:state.zedBaseURL,key,model,contextWindow:Math.max(1024, Number($('context-window').value) || 200000)});
   return isCodexClient()?codexImageMCPConfig(config,codexSelection().imageGeneration,state.baseURL):config;
 }
 function launch(key) {

@@ -30,54 +30,59 @@ type event struct {
 }
 
 type app struct {
-	imageGenerationURL    string
-	imageGenerationMu     sync.Mutex
-	imageGenerationActive int
-	launcher              *clientLaunchRuntime
-	launchMu              sync.Mutex
-	desktop               desktopBridge
-	desktopProbes         chan desktopProbe
-	editorTestRoot        string
-	cursor                *cursorSession
-	usageTotal            usageSummary
-	usageSessions         map[string]*usageSummary
-	captureEnabled        bool
-	activeTraces          int
-	nextEventID           uint64
-	activityEpoch         uint64
-	traces                map[string]*requestTrace
-	codexProfileDir       string
-	codexCLIProfileDir    string
-	xcodeTestRoot         string
-	claudeProfileDir      string
-	catalogRevision       uint64
-	modelStatsURL         string
-	modelStatsCache       modelStatsCache
-	accountURL            string
-	authPollInterval      time.Duration
-	login                 *loginSession
-	organizations         []organization
-	accountEmail          string
-	keySaved              bool
-	mu                    sync.Mutex
-	dir                   string
-	config                settings
-	apiKey                string
-	vault                 credentialVault
-	vaultWarning          string
-	adminToken            string
-	adminHost             string
-	upstream              *url.URL
-	transport             http.RoundTripper
-	proxyServer           *http.Server
-	proxyListener         net.Listener
-	started               time.Time
-	requests              int
-	failures              int
-	active                int
-	events                []event
-	quit                  chan struct{}
-	quitOnce              sync.Once
+	modelLibrary           *modelLibraryStore
+	imageGenerationURL     string
+	imageGenerationMu      sync.Mutex
+	imageGenerationActive  int
+	launcher               *clientLaunchRuntime
+	terminalCommandsBinary string
+	terminalCommandsShell  string
+	launchMu               sync.Mutex
+	desktop                desktopBridge
+	desktopProbes          chan desktopProbe
+	editorTestRoot         string
+	editorMu               sync.Mutex
+	zedCredentialStore     func(context.Context, string, string, string) error
+	cursor                 *cursorSession
+	usageTotal             usageSummary
+	usageSessions          map[string]*usageSummary
+	captureEnabled         bool
+	activeTraces           int
+	nextEventID            uint64
+	activityEpoch          uint64
+	traces                 map[string]*requestTrace
+	codexProfileDir        string
+	codexCLIProfileDir     string
+	xcodeTestRoot          string
+	claudeProfileDir       string
+	catalogRevision        uint64
+	modelStatsURL          string
+	modelStatsCache        modelStatsCache
+	accountURL             string
+	authPollInterval       time.Duration
+	login                  *loginSession
+	organizations          []organization
+	accountEmail           string
+	keySaved               bool
+	mu                     sync.Mutex
+	dir                    string
+	config                 settings
+	apiKey                 string
+	vault                  credentialVault
+	vaultWarning           string
+	adminToken             string
+	adminHost              string
+	upstream               *url.URL
+	transport              http.RoundTripper
+	proxyServer            *http.Server
+	proxyListener          net.Listener
+	started                time.Time
+	requests               int
+	failures               int
+	active                 int
+	events                 []event
+	quit                   chan struct{}
+	quitOnce               sync.Once
 }
 
 func newApp(dir string, vault credentialVault) (*app, error) {
@@ -92,6 +97,8 @@ func newApp(dir string, vault credentialVault) (*app, error) {
 	tr.Proxy = nil
 	tr.ResponseHeaderTimeout = 120 * time.Second
 	a := &app{dir: dir, config: cfg, vault: vault, adminToken: randomKey(""), upstream: u, transport: tr, quit: make(chan struct{})}
+	a.modelLibrary = newModelLibraryStore(dir)
+	a.zedCredentialStore = storeZedCredential
 	a.captureEnabled = true
 	a.traces = make(map[string]*requestTrace)
 	a.accountURL = kiloAccountURL
@@ -191,6 +198,10 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 		if r.URL.RawPath == "" && r.URL.Path == "/xcode/v1/chat/completions" && r.Method == "POST" {
 			r = r.Clone(r.Context())
 			r.URL.Path = "/v1/chat/completions"
+		}
+		if prefix := zedProxyPrefix(localKey); r.URL.RawPath == "" && strings.HasPrefix(r.URL.Path, prefix+"/v1/") {
+			r = r.Clone(r.Context())
+			r.URL.Path = strings.TrimPrefix(r.URL.Path, prefix)
 		}
 		if !validRoute(r.Method, r.URL.Path) || r.URL.RawPath != "" || !validQuery(r.URL) {
 			jsonError(w, http.StatusNotFound, "Endpoint no compatible. Usa la base URL terminada en /v1.")
@@ -307,6 +318,12 @@ func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 func (a *app) start() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	return a.startLocked()
+}
+
+// Caller holds a.mu, allowing profile preparation and startup to stay atomic
+// with respect to another managed profile or connection update.
+func (a *app) startLocked() error {
 	select {
 	case <-a.quit:
 		return errors.New("application is closing")

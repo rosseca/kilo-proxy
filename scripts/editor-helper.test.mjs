@@ -15,6 +15,17 @@ test('OpenCode and Zed export multiple exact models, names and limits without gi
  }
  assert.equal(s.models[1].contextWindow,200000);assert.equal(editorPayload([{id:'bad',contextWindow:0}],'bad').models[0].contextWindow,0);
 });
+test('Zed exports its prepared credential-versioned URL without changing other clients or exposing the local key',()=>{
+ const baseURL='http://127.0.0.1:9988/v1',zedBaseURL='http://127.0.0.1:9988/zed/0123456789abcdef/v1';
+ const input={baseURL,zedBaseURL,key:'kl_local_do-not-export',model:'vendor/a',selectedModels:[{id:'vendor/a',name:'Short A'}]};
+ const zed=JSON.parse(clientConfig({...input,client:'zed'}));
+ assert.equal(zed.language_models.openai_compatible['kilo-local'].api_url,zedBaseURL);
+ assert.equal(zed.language_models.openai_compatible['kilo-local'].available_models[0].display_name,'Short A');
+ assert.doesNotMatch(JSON.stringify(zed),/kl_local_do-not-export/);
+ const opencode=JSON.parse(clientConfig({...input,client:'opencode'}));
+ assert.equal(opencode.provider['kilo-local'].options.baseURL,baseURL);
+ assert.equal(opencode.provider['kilo-local'].options.apiKey,input.key);
+});
 test('OpenCode launcher quotes paths, clears inline override and scopes environment',{skip:process.platform==='win32'},()=>{
  const dir=mkdtempSync(join(tmpdir(),'kilo-editor-'));
  try{

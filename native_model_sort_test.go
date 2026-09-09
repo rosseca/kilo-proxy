@@ -20,16 +20,10 @@ func TestNativeModelSortMenuPreservesProfile(t *testing.T) {
 			h := newNativePointerHarness(t, size)
 			models, _ := modelSortFixture()
 			h.u.models = models
-			selection := h.u.clientState().selection("codex")
-			if err := selection.add(models[1], 50); err != nil {
-				t.Fatal(err)
-			}
-			selection.choice(models[1].ID).DisplayName = "My model"
-			label := "Clients & models"
-			if size.X < 940 {
-				label = "Clients"
-			}
-			h.click(label, semantic.Button)
+			selection := nativeSeedSharedForTest(t, h.u, models[1])
+			h.u.setValue(nativeClientField(sharedModelKey, models[1].ID, "name"), "My model")
+			h.click("Models", semantic.Button)
+			h.click("Add models", semantic.Button)
 			before, _ := json.Marshal(selection)
 			h.click("Code Mode Rank  ▾", semantic.Button)
 			h.click("Speed", semantic.Button)
@@ -65,7 +59,7 @@ func TestNativeModelSortMenuPreservesProfile(t *testing.T) {
 			h.router.Queue(pointer.Event{Kind: pointer.Release, Source: pointer.Mouse, Position: point})
 			h.frame()
 			h.frame()
-			if h.u.expanded["models.sort"] || !h.router.Source().Focused(h.u.editor("client:codex:search")) {
+			if h.u.expanded["models.sort"] || !h.router.Source().Focused(h.u.editor("client:shared:search")) {
 				t.Fatal("outside click did not dismiss the menu and focus search")
 			}
 			h.click("Price  ▾", semantic.Button)

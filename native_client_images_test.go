@@ -141,13 +141,11 @@ func TestNativeClientImagesPayloadLoadAndFingerprint(t *testing.T) {
 
 func TestNativeClientImagesExportAndPointer(t *testing.T) {
 	u := nativeTestUI(t)
-	u.page = "clients"
+	u.page = "models"
+	u.expanded["library.images"] = true
 	u.models = append(nativeClientModelsForTest(), nativeImagesForTest()...)
-	s := u.clientState().selection("codex")
-	if err := s.add(u.models[0], 50); err != nil {
-		t.Fatal(err)
-	}
-	u.seedClientChoice("codex", s.Models[0])
+	nativeSeedSharedForTest(t, u, u.models[0])
+	s := u.sharedClientSelection("codex")
 	nativeTestFrame(t, u)
 	u.clickable("client:codex:images:model.toggle").Click()
 	nativeEditClientImages(s, func(v *imageGenerationSettings) { v.Enabled = true })
@@ -189,7 +187,8 @@ func TestNativeClientImagesResponsivePanel(t *testing.T) {
 		for _, language := range []string{"en", "es"} {
 			t.Run(fmtSize(size)+"/"+language, func(t *testing.T) {
 				u := nativeTestUI(t)
-				u.page, u.language = "clients", language
+				u.page, u.language = "models", language
+				u.expanded["library.images"] = true
 				u.models = append(nativeClientModelsForTest(), nativeImagesForTest()...)
 				s := u.clientState().selection("codex")
 				s.ImageGeneration = &imageGenerationSettings{Enabled: true, Model: "openai/gpt-5.4-image-2"}

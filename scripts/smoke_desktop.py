@@ -15,6 +15,10 @@ REQUIRED = {
     'rendered-ui-and-authenticated-backend', 'window-and-tray-language-en',
     'window-and-tray-language-es', 'native-clipboard-via-ui', 'proxy-start-via-ui',
     'close-keeps-proxy', 'tray-reopen-preserves-session', 'tray-stop',
+    'tray-appearance-persisted-icon', 'tray-appearance-persisted-spend',
+    'tray-appearance-persisted-icon-restored',
+    'shared-model-library-autosave', 'primary-navigation-preserves-shared-models',
+    'model-edit-survives-window-close',
 }
 
 
@@ -83,6 +87,10 @@ def smoke(binary, root, expected_version=None):
     data = json.loads(report.read_text())
     if result.returncode != 0 or not data.get('passed') or not REQUIRED.issubset(data.get('checks', [])):
         raise RuntimeError('Native desktop check failed: ' + json.dumps(data) + '\n' + result.stderr[-2500:])
+    if platform.system() == 'Darwin' and not {
+            'cocoa-tray-title-and-image-icon', 'cocoa-tray-title-and-image-spend',
+            'cocoa-tray-title-and-image-icon-restored'}.issubset(data.get('checks', [])):
+        raise RuntimeError('Native desktop did not verify the real Cocoa tray title and image')
     expected_arch = {'aarch64': 'arm64', 'arm64': 'arm64', 'amd64': 'amd64', 'x86_64': 'amd64'}[platform.machine().lower()]
     expected_os = {'Darwin': 'darwin', 'Windows': 'windows', 'Linux': 'linux'}[platform.system()]
     if data.get('arch') != expected_arch or data.get('os') != expected_os:

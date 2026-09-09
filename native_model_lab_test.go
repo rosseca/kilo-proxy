@@ -59,15 +59,9 @@ func TestNativeLabMenuPointerAndCrossClientState(t *testing.T) {
 		t.Run(fmtSize(size), func(t *testing.T) {
 			h := newNativePointerHarness(t, size)
 			h.u.models = nativeClientModelsForTest()
-			selection := h.u.clientState().selection("codex")
-			if err := selection.add(h.u.models[0], 50); err != nil {
-				t.Fatal(err)
-			}
-			label := "Clients & models"
-			if size.X < 940 {
-				label = "Clients"
-			}
-			h.click(label, semantic.Button)
+			selection := nativeSeedSharedForTest(t, h.u, h.u.models[0])
+			h.click("Models", semantic.Button)
+			h.click("Add models", semantic.Button)
 			before, _ := json.Marshal(selection)
 			h.click("All labs  ▾", semantic.Button)
 			h.click("Anthropic", semantic.Button)
@@ -80,13 +74,16 @@ func TestNativeLabMenuPointerAndCrossClientState(t *testing.T) {
 				t.Fatal("opening sort left both menus open")
 			}
 			h.click("Speed", semantic.Button)
-			h.click("Codex CLI", semantic.Button)
+			h.click("Done", semantic.Button)
+			h.click("Activity", semantic.Button)
+			h.click("Models", semantic.Button)
+			h.click("Add models", semantic.Button)
 			if h.u.value("models.lab") != "anthropic" || h.u.value("models.sort") != "speed" {
-				t.Fatal("switching client lost catalog preferences")
+				t.Fatal("navigation lost catalog preferences")
 			}
 			h.click("Anthropic  ▾", semantic.Button)
 			h.click("provider/model", semantic.Editor)
-			if h.u.expanded["models.lab"] || !h.router.Source().Focused(h.u.editor("client:codex-cli:search")) {
+			if h.u.expanded["models.lab"] || !h.router.Source().Focused(h.u.editor("client:shared:search")) {
 				t.Fatal("outside click did not close labs and focus search")
 			}
 			h.click("Anthropic  ▾", semantic.Button)
@@ -105,7 +102,7 @@ func TestNativeLabMenuPointerAndCrossClientState(t *testing.T) {
 			}
 			after, _ := json.Marshal(selection)
 			if string(before) != string(after) {
-				t.Fatal("filtering or switching client changed the Codex profile")
+				t.Fatal("filtering or navigation changed the shared library")
 			}
 		})
 	}

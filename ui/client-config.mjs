@@ -1,6 +1,6 @@
 import {claudeLaunch} from './claude-helper.mjs';
 import {validModelID} from './model-helper.mjs';
-export function clientConfig({client, baseURL, key, model, contextWindow=200000, language='es', catalogPath='', models=[], selectedModels=[], aliases={}}) {
+export function clientConfig({client, baseURL, zedBaseURL, key, model, contextWindow=200000, language='es', catalogPath='', models=[], selectedModels=[], aliases={}}) {
  if (client === 'cursor') return cursorGuide(models.length ? models : model ? [model] : [],language);
  if (client === 'codex' || client === 'codex-cli') return `# ~/.codex-kilo-${client === 'codex' ? 'desktop' : 'cli'}/config.toml · ${language === 'en' ? 'save in this isolated profile' : 'guardar en este perfil independiente'}\nmodel = ${JSON.stringify(model)}${catalogPath ? '\nmodel_catalog_json = ' + JSON.stringify(catalogPath) : ''}\nmodel_provider = "kilo-local"\ncli_auth_credentials_store = "file"\n\n[model_providers.kilo-local]\nname = "Kilo Proxy"\nbase_url = ${JSON.stringify(baseURL)}\n# ${language === 'en' ? 'Keep this variable name unchanged. The launch command supplies the local key.' : 'Conserva este nombre de variable. El comando de arranque carga la clave local.'}\nenv_key = "KILO_LOCAL_API_KEY"\nenv_key_instructions = ${JSON.stringify(language === 'en' ? 'Close the Kilo instance and launch it with the command from the Kilo Proxy Codex helper.' : 'Cierra la instancia Kilo y ábrela con el comando del helper de Codex en Kilo Proxy.')}\nwire_api = "responses"\nrequires_openai_auth = false\nsupports_websockets = false`;
  const selected = [...new Map(selectedModels.filter(m => m && validModelID(m.id)).map(m => [m.id,m])).values()];
@@ -15,7 +15,7 @@ export function clientConfig({client, baseURL, key, model, contextWindow=200000,
   ANTHROPIC_DEFAULT_OPUS_MODEL:alias('opus'),
   ANTHROPIC_DEFAULT_HAIKU_MODEL:alias('haiku')
  }},null,2);
- if (client === 'zed') return JSON.stringify({agent:{default_model:{provider:'kilo-local',model:initial}},language_models:{openai_compatible:{'kilo-local':{api_url:baseURL,available_models:selected.map(m=>({name:m.id,display_name:m.name||m.id,max_tokens:m.contextWindow||contextWindow,...(m.maxOutputTokens>0?{max_output_tokens:m.maxOutputTokens}:{})}))}}}},null,2);
+ if (client === 'zed') return JSON.stringify({agent:{default_model:{provider:'kilo-local',model:initial}},language_models:{openai_compatible:{'kilo-local':{api_url:zedBaseURL||baseURL,available_models:selected.map(m=>({name:m.id,display_name:m.name||m.id,max_tokens:m.contextWindow||contextWindow,...(m.maxOutputTokens>0?{max_output_tokens:m.maxOutputTokens}:{})}))}}}},null,2);
  if (client === 'opencode') return JSON.stringify({$schema:'https://opencode.ai/config.json',model:'kilo-local/'+initial,provider:{'kilo-local':{npm:'@ai-sdk/openai-compatible',name:'Kilo Proxy',options:{baseURL,...(key?{apiKey:key}:{})},models:Object.fromEntries(selected.map(m=>[m.id,{name:m.name || m.id,...(Number.isSafeInteger(m.contextWindow) && m.contextWindow>0 && Number.isSafeInteger(m.maxOutputTokens) && m.maxOutputTokens>0 ? {limit:{context:m.contextWindow,output:m.maxOutputTokens}} : {})}]))}}},null,2);
  return `Base URL  ${baseURL}\nAPI key   ${key}\n${language === 'en' ? 'Model' : 'Modelo'}    ${model}`;
 }

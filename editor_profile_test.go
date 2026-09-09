@@ -32,7 +32,11 @@ func TestEditorJSONCPreservation(t *testing.T) {
 			t.Fatalf("%s: no-op changed formatting", client)
 		}
 		changed, err := mergeEditorSettings(updated, client, editorSelection{Models: exampleEditorSelection().Models[:1], Initial: "vendor/one"}, "http://127.0.0.1:8899/v1", "new-local-key")
-		if err != nil || bytes.Contains(changed, []byte("vendor/two")) || !bytes.Contains(changed, []byte(":8899/v1")) {
+		wantURL := "http://127.0.0.1:8899/v1"
+		if client == "zed" {
+			wantURL = zedBaseURL(wantURL, "new-local-key")
+		}
+		if err != nil || bytes.Contains(changed, []byte("vendor/two")) || !bytes.Contains(changed, []byte(wantURL)) {
 			t.Fatalf("%s: update failed", client)
 		}
 	}

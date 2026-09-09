@@ -19,25 +19,38 @@ These are six desktop targets. This project does not provide Android, iOS or tab
 
 The interface embeds the unmodified Regular, Medium and SemiBold fonts from [Inter 4.1](https://github.com/rsms/inter/releases/tag/v4.1), with Go fonts as a fallback. Nothing is installed into the user’s system font collection. The full font license is included in `THIRD-PARTY-NOTICES.txt`.
 
-The native frontend uses the existing authenticated loopback API, keeping configuration validation, safe file updates, credentials and proxy accounting in one backend. External HTTPS links, including Kilo's sign-in page, open in the system browser. Copy controls use the OS clipboard. Client **Launch** controls use the authenticated backend to prepare profiles and open installed agents on this computer, with a shared project-folder field. See [client launch behavior](clients.md#launch-installed-clients). The existing browser interface remains available through an explicit launch option.
+The native frontend uses the existing authenticated loopback API, keeping configuration validation, safe file updates, credentials and proxy accounting in one backend. External HTTPS links, including Kilo's sign-in page, open in the system browser. Copy controls use the OS clipboard. Agent **Open** controls use the authenticated backend to prepare profiles from the shared library and open installed agents on this computer, with a remembered folder for each agent. See [client launch behavior](clients.md#launch-installed-clients). The optional browser interface retains its older per-client model pickers and explicit preparation. It does not edit the native shared library.
+
+## Native workflow
+
+The main navigation is **Agents**, **Models**, **Activity** and **Settings**. An unconfigured first launch opens Settings for sign-in and organization selection; a configured app opens Agents.
+
+- **Agents:** installed-agent cards, direct Open actions, project-folder choosers and recent folders. Codex Desktop and Codex CLI have distinct actions. Options contains installation guidance, integration setup and exports.
+- **Models:** one automatically saved library with names, order, a default model and supported reasoning preferences. Agent exports apply only settings supported by that client. Image generation is under **Image generation for Codex** and is saved when a Codex profile is prepared/opened.
+- **Activity:** requests, conversation breakdowns, observed costs and cache reuse.
+- **Settings:** Kilo account and organization, local connection, language and tray appearance.
+
+The library is `models.json` in the application configuration directory; project choices live in `agent-preferences.json`. Neither is a generated agent credential file. See [shared-model paths, recovery and propagation limits](shared-models.md).
 
 ## Interface preview
 
 These images are rendered by Gio with synthetic test data, using the same layout and GPU renderer as the native window. They are not browser mockups. CI also captures compact window sizes for each desktop target.
 
-![Native connection screen](images/native-connection.png)
+![Native Agents home](images/native-agents.png)
 
-![Native model selector](images/native-clients.png)
-
-![Native session activity](images/native-activity.png)
+![Native shared model library](images/native-models.png)
 
 ## Window and tray
 
-- Launch Kilo Proxy to open its native window and create the tray/menu-bar icon.
+- Launch Kilo Proxy to open its native window and create the tray/menu-bar item.
 - Closing the window leaves the application and an active proxy running, including requests already in progress.
 - Choose **Open Kilo Proxy…** in the tray menu to reopen the interface with the same application session.
-- The tray shows the team, endpoint, request counts and connection state. **Start proxy** and **Stop proxy** control the same backend as the window.
+- The tray menu shows the team, endpoint, request counts, reported cost coverage and connection state. **Start proxy** and **Stop proxy** control the same backend as the window.
 - **Stop proxy** cancels active requests. **Quit Kilo Proxy** stops the application and proxy.
+
+**Settings → Appearance** saves **K icon** or **Session cost** without restarting the proxy. On macOS, **Session cost** shows the K icon and the current amount together; **K icon** shows just the icon. Windows retains the K icon with the amount in its tooltip/menu; Linux shows the K icon and, where the shell supports a title, the amount beside it, with tooltip/menu as the fallback. The menu remains usable in either mode.
+
+Spend covers the current Kilo Proxy process, across all conversations and image calls. It survives hiding the window, stopping/restarting the proxy, changing organizations and clearing request captures. Quitting resets it. The display uses `$0.00` before any requests, `—` when requests have no reported costs, `<$0.01` for a positive sub-cent amount, and `*` for a subtotal with missing costs. The menu shows reported/total request coverage. These observations are not your organization's invoice or remaining balance.
 
 The tray needs a desktop environment that supports status icons. Linux shells differ in where or whether they display StatusNotifierItem/AppIndicator icons. Browser and headless modes remain available when native desktop integration is unsuitable.
 
@@ -113,9 +126,9 @@ Use `scripts/package.py` for the production tags, linker settings and platform r
 Validation separates the native interface from the optional browser frontend:
 
 1. **Core:** Go race tests, `go vet`, module verification, JavaScript helper tests and Python packaging/release tests on macOS, Linux and Windows.
-2. **Native controls:** tests built with `-tags desktop` exercise Gio controls and backend effects using temporary profiles and a synthetic gateway. Real pointer and keyboard tests verify navigation, wrapped tabs, focus, typing and model selection at wide, compact and minimum-width window sizes. Model-grid checks cover separate column hit targets, expanded-card settings, scrolling and resize anchoring; a large catalog verifies that off-screen rows remain virtualized. Shared Go helper tests compare catalogs, reasoning, launch commands and guides with the existing browser implementations; executable shell tests verify quoting and environment isolation. Launch tests use fake agents and temporary profiles to verify preparation, dispatch, project directories, duplicate clicks, edits during preparation and failure recovery. Platform tests verify private terminal tickets, inherited interactive input/output, environment isolation and Windows console handles.
+2. **Native controls:** tests built with `-tags desktop` exercise Gio controls and backend effects using temporary profiles and a synthetic gateway. Real pointer and keyboard tests verify navigation and its wrapping, focus, typing and model selection at wide, compact and minimum-width window sizes. Model-grid checks cover separate column hit targets, expanded-card settings, scrolling and resize anchoring; a large catalog verifies that off-screen rows remain virtualized. Shared Go helper tests compare catalogs, reasoning, launch commands and guides with the existing browser implementations; executable shell tests verify quoting and environment isolation. Shared-library tests cover restart persistence, names/default/order/reasoning propagation, atomic saves, damaged-file recovery, external/concurrent changes and save failures. Agent launch tests use fake processes and temporary profiles to verify preparation, dispatch, remembered per-agent folders, chooser cancellation/failure, duplicate clicks, configuration edits during preparation and failure recovery. Tray tests cover persisted appearance and zero, sub-cent, missing and partial cost display across the whole process session. Platform tests verify private terminal tickets, inherited interactive input/output, environment isolation and Windows console handles.
 3. **Optional browser:** Playwright runs Chromium and WebKit against an isolated local backend. These tests verify browser-mode behavior, not the native renderer.
-4. **Real desktop:** `scripts/smoke_desktop.py` launches the production executable. It checks rendered native content, authenticated backend access, window/tray language changes, OS clipboard, proxy startup, close/reopen behavior, tray stop and clean process exit.
+4. **Real desktop:** `scripts/smoke_desktop.py` launches the production executable. It checks rendered Agents/Models/Activity/Settings content, shared-library persistence and in-memory client propagation, authenticated backend access, window/tray language changes, OS clipboard, proxy startup, saved tray appearance, close/reopen behavior, tray stop and clean process exit.
 5. **Packaging:** the workflow requires its core, browser and native jobs to pass before creating bundles. It packages the tested executable, then exercises the extracted archive. macOS also receives full bundle-signature and LaunchServices checks. The aggregate job validates six archives and their checksums.
 
 Every tag-triggered release is gated on the reusable build workflow. Core, browser and native tests must pass before packaging, and each extracted archive must pass its platform smoke test before publication. Check the workflow run for a release tag to see its validation results.
