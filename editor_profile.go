@@ -138,7 +138,7 @@ func mergeEditorSettings(old []byte, client string, s editorSelection, baseURL, 
 		fields = []struct {
 			path  string
 			value any
-		}{{"/language_models/openai_compatible/kilo-local/api_url", baseURL}, {"/language_models/openai_compatible/kilo-local/available_models", models}, {"/agent/default_model/provider", "kilo-local"}, {"/agent/default_model/model", s.Initial}}
+		}{{"/language_models/openai_compatible/kilo-local/api_url", zedBaseURL(baseURL, key)}, {"/language_models/openai_compatible/kilo-local/available_models", models}, {"/agent/default_model/provider", "kilo-local"}, {"/agent/default_model/model", s.Initial}}
 	}
 	for _, f := range fields {
 		if err := set(f.path, f.value); err != nil {
@@ -259,6 +259,8 @@ func (a *app) editorProfile(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, 500, "Cannot locate editor settings.")
 		return
 	}
+	a.editorMu.Lock()
+	defer a.editorMu.Unlock()
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if r.Method == "GET" {
@@ -324,6 +326,35 @@ func (a *app) editorProfile(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		jsonError(w, 409, err.Error())
 		return
+	}
+	if client == "zed" {
+		// Write the credential before changing api_url: Zed reloads it as soon
+		// as the settings watcher observes the new URL. Never store the Kilo
+		// account credential, and never serialize the local key into settings.
+		rt := a.launchRuntime()
+		executable, _ := rt.resolve("zed", "")
+		port, key, store := a.config.Port, a.config.LocalKey, a.zedCredentialStore
+		apiURL := zedBaseURL("http://127.0.0.1:"+strconv.Itoa(port)+"/v1", key)
+		// Unlocking a system vault may show an OS prompt. It must not block
+		// inference, session accounting or the rest of the application UI.
+		a.mu.Unlock()
+		storeErr := store(r.Context(), apiURL, key, executable)
+		a.mu.Lock()
+		if storeErr != nil || r.Context().Err() != nil {
+			jsonError(w, 409, errZedCredentialStore.Error())
+			return
+		}
+		if a.config.Port != port || a.config.LocalKey != key {
+			jsonError(w, 409, "The proxy connection changed during Zed setup. Prepare Zed again.")
+			return
+		}
+		for _, f := range []profileFile{settings, saved} {
+			current, readErr := readCatalogFile(f.path)
+			if (f.exists && (readErr != nil || !bytes.Equal(current, f.old))) || (!f.exists && !errors.Is(readErr, os.ErrNotExist)) {
+				jsonError(w, 409, "Zed settings changed during credential setup. Prepare Zed again to keep your latest changes.")
+				return
+			}
+		}
 	}
 	changed, err := saveEditorFiles([]profileFile{saved, settings})
 	if err != nil {

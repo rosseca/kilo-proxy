@@ -747,7 +747,7 @@ func (u *nativeUI) clientActions(key string, s *nativeClientSelection) layout.Wi
 	}
 	copyLabel := u.tr("Copy launch command", "Copiar comando de arranque")
 	if key == "zed" {
-		copyLabel = u.tr("Copy key for Zed (one-time setup)", "Copiar clave para Zed (configuración inicial)")
+		copyLabel = u.tr("Copy key for Zed (recovery)", "Copiar clave para Zed (recuperación)")
 	}
 	if key == "xcode-chat" {
 		copyLabel = u.tr("Copy Xcode connection (one-time setup)", "Copiar conexión de Xcode (configuración inicial)")
@@ -767,7 +767,7 @@ func (u *nativeUI) clientActions(key string, s *nativeClientSelection) layout.Wi
 		})))
 	}
 	if key == "zed" {
-		widgets = append(widgets, u.note(u.tr("In Zed, open agent: open settings, find kilo-local and paste the local key once. Zed saves it in its keychain. Select a model in the Agent panel.", "En Zed, abre agent: open settings, busca kilo-local y pega la clave local una vez. Zed la guarda en su llavero. Elige modelo en el panel Agent.")))
+		widgets = append(widgets, u.note(u.tr("Preparation saves the local key in the system credential store. Select a model in Zed’s Agent panel; existing projects stay open. Copy key is only for recovery in agent: open settings → kilo-local.", "La preparación guarda la clave local en el almacén de credenciales del sistema. Elige modelo en el panel Agent de Zed; tus proyectos siguen abiertos. Copiar clave sirve solo para recuperarla en agent: open settings → kilo-local.")))
 	}
 	if key == "opencode" {
 		widgets = append(widgets, u.note(u.tr("Launch opens a terminal in your project; then use /models. No /connect needed. Global/project OpenCode settings still merge and may override this profile.", "Abrir inicia una terminal en tu proyecto; después usa /models. No hace falta /connect. Los ajustes globales/del proyecto se combinan y pueden prevalecer.")))
@@ -790,6 +790,9 @@ func (u *nativeUI) clientActions(key string, s *nativeClientSelection) layout.Wi
 	}
 	widgets = append(widgets, u.check("client:"+key+":show-config", u.tr("Show optional configuration export", "Mostrar exportación de configuración opcional"), func(bool) {}))
 	if u.checked("client:"+key+":show-config") && len(s.Models) > 0 {
+		if key == "zed" {
+			widgets = append(widgets, u.note(u.tr("Copying configuration alone does not save credentials. Use Prepare or set the local key in Zed’s kilo-local provider.", "Copiar solo la configuración no guarda las credenciales. Usa Preparar o configura la clave local en el proveedor kilo-local de Zed.")))
+		}
 		if text, err := u.clientExport(key, s, false); err == nil {
 			widgets = append(widgets, u.code("client:"+key+":config", text), u.button("client:"+key+":config-copy", u.tr("Copy complete configuration", "Copiar configuración completa"), func() {
 				u.syncClientSelection(key, s)
@@ -1005,7 +1008,7 @@ func (u *nativeUI) clientLaunch(key string, s *nativeClientSelection, reveal boo
 		if reveal {
 			return local, nil
 		}
-		return u.tr("Provider: kilo-local\nPaste the copied key in Zed Agent settings.", "Proveedor: kilo-local\nPega la clave copiada en los ajustes de Zed Agent."), nil
+		return u.tr("Provider: kilo-local\nLocal key saved in the system credential store.\nChoose a model in Zed’s Agent panel.", "Proveedor: kilo-local\nClave local guardada en el almacén de credenciales del sistema.\nElige modelo en el panel Agent de Zed."), nil
 	case "xcode-chat":
 		return xcodeChatGuide(base, local, u.language), nil
 	case "xcode-codex", "xcode-claude":
@@ -1016,7 +1019,8 @@ func (u *nativeUI) clientLaunch(key string, s *nativeClientSelection, reveal boo
 
 func (u *nativeUI) clientExport(key string, s *nativeClientSelection, reveal bool) (string, error) {
 	base, local, port := u.clientBase()
-	if !reveal {
+	// Zed exports only a credential-versioned URL, never the local key itself.
+	if !reveal && key != "zed" {
 		local = "kl_local_••••••••"
 	}
 	payload, err := nativeClientPayload(key, s)

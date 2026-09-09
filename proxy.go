@@ -39,6 +39,8 @@ type app struct {
 	desktop               desktopBridge
 	desktopProbes         chan desktopProbe
 	editorTestRoot        string
+	editorMu              sync.Mutex
+	zedCredentialStore    func(context.Context, string, string, string) error
 	cursor                *cursorSession
 	usageTotal            usageSummary
 	usageSessions         map[string]*usageSummary
@@ -94,6 +96,7 @@ func newApp(dir string, vault credentialVault) (*app, error) {
 	tr.ResponseHeaderTimeout = 120 * time.Second
 	a := &app{dir: dir, config: cfg, vault: vault, adminToken: randomKey(""), upstream: u, transport: tr, quit: make(chan struct{})}
 	a.modelLibrary = newModelLibraryStore(dir)
+	a.zedCredentialStore = storeZedCredential
 	a.captureEnabled = true
 	a.traces = make(map[string]*requestTrace)
 	a.accountURL = kiloAccountURL
@@ -193,6 +196,10 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 		if r.URL.RawPath == "" && r.URL.Path == "/xcode/v1/chat/completions" && r.Method == "POST" {
 			r = r.Clone(r.Context())
 			r.URL.Path = "/v1/chat/completions"
+		}
+		if prefix := zedProxyPrefix(localKey); r.URL.RawPath == "" && strings.HasPrefix(r.URL.Path, prefix+"/v1/") {
+			r = r.Clone(r.Context())
+			r.URL.Path = strings.TrimPrefix(r.URL.Path, prefix)
 		}
 		if !validRoute(r.Method, r.URL.Path) || r.URL.RawPath != "" || !validQuery(r.URL) {
 			jsonError(w, http.StatusNotFound, "Endpoint no compatible. Usa la base URL terminada en /v1.")

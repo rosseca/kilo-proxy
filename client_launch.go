@@ -142,7 +142,7 @@ func (a *app) clientsLaunch(w http.ResponseWriter, r *http.Request) {
 	}
 	message := plan.Name + " opened."
 	if input.Client == "zed" {
-		message = "Zed opened. Complete the one-time provider key setup if needed."
+		message = "Zed opened. Local credentials and models are ready; existing projects stay open."
 	}
 	if input.Client == "cursor" {
 		message = "Cursor opened. Connect its provider to the existing tunnel if needed."

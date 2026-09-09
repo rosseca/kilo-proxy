@@ -177,7 +177,7 @@ func (u *nativeUI) agentCompatibility(key string) string {
 	case "opencode":
 		return u.tr("Uses Chat Completions with shared names and default model; reasoning stays automatic. Opens a terminal in your project. Local OpenCode settings can override this profile.", "Usa Chat Completions con nombres y modelo inicial compartidos; el razonamiento sigue automático. Abre una terminal en tu proyecto. Los ajustes de OpenCode pueden prevalecer.")
 	case "zed":
-		return u.tr("Uses Chat Completions with shared names and default model; reasoning stays automatic. Paste the local provider key once in Zed; Zed stores it in its keychain.", "Usa Chat Completions con nombres y modelo inicial compartidos; el razonamiento sigue automático. Pega la clave del proveedor una vez en Zed; Zed la guarda en su llavero.")
+		return u.tr("Uses Chat Completions with shared names and default model; reasoning stays automatic. Open Zed saves the local key in the system credential store and updates its models.", "Usa Chat Completions con nombres y modelo inicial compartidos; el razonamiento sigue automático. Abrir Zed guarda la clave local en el almacén de credenciales del sistema y actualiza sus modelos.")
 	case "cursor":
 		return u.tr("Requires a connected HTTPS tunnel and one-time provider setup in Cursor. Cursor uses the tunnel's published model list.", "Requiere un túnel HTTPS conectado y configurar el proveedor en Cursor. Usa los modelos publicados en el túnel.")
 	default:
@@ -327,7 +327,7 @@ func (u *nativeUI) agentCard(key string, primary bool) layout.Widget {
 		}
 	}
 	if key == "zed" {
-		widgets = append(widgets, u.note(u.tr("One-time provider key setup in Zed may be needed.", "Puede requerir configurar la clave del proveedor una vez en Zed.")))
+		widgets = append(widgets, u.note(u.tr("Credentials and models are configured automatically.", "Las credenciales y los modelos se configuran automáticamente.")))
 	}
 	if len(s.Models) > 0 && err != nil && key != "cursor" {
 		widgets = append(widgets, u.note(nativeMessage(err.Error(), u.language)))

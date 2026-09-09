@@ -333,7 +333,7 @@ test('Claude prepares and reloads model picker, alias and reasoning without over
   await expect(page.locator(`[data-focus="claude-name:${second}"]`)).toHaveValue('Sonnet');
 });
 
-test('OpenCode and Zed save multiple models, limits, backups and independent selections',async({page,gateway})=>{
+test('OpenCode and Zed save multiple models, limits, backups and independent selections',async({page,gateway,request})=>{
   for(const client of ['opencode','zed']) {
     const dir=gateway.profiles[client],name=client==='zed'?'settings.json':'opencode.json';
     const original='// Keep team comments\n{"theme":"dark", "permission":{"bash":"ask"},}\n';
@@ -368,6 +368,19 @@ test('OpenCode and Zed save multiple models, limits, backups and independent sel
     } else expect(output).toMatch(/^kl_local_/);
     const exported=await copied(page,'#editor-export');
     expect(exported).toContain(first);expect(exported).toContain(second);
+    if(client==='zed') {
+      const local=await state(request,gateway);
+      expect(local.zedBaseURL).toMatch(/\/zed\/[a-f0-9]{16}\/v1$/);
+      expect(JSON.parse(exported).language_models.openai_compatible['kilo-local'].api_url).toBe(local.zedBaseURL);
+      expect(settings).toContain(local.zedBaseURL);
+      expect(exported).not.toContain(local.localKey);
+      await expect(page.locator('#editor-copy')).toHaveText('Copy key for Zed (recovery)');
+      await expect(page.locator('#editor-next')).toContainText('Preparation saves the local key in the system credential store');
+      await page.locator('#language').selectOption('es');
+      await expect(page.locator('#editor-copy')).toHaveText('Copiar clave para Zed (recuperación)');
+      await expect(page.locator('#editor-next')).toContainText('La preparación guarda la clave local en el almacén de credenciales del sistema');
+      await page.locator('#language').selectOption('en');
+    }
     await page.locator(`[data-editor-name="${first}"]`).fill('Unsaved');
     await expect(page.locator('#editor-copy')).toBeDisabled();
     await page.locator('#editor-load').click();

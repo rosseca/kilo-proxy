@@ -38,6 +38,7 @@ func TestE2EServer(t *testing.T) {
 	defer a.stop()
 	defer a.cancelLogin()
 	a.editorTestRoot = root
+	a.zedCredentialStore = fakeZedCredentialStore
 	a.codexProfileDir = filepath.Join(root, ".codex-kilo-desktop")
 	a.codexCLIProfileDir = filepath.Join(root, ".codex-kilo-cli")
 	a.claudeProfileDir = filepath.Join(root, ".claude-kilo")

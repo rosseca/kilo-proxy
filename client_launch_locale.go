@@ -26,7 +26,7 @@ func (a *app) clientLaunchMessage(message string) string {
 		"Choose an absolute path to the Codex application.":                                      "Indica la ruta absoluta de la aplicación Codex.",
 		"The selected Codex application does not exist or cannot be executed.":                   "La aplicación Codex seleccionada no existe o no se puede ejecutar.",
 		"Start the Cursor HTTPS tunnel before launching Cursor.":                                 "Conecta el túnel HTTPS de Cursor antes de abrir Cursor.",
-		"Zed opened. Complete the one-time provider key setup if needed.":                        "Zed abierto. Completa la configuración inicial de la clave del proveedor si hace falta.",
+		"Zed opened. Local credentials and models are ready; existing projects stay open.":       "Zed abierto. Las credenciales locales y los modelos están preparados; tus proyectos siguen abiertos.",
 		"Cursor opened. Connect its provider to the existing tunnel if needed.":                  "Cursor abierto. Conecta su proveedor al túnel existente si hace falta.",
 		"Xcode opened. Existing projects stay open; complete its provider setup if needed.":      "Xcode abierto. Los proyectos existentes siguen abiertos; completa la configuración del proveedor si hace falta.",
 		"Terminal is not installed":                                                              "Terminal no está instalado.",

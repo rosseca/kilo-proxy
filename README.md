@@ -14,7 +14,7 @@ Connect with your personal Kilo account, choose your organization, add models on
 2. Open **Kilo Proxy.app** on macOS, **Kilo Proxy.exe** on Windows, or run `./kilo-proxy` on Linux.
 3. Click **Sign in with Kilo / SSO** and approve the device code on Kilo’s website using your usual login or SSO. Choose your organization, then click **Save & start**. Manual API key and organization ID entry is also available.
 4. Open **Models → Add models**. Choose your models, names, default and supported reasoning preferences. Changes save automatically.
-5. Return to **Agents**, choose a project folder, and click **Open Codex** or another installed agent. Profiles are prepared automatically from the shared library. Zed, Cursor and Xcode retain their one-time provider setup under **Options**.
+5. Return to **Agents**, choose a project folder, and click **Open Codex** or another installed agent. Profiles are prepared automatically from the shared library. Zed also receives its local credential automatically. Cursor and Xcode retain their one-time provider setup under **Options**.
 
 The default API URL is `http://127.0.0.1:8877/v1`. The editor uses a randomly generated **local API key**, not your personal Kilo key. Enable **Remember** to save the upstream credential in the operating system’s credential store when saving the connection.
 
@@ -42,7 +42,7 @@ macOS bundles have an **ad-hoc signature** covering the executable, bundle metad
 | Codex CLI | Separate generated profile using the shared models, names, reasoning levels and terminal launcher |
 | OpenCode | Automatic profile preparation, multiple models, names, limits, and scoped launcher |
 | Claude Code | Automatic isolated profile, version-aware model picker, short names, native effort and terminal launcher |
-| Zed | Automatic JSONC settings updates, multiple models, names, and initial model |
+| Zed | Automatic local credentials and JSONC settings updates, multiple models, names, and initial model |
 | Xcode | Dedicated Chat model list, automatic Codex/Claude agent profiles, version-aware Claude aliases and setup guidance |
 | Cursor | Managed ngrok HTTPS connection, dedicated key, selected models, and public connection check |
 
@@ -60,7 +60,7 @@ From v0.23.1, image results include a preview bounded to **1024 pixels per side 
 
 The Claude Code card detects the installed version, prepares a separate profile with backups, and opens an interactive terminal. Shared names and reasoning preferences apply only where that version and model support them. See [client setup](docs/clients.md) for profile isolation, saving, and compatibility limits.
 
-OpenCode and Zed receive the shared IDs, names, default and token limits through JSONC-preserving updates. Their reasoning remains automatic. OpenCode includes local authentication in its dedicated profile; Zed uses a one-time key paste into its keychain-backed provider settings. See [their setup guide](docs/opencode-and-zed.md).
+OpenCode and Zed receive the shared IDs, names, default and token limits through JSONC-preserving updates. Their reasoning remains automatic. OpenCode includes local authentication in its dedicated profile; Zed receives its local key in the system credential store and refreshes the provider when the key changes, including in an already-open editor. See [their setup guide](docs/opencode-and-zed.md).
 
 The application and tray support **English / Español**. The first launch reads the operating system’s preferred language, with English as the fallback. An explicitly saved language takes priority; changing it updates the interface and tray without restarting the proxy. Documentation and release instructions are in English.
 

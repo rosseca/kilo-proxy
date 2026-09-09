@@ -137,7 +137,7 @@ See [Claude Code compatibility verification](claude-code-compatibility.md).
 
 ## Zed
 
-**Open Zed** prepares the common library's IDs, names, limits and default in its user settings, then opens the editor. Reasoning remains automatic. Other providers, comments and unrelated settings are preserved with backups. In **Options → Integration settings**, use **Copy key for Zed (one-time setup)** and paste it into Zed's `kilo-local` provider so Zed stores it in its keychain. See [OpenCode and Zed setup](opencode-and-zed.md).
+**Open Zed** prepares the common library's IDs, names, limits and default in its user settings, then opens the editor. Reasoning remains automatic. Other providers, comments and unrelated settings are preserved with backups. Preparation also saves the local proxy key in the system credential store. Existing Zed projects stay open; the provider reloads its credentials when the managed connection changes. **Copy key for Zed (recovery)** remains available under **Options → Integration settings** for manual recovery. See [OpenCode and Zed setup](opencode-and-zed.md).
 
 ## Xcode
 
