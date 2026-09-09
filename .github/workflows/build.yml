@@ -176,6 +176,11 @@ jobs:
           KILO_TARGET: ${{ matrix.system }}/${{ matrix.arch }}
         shell: bash
         run: python scripts/package.py --build-only --target "$KILO_TARGET" --output dist/binaries
+      - name: Test production terminal commands without a graphical session
+        if: runner.os != 'Windows'
+        env:
+          KILO_TEST_TERMINAL_BINARY: ${{ github.workspace }}/dist/binaries/${{ matrix.binary }}
+        run: go test . -run '^TestTerminalAgentRunsInCurrentTerminal$' -count=1
       - name: Test the native Linux window, clipboard, tray lifecycle and proxy
         if: runner.os == 'Linux'
         env:

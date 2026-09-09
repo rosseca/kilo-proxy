@@ -34,6 +34,7 @@ type nativeUI struct {
 	catalogCached       bool
 	library             *nativeLibrary
 	agents              *nativeAgents
+	terminalCommands    *nativeTerminalCommands
 	traceGeneration     uint64
 	modelsPending       bool
 	languageRevision    uint64

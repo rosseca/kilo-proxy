@@ -243,6 +243,9 @@ func (u *nativeUI) agentOptions(key string) layout.Widget {
 		widgets = append(widgets, u.field("clients-launch-app-path", u.tr("Codex application path (optional)", "Ruta de la aplicación Codex (opcional)"), c.LaunchInfo.Clients[key].Path, false))
 		widgets = append(widgets, u.disabled(a.FolderBusy == "", u.button("agent:codex:locate-options", u.tr("Locate Codex", "Localizar Codex"), u.locateCodexApplication)))
 	}
+	if key == "codex-cli" || key == "claude" {
+		widgets = append(widgets, u.button("agent:"+key+":terminal-commands", u.tr("Terminal commands in Settings", "Comandos de terminal en Ajustes"), func() { u.page = "settings" }))
+	}
 	widgets = append(widgets, u.pills(u.button("agent:"+key+":setup", u.tr("Integration settings", "Ajustes de integración"), func() { u.agentSetup(key) }), u.button("agent:"+key+":detect", u.tr("Refresh detection", "Actualizar detección"), func() {
 		u.detectLaunchers()
 		if key == "claude" && !u.busy["GET/api/claude/info"] {

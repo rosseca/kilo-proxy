@@ -22,6 +22,8 @@ The default API URL is `http://127.0.0.1:8877/v1`. The editor uses a randomly ge
 
 Closing the application window leaves the proxy running. The system tray / menu bar can reopen the interface, show status and observed spend, start or stop the saved connection, and quit the application. **Settings → Appearance** saves your choice of **K icon** or **Session cost**; macOS shows the K icon and amount together in **Session cost**, while other tray hosts may use the K icon, tooltip and menu. Stopping cancels active requests. The proxy does not start automatically when opening the application.
 
+On macOS and Linux, **Settings → Terminal commands → Install terminal commands** adds `kilo-codex` and `kilo-claude`. Open a new terminal in your project and run either command to use the latest saved shared models in that terminal. Arguments pass through, including `kilo-codex resume` and `kilo-claude --resume`. Keep Kilo Proxy open, including in the tray; the commands start its saved connection when needed. Your ordinary `codex` and `claude` profiles keep their usual authentication. See [terminal command setup](docs/terminal-commands.md).
+
 ## Downloads
 
 | System | Architecture | Archive contents |

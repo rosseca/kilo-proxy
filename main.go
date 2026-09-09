@@ -42,6 +42,9 @@ func randomKey(prefix string) string {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == terminalAgentFlag {
+		os.Exit(runTerminalAgentMode(os.Args[2:]))
+	}
 	if len(os.Args) > 1 && os.Args[1] == clientLaunchRunnerFlag {
 		os.Exit(runClientLaunchMode(os.Args[2:]))
 	}
@@ -77,6 +80,12 @@ func main() {
 		}
 		*configDir = filepath.Join(base, "kilo-proxy")
 	}
+	absoluteConfig, err := filepath.Abs(*configDir)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Cannot locate the Kilo Proxy configuration directory.")
+		os.Exit(1)
+	}
+	*configDir = absoluteConfig
 	app, err := newApp(*configDir, systemVault{})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Cannot load Kilo Proxy:", err)
@@ -84,6 +93,7 @@ func main() {
 	}
 	stopFakeGateway := func() {}
 	if *selfTest != "" {
+		app.launcher = &clientLaunchRuntime{home: isolatedProfile}
 		stopFakeGateway = app.desktopTestGateway()
 		defer stopFakeGateway()
 	}
@@ -95,9 +105,17 @@ func main() {
 	app.adminHost = listener.Addr().String()
 	admin := &http.Server{Handler: app.adminHandler(), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 32 << 10}
 	go func() { _ = admin.Serve(listener) }()
+	cleanupTerminal := func() {}
+	if *selfTest == "" && terminalPlatformSupported(runtime.GOOS) {
+		cleanupTerminal, err = app.publishTerminalRuntime()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Terminal commands unavailable: cannot publish the private local connection file.")
+		}
+	}
 	var cleanupOnce sync.Once
 	cleanup := func() {
 		cleanupOnce.Do(func() {
+			cleanupTerminal()
 			app.requestQuit()
 			app.cancelLogin()
 			app.stop()

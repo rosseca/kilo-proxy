@@ -30,57 +30,59 @@ type event struct {
 }
 
 type app struct {
-	modelLibrary          *modelLibraryStore
-	imageGenerationURL    string
-	imageGenerationMu     sync.Mutex
-	imageGenerationActive int
-	launcher              *clientLaunchRuntime
-	launchMu              sync.Mutex
-	desktop               desktopBridge
-	desktopProbes         chan desktopProbe
-	editorTestRoot        string
-	editorMu              sync.Mutex
-	zedCredentialStore    func(context.Context, string, string, string) error
-	cursor                *cursorSession
-	usageTotal            usageSummary
-	usageSessions         map[string]*usageSummary
-	captureEnabled        bool
-	activeTraces          int
-	nextEventID           uint64
-	activityEpoch         uint64
-	traces                map[string]*requestTrace
-	codexProfileDir       string
-	codexCLIProfileDir    string
-	xcodeTestRoot         string
-	claudeProfileDir      string
-	catalogRevision       uint64
-	modelStatsURL         string
-	modelStatsCache       modelStatsCache
-	accountURL            string
-	authPollInterval      time.Duration
-	login                 *loginSession
-	organizations         []organization
-	accountEmail          string
-	keySaved              bool
-	mu                    sync.Mutex
-	dir                   string
-	config                settings
-	apiKey                string
-	vault                 credentialVault
-	vaultWarning          string
-	adminToken            string
-	adminHost             string
-	upstream              *url.URL
-	transport             http.RoundTripper
-	proxyServer           *http.Server
-	proxyListener         net.Listener
-	started               time.Time
-	requests              int
-	failures              int
-	active                int
-	events                []event
-	quit                  chan struct{}
-	quitOnce              sync.Once
+	modelLibrary           *modelLibraryStore
+	imageGenerationURL     string
+	imageGenerationMu      sync.Mutex
+	imageGenerationActive  int
+	launcher               *clientLaunchRuntime
+	terminalCommandsBinary string
+	terminalCommandsShell  string
+	launchMu               sync.Mutex
+	desktop                desktopBridge
+	desktopProbes          chan desktopProbe
+	editorTestRoot         string
+	editorMu               sync.Mutex
+	zedCredentialStore     func(context.Context, string, string, string) error
+	cursor                 *cursorSession
+	usageTotal             usageSummary
+	usageSessions          map[string]*usageSummary
+	captureEnabled         bool
+	activeTraces           int
+	nextEventID            uint64
+	activityEpoch          uint64
+	traces                 map[string]*requestTrace
+	codexProfileDir        string
+	codexCLIProfileDir     string
+	xcodeTestRoot          string
+	claudeProfileDir       string
+	catalogRevision        uint64
+	modelStatsURL          string
+	modelStatsCache        modelStatsCache
+	accountURL             string
+	authPollInterval       time.Duration
+	login                  *loginSession
+	organizations          []organization
+	accountEmail           string
+	keySaved               bool
+	mu                     sync.Mutex
+	dir                    string
+	config                 settings
+	apiKey                 string
+	vault                  credentialVault
+	vaultWarning           string
+	adminToken             string
+	adminHost              string
+	upstream               *url.URL
+	transport              http.RoundTripper
+	proxyServer            *http.Server
+	proxyListener          net.Listener
+	started                time.Time
+	requests               int
+	failures               int
+	active                 int
+	events                 []event
+	quit                   chan struct{}
+	quitOnce               sync.Once
 }
 
 func newApp(dir string, vault credentialVault) (*app, error) {
@@ -316,6 +318,12 @@ func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 func (a *app) start() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	return a.startLocked()
+}
+
+// Caller holds a.mu, allowing profile preparation and startup to stay atomic
+// with respect to another managed profile or connection update.
+func (a *app) startLocked() error {
 	select {
 	case <-a.quit:
 		return errors.New("application is closing")

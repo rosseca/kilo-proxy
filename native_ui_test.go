@@ -52,6 +52,8 @@ func nativeTestUI(t *testing.T) *nativeUI {
 		t.Fatal(err)
 	}
 	a.editorTestRoot = root
+	a.launcher = &clientLaunchRuntime{home: root}
+	a.terminalCommandsShell = "/bin/zsh"
 	a.zedCredentialStore = fakeZedCredentialStore
 	a.codexProfileDir = filepath.Join(root, ".codex-kilo-desktop")
 	a.codexCLIProfileDir = filepath.Join(root, ".codex-kilo-cli")

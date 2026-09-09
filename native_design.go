@@ -170,7 +170,7 @@ func (u *nativeUI) Layout(gtx layout.Context) layout.Dimensions {
 					case "activity":
 						panel = u.activityPanel()
 					default:
-						panel = u.column(u.connectionPanel(), u.appearancePanel())
+						panel = u.column(u.connectionPanel(), u.appearancePanel(), u.terminalCommandsPanel())
 					}
 					return material.List(u.theme, u.list("page."+u.page)).Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
 						return layout.Inset{Right: 14, Bottom: 20}.Layout(gtx, panel)

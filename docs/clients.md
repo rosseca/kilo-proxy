@@ -10,6 +10,8 @@ Choose models once in **Models → Add models** and set their names, default, or
 
 Codex Desktop opens the GUI with an isolated profile. **Codex CLI**, **Claude Code** and **OpenCode** open interactive terminals: Terminal on macOS, a console on Windows and an installed desktop terminal on Linux. **Zed** and **Cursor** open their editors. **Set up Xcode** and **Other clients** lead to provider-specific guidance. Existing editor windows may be focused by the editor itself.
 
+To use your existing terminal on macOS or Linux, install `kilo-codex` and `kilo-claude` from **Settings → Terminal commands → Install terminal commands**. They run in that terminal's current project folder, forward arguments, and prepare the latest saved shared models on each invocation. Keep Kilo Proxy open, including in the tray; a stopped saved proxy connection starts automatically. See [terminal commands](terminal-commands.md) for installation, resume examples and PATH setup.
+
 **Choose folder** opens a platform folder chooser. Each agent remembers its own project, with up to six recent folders in **Options**; a new agent defaults to your home folder. Folder paths and a custom Codex path are saved separately in `agent-preferences.json`. Linux uses an installed zenity or kdialog; if neither is available, enter the path under Options. **Locate Codex** chooses a nonstandard Desktop installation. Missing applications show installation guidance; use **Options → Refresh detection** after installing them.
 
 Launch validates saved profile files and the current connection. Preparation failures stop it. Changes to models, connection, project or the Codex application path during preparation cancel that launch; click again with the new choices. Installation status and a successful open confirm discovery/process handoff, not a running-agent health check or successful paid inference. Library changes apply on the next preparation/open; already running agents may need reopening.
@@ -96,6 +98,8 @@ Choose **Open Codex CLI** on Agents to open an interactive terminal in its remem
 
 Common installation paths and the CLI bundled in the macOS Desktop app are detected. The local key and `CODEX_HOME` are scoped to the new session. Use `/model` in Codex CLI to select a model and its supported reasoning; reopen it after library changes. Desktop and CLI share model preferences but keep separate generated files and readiness state, and ordinary Codex retains its usual profile. Both integrations use Responses.
 
+On macOS and Linux, the installed `kilo-codex` command uses the same CLI profile in your current terminal. Use `kilo-codex resume` to return to a session saved in that isolated profile. [Command setup and examples](terminal-commands.md).
+
 Manual preparation and command/configuration exports remain under **Options → Integration settings**. The generated CLI catalog has been checked with a disposable installed app-server profile through `model/list`, without inference; that does not establish compatibility with every installed CLI version.
 
 Reference: [OpenAI configuration reference: model_catalog_json](https://learn.chatgpt.com/docs/config-file/config-reference).
@@ -105,6 +109,8 @@ Reference: [OpenAI configuration reference: model_catalog_json](https://learn.ch
 The OpenCode card derives IDs, names, limits and the default from the shared library, then creates or updates `~/.opencode-kilo/opencode.json` with the local proxy credential. Click **Open OpenCode** to open it in a terminal, and use `/models` to switch models; `/connect` is not needed for this prepared profile. JSONC settings are preserved with exact backups. Global/project OpenCode configuration still merges. See [OpenCode and Zed setup](opencode-and-zed.md).
 
 ## Claude Code: automatic isolated setup
+
+On macOS and Linux, the installed `kilo-claude` command prepares the same isolated Claude profile and runs in your current terminal. Use `kilo-claude --resume` to select a session from that profile. [Command setup and examples](terminal-commands.md).
 
 1. Choose shared models and preferences in **Models**. On **Agents**, the Claude Code card checks the installed version. Its **Options → Refresh detection** action checks again after an update.
 2. Use the card's **Options** to choose its project folder, then **Open Claude Code**. The helper prepares `~/.claude-kilo` (`%USERPROFILE%\.claude-kilo` on Windows), including `settings.json` and `kilo-models.json`, before opening an interactive terminal. Changed files receive exact `.bak` backups; unrelated permissions and hooks are preserved.

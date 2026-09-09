@@ -74,6 +74,14 @@ func (a *app) adminHandler() http.Handler {
 			a.clientsLaunch(w, r)
 			return
 		}
+		if r.URL.Path == "/api/terminal/commands" {
+			a.terminalCommandsAPI(w, r)
+			return
+		}
+		if r.URL.Path == "/api/terminal/prepare" {
+			a.terminalPrepareAPI(w, r)
+			return
+		}
 		if r.URL.Path == "/api/model-library" {
 			a.modelLibraryAPI(w, r)
 			return
