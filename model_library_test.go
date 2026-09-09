@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -79,8 +80,13 @@ func TestModelLibraryRestartPreservesSelectionAndPreferences(t *testing.T) {
 				t.Fatalf("%s contains unrelated data: %q", name, forbidden)
 			}
 		}
-		info, _ := os.Stat(filepath.Join(a.dir, name))
-		if info.Mode().Perm() != 0600 {
+		info, err := os.Stat(filepath.Join(a.dir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Windows access is controlled by ACLs; its reported Unix mode bits
+		// do not represent the owner-only permissions checked on Unix.
+		if runtime.GOOS != "windows" && info.Mode().Perm() != 0600 {
 			t.Fatalf("file permissions = %v", info.Mode())
 		}
 	}
