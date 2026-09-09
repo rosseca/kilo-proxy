@@ -108,6 +108,10 @@ func nativeTestUI(t *testing.T) *nativeUI {
 	go server.Serve(listener)
 	t.Cleanup(func() { a.requestQuit(); a.cancelLogin(); a.stop(); server.Close(); up.Close() })
 	u := newNativeUI(a, func() {})
+	t.Cleanup(func() { a.requestQuit(); u.shutdownModelLibrary() })
+	u.page = "connection" // Legacy connection tests opt into Settings explicitly.
+	u.clientState().Claude = claudeCaps("2.1.251")
+	u.clients.ClaudeChecked, u.clients.ClaudeDetectStarted = true, true
 	yes := true
 	u.models = []modelInfo{{ID: "vendor/one", Name: "Very Long First Model Name", ContextWindow: 64000, MaxOutputTokens: 4000, ReasoningEfforts: []string{"low", "high"}, Tools: &yes, InputPrice: ptrFloat(1), OutputPrice: ptrFloat(2)}, {ID: "anthropic/claude-sonnet-4.6", Name: "Claude Sonnet", ContextWindow: 128000, Tools: &yes, InputPrice: ptrFloat(3), OutputPrice: ptrFloat(15)}}
 	nativeTestWait(t, u, func() bool { return u.authenticated })
@@ -283,7 +287,7 @@ func TestNativeVisualSnapshots(t *testing.T) {
 		t.Fatal(err)
 	}
 	u := nativeTestUI(t)
-	selection := u.clientState().selection("codex")
+	selection := nativeSeedSharedForTest(t, u)
 	for i, model := range u.models {
 		if err := selection.add(model, 50); err != nil {
 			t.Fatal(err)
@@ -292,10 +296,10 @@ func TestNativeVisualSnapshots(t *testing.T) {
 		if i == 0 {
 			selection.Models[i].DefaultReasoning = "high"
 		}
-		u.seedClientChoice("codex", selection.Models[i])
+		u.seedClientChoice(sharedModelKey, selection.Models[i])
 	}
 	for _, size := range []image.Point{{1180, 820}, {780, 700}} {
-		for _, page := range []string{"connection", "clients", "activity"} {
+		for _, page := range []string{"settings", "clients", "activity"} {
 			u.page = page
 			u.language = "en"
 			u.notice = ""

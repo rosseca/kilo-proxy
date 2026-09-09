@@ -106,11 +106,18 @@ func TestNativeModelGridPointerSettingsAndResize(t *testing.T) {
 				u.models = nativeGridModels()
 				u.setLanguage(lang)
 				nativeTestWait(t, u, func() bool { return u.language == lang && u.languageTarget == "" && !u.busy["POST/api/language"] })
-				u.page = "clients"
+				u.page = "models"
+				u.expanded["library.catalog"] = true
 				h := &nativePointerHarness{t: t, u: u, size: size, now: time.Now()}
 				h.frame()
-				// Move the parent page until the first row sits below the fixed header.
-				nativeMenuWheel(h, image.Pt(size.X-80, 350), 320)
+				// Position the first grid row below the fixed navigation before real pointer input.
+				initial := h.target("GPT-5.6 Sol", semantic.CheckBox).Desc.Bounds
+				anchor := 180
+				if size.X < 940 {
+					anchor = 240
+				}
+				u.list("page.models").Position.Offset = max(0, initial.Min.Y-anchor)
+				h.frame()
 				first := h.target("GPT-5.6 Sol", semantic.CheckBox).Desc.Bounds
 				second := h.target("Claude Sonnet 4.6", semantic.CheckBox).Desc.Bounds
 				if first.Min.Y != second.Min.Y || second.Min.X <= first.Max.X {
@@ -124,12 +131,16 @@ func TestNativeModelGridPointerSettingsAndResize(t *testing.T) {
 				}
 				nativeGridCapture(t, h, "native-model-grid-"+fmtSize(size)+"-"+lang)
 				h.click("Claude Sonnet 4.6", semantic.CheckBox)
-				s := u.clientState().selection("codex")
+				s := u.library.selection
 				if s.choice("anthropic/claude-sonnet-4.6") == nil || len(s.Models) != 1 {
 					t.Fatal("second-column pointer selected the wrong model")
 				}
 				nativeGridCapture(t, h, "native-model-grid-selected-"+fmtSize(size)+"-"+lang)
-				field := nativeClientField("codex", "anthropic/claude-sonnet-4.6", "name")
+				u.list("page.models").Position.Offset = 0
+				h.frame()
+				h.click(u.tr("Done", "Listo"), semantic.Button)
+				field := nativeClientField(sharedModelKey, "anthropic/claude-sonnet-4.6", "name")
+				h.click(u.tr("Edit", "Editar"), semantic.Button)
 				h.click("Claude Sonnet 4.6", semantic.Editor)
 				if !h.router.Source().Focused(u.editor(field)) {
 					t.Fatal("selected card input did not receive pointer focus")
@@ -139,11 +150,10 @@ func TestNativeModelGridPointerSettingsAndResize(t *testing.T) {
 				if s.choice("anthropic/claude-sonnet-4.6").DisplayName != "My Claude" {
 					t.Fatal("keyboard edit was lost in selected card")
 				}
-				reasoningField := nativeClientField("codex", "anthropic/claude-sonnet-4.6", "reasoning")
+				reasoningField := nativeClientField(sharedModelKey, "anthropic/claude-sonnet-4.6", "reasoning")
 				h.click(u.value(reasoningField)+"  ▾", semantic.Button)
-				nativeMenuWheel(h, second.Min.Add(image.Pt(30, 100)), 180)
 				h.click("low", semantic.Button)
-				if u.value(nativeClientField("codex", "anthropic/claude-sonnet-4.6", "reasoning")) != "low" {
+				if u.value(nativeClientField(sharedModelKey, "anthropic/claude-sonnet-4.6", "reasoning")) != "low" {
 					t.Fatal("reasoning choice did not stay inside selected card")
 				}
 				before := append([]string(nil), s.ids()...)
@@ -210,12 +220,9 @@ func TestNativeModelGridVisualOverview(t *testing.T) {
 	}
 	u := nativeTestUI(t)
 	u.models = nativeGridModels()[:6]
-	s := u.clientState().selection("codex")
-	if err := s.add(u.models[0], 50); err != nil {
-		t.Fatal(err)
-	}
-	u.seedClientChoice("codex", s.Models[0])
-	u.page = "clients"
+	nativeSeedSharedForTest(t, u, u.models[0])
+	u.page = "models"
+	u.expanded["library.catalog"] = true
 	h := &nativePointerHarness{t: t, u: u, size: image.Pt(1180, 1160), now: time.Now()}
 	h.frame()
 	nativeMenuWheel(h, image.Pt(1100, 350), 70)

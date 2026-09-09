@@ -2,12 +2,71 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"strings"
 	"sync"
 	"testing"
 )
+
+func TestTraySpendFormatsReportedNanodollars(t *testing.T) {
+	for _, tc := range []struct {
+		name                    string
+		requests, priced, nanos int64
+		want                    string
+	}{
+		{"new session", 0, 0, 0, "$0.00"},
+		{"unknown", 3, 0, 0, "—"},
+		{"known zero", 2, 2, 0, "$0.00"},
+		{"partial zero", 3, 2, 0, "$0.00*"},
+		{"one nanodollar", 1, 1, 1, "<$0.01"},
+		{"partial tiny", 3, 2, 9999999, "<$0.01*"},
+		{"one cent", 1, 1, 10000000, "$0.01"},
+		{"below rounding boundary", 1, 1, 219999999, "$0.22"},
+		{"half cent rounds up", 1, 1, 225000000, "$0.23"},
+		{"decimal carry", 1, 1, 999999999, "$1.00"},
+		{"large precise boundary", 1, 1, 9007199254740993, "$9007199.25"},
+		{"max accumulator", 1, 1, math.MaxInt64, "$9223372036.85"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := usageSummary{Requests: tc.requests, Priced: tc.priced, costNanos: tc.nanos}
+			if got := traySpendAmount(s); got != tc.want {
+				t.Fatalf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestTraySpendUsesProcessTotalAcrossConversationsAndImages(t *testing.T) {
+	a := testApp(t)
+	a.config.TrayDisplay = trayDisplaySpend
+	a.config.Language = "en"
+	for _, request := range []struct{ source, session, org, response string }{
+		{"codex-thread", "codex-task", "org-a", `{"usage":{"cost":0.12}}`},
+		{"claude-session", "claude-task", "org-a", `{"usage":{"cost":0.23}}`},
+		{"unassigned", "image", "org-b", `{"usage":{"cost":0,"cost_details":{"upstream_inference_cost":0.21976}}}`},
+		{"client-session", "unknown", "org-b", `{"usage":{"input_tokens":12}}`},
+	} {
+		usage := observeUsage(t, false, request.response)
+		usage.usage.Source, usage.usage.Session, usage.org = request.source, request.session, request.org
+		a.recordUsage(usage)
+	}
+	before := a.trayState()
+	if before.amount != "$0.57*" || before.spend != "Reported subtotal this session: $0.57*" || before.coverage != "Cost reported: 3/4 requests" || !strings.Contains(before.tooltip, "$0.57*") {
+		t.Fatalf("tray lost process subtotal or coverage: %+v", before)
+	}
+	a.clearActivity(httptest.NewRecorder())
+	a.stop()
+	if after := a.trayState(); after.amount != before.amount || after.coverage != before.coverage {
+		t.Fatal("clearing captures or stopping reset tray spend")
+	}
+	a.config.TrayDisplay = trayDisplayIcon
+	if icon := a.trayState(); icon.tooltip != icon.labels.tooltip || icon.amount != before.amount {
+		t.Fatal("icon preference changed accounting or kept spend tooltip")
+	}
+}
 
 func TestTrayFollowsPanelLifecycle(t *testing.T) {
 	a := testApp(t)

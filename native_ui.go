@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"gioui.org/layout"
@@ -26,6 +27,13 @@ import (
 // All view state is confined to the window event goroutine. Network requests
 // return through updates; polling never changes an editor the user is typing in.
 type nativeUI struct {
+	frameMu             sync.Mutex
+	closing             bool
+	catalogCache        nativeCatalogCache
+	catalogGeneration   uint64
+	catalogCached       bool
+	library             *nativeLibrary
+	agents              *nativeAgents
 	traceGeneration     uint64
 	modelsPending       bool
 	languageRevision    uint64
@@ -63,15 +71,21 @@ func newNativeUI(owner *app, invalidate func()) *nativeUI {
 	t.Shaper = text.NewShaper(text.WithCollection(nativeFonts()))
 	t.TextSize = 14
 	t.Face = "Inter"
-	t.Bg, t.Fg = nativeColor(0xf4f5ef), nativeColor(0x252b28)
-	t.ContrastBg, t.ContrastFg = nativeColor(0x596b40), nativeColor(0x252b28)
-	u := &nativeUI{owner: owner, invalidate: invalidate, theme: t, updates: make(chan func(), 128), editors: map[string]*widget.Editor{}, buttons: map[string]*widget.Clickable{}, checks: map[string]*widget.Bool{}, lists: map[string]*widget.List{}, expanded: map[string]bool{}, busy: map[string]bool{}, state: map[string]any{}, client: "codex", page: "connection", traceStage: "request"}
+	t.Bg, t.Fg = nativeColor(0xf7f8fa), nativeColor(0x202632)
+	t.ContrastBg, t.ContrastFg = nativeColor(0x263040), nativeColor(0xffffff)
+	u := &nativeUI{owner: owner, invalidate: invalidate, theme: t, updates: make(chan func(), 128), editors: map[string]*widget.Editor{}, buttons: map[string]*widget.Clickable{}, checks: map[string]*widget.Bool{}, lists: map[string]*widget.List{}, expanded: map[string]bool{}, busy: map[string]bool{}, state: map[string]any{}, client: "codex", page: "agents", traceStage: "request"}
 	owner.mu.Lock()
 	u.language = owner.config.Language
 	u.setValue("connection.org", owner.config.OrgID)
 	u.setValue("connection.port", strconv.Itoa(owner.config.Port))
+	u.models = readNativeCatalogCache(owner.dir, owner.config.OrgID)
+	u.catalogCached = len(u.models) > 0
 	u.setChecked("connection.remember", owner.config.Remember)
+	if owner.apiKey == "" || owner.config.OrgID == "" {
+		u.page = "settings"
+	}
 	owner.mu.Unlock()
+	u.initModelLibrary()
 	u.refreshState()
 	go func() {
 		ticker := time.NewTicker(time.Second)
@@ -153,7 +167,7 @@ func (u *nativeUI) label(s string) layout.Widget {
 func (u *nativeUI) note(s string) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
 		l := material.Caption(u.theme, s)
-		l.Color = nativeColor(0x64705f)
+		l.Color = nativeColor(0x626b79)
 		return l.Layout(gtx)
 	}
 }
@@ -176,13 +190,22 @@ func (u *nativeUI) button(id, label string, action func()) layout.Widget {
 		style.TextSize = 12
 		style.Inset = layout.Inset{Top: 11, Bottom: 11, Left: 14, Right: 14}
 		gtx.Constraints.Min.Y = max(gtx.Constraints.Min.Y, gtx.Dp(40))
-		style.Background = nativeColor(0xeff2e8)
-		if id == "connection.save-start" || id == "connection.login" || strings.Contains(id, "prepare") && !strings.HasSuffix(id, ":prepare") || strings.HasSuffix(id, ":launch") {
-			style.Background = nativeColor(0xe8f36a)
+		style.Background, style.Color = nativeColor(0xe9ecf1), nativeColor(0x293344)
+		if strings.HasPrefix(id, "primary.") || id == "connection.save-start" || id == "connection.login" || strings.HasSuffix(id, ":launch") {
+			style.Background, style.Color = nativeColor(0x202a39), nativeColor(0xffffff)
 		}
 		if strings.HasPrefix(label, "● ") || strings.HasPrefix(label, "★ ") {
-			style.Background = nativeColor(0x293b26)
-			style.Color = nativeColor(0xf3f8df)
+			style.Background, style.Color = nativeColor(0xdce3ee), nativeColor(0x25344e)
+		}
+		if b.Hovered() && gtx.Enabled() {
+			if style.Background == nativeColor(0x202a39) {
+				style.Background = nativeColor(0x35445c)
+			} else {
+				style.Background = nativeColor(0xd9dfe8)
+			}
+		}
+		if !gtx.Enabled() {
+			style.Background, style.Color = nativeColor(0xeff1f4), nativeColor(0x727b89)
 		}
 		return style.Layout(gtx)
 	}
@@ -204,7 +227,7 @@ func (u *nativeUI) field(id, label, placeholder string, secret bool) layout.Widg
 		if secret {
 			e.Mask = '•'
 		}
-		return widget.Border{Color: nativeColor(0xdfe3d8), Width: 1, CornerRadius: 6}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return widget.Border{Color: nativeColor(0xd5dae2), Width: 1, CornerRadius: 6}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			gtx.Constraints.Min.X = gtx.Constraints.Max.X
 			gtx.Constraints.Min.Y = max(0, gtx.Constraints.Min.Y-gtx.Dp(20))
 			gtx.Constraints.Min.Y = max(gtx.Constraints.Min.Y, gtx.Dp(20))
@@ -290,7 +313,7 @@ func (u *nativeUI) alignedRow(alignment layout.Alignment, children ...layout.Wid
 func (u *nativeUI) card(children ...layout.Widget) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
 		return nativeSurface(gtx, nativeColor(0xffffff), 12, func(gtx layout.Context) layout.Dimensions {
-			return widget.Border{Color: nativeColor(0xe0e5d8), Width: 1, CornerRadius: 12}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return widget.Border{Color: nativeColor(0xdce1e8), Width: 1, CornerRadius: 12}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				gtx.Constraints.Min.X = gtx.Constraints.Max.X
 				return layout.UniformInset(24).Layout(gtx, u.column(children...))
 			})
@@ -318,7 +341,7 @@ func (u *nativeUI) code(id, value string) layout.Widget {
 		}
 		gtx.Constraints.Min.X = gtx.Constraints.Max.X
 		gtx.Constraints.Max.Y = gtx.Dp(300)
-		return widget.Border{Color: nativeColor(0xdfe3d8), Width: 1, CornerRadius: 6}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return widget.Border{Color: nativeColor(0xd5dae2), Width: 1, CornerRadius: 6}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			style := material.Editor(u.theme, e, "")
 			style.Font.Typeface = "Go Mono"
 			style.TextSize = 12
@@ -445,7 +468,14 @@ func (u *nativeUI) acceptState(raw json.RawMessage) {
 	}
 	if !first && oldRevision != nativeNumber(state, "catalogRevision") {
 		u.models = nil
-		if u.page == "clients" {
+		if u.library != nil {
+			for i := range u.library.selection.Models {
+				m := &u.library.selection.Models[i].Model
+				*m = modelInfo{ID: m.ID, Name: m.ID, ContextWindow: m.ContextWindow, MaxOutputTokens: m.MaxOutputTokens}
+			}
+		}
+		u.catalogCached = false
+		if u.page == "clients" || u.page == "models" || u.page == "agents" {
 			u.modelsPending = true
 		}
 	}
@@ -490,10 +520,20 @@ func (u *nativeUI) applyModels(raw json.RawMessage, requestedRevision float64, f
 		u.refreshState()
 		return false
 	}
+	u.owner.mu.Lock()
+	currentRevision, org := u.owner.catalogRevision, u.owner.config.OrgID
+	u.owner.mu.Unlock()
+	if response.Revision != float64(currentRevision) {
+		u.modelsPending = true
+		u.refreshState()
+		return false
+	}
 	u.models = response.Models
 	if field == "catalog" {
 		u.models = response.Catalog
 	}
+	u.catalogCached = false
+	u.cacheModels(org)
 	return true
 }
 func (u *nativeUI) refreshModels() {
@@ -622,8 +662,8 @@ func (u *nativeUI) connectionPanel() layout.Widget {
 	}), u.disabled(editable, u.button("connection.forget", u.tr("Forget upstream key", "Olvidar clave de Kilo"), func() {
 		u.call("POST", "/api/forget", map[string]any{}, func(json.RawMessage) { u.setValue("connection.key", ""); u.refreshState() })
 	}))))
-	endpoint := u.card(u.heading(u.tr("Your local endpoint", "Tu endpoint local")), u.label(nativeString(u.state, "baseURL")), u.pills(u.button("connection.copy-url", u.tr("Copy base URL", "Copiar URL base"), func() { u.copy(nativeString(u.state, "baseURL")) }), u.button("connection.copy-key", u.tr("Copy local API key", "Copiar API key local"), func() { u.copy(nativeString(u.state, "localKey")) })), u.note(u.tr("The local key authenticates your tools. Your personal Kilo key stays on this device.", "La clave local autentica tus herramientas. Tu clave personal de Kilo permanece en este equipo.")), u.button("connection.clients", u.tr("Set up a client →", "Configurar un cliente →"), func() {
-		u.page = "clients"
+	endpoint := u.card(u.heading(u.tr("Your local endpoint", "Tu endpoint local")), u.label(nativeString(u.state, "baseURL")), u.pills(u.button("connection.copy-url", u.tr("Copy base URL", "Copiar URL base"), func() { u.copy(nativeString(u.state, "baseURL")) }), u.button("connection.copy-key", u.tr("Copy local API key", "Copiar API key local"), func() { u.copy(nativeString(u.state, "localKey")) })), u.note(u.tr("The local key authenticates your tools. Your personal Kilo key stays on this device.", "La clave local autentica tus herramientas. Tu clave personal de Kilo permanece en este equipo.")), u.button("connection.clients", u.tr("Go to agents →", "Ir a agentes →"), func() {
+		u.page = "agents"
 		if len(u.models) == 0 {
 			u.refreshModels()
 		}
@@ -649,6 +689,9 @@ func (u *nativeUI) SmokeAction(action, value string) error {
 	case "stop":
 		u.call("POST", "/api/stop", map[string]any{}, u.acceptState)
 	default:
+		if handled, err := u.modelSmokeAction(action, value); handled {
+			return err
+		}
 		return errors.New("unknown native action")
 	}
 	return nil
@@ -662,5 +705,9 @@ func (u *nativeUI) SmokeSnapshot() map[string]string {
 	if nativeBool(u.state, "running") {
 		status = "running"
 	}
-	return map[string]string{"version": version, "language": u.language, "language-saving": strconv.FormatBool(u.languageTarget != "" || u.busy["POST/api/language"]), "status": status, "content-ready": ready, "baseURL": nativeString(u.state, "baseURL"), "notice": u.notice}
+	snapshot := map[string]string{"version": version, "language": u.language, "language-saving": strconv.FormatBool(u.languageTarget != "" || u.busy["POST/api/language"]), "status": status, "content-ready": ready, "baseURL": nativeString(u.state, "baseURL"), "notice": u.notice}
+	for key, value := range u.modelSmokeSnapshot() {
+		snapshot[key] = value
+	}
+	return snapshot
 }

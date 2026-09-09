@@ -1,6 +1,7 @@
 //go:build !ios
 
 #import <Cocoa/Cocoa.h>
+#include <string.h>
 #include "systray.h"
 
 #if __MAC_OS_X_VERSION_MIN_REQUIRED < 101400
@@ -191,6 +192,11 @@ withShortcutMods: (unsigned int)theShortcutMods
 - (void)setIcon:(NSImage *)image {
   statusItem.button.image = image;
   [self updateTitleButtonStyle];
+}
+
+- (void)copyAppearance:(NSMutableDictionary *)appearance {
+  appearance[@"title"] = statusItem.button.title ?: @"";
+  appearance[@"hasIcon"] = @(statusItem.button.image != nil);
 }
 
 - (void)setTitle:(NSString *)title {
@@ -431,6 +437,20 @@ void setIcon(const char* iconBytes, int length, bool template) {
     [image setSize:NSMakeSize(16, 16)];
     image.template = template;
     runInMainThread(@selector(setIcon:), (id)image);
+  }
+}
+
+// Keep the status item and menu available when the title carries the content.
+void clearIcon(void) {
+  runInMainThread(@selector(setIcon:), nil);
+}
+
+char* copyTrayAppearance(bool *hasIcon) {
+  @autoreleasepool {
+    NSMutableDictionary *appearance = [[NSMutableDictionary alloc] init];
+    runInMainThread(@selector(copyAppearance:), appearance);
+    *hasIcon = [appearance[@"hasIcon"] boolValue];
+    return strdup([(appearance[@"title"] ?: @"") UTF8String]);
   }
 }
 

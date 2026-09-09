@@ -286,6 +286,9 @@ func (u *nativeUI) seedClientChoice(key string, m nativeModelChoice) {
 	id := m.Model.ID
 	u.setValue(nativeClientField(key, id, "name"), m.DisplayName)
 	_, initial := nativeReasoningFor(m)
+	if key == sharedModelKey && m.DefaultReasoning != "" {
+		initial = m.DefaultReasoning
+	}
 	u.setValue(nativeClientField(key, id, "reasoning"), initial)
 	u.setValue(nativeClientField(key, id, "claude-effort"), m.ClaudeEffort)
 	u.setValue(nativeClientField(key, id, "context"), strconv.Itoa(m.Model.ContextWindow))
@@ -306,11 +309,11 @@ func (u *nativeUI) syncClientSelection(key string, s *nativeClientSelection) {
 		id := m.Model.ID
 		m.Model = nativeCurrentModel(m.Model, catalog[id])
 		m.DisplayName = u.value(nativeClientField(key, id, "name"))
-		if key == "opencode" || key == "zed" {
+		if key == sharedModelKey || key == "opencode" || key == "zed" {
 			m.Model.ContextWindow, _ = strconv.Atoi(u.value(nativeClientField(key, id, "context")))
 			m.Model.MaxOutputTokens, _ = strconv.Atoi(u.value(nativeClientField(key, id, "output")))
 		}
-		if key == "codex" || key == "codex-cli" || key == "xcode-codex" {
+		if key == sharedModelKey || key == "codex" || key == "codex-cli" || key == "xcode-codex" {
 			m.ReasoningCustom = u.checked(nativeClientField(key, id, "custom"))
 			if m.ReasoningCustom {
 				m.ReasoningLevels = []string{}
@@ -387,15 +390,7 @@ func (u *nativeUI) clientsPanel() layout.Widget {
 			}
 		})
 	}
-	tabs := []layout.Widget{}
-	for _, tab := range []struct{ id, name string }{{"codex", "Codex GUI"}, {"codex-cli", "Codex CLI"}, {"claude", "Claude Code"}, {"opencode", "OpenCode"}, {"zed", "Zed"}, {"cursor", "Cursor"}, {"xcode", "Xcode"}, {"generic", u.tr("Other clients", "Otros clientes")}} {
-		id, name := tab.id, tab.name
-		if u.client == id {
-			name = "● " + name
-		}
-		tabs = append(tabs, u.button("client-tab:"+id, name, func() { u.client = id }))
-	}
-	widgets := []layout.Widget{u.pills(tabs...)}
+	widgets := []layout.Widget{u.pills(u.button("agents.back", u.tr("← All agents", "← Todos los agentes"), func() { u.page = "agents" })), u.heading(map[string]string{"codex": "Codex Desktop", "codex-cli": "Codex CLI", "claude": "Claude Code", "opencode": "OpenCode", "zed": "Zed", "cursor": "Cursor", "xcode": "Xcode", "generic": u.tr("Other agents", "Otros agentes")}[u.client])}
 	key := u.client
 	if key == "xcode" {
 		variants := []layout.Widget{}
@@ -426,7 +421,7 @@ func (u *nativeUI) clientsPanel() layout.Widget {
 			widgets = append(widgets, u.note(u.tr("Close Xcode before preparing its agent profile. Reopen Xcode and start a new conversation afterwards. Xcode controls its own model picker.", "Cierra Xcode antes de preparar el perfil del agente. Vuelve a abrirlo e inicia una conversación nueva. Xcode controla su selector de modelos.")))
 		}
 	}
-	s := c.selection(key)
+	s := u.sharedClientSelection(key)
 	u.syncClientSelection(key, s)
 	if key == "claude" {
 		if u.value("clients-claude-mode") == "" {
@@ -456,9 +451,9 @@ func (u *nativeUI) clientsPanel() layout.Widget {
 		protocol = u.tr("Uses Anthropic Messages. All selected models and internal-task aliases must support it.", "Usa Anthropic Messages. Los modelos y los alias de tareas internas deben admitirlo.")
 	}
 	widgets = append(widgets, u.note(protocol))
-	widgets = append(widgets, u.clientPicker(key, s))
+	widgets = append(widgets, u.actionRow(u.note(u.sharedModelSummary()), u.button("agents.models.edit", u.tr("Edit shared models", "Editar modelos compartidos"), func() { u.page = "models" })))
 	if key == "codex" || key == "codex-cli" {
-		widgets = append(widgets, u.clientImagesPanel(key, s))
+		widgets = append(widgets, u.button("agents.images.edit", u.tr("Image generation settings", "Ajustes de generación de imágenes"), func() { u.page = "models"; u.expanded["library.images"] = true }))
 	}
 	if key == "cursor" {
 		widgets = append(widgets, u.cursorClientPanel(s))
@@ -487,6 +482,8 @@ func (u *nativeUI) clientsPanel() layout.Widget {
 
 func (u *nativeUI) clientPicker(key string, s *nativeClientSelection) layout.Widget {
 	prefix := "client:" + key + ":"
+	shared := key == sharedModelKey
+	catalog := !shared || u.expanded["library.catalog"]
 	limit := 50
 	if key == "generic" {
 		limit = 1
@@ -530,7 +527,12 @@ func (u *nativeUI) clientPicker(key string, s *nativeClientSelection) layout.Wid
 			u.setValue(prefix+"alias:"+alias, "")
 		}
 	})), u.note(fmt.Sprintf(u.tr("%d selected · %d matching · up to %d models", "%d seleccionados · %d resultados · hasta %d modelos"), len(s.Models), len(available), limit) + u.tr(" · Prices: input / output per 1M tokens", " · Precios: entrada / salida por 1M tokens"))}
-	controls = append(controls, u.note(u.modelSortHint(order)))
+	if shared && !catalog {
+		available = u.sharedModelOrder()
+		controls = []layout.Widget{u.pills(u.check(prefix+"advanced", u.tr("Advanced model options", "Opciones avanzadas de modelos"), func(bool) {}))}
+	} else {
+		controls = append(controls, u.note(u.modelSortHint(order)))
+	}
 	cards := []layout.Widget{}
 	cardIDs := []string{}
 	for i, model := range available {
@@ -556,7 +558,7 @@ func (u *nativeUI) clientPicker(key string, s *nativeClientSelection) layout.Wid
 			}
 		}), u.note(id)}
 		row := []layout.Widget{u.modelCardHeading(heading...), u.modelPriceCells(m)}
-		if metric := u.modelSortMetric(m, order); metric != "" {
+		if metric := u.modelSortMetric(m, order); metric != "" && (!shared || catalog || u.checked(prefix+"advanced")) {
 			row = append(row, u.note(metric))
 		}
 		if m.MayTrain != nil && *m.MayTrain {
@@ -590,7 +592,7 @@ func (u *nativeUI) clientPicker(key string, s *nativeClientSelection) layout.Wid
 				row = append(row, u.note(strings.Join(details, " · ")))
 			}
 		}
-		if choice != nil {
+		if choice != nil && !shared {
 			defaultLabel := u.tr("Use on startup", "Usar al iniciar")
 			if s.Initial == id {
 				defaultLabel = u.tr("★ Initial model", "★ Modelo inicial")
@@ -606,8 +608,14 @@ func (u *nativeUI) clientPicker(key string, s *nativeClientSelection) layout.Wid
 					}
 				}
 			})}
-			if key == "codex" || key == "codex-cli" || key == "xcode-codex" {
+			if shared || key == "codex" || key == "codex-cli" || key == "xcode-codex" {
 				levels, _ := nativeReasoningFor(*choice)
+				if shared && !choice.ReasoningCustom && choice.DefaultReasoning != "" && !helperContains(levels, choice.DefaultReasoning) {
+					levels = append(levels, choice.DefaultReasoning)
+				}
+				if shared && choice.ReasoningCustom && len(levels) == 0 {
+					u.setValue(nativeClientField(key, id, "reasoning"), "")
+				}
 				if key == "xcode-codex" {
 					filtered := []string{}
 					for _, level := range levels {
@@ -654,8 +662,22 @@ func (u *nativeUI) clientPicker(key string, s *nativeClientSelection) layout.Wid
 			}
 			row = append(row, u.row(primary...))
 			row = append(row, options...)
-			if (key == "opencode" || key == "zed") && u.checked(prefix+"advanced") {
+			if (shared || key == "opencode" || key == "zed") && u.checked(prefix+"advanced") {
 				row = append(row, u.row(u.field(nativeClientField(key, id, "context"), u.tr("Context tokens", "Tokens de contexto"), "200000", false), u.field(nativeClientField(key, id, "output"), u.tr("Max output (0 = unspecified)", "Salida máxima (0 = sin especificar)"), "0", false)))
+			}
+		}
+		if shared && !catalog && choice != nil {
+			row[0] = u.column(heading...)
+			row = append(row, u.sharedModelControls(choice))
+			found := false
+			for _, current := range u.models {
+				if current.ID == id {
+					found = true
+					break
+				}
+			}
+			if !found {
+				row = append(row, u.note(u.tr("Saved model · catalog unavailable", "Modelo guardado · catálogo no disponible")))
 			}
 		}
 		cards = append(cards, u.modelCard(choice != nil, row...))
@@ -669,20 +691,23 @@ func (u *nativeUI) clientPicker(key string, s *nativeClientSelection) layout.Wid
 	if len(available) > 150 {
 		controls = append(controls, u.note(u.tr("Showing the first 150 results. Search to narrow the catalog.", "Se muestran los primeros 150 resultados. Busca para acotar el catálogo.")))
 	}
-	controls = append(controls, u.actionRow(u.field(prefix+"manual", u.tr("Add an exact model ID", "Añadir un ID de modelo exacto"), "provider/model", false), u.button(prefix+"add", u.tr("Add model", "Añadir modelo"), func() {
-		id := strings.TrimSpace(u.value(prefix + "manual"))
-		m := modelInfo{ID: id, Name: id}
-		for _, candidate := range u.models {
-			if candidate.ID == id {
-				m = candidate
-				break
+	if catalog || u.checked(prefix+"advanced") {
+		controls = append(controls, u.actionRow(u.field(prefix+"manual", u.tr("Add an exact model ID", "Añadir un ID de modelo exacto"), "provider/model", false), u.button(prefix+"add", u.tr("Add model", "Añadir modelo"), func() {
+			id := strings.TrimSpace(u.value(prefix + "manual"))
+			m := modelInfo{ID: id, Name: id}
+			for _, candidate := range u.models {
+				if candidate.ID == id {
+					m = candidate
+					break
+				}
 			}
-		}
-		if add(m) {
-			u.setValue(prefix+"manual", "")
-			u.setValue(prefix+"search", "")
-		}
-	})))
+			if add(m) {
+				u.setValue(prefix+"manual", "")
+				u.setValue(prefix+"search", "")
+			}
+		})))
+	}
+
 	return u.column(controls...)
 }
 
@@ -699,7 +724,7 @@ func (u *nativeUI) clientActions(key string, s *nativeClientSelection) layout.Wi
 	if strings.HasPrefix(key, "xcode-") && key != "xcode-chat" && !u.clientState().Xcode.Available {
 		canSave = false
 	}
-	status := u.tr("Choose models, then launch. Your profile is prepared automatically.", "Elige modelos y abre el editor. El perfil se prepara automáticamente.")
+	status := u.tr("Open this agent from Agents. Its profile is prepared automatically.", "Abre este agente desde Agentes. Su perfil se prepara automáticamente.")
 	if s.Saved != "" {
 		status = u.tr("Unsaved changes will be prepared when you launch.", "Los cambios pendientes se prepararán al abrir.")
 	}
@@ -709,7 +734,7 @@ func (u *nativeUI) clientActions(key string, s *nativeClientSelection) layout.Wi
 	if validation != nil && len(s.Models) > 0 {
 		status = validation.Error()
 	}
-	widgets := []layout.Widget{u.clientLauncherPanel(key, s, canSave), u.row(u.disabled(canSave, u.button("client:"+key+":prepare", u.tr("Prepare without launching", "Preparar sin abrir"), func() { u.prepareClient(key) })), u.disabled(!working, u.button("client:"+key+":load", u.tr("Load saved selection", "Cargar selección guardada"), func() { u.loadClient(key) }))), u.note(status), u.note(u.tr("Existing preferences are preserved. Changed files receive .bak backups. Loading a selection requires preparing it again for the current connection.", "Se conservan los ajustes existentes y se guardan copias .bak. Tras cargar una selección, prepárala de nuevo para aplicar la conexión actual."))}
+	widgets := []layout.Widget{u.clientLauncherPanel(key, s, canSave), u.row(u.disabled(canSave, u.button("client:"+key+":prepare", u.tr("Prepare without launching", "Preparar sin abrir"), func() { u.prepareClient(key) }))), u.note(status), u.note(u.tr("Existing preferences are preserved. Changed files receive .bak backups.", "Se conservan los ajustes existentes y se guardan copias .bak de los archivos modificados."))}
 	widgets = append(widgets, u.check("client:"+key+":show-command", u.tr("Show launch command (optional)", "Mostrar comando de arranque (opcional)"), func(bool) {}))
 	showCommand := u.checked("client:" + key + ":show-command")
 	if showCommand {
@@ -791,7 +816,7 @@ func (u *nativeUI) prepareClient(key string) {
 }
 
 func (u *nativeUI) prepareClientAfter(key string, done func(error)) {
-	s := u.clientState().selection(key)
+	s := u.sharedClientSelection(key)
 	u.syncClientSelection(key, s)
 	payload, err := nativeClientPayload(key, s)
 	if err != nil {

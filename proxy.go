@@ -30,6 +30,7 @@ type event struct {
 }
 
 type app struct {
+	modelLibrary          *modelLibraryStore
 	imageGenerationURL    string
 	imageGenerationMu     sync.Mutex
 	imageGenerationActive int
@@ -92,6 +93,7 @@ func newApp(dir string, vault credentialVault) (*app, error) {
 	tr.Proxy = nil
 	tr.ResponseHeaderTimeout = 120 * time.Second
 	a := &app{dir: dir, config: cfg, vault: vault, adminToken: randomKey(""), upstream: u, transport: tr, quit: make(chan struct{})}
+	a.modelLibrary = newModelLibraryStore(dir)
 	a.captureEnabled = true
 	a.traces = make(map[string]*requestTrace)
 	a.accountURL = kiloAccountURL

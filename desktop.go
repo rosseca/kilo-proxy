@@ -227,10 +227,10 @@ func (d *nativeDesktop) setupTray() {
 	} else {
 		systray.SetIcon(trayIcon(false))
 	}
-	systray.SetTitle("Kilo Proxy")
+	systray.SetTitle("")
 	d.items = map[string]*systray.MenuItem{}
 	systray.AddMenuItem("Kilo Proxy · "+version, "").Disable()
-	for _, key := range []string{"status", "team", "address", "activity"} {
+	for _, key := range []string{"status", "team", "address", "activity", "spend", "coverage"} {
 		d.items[key] = systray.AddMenuItem(" ", "")
 		d.items[key].Disable()
 	}
@@ -268,10 +268,25 @@ func (d *nativeDesktop) updateTray() {
 	if s == d.last {
 		return
 	}
+	if s.display != d.last.display || s.display == trayDisplaySpend && s.amount != d.last.amount {
+		if s.display == trayDisplaySpend {
+			systray.SetTitle(s.amount)
+			if runtime.GOOS == "darwin" {
+				systray.ClearIcon()
+			}
+		} else {
+			if runtime.GOOS == "darwin" {
+				systray.SetTemplateIcon(trayIcon(true), trayIcon(false))
+			}
+			systray.SetTitle("")
+		}
+	}
 	d.items["status"].SetTitle(s.status)
 	d.items["team"].SetTitle(s.team)
 	d.items["address"].SetTitle(s.labels.endpoint + s.address)
 	d.items["activity"].SetTitle(s.activity)
+	d.items["spend"].SetTitle(s.spend)
+	d.items["coverage"].SetTitle(s.coverage)
 	d.items["open"].SetTitle(s.labels.open)
 	start := s.labels.setup
 	if s.configured {
@@ -291,7 +306,7 @@ func (d *nativeDesktop) updateTray() {
 	}
 	d.items["quit"].SetTitle(s.labels.exit)
 	d.items["message"].SetTitle(s.labels.message(d.message))
-	systray.SetTooltip(s.labels.tooltip)
+	systray.SetTooltip(s.tooltip)
 	d.mu.Lock()
 	d.quitLabel = s.labels.exit
 	d.mu.Unlock()
@@ -304,6 +319,7 @@ func (d *nativeDesktop) control() {
 	for {
 		select {
 		case <-d.owner.quit:
+			d.ui.shutdownModelLibrary()
 			d.cleanup()
 			d.mu.Lock()
 			w, done, code := d.window, d.windowDone, d.exitCode

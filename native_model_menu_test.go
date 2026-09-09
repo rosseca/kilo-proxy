@@ -30,7 +30,8 @@ func TestNativeModelMenuFitsWindowAndIsolatesScrolling(t *testing.T) {
 				h.u.models = append(h.u.models, modelInfo{ID: fmt.Sprintf("lab-%02d/model", i), Name: fmt.Sprintf("Model %02d", i)})
 			}
 			h.u.models = append(h.u.models, modelInfo{ID: "z-ai/final", Name: "Final model"})
-			h.u.page = "clients"
+			h.u.page = "models"
+			h.u.expanded["library.catalog"] = true
 			h.frame()
 			before := h.target("All labs  ▾", semantic.Button).Desc.Bounds
 			nativeMenuWheel(h, image.Pt(size.X-50, before.Min.Y-10), 40)
@@ -39,7 +40,7 @@ func TestNativeModelMenuFitsWindowAndIsolatesScrolling(t *testing.T) {
 				t.Fatal("fixture did not scroll the parent page before opening its menu")
 			}
 			h.click("All labs  ▾", semantic.Button)
-			pageBefore := h.u.list("page.clients").Position
+			pageBefore := h.u.list("page.models").Position
 			first := h.target("● All labs", semantic.Button).Desc.Bounds
 			nativeMenuWheel(h, first.Min.Add(image.Pt(12, 12)), 3000)
 			if !h.u.expanded["models.lab"] {
@@ -53,7 +54,7 @@ func TestNativeModelMenuFitsWindowAndIsolatesScrolling(t *testing.T) {
 			if !h.u.expanded["models.lab"] {
 				t.Fatal("overscroll at the end of labs dismissed the menu")
 			}
-			pageAfter := h.u.list("page.clients").Position
+			pageAfter := h.u.list("page.models").Position
 			if pageBefore.First != pageAfter.First || pageBefore.Offset != pageAfter.Offset {
 				t.Fatal("lab scrolling leaked into the parent page")
 			}

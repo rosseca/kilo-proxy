@@ -10,16 +10,16 @@ Kilo Proxy can start a dedicated **ngrok HTTPS tunnel** for Cursor. Cursor sends
 
 ## Connect
 
-1. Open the **Cursor** tab and check the models you want in the catalog (up to 50). Search by name or use **Add an exact model ID** for models missing from the catalog.
+1. In native **Models**, choose the shared models you want to publish (up to 50). Then open **Agents → Cursor → Set up tunnel**. The optional browser helper instead keeps its own independent selection in its Cursor tab.
 2. Click **Connect HTTPS tunnel**. This explicitly publishes an authenticated inference endpoint through your ngrok account. Keep the app and computer running while using Cursor.
 3. Click **Test public connection**. This checks HTTPS, authentication, and the selected model list without making a billable inference request.
 4. In **Cursor → Settings → Models**, enable **OpenAI API Key**, paste the helper's **Cursor key**, and enable **Override OpenAI Base URL** with the helper's HTTPS URL, including `/v1`.
 5. Add each exact model ID from the helper using **Add Custom Model / Add model**, and enable it. Select that custom model in a new chat and send a small test request. UI labels vary with Cursor versions.
-6. Inspect **Activity & costs** in Kilo Proxy for the actual request, upstream response, and any gateway error. Cost and cache statistics use the same pipeline as other clients when Kilo returns usage data.
+6. Inspect **Activity** in Kilo Proxy for the actual request, upstream response, and any gateway error. Cost and cache statistics use the same pipeline as other clients when Kilo returns usage data.
 
 The OpenAI key field receives the dedicated `kl_cursor_…` key, never your Kilo API key or the ordinary `kl_local_…` key. Do not enter a second organization header in Cursor; the proxy supplies it.
 
-**Disconnect** stops the tunnel and its listener. Stopping the main proxy or quitting Kilo Proxy also disconnects Cursor. Each connection gets a fresh key. Reconnect and update Cursor's key (and URL if changed). Changing the model list requires disconnecting first. Tunnels do not restart automatically. Your ngrok account's endpoint, bandwidth, concurrent-session, and pricing limits apply.
+**Disconnect** stops the tunnel and its listener. Stopping the main proxy or quitting Kilo Proxy also disconnects Cursor. Each connection gets a fresh key. Reconnect and update Cursor's key (and URL if changed). The connected tunnel keeps the model list published at connection time. After editing the shared library, disconnect and reconnect to publish the new list; there is no live update. **Open Cursor** is enabled only with an existing connected tunnel; it opens the installed editor and never starts a public tunnel automatically. Tunnels do not restart automatically. Your ngrok account's endpoint, bandwidth, concurrent-session, and pricing limits apply.
 
 ## Scope and limitations
 
@@ -38,10 +38,10 @@ The OpenAI key field receives the dedicated `kl_cursor_…` key, never your Kilo
 - **ngrok stopped / startup timeout:** check account authentication, allowed endpoints, existing ngrok sessions, quotas, and corporate network rules. Disconnect and reconnect after resolving the issue.
 - **Public connection check fails:** check ngrok first. Do not substitute localhost in Cursor; its backend cannot reach it.
 - **401:** copy the current Cursor key. A previous connection's key is invalid.
-- **400 model not enabled:** add the exact requested Kilo model ID in the helper and reconnect, then select that model in Cursor. No silent fallback or model substitution is performed.
+- **400 model not enabled:** add the exact requested Kilo model ID in Models (or the browser helper's independent selection), then reconnect and select that model in Cursor. No silent fallback or model substitution is performed.
 - **404:** verify the base URL ends in `/v1`, not `/v1/chat/completions`; this adapter serves Chat Completions only.
-- **No request in Activity & costs:** Cursor did not reach the inference handler. Check the public connection, selected custom model, key, and URL override. Authentication and rejected ingress requests do not call Kilo.
-- **Kilo error in Activity & costs:** inspect the response for organization credits, model access, or unsupported parameters. Listing a model does not establish inference compatibility.
+- **No request in Activity:** Cursor did not reach the inference handler. Check the public connection, selected custom model, key, and URL override. Authentication and rejected ingress requests do not call Kilo.
+- **Kilo error in Activity:** inspect the response for organization credits, model access, or unsupported parameters. Listing a model does not establish inference compatibility.
 
 ## Verification
 

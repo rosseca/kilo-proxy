@@ -1,14 +1,17 @@
 # OpenCode and Zed helpers
 
-Both tabs provide a searchable model picker with prices, up to 50 selected models, editable names, an initial model, and adjustable context/output limits under **Advanced options**. Each client has independent selections. Unknown models start with a 200,000-token context assumption; review it against provider metadata. Output limits left at zero are unspecified. These helpers use Chat Completions and do not invent reasoning settings or certify model compatibility.
+The native **OpenCode** and **Zed** cards use the same [shared model library](shared-models.md). Edit up to 50 IDs, names, a default model and token limits in **Models**. Unknown models start with a 200,000-token context assumption; review it against provider metadata. An output limit of zero is unspecified. Both integrations use Chat Completions; reasoning remains automatic, and model listing does not certify inference compatibility.
+
+The optional browser helper remains a separate interface with independent per-client model selections and explicit profile preparation.
 
 ## OpenCode
 
-1. Install OpenCode separately, then start Kilo Proxy and its proxy.
-2. Open **OpenCode**, check models, edit their short names, and choose **Use on startup**.
-3. Click **Prepare without launching**. The helper creates or updates `~/.opencode-kilo/opencode.json` and `kilo-models.json` (`%USERPROFILE%\.opencode-kilo` on Windows).
-4. Set **Project folder** and click **Launch** to open a terminal. Launch can also replace step 3 by preparing pending changes first. It selects the profile through `OPENCODE_CONFIG`, clears an inherited inline configuration override for this child, and pins the initial model with `--model`.
-5. Use `/models` to switch models. Load the saved selection to edit it later, then prepare again.
+1. Install OpenCode separately and configure Kilo Proxy in **Settings**.
+2. Choose models, names, a default and any token limits in **Models**. These library changes save automatically.
+3. On **Agents**, use OpenCode's **Options** to choose its project folder, then **Open OpenCode**. It prepares `~/.opencode-kilo/opencode.json` and `kilo-models.json` (`%USERPROFILE%\.opencode-kilo` on Windows), then opens an interactive terminal.
+4. Use `/models` to switch models. Edit the common library and reopen the agent to apply changes. Manual preparation is under **Options → Integration settings → Prepare without launching**.
+
+The launcher selects the profile through `OPENCODE_CONFIG`, clears an inherited inline configuration override for this child, and pins the initial model with `--model`.
 
 The custom provider includes the local proxy key in its protected configuration, so `/connect` is unnecessary for this profile. It never includes the upstream Kilo credential. The initial model also supplies `small_model` for internal requests. Context/output limits are emitted together when an output limit is known.
 
@@ -18,16 +21,16 @@ The optional configuration export contains the local key; keep it private. The l
 
 ## Zed
 
-1. Open **Zed** in Kilo Proxy and select your models, names, limits, and initial model.
-2. Click **Prepare without launching**. It updates the `kilo-local` OpenAI-compatible provider and the Agent default model in your user settings, preserving other providers and unrelated settings.
-3. Click **Launch** to open Zed; it also prepares pending changes. Use **Copy key for Zed (one-time setup)** once. In Zed, open `agent: open settings`, locate `kilo-local`, and paste the key once. Zed stores it in its system keychain; this helper does not put a key into Zed's settings.
-4. Select a model in Zed's Agent panel and test a conversation with the proxy running.
+1. Edit models, names, limits and the default in **Models**.
+2. On **Agents**, click **Open Zed**. It prepares the `kilo-local` OpenAI-compatible provider and Agent default model in your user settings, preserving other providers and unrelated settings, then opens Zed.
+3. For the one-time key setup, open **Options → Integration settings → Copy key for Zed (one-time setup)**. In Zed, run `agent: open settings`, locate `kilo-local`, and paste the key. Zed stores it in its system keychain; the helper does not put a key in Zed's settings.
+4. Select a model in Zed's Agent panel with the proxy running. Native generation still depends on the model and gateway.
 
 Settings locations are `~/.config/zed/settings.json` on macOS/Linux, `$XDG_CONFIG_HOME/zed/settings.json` when configured on Linux, and `%APPDATA%\Zed\settings.json` on Windows. A neighboring `kilo-models.json` stores the helper selection. Reload Zed if it does not pick up a change. This configures Zed Agent, not edit prediction or external agents.
 
 ## Updates and backups
 
-**Load saved selection** restores models and names; prepare again to apply the current proxy port/key. The helper marks edited selections as unsaved. **Launch** prepares them first; manual command copying remains gated on a prepared profile. Unsaved panel edits are not persisted automatically.
+Native library edits save automatically, but generated editor files update only when that agent is opened or prepared. Reopen an existing agent if it has retained old settings; these are not live model-picker updates. Use **Models → Import an existing agent selection** to review an older saved OpenCode/Zed profile before replacing the common library. The browser helper retains its explicit Load/Prepare flow.
 
 JSON comments, trailing commas, unrelated settings, and exact large-number literals are preserved. Only Kilo-managed fields and the selected default are updated. Changed files receive exact `.bak` backups; a no-op leaves existing backups intact. Invalid or duplicate-key JSON, non-object settings sections, symbolic-link destinations, and unsafe backups are rejected. Writes use temporary files and restore earlier writes if a later write fails; this is not a crash-atomic transaction. If your settings use symlinks, use the optional export to merge the configuration yourself.
 
@@ -36,7 +39,7 @@ The saved model selections contain no credentials. Files written by Kilo Proxy u
 ## Verified coverage
 
 - Automated Go tests cover multi-model validation, JSONC preservation, exact backups, idempotent saves, updates, unsafe paths, and profile load/save.
-- Browser checks cover both tabs, names, initial models, copying, independent selections, dirty-state handling, English/Spanish, and mobile layouts.
+- Native checks cover shared-library propagation, automatic saving, project persistence and preparation-to-open transitions. Browser checks separately cover its independent tabs, names, initial models, copying, dirty-state handling, English/Spanish and narrow layouts.
 - The installed **OpenCode 1.4.0** loaded both generated models and completed a streaming request against a synthetic local gateway with the expected local bearer key. Internal requests stayed within the selected Kilo provider. No paid Kilo inference was performed.
 - Zed is not installed in this development environment. Generated settings and the helper are tested; native Zed generation remains unverified.
 

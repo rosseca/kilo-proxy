@@ -1,30 +1,34 @@
 # Client setup
 
-Start Kilo Proxy and open **Clients & models**. Select your editor and models, optionally set **Project folder**, then click **Launch** to prepare changes and open the client. **Prepare without launching** remains available to save without opening it. Optional exports are available when you need to configure another computer; merge those snippets into existing settings. The local key grants access to your organization’s credits while the proxy is running; do not commit generated credentials. The instructions below use the native interface's English labels; the optional browser interface has equivalent helpers with some different button names.
+Use **Models** to build one automatically saved library, then **Agents** to open an installed client. Each card shows installation status and an **Open** action; **Options → Integration settings** contains manual preparation, provider setup and exports. **Activity** shows observed requests and costs, and **Settings** manages your account, connection and appearance. The first launch opens Settings when a connection has not been configured; a configured app opens Agents.
+
+The local key grants access to your organization’s credits while the proxy is running; do not commit generated credentials. The instructions below use the native interface's English labels. The optional `--browser` helper is a separate older interface with independent per-client selections and explicit preparation. It does not edit the native shared library.
 
 ## Launch installed clients
 
-**Launch** always runs on the computer hosting Kilo Proxy. Operating-system and shell selectors in optional exports only change copied commands. The project folder is shared across helper tabs for the current panel session and defaults to your home folder. **Refresh installed apps** checks again after installing a client; the helper does not install applications.
+Choose models once in **Models → Add models** and set their names, default, order and supported reasoning preferences. The library survives restarts; see [shared models and storage](shared-models.md). Return to **Agents**, choose a project folder and click **Open Codex** or another agent's Open button. The action saves pending library edits, prepares that agent's generated profile when necessary, starts the saved proxy and opens the installed client on this computer. It does not install applications.
 
-Codex Desktop opens an isolated GUI profile. Codex CLI, Claude Code and OpenCode open interactive terminals. macOS uses Terminal, Windows uses its built-in console, and Linux uses an installed desktop terminal. Zed, Cursor and Xcode open their editors; their one-time provider/key setup remains visible in the helper. Existing editor windows may be focused by the editor itself.
+Codex Desktop opens the GUI with an isolated profile. **Codex CLI**, **Claude Code** and **OpenCode** open interactive terminals: Terminal on macOS, a console on Windows and an installed desktop terminal on Linux. **Zed** and **Cursor** open their editors. **Set up Xcode** and **Other clients** lead to provider-specific guidance. Existing editor windows may be focused by the editor itself.
 
-Launch validates saved profile files and the current connection before opening an application, and starts the saved local proxy when needed. Preparation failures stop the launch. Editing models, project folder or the Codex application path while preparation is pending cancels that launch; click again with the new choices. A success message confirms the process was opened, not that a paid inference request succeeded.
+**Choose folder** opens a platform folder chooser. Each agent remembers its own project, with up to six recent folders in **Options**; a new agent defaults to your home folder. Folder paths and a custom Codex path are saved separately in `agent-preferences.json`. Linux uses an installed zenity or kdialog; if neither is available, enter the path under Options. **Locate Codex** chooses a nonstandard Desktop installation. Missing applications show installation guidance; use **Options → Refresh detection** after installing them.
 
-Terminal handoff uses a short-lived private ticket consumed before the agent starts. Credentials are not embedded in terminal history or bootstrap arguments, and the parent environment is unchanged. Closing Kilo Proxy does not terminate opened agents, but it does disconnect their proxy. Manual commands and configuration exports remain available.
+Launch validates saved profile files and the current connection. Preparation failures stop it. Changes to models, connection, project or the Codex application path during preparation cancel that launch; click again with the new choices. Installation status and a successful open confirm discovery/process handoff, not a running-agent health check or successful paid inference. Library changes apply on the next preparation/open; already running agents may need reopening.
 
-![Native Launch controls with an illustrative project folder](images/native-client-launch.png)
+Terminal handoff uses a short-lived private ticket consumed before the agent starts. Credentials are not embedded in terminal history or bootstrap arguments, and the parent environment is unchanged. Quitting Kilo Proxy disconnects opened agents from their proxy without terminating them. Optional operating-system and shell selectors affect copied commands only; automatic preparation and Open always run on the computer hosting Kilo Proxy.
+
+![Native Agents home with synthetic test data](images/native-agents.png)
 
 ## Sort the model catalog
 
-Models appear in a responsive card grid in both the native app and browser helper. Wider windows show several models side by side; narrow windows use one column. Each card keeps the model name, exact ID, and input/output prices together. Selecting a model reveals its settings inside the same card, including its display name and supported reasoning controls. Cards expand to fit these settings.
+In the native app, open **Models → Add models** to browse a responsive card grid. The optional browser helper retains its own model grids. Wider windows show several models side by side; narrow windows use one column. Each card keeps the model name, exact ID, and input/output prices together. Select models, then choose **Done** to return to the saved library. Its cards show the default and supported reasoning controls; **Edit** reveals the display name and additional settings. Cards expand to fit those settings.
 
-![Native model card grid with synthetic example prices and rankings](images/native-model-grid.png)
+![Native shared model library with synthetic test data](images/native-models.png)
 
 Use **All labs** beside search to filter by a publisher such as OpenAI, Anthropic, Google, or DeepSeek. Choices come from the gateway catalog and your saved manual models, including new publishers automatically. The filter combines with search, coding-capability and selected-only filters. Switching labs never removes a hidden selection or changes its initial-model setting; **Select results** adds only the visible results.
 
-In both the native app and browser helper, the chosen lab and sort order stay active across client tabs during the session. If a catalog refresh or another client has no matching models, the active lab remains available so **All labs** can always reset the view. Publisher names are derived from the gateway provider namespace (or the first segment of an exact manual model ID); a leading `~` is ignored for lab grouping only, while exact request IDs remain unchanged.
+The native catalog keeps its chosen lab and sort order during the session. If a refresh has no matching models, **All labs** can always reset the view. In the browser helper, these discovery controls remain shared across its client tabs. Publisher names are derived from the gateway provider namespace (or the first segment of an exact manual model ID); a leading `~` is ignored for lab grouping only, while exact request IDs remain unchanged.
 
-The selector beside model search offers the same five criteria as [Kilo's model browser](https://kilo.ai/leaderboard). Your choice stays active across editor tabs for the current app/browser session.
+The selector beside model search offers the same five criteria as [Kilo's model browser](https://kilo.ai/leaderboard). Your choice stays active for the current discovery session.
 
 | Sort | Order and meaning |
 | --- | --- |
@@ -34,19 +38,19 @@ The selector beside model search offers the same five criteria as [Kilo's model 
 | Price | Lowest **input** price per million tokens first. Output prices remain visible beside input prices. |
 | Name | A–Z using your custom display name when set, otherwise the catalog name. |
 
-Missing metrics sort last; an explicit zero price or score remains valid. Ties use name and model ID for a stable order. Selected models follow the chosen order too; **Selected only** filters them. Sorting only changes the view: it does not change your initial model, selections, reasoning settings, or prepared editor files.
+Missing metrics sort last; an explicit zero price or score remains valid. Ties use name and model ID for a stable order. In the discovery view, **Selected only** filters selected models. Catalog sorting does not change the saved library order, default, selections, reasoning settings or prepared files. Use the library move controls to change its saved order.
 
 Rank, coding index, and speed come from [Kilo's public model statistics](https://kilo.ai/api/models/stats), matched by exact gateway model ID. Coverage varies and values are Kilo-published snapshots. The extra request sends no API key or organization header, uses a short timeout, and caches successful results for five minutes. An unavailable statistics service leaves the gateway catalog usable and retains the last successful statistics snapshot when available. Prices and availability always come from the gateway catalog. Custom gateways are not queried against Kilo's public statistics.
 
-![Native model sorting menu with synthetic example metadata](images/native-model-sorting.png)
-
 ## Codex Desktop: a second GUI instance
 
-The **Codex GUI** tab prepares a launcher for the installed desktop application with separate configuration and interface data, allowing your normal Codex to remain open.
+The **Codex** card opens the installed Desktop GUI with separate configuration and interface data, allowing your normal Codex to remain open. **Codex CLI** is a separate terminal action.
 
-1. Select your models. **Launch** creates `~/.codex-kilo-desktop` (`%USERPROFILE%\.codex-kilo-desktop` on Windows) and saves both `config.toml` and `models.json` on this computer.
-2. The helper detects installed applications on this computer. If Codex is elsewhere, enter its actual path under **Codex application (optional custom path)**. On macOS this may be `/Applications/ChatGPT.app` or `/Applications/Codex.app`; use the bundle that contains Codex.
-3. Choose a project folder if needed and click **Launch**. The new process receives `CODEX_HOME`, `CODEX_ELECTRON_USER_DATA_PATH`, `--user-data-dir`, and `KILO_LOCAL_API_KEY`. The normal Codex profile stays separate.
+1. Edit the shared library in **Models**, including names, a default model and supported reasoning preferences.
+2. On **Agents**, use **Choose folder** and **Open Codex**. Kilo Proxy prepares `~/.codex-kilo-desktop` (`%USERPROFILE%\.codex-kilo-desktop` on Windows), including `config.toml` and its generated `models.json`.
+3. If Desktop is not detected, use **Locate Codex**, or enter the application path in **Options**. On macOS the installed bundle may be `/Applications/Codex.app` or `/Applications/ChatGPT.app`.
+
+The child receives `CODEX_HOME`, `CODEX_ELECTRON_USER_DATA_PATH`, `--user-data-dir` and `KILO_LOCAL_API_KEY`. The normal Codex profile stays separate.
 
 Interface data lives in `~/Library/Application Support/Codex Kilo` on macOS, `%LOCALAPPDATA%\Codex Kilo` on Windows, or `${XDG_CONFIG_HOME:-~/.config}/codex-kilo-desktop` on Linux. Relaunching the same isolated profile may focus its existing window.
 
@@ -56,13 +60,13 @@ The Electron isolation variable is version-dependent rather than a stable public
 
 ### Multiple models, reasoning, and short names
 
-1. Check models in the catalog, or select search results in bulk, up to 50. **Selected only** filters the same list. Manual IDs are under **Add an exact model ID**.
-2. Adjust **Initial reasoning** in the selected row and choose **Use on startup** for the initial model. Enable **Advanced options**, then **Customize supported reasoning levels** to change available efforts; **Restore suggested levels** restores known defaults.
-3. Edit **Display name** for a short display name such as Sol, GLM, or Fable. Clearing it restores the catalog label. Names are limited to 80 characters and searchable.
-4. Click **Prepare without launching**. The helper creates missing files and updates Kilo settings in an existing `config.toml`: initial model, reasoning, catalog path, local port, Responses protocol and environment-variable authentication. Other settings and comments are preserved; conflicting Kilo authentication settings are removed. A selected named profile is synchronized too.
-5. Click **Launch** to open Codex. You can also skip the separate Prepare step: Launch saves pending changes first. Close the existing Kilo instance before relaunching after changing its port or credential. Manual commands remain under optional exports.
+The native **Models** page is the source for both Codex integrations. Add up to 50 exact IDs, edit display names, choose the default and set supported reasoning. Open a model card's **Edit** controls for its name and additional preferences; advanced options expose custom supported reasoning levels. Names are limited to 80 characters. These preferences save automatically in the common library, independently of generated profiles.
 
-**Load saved selection** restores models, labels, and reasoning. Unsaved changes last only for the panel session. Saving updates both profile files without storing the local API key in TOML. Each changed existing file receives an exact `.bak` copy; saving unchanged files leaves backups intact. Invalid TOML and unsafe file destinations stop the save without replacing either profile file. The config references `model_catalog_json = "models.json"`; the exporter puts the initial model first because the inspected app-server’s `model/list` default follows catalog order.
+**Open Codex** prepares pending profile changes before launching. To save a profile without opening it, use **Options → Integration settings → Prepare without launching**. Preparation updates the initial model, reasoning, catalog path, local port, Responses protocol and environment-variable authentication. Unrelated settings and comments are preserved, conflicting Kilo authentication settings are removed and a selected named profile is synchronized too.
+
+A changed existing profile file receives an exact `.bak` copy; unchanged writes preserve backups. Invalid TOML and unsafe destinations stop preparation. Codex TOML names the local-key environment variable without storing the key itself. Its `model_catalog_json = "models.json"` refers to the generated catalog in that agent profile, not the application's shared library. The exporter puts the default first because the inspected app-server's `model/list` default follows catalog order.
+
+Use **Models → Import an existing agent selection** to review and import an old Desktop or CLI profile into the common library. Reopen the Kilo Codex instance after preparing a changed catalog or connection; there is no automatic update of an already running instance.
 
 Model IDs remain unchanged. Renaming changes only `display_name`; reasoning is sent as `reasoning.effort`. Explicit efforts from Kilo’s `opencode.variants` metadata take priority over exact-ID fallback presets. Manual customizations take priority over both. Variant names and token budgets are not interpreted as effort levels. Unknown models receive no invented levels and can be configured manually.
 
@@ -74,7 +78,7 @@ All models in this profile must support **Responses**. Catalog listing does not 
 
 ### “Missing environment variable”
 
-Copy `env_key = "KILO_LOCAL_API_KEY"` literally. It names an environment variable; never replace it with the actual token. Use **Launch** to supply the local key automatically when opening Codex. Close a previously running Kilo instance before relaunching with updated environment values.
+Copy `env_key = "KILO_LOCAL_API_KEY"` literally. It names an environment variable; never replace it with the actual token. Use **Open Codex** to supply the local key automatically when opening Desktop, or **Open Codex CLI** for the terminal. Close a previously running Kilo instance before relaunching with updated environment values.
 
 For manual command exports, the on-screen preview masks the key and cannot be executed as displayed. **Copy launch command** copies the complete command with the real local key. The native preview intentionally has no separate copy button.
 
@@ -88,32 +92,27 @@ Local JSON Pointer references are relocated. Schemas with IDs, anchors, external
 
 ## Codex CLI
 
-The **Codex CLI** tab offers the same helper as Codex Desktop, with an independent model selection and profile:
+Choose **Open Codex CLI** on Agents to open an interactive terminal in its remembered project folder. It uses the same shared model library as Desktop and prepares its own `~/.codex-kilo-cli` (`%USERPROFILE%\.codex-kilo-cli` on Windows), with `config.toml` and a generated `models.json`. Existing unrelated settings and comments are preserved with exact `.bak` backups.
 
-1. Check models in the catalog, or add exact IDs manually. Set short display names, the initial model and supported reasoning levels in each row.
-2. Click **Prepare without launching**. Kilo Proxy creates `~/.codex-kilo-cli` (`%USERPROFILE%\.codex-kilo-cli` on Windows) and saves `config.toml` plus `models.json`. Existing Kilo settings are updated; unrelated settings and comments are retained, with exact `.bak` backups of changed files.
-3. Set **Project folder** and click **Launch** to open an interactive terminal there. Install Codex CLI first; common installation paths and the bundled macOS CLI are detected. Launch also prepares unsaved changes and scopes the local key and `CODEX_HOME` to this session.
-4. Use `/model` inside Codex CLI to select a model and its reasoning level. Restart the CLI session after changing the catalog in the helper. **Load saved selection** restores this CLI profile's models, names and reasoning choices.
+Common installation paths and the CLI bundled in the macOS Desktop app are detected. The local key and `CODEX_HOME` are scoped to the new session. Use `/model` in Codex CLI to select a model and its supported reasoning; reopen it after library changes. Desktop and CLI share model preferences but keep separate generated files and readiness state, and ordinary Codex retains its usual profile. Both integrations use Responses.
 
-GUI and CLI selections, saved catalogs and readiness indicators are independent. Codex Desktop continues to use `~/.codex-kilo-desktop`; ordinary Codex continues to use its usual profile. Both Kilo integrations use HTTP Responses and the same model capability catalog format. Optional TOML and JSON exports remain available for another computer. Preparation always writes on the computer running Kilo Proxy.
-
-The generated CLI profile was checked against the Codex executable bundled with the installed desktop app: both selected models, short labels, the initial model and exact reasoning choices appeared in `model/list`, without inference. The separate npm CLI installation on the development machine could not be validated because its executable was missing, including after reinstalling the same version.
+Manual preparation and command/configuration exports remain under **Options → Integration settings**. The generated CLI catalog has been checked with a disposable installed app-server profile through `model/list`, without inference; that does not establish compatibility with every installed CLI version.
 
 Reference: [OpenAI configuration reference: model_catalog_json](https://learn.chatgpt.com/docs/config-file/config-reference).
 
 ## OpenCode
 
-The helper selects multiple models, short names, limits, and an initial model, then creates or updates `~/.opencode-kilo/opencode.json` with the local proxy credential. Click **Launch** to open it in a terminal, and use `/models` to switch models; `/connect` is not needed for this prepared profile. JSONC settings are preserved with exact backups. Global/project OpenCode configuration still merges. See [OpenCode and Zed setup](opencode-and-zed.md).
+The OpenCode card derives IDs, names, limits and the default from the shared library, then creates or updates `~/.opencode-kilo/opencode.json` with the local proxy credential. Click **Open OpenCode** to open it in a terminal, and use `/models` to switch models; `/connect` is not needed for this prepared profile. JSONC settings are preserved with exact backups. Global/project OpenCode configuration still merges. See [OpenCode and Zed setup](opencode-and-zed.md).
 
 ## Claude Code: automatic isolated setup
 
-1. Open **Claude Code** in the helper. It detects your installed version and shows whether the Kilo configuration is supported. Use **Detect installed version** after updating Claude.
-2. Check models directly in the catalog. Edit a short name, choose **Use on startup**, and set supported reasoning preferences in each row. Manual IDs, search, prices, bulk selection and **Selected only** work like the Codex Desktop picker.
-3. Click **Prepare without launching**. This creates `~/.claude-kilo` (`%USERPROFILE%\.claude-kilo` on Windows), saves `settings.json` and `kilo-models.json`, and shows **Editor profile prepared**. Changed existing files receive exact `.bak` backups. Unrelated settings such as permissions and hooks are retained.
-4. Set **Project folder** and click **Launch**. It prepares pending changes and opens a terminal with `CLAUDE_CONFIG_DIR` and `--settings`, clearing conflicting inherited authentication/provider variables for that child. The normal Claude profile remains available in another terminal.
-5. Use `/model` to switch models. Restart a Kilo session after preparing changes. **Load saved selection** restores selected models, names, initial model, aliases and reasoning preferences.
+1. Choose shared models and preferences in **Models**. On **Agents**, the Claude Code card checks the installed version. Its **Options → Refresh detection** action checks again after an update.
+2. Use the card's **Options** to choose its project folder, then **Open Claude Code**. The helper prepares `~/.claude-kilo` (`%USERPROFILE%\.claude-kilo` on Windows), including `settings.json` and `kilo-models.json`, before opening an interactive terminal. Changed files receive exact `.bak` backups; unrelated permissions and hooks are preserved.
+3. Use `/model` to switch models. Reopen the Kilo session after changing the common library. Manual preparation and compatibility settings remain under **Options → Integration settings**.
 
-The profile contains only the local proxy credential, not your Kilo account key. It configures `ANTHROPIC_BASE_URL` without a trailing `/v1`, uses bearer authentication, and maps internal Sonnet/Opus/Haiku aliases to selected models. Modern versions also pin the Fable default. Advanced alias assignments are optional. Existing Kilo routing/authentication/model mappings are refreshed; policy settings such as `availableModels` remain in force.
+The child uses `CLAUDE_CONFIG_DIR` and `--settings`, clearing conflicting inherited authentication/provider variables for that child. The normal Claude profile remains available in another terminal. Shared reasoning preferences are filtered to levels supported by the selected model and installed version.
+
+The profile contains only the local proxy credential, not your Kilo account key. It configures `ANTHROPIC_BASE_URL` without a trailing `/v1`, uses bearer authentication, and maps internal Sonnet/Opus/Haiku aliases to selected models. Modern versions also pin the Fable default. Existing Kilo routing/authentication/model mappings are refreshed; policy settings such as `availableModels` remain in force.
 
 ### Compared with Codex Desktop
 
@@ -138,15 +137,15 @@ See [Claude Code compatibility verification](claude-code-compatibility.md).
 
 ## Zed
 
-Select several models and short names, then click **Prepare without launching** to update its user settings and Agent default model. The helper preserves comments, other providers, and unrelated settings, with backups. **Launch** prepares pending changes and opens Zed. Copy the local key once into Zed's `kilo-local` provider settings so Zed stores it in its keychain. See [OpenCode and Zed setup](opencode-and-zed.md) for paths, limits, and verification.
+**Open Zed** prepares the common library's IDs, names, limits and default in its user settings, then opens the editor. Reasoning remains automatic. Other providers, comments and unrelated settings are preserved with backups. In **Options → Integration settings**, use **Copy key for Zed (one-time setup)** and paste it into Zed's `kilo-local` provider so Zed stores it in its keychain. See [OpenCode and Zed setup](opencode-and-zed.md).
 
 ## Xcode
 
-The **Xcode** tab has three independent variants: **Chat**, **Codex** and **Claude**. Chat saves a dedicated model list and copies the provider connection details; its URL ends in `/xcode`, without `/v1`. The agent variants prepare Apple's dedicated profile folders on macOS with backups. Claude options use Xcode's advertised agent version, not the terminal installation. **Launch** prepares changes and opens Xcode without forcing a restart or closing projects. Complete the chosen variant's one-time setup inside Xcode. See [Xcode setup and compatibility](xcode.md).
+**Agents → Set up Xcode** has three integration variants using the shared library: **Chat**, **Codex** and **Claude**. Chat saves a dedicated model list and copies the provider connection details; its URL ends in `/xcode`, without `/v1`. The agent variants prepare Apple's dedicated profile folders on macOS with backups. Claude options use Xcode's advertised agent version, not the terminal installation. **Launch** prepares changes and opens Xcode without forcing a restart or closing projects. Complete the chosen variant's one-time setup inside Xcode. See [Xcode setup and compatibility](xcode.md).
 
 ## Cursor
 
-The helper manages a dedicated ngrok HTTPS tunnel, since Cursor's servers cannot reach localhost. Install ngrok 3 and configure its account once, start the local proxy, select up to 50 model IDs, and click **Connect HTTPS tunnel**. Copy the public URL and dedicated Cursor key into **Settings → Models → OpenAI API Key / Override OpenAI Base URL**. **Launch** opens Cursor once this tunnel is running; it never starts a public tunnel automatically. Add the exact custom IDs and select one in chat.
+The helper manages a dedicated ngrok HTTPS tunnel, since Cursor's servers cannot reach localhost. Install ngrok 3 and configure its account once, start the local proxy, choose shared models, and use **Agents → Cursor → Set up tunnel → Connect HTTPS tunnel**. Copy the public URL and dedicated Cursor key into **Settings → Models → OpenAI API Key / Override OpenAI Base URL**. **Open Cursor** opens Cursor once this tunnel is running; it never starts a public tunnel automatically. Add the exact custom IDs and select one in chat.
 
 **Test public connection** checks authentication and model-list reachability without inference charges. Disconnecting revokes the key. Only selected models and Chat Completions are exposed; the control panel remains local. Prompts pass through Cursor, ngrok, and Kilo. Cursor's BYOK limitations still apply, including Tab/Composer and model-dependent reasoning or Agent support.
 

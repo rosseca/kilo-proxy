@@ -74,6 +74,10 @@ func (a *app) adminHandler() http.Handler {
 			a.clientsLaunch(w, r)
 			return
 		}
+		if r.URL.Path == "/api/model-library" {
+			a.modelLibraryAPI(w, r)
+			return
+		}
 		if strings.HasPrefix(r.URL.Path, "/api/desktop/") {
 			a.desktopAPI(w, r)
 			return
@@ -104,6 +108,10 @@ func (a *app) adminHandler() http.Handler {
 		}
 		if r.Method == "GET" && r.URL.Path == "/api/state" {
 			a.state(w)
+			return
+		}
+		if r.URL.Path == "/api/tray-settings" && (r.Method == "GET" || r.Method == "PUT") {
+			a.traySettings(w, r)
 			return
 		}
 		if r.Method != "POST" {

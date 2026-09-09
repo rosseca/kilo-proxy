@@ -22,7 +22,7 @@ func nativeClientModelsForTest() []modelInfo {
 	}
 }
 
-func TestNativeClientsSelectionsRemainIndependent(t *testing.T) {
+func TestNativeClientProfileSelectionIsolationAndValidation(t *testing.T) {
 	c := nativeClients{}
 	for _, key := range []string{"codex", "codex-cli", "claude", "opencode", "zed", "cursor", "xcode-chat", "xcode-codex", "xcode-claude"} {
 		s := c.selection(key)
@@ -156,7 +156,8 @@ func TestNativeClientsWidgetActionsPrepareEveryEditor(t *testing.T) {
 	for _, key := range []string{"codex", "codex-cli", "claude", "opencode", "zed", "xcode-chat", "xcode-codex", "xcode-claude"} {
 		t.Run(key, func(t *testing.T) {
 			u := nativeTestUI(t)
-			u.page = "clients"
+			u.page = "models"
+			u.expanded["library.catalog"] = true
 			u.models = nativeClientModelsForTest()
 			u.client = key
 			if strings.HasPrefix(key, "xcode-") {
@@ -171,31 +172,35 @@ func TestNativeClientsWidgetActionsPrepareEveryEditor(t *testing.T) {
 				u.clientState().ClaudeDetectStarted = true
 			}
 			nativeTestFrame(t, u)
-			u.clickable("client:" + key + ":select-all").Click()
+			u.clickable("client:shared:select-all").Click()
 			nativeTestFrame(t, u)
-			s := u.clientState().selection(key)
-			if len(s.Models) != 2 {
-				t.Fatalf("native select-results did not select both models: %d", len(s.Models))
+			shared := u.library.selection
+			if len(shared.Models) != 2 {
+				t.Fatalf("native select-results did not select both models: %d", len(shared.Models))
 			}
-			u.setValue(nativeClientField(key, "vendor/one", "name"), "Short Native")
+			u.clickable("models.done").Click()
+			nativeTestFrame(t, u)
+			u.clickable("client:shared:edit:vendor/one").Click()
+			nativeTestFrame(t, u)
+			u.setValue(nativeClientField(sharedModelKey, "vendor/one", "name"), "Short Native")
 			if strings.Contains(key, "codex") {
-				field := nativeClientField(key, "vendor/one", "reasoning")
+				field := nativeClientField(sharedModelKey, "vendor/one", "reasoning")
 				u.clickable(field + ".toggle").Click()
 				nativeTestFrame(t, u)
 				u.clickable(field + ".option.high").Click()
 				nativeTestFrame(t, u)
 			}
-			u.clickable("client:" + key + ":initial:vendor/one").Click()
+			u.clickable("client:shared:initial:vendor/one").Click()
 			nativeTestFrame(t, u)
+			u.flushModelLibrary()
+			u.page = "clients"
+			nativeTestFrame(t, u)
+			s := u.sharedClientSelection(key)
 			u.clickable("client:" + key + ":prepare").Click()
 			nativeTestFrame(t, u)
 			nativeTestWait(t, u, func() bool { return s.Saved != "" })
 			if s.Path == "" {
 				t.Fatal("prepared profile has no path")
-			}
-			payload, err := nativeClientPayload(key, s)
-			if err != nil {
-				t.Fatal(err)
 			}
 			if key == "codex" || key == "codex-cli" || key == "xcode-codex" {
 				data, err := os.ReadFile(filepath.Join(s.Path, "models.json"))
@@ -232,26 +237,8 @@ func TestNativeClientsWidgetActionsPrepareEveryEditor(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			before, _ := json.Marshal(payload)
-			u.clickable("client:" + key + ":clear").Click()
-			nativeTestFrame(t, u)
-			u.clickable("client:" + key + ":load").Click()
-			nativeTestFrame(t, u)
-			nativeTestWait(t, u, func() bool { return len(u.clientState().selection(key).Models) == 2 })
-			loaded := u.clientState().selection(key)
-			if loaded.Saved != "" {
-				t.Fatal("loading stale connection enabled launch")
-			}
-			afterPayload, err := nativeClientPayload(key, loaded)
-			if err != nil {
-				t.Fatal(err)
-			}
-			after, _ := json.Marshal(afterPayload)
-			var left, right any
-			_ = json.Unmarshal(before, &left)
-			_ = json.Unmarshal(after, &right)
-			if !reflect.DeepEqual(left, right) {
-				t.Fatalf("save/load changed payload:\nbefore %s\nafter %s", before, after)
+			if stored := u.owner.modelLibrary.snapshot().Library; stored.DefaultModel != "vendor/one" || len(stored.Models) != 2 || nativeSavedLibraryItem(t, stored, "vendor/one").DisplayName != "Short Native" {
+				t.Fatalf("preparation changed the shared library: %#v", stored)
 			}
 		})
 	}
@@ -262,10 +249,9 @@ func TestNativeClientsExportMasksPreviewsAndCopiesRealLocalKey(t *testing.T) {
 	u.page = "clients"
 	u.client = "opencode"
 	u.models = nativeClientModelsForTest()
+	nativeSeedSharedForTest(t, u, u.models...)
 	nativeTestFrame(t, u)
-	u.clickable("client:opencode:select-all").Click()
-	nativeTestFrame(t, u)
-	s := u.clientState().selection("opencode")
+	s := u.sharedClientSelection("opencode")
 	_, local, _ := u.clientBase()
 	preview, err := u.clientExport("opencode", s, false)
 	if err != nil {
@@ -305,6 +291,7 @@ func TestNativeClientsMalformedProfileIsNotOverwritten(t *testing.T) {
 	u.page = "clients"
 	u.client = "zed"
 	u.models = nativeClientModelsForTest()
+	nativeSeedSharedForTest(t, u, u.models...)
 	dir := filepath.Join(u.owner.editorTestRoot, ".config", "zed")
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		t.Fatal(err)
@@ -314,8 +301,6 @@ func TestNativeClientsMalformedProfileIsNotOverwritten(t *testing.T) {
 	if err := os.WriteFile(path, original, 0600); err != nil {
 		t.Fatal(err)
 	}
-	nativeTestFrame(t, u)
-	u.clickable("client:zed:select-all").Click()
 	nativeTestFrame(t, u)
 	u.clickable("client:zed:prepare").Click()
 	nativeTestFrame(t, u)
@@ -335,61 +320,64 @@ func TestNativeClientsMalformedProfileIsNotOverwritten(t *testing.T) {
 	}
 }
 
-func TestNativeClientsGenericManualInputAndTabIsolation(t *testing.T) {
+func TestNativeClientsManualModelsAreSharedAcrossAgents(t *testing.T) {
 	u := nativeTestUI(t)
-	u.page = "clients"
-	u.client = "generic"
+	u.page = "models"
+	u.expanded["library.catalog"] = true
 	nativeTestFrame(t, u)
-	u.setValue("client:generic:manual", "vendor/one")
-	u.clickable("client:generic:add").Click()
+	u.setValue("client:shared:manual", "vendor/one")
+	u.clickable("client:shared:add").Click()
 	nativeTestFrame(t, u)
-	s := u.clientState().selection("generic")
+	s := u.library.selection
 	if len(s.Models) != 1 || s.Initial != "vendor/one" {
 		t.Fatal("manual model was not selected")
 	}
-	u.setValue("client:generic:manual", "invalid model id")
-	u.clickable("client:generic:add").Click()
+	u.setValue("client:shared:manual", "invalid model id")
+	u.clickable("client:shared:add").Click()
 	nativeTestFrame(t, u)
-	if len(s.Models) != 1 || s.Initial != "vendor/one" || u.value("client:generic:manual") != "invalid model id" {
+	if len(s.Models) != 1 || s.Initial != "vendor/one" || u.value("client:shared:manual") != "invalid model id" {
 		t.Fatal("invalid manual input destroyed the current selection or editable input")
 	}
-	u.setValue("client:generic:manual", "vendor/second")
-	u.clickable("client:generic:add").Click()
+	u.setValue("client:shared:manual", "vendor/second")
+	u.clickable("client:shared:add").Click()
 	nativeTestFrame(t, u)
-	if len(s.Models) != 1 || s.Initial != "vendor/second" {
-		t.Fatal("generic model replacement retained both models")
+	if len(s.Models) != 2 || s.Initial != "vendor/one" {
+		t.Fatal("adding another shared model discarded a choice or replaced the initial model")
 	}
-	u.clickable("client-tab:codex-cli").Click()
-	nativeTestFrame(t, u)
-	if u.client != "codex-cli" || len(u.clientState().selection("codex-cli").Models) != 0 {
-		t.Fatal("client navigation copied a different editor selection")
+	for _, key := range []string{"generic", "codex-cli", "claude", "opencode"} {
+		u.page, u.client = "clients", key
+		nativeTestFrame(t, u)
+		if selected := u.sharedClientSelection(key); !reflect.DeepEqual(selected.ids(), s.ids()) || selected.Initial != s.Initial {
+			t.Fatal("agent navigation lost the shared selection", key)
+		}
 	}
-	u.clickable("client-tab:generic").Click()
+	u.clickable("agents.models.edit").Click()
 	nativeTestFrame(t, u)
-	if u.clientState().selection("generic").Initial != "vendor/second" {
-		t.Fatal("navigation discarded the editor selection")
+	if u.page != "models" || u.library.selection != s {
+		t.Fatal("returning to Models discarded the shared selection")
 	}
 }
 
 func TestNativeClientsCatalogRefreshPreservesEditsAndUpdatesMetadata(t *testing.T) {
 	u := nativeTestUI(t)
-	u.page = "clients"
+	u.page = "models"
+	u.expanded["library.catalog"] = true
 	u.client = "codex"
 	u.models = nativeClientModelsForTest()
 	nativeTestFrame(t, u)
-	u.setValue("client:codex:manual", "vendor/one")
-	u.clickable("client:codex:add").Click()
+	u.setValue("client:shared:manual", "vendor/one")
+	u.clickable("client:shared:add").Click()
 	nativeTestFrame(t, u)
-	u.setValue(nativeClientField("codex", "vendor/one", "name"), "My short name")
-	u.setValue(nativeClientField("codex", "vendor/one", "reasoning"), "high")
-	u.setChecked(nativeClientField("codex", "vendor/one", "custom"), true)
-	u.setValue(nativeClientField("codex", "vendor/one", "levels"), "low,high")
+	u.setValue(nativeClientField(sharedModelKey, "vendor/one", "name"), "My short name")
+	u.setValue(nativeClientField(sharedModelKey, "vendor/one", "reasoning"), "high")
+	u.setChecked(nativeClientField(sharedModelKey, "vendor/one", "custom"), true)
+	u.setValue(nativeClientField(sharedModelKey, "vendor/one", "levels"), "low,high")
 	newPrice := 4.0
 	u.models[0].InputPrice = &newPrice
 	u.models[0].ReasoningEfforts = []string{"low"}
 	u.models[0].ContextWindow = 99000
 	nativeTestFrame(t, u)
-	s := u.clientState().selection("codex")
+	s := u.library.selection
 	m := s.choice("vendor/one")
 	if m.DisplayName != "My short name" || m.Model.ContextWindow != 64000 {
 		t.Fatal("metadata refresh replaced profile edits")
@@ -407,33 +395,40 @@ func TestNativeClientsCatalogRefreshPreservesEditsAndUpdatesMetadata(t *testing.
 	}
 }
 
-func TestNativeClientsLoadPreservesEditsMadeWhileRequestIsPending(t *testing.T) {
+func TestNativeClientsImportRequiresExplicitReplacement(t *testing.T) {
 	u := nativeTestUI(t)
-	u.page = "clients"
-	u.client = "zed"
+	u.page = "models"
+	s := nativeSeedSharedForTest(t, u, u.models...)
+	u.setValue(nativeClientField(sharedModelKey, "vendor/one", "name"), "Saved profile name")
 	nativeTestFrame(t, u)
-	u.clickable("client:zed:select-all").Click()
+	u.prepareClient("zed")
+	nativeTestWait(t, u, func() bool { return u.clientState().selection("zed").Saved != "" })
+	u.importModelLibrary("zed")
+	// Import responses are candidates only, including when a shared edit happens
+	// before the API completion is drained onto the UI thread.
+	u.setValue(nativeClientField(sharedModelKey, "vendor/one", "name"), "Keep my latest edit")
 	nativeTestFrame(t, u)
-	u.clickable("client:zed:prepare").Click()
-	nativeTestFrame(t, u)
-	s := u.clientState().selection("zed")
-	nativeTestWait(t, u, func() bool { return s.Saved != "" })
-	u.loadClient("zed")
-	// The HTTP callback is queued onto the UI thread; this user edit happens
-	// before that queue is drained, regardless of how fast the server responds.
-	u.setValue(nativeClientField("zed", "vendor/one", "name"), "Keep my latest edit")
-	nativeTestWait(t, u, func() bool { return !u.busy["GET/api/editors/zed/profile"] })
-	if u.clientState().selection("zed") != s || s.choice("vendor/one").DisplayName != "Keep my latest edit" {
-		t.Fatal("profile response erased a newer edit")
+	nativeTestWait(t, u, func() bool { return u.library.pendingImport != nil })
+	if u.library.selection != s || s.choice("vendor/one").DisplayName != "Keep my latest edit" {
+		t.Fatal("import response erased a newer shared edit")
 	}
-	if !strings.Contains(u.notice, "changed while loading") {
-		t.Fatalf("stale load was silently dropped: %s", u.notice)
+	if u.library.pendingImport.choice("vendor/one").DisplayName != "Saved profile name" {
+		t.Fatal("import preview did not show the actual saved profile")
 	}
-	// An intentional second load can replace those edits with the saved profile.
-	u.loadClient("zed")
-	nativeTestWait(t, u, func() bool { return !u.busy["GET/api/editors/zed/profile"] })
-	if u.clientState().selection("zed") == s || u.clientState().selection("zed").choice("vendor/one").DisplayName == "Keep my latest edit" {
-		t.Fatal("explicit retry could not load the saved selection")
+	nativeTestFrame(t, u)
+	u.clickable("models.import.cancel").Click()
+	nativeTestFrame(t, u)
+	if u.library.pendingImport != nil || u.library.selection != s {
+		t.Fatal("cancelling import changed the shared library")
+	}
+	u.importModelLibrary("zed")
+	nativeTestWait(t, u, func() bool { return u.library.pendingImport != nil })
+	nativeTestFrame(t, u)
+	u.clickable("models.import.accept").Click()
+	nativeTestFrame(t, u)
+	u.flushModelLibrary()
+	if u.library.selection == s || u.library.selection.choice("vendor/one").DisplayName != "Saved profile name" || u.owner.modelLibrary.snapshot().Library.Models[0].DisplayName != "Saved profile name" {
+		t.Fatal("explicit acceptance did not persist the imported selection")
 	}
 }
 
@@ -456,8 +451,8 @@ func TestNativeClientsCursorCheckCopyAndDisconnect(t *testing.T) {
 	u.owner.cursor = session
 	u.owner.mu.Unlock()
 	u.state["cursor"] = session
-	s := u.clientState().selection("cursor")
-	_ = s.add(modelInfo{ID: "unsaved/different-model"}, 50)
+	nativeSeedSharedForTest(t, u, modelInfo{ID: "unsaved/different-model"})
+	s := u.sharedClientSelection("cursor")
 	nativeTestFrame(t, u)
 	u.clickable("cursor-check").Click()
 	nativeTestFrame(t, u)
