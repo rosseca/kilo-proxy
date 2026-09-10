@@ -272,6 +272,15 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 			return
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, 32<<20)
+		if err := prepareResponsesInput(r); err != nil {
+			var oversized *http.MaxBytesError
+			if errors.As(err, &oversized) {
+				jsonError(recorder, http.StatusRequestEntityTooLarge, "La petición supera 32 MiB.")
+				return
+			}
+			jsonError(recorder, http.StatusBadRequest, "Could not adapt Codex cross-task input: "+err.Error())
+			return
+		}
 		bridge, err := prepareSchemaBridge(r)
 		if err != nil {
 			var oversized *http.MaxBytesError
