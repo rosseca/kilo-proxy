@@ -41,6 +41,16 @@ func nativeOnboardingListener(t *testing.T, u *nativeUI, want bool) {
 	u.owner.mu.Lock()
 	address := net.JoinHostPort("127.0.0.1", strconv.Itoa(u.owner.config.Port))
 	u.owner.mu.Unlock()
+	if !want {
+		// Rebinding proves Stop released the listener. A TCP handshake alone can
+		// still complete transiently after close on macOS and falsely look live.
+		listener, err := net.Listen("tcp4", address)
+		if err != nil {
+			t.Fatalf("stopped proxy has not released %s: %v", address, err)
+		}
+		listener.Close()
+		return
+	}
 	conn, err := net.DialTimeout("tcp4", address, 300*time.Millisecond)
 	if err == nil {
 		conn.Close()
