@@ -35,6 +35,7 @@ type nativeUI struct {
 	library             *nativeLibrary
 	agents              *nativeAgents
 	terminalCommands    *nativeTerminalCommands
+	setupStep           int
 	traceGeneration     uint64
 	modelsPending       bool
 	languageRevision    uint64
@@ -82,11 +83,11 @@ func newNativeUI(owner *app, invalidate func()) *nativeUI {
 	u.models = readNativeCatalogCache(owner.dir, owner.config.OrgID)
 	u.catalogCached = len(u.models) > 0
 	u.setChecked("connection.remember", owner.config.Remember)
-	if owner.apiKey == "" || owner.config.OrgID == "" {
-		u.page = "settings"
-	}
 	owner.mu.Unlock()
 	u.initModelLibrary()
+	if u.setupNeeded() {
+		u.beginSetup()
+	}
 	u.refreshState()
 	go func() {
 		ticker := time.NewTicker(time.Second)
@@ -370,8 +371,15 @@ func (u *nativeUI) open(address string) {
 		u.notice = nativeMessage(err.Error(), u.language)
 		return
 	}
+	u.owner.mu.Lock()
+	bridge := u.owner.desktop
+	u.owner.mu.Unlock()
 	go func() {
-		if err := openBrowser(safe); err != nil {
+		open := openBrowser
+		if bridge != nil {
+			open = bridge.OpenExternal
+		}
+		if err := open(safe); err != nil {
 			u.enqueue(func() { u.notice = nativeMessage(err.Error(), u.language) })
 		}
 	}()
@@ -461,6 +469,7 @@ func (u *nativeUI) acceptState(raw json.RawMessage) {
 	oldRevision := nativeNumber(u.state, "catalogRevision")
 	oldEpoch := nativeNumber(u.state, "activityEpoch")
 	oldOrg := nativeString(u.state, "orgId")
+	loginApproved := nativeString(nativeMap(state["auth"]), "status") == "approved" && nativeString(nativeMap(u.state["auth"]), "status") != "approved"
 	u.state = state
 	u.authenticated = true
 	if !first && oldEpoch != nativeNumber(state, "activityEpoch") {
@@ -476,7 +485,7 @@ func (u *nativeUI) acceptState(raw json.RawMessage) {
 			}
 		}
 		u.catalogCached = false
-		if u.page == "clients" || u.page == "models" || u.page == "agents" {
+		if u.page == "clients" || u.page == "models" || u.page == "agents" || u.page == "setup" && u.setupStep == setupModels {
 			u.modelsPending = true
 		}
 	}
@@ -484,8 +493,11 @@ func (u *nativeUI) acceptState(raw json.RawMessage) {
 		u.modelsPending = false
 		u.refreshModels()
 	}
-	if first || oldOrg != nativeString(state, "orgId") {
+	if first || loginApproved || oldOrg != nativeString(state, "orgId") {
 		u.setValue("connection.org", nativeString(state, "orgId"))
+	}
+	if loginApproved {
+		u.setValue("connection.key", "")
 	}
 	if first {
 		u.setValue("connection.port", fmt.Sprint(state["port"]))
@@ -541,7 +553,11 @@ func (u *nativeUI) refreshModels() {
 	revision := nativeNumber(u.state, "catalogRevision")
 	u.call("POST", "/api/models", map[string]any{}, func(raw json.RawMessage) {
 		if u.applyModels(raw, revision, "models") {
-			u.notice = fmt.Sprintf(u.tr("Loaded %d models", "%d modelos cargados"), len(u.models))
+			if u.page == "setup" {
+				u.notice = ""
+			} else {
+				u.notice = fmt.Sprintf(u.tr("Loaded %d models", "%d modelos cargados"), len(u.models))
+			}
 		}
 	})
 }
@@ -592,6 +608,17 @@ func (u *nativeUI) saveLanguage() {
 	}()
 }
 func (u *nativeUI) submitConnection(start bool) {
+	u.saveConnection(func() {
+		u.notice = u.tr("Connection saved", "Conexión guardada")
+		if start {
+			u.call("POST", "/api/start", map[string]any{}, u.acceptState)
+		} else {
+			u.refreshState()
+		}
+	})
+}
+
+func (u *nativeUI) saveConnection(done func()) {
 	port, err := strconv.Atoi(strings.TrimSpace(u.value("connection.port")))
 	if err != nil || port < 1024 || port > 65535 {
 		u.notice = u.tr("Enter a port between 1024 and 65535", "Introduce un puerto entre 1024 y 65535")
@@ -603,11 +630,8 @@ func (u *nativeUI) submitConnection(start bool) {
 		if u.value("connection.key") == submittedKey {
 			u.setValue("connection.key", "")
 		}
-		u.notice = u.tr("Connection saved", "Conexión guardada")
-		if start {
-			u.call("POST", "/api/start", map[string]any{}, u.acceptState)
-		} else {
-			u.refreshState()
+		if done != nil {
+			done()
 		}
 	})
 }
@@ -621,16 +645,7 @@ func (u *nativeUI) connectionPanel() layout.Widget {
 		}
 	}
 	editable := !nativeBool(u.state, "running") && !pending && !connectionBusy
-	login := []layout.Widget{u.heading(u.tr("Connect your Kilo team", "Conecta tu equipo de Kilo")), u.note(u.tr("Your tools send requests here. Kilo Proxy adds your organization header before forwarding them to Kilo.", "Tus herramientas envían aquí sus peticiones. Kilo Proxy añade la cabecera de tu organización antes de enviarlas a Kilo.")), u.disabled(editable, u.button("connection.login", u.tr("Sign in with Kilo / SSO", "Iniciar sesión con Kilo / SSO"), func() {
-		u.call("POST", "/api/auth/start", map[string]any{}, func(raw json.RawMessage) {
-			var auth map[string]any
-			_ = json.Unmarshal(raw, &auth)
-			if link := nativeString(auth, "verificationUrl"); link != "" {
-				u.open(link)
-			}
-			u.refreshState()
-		})
-	}))}
+	login := []layout.Widget{u.heading(u.tr("Connect your Kilo team", "Conecta tu equipo de Kilo")), u.note(u.tr("Your tools send requests here. Kilo Proxy adds your organization header before forwarding them to Kilo.", "Tus herramientas envían aquí sus peticiones. Kilo Proxy añade la cabecera de tu organización antes de enviarlas a Kilo.")), u.disabled(editable, u.button("connection.login", u.tr("Sign in with Kilo / SSO", "Iniciar sesión con Kilo / SSO"), u.beginKiloLogin))}
 	if email := nativeString(u.state, "accountEmail"); email != "" {
 		login = append(login, u.label(email))
 	}

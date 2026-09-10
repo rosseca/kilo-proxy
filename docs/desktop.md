@@ -23,9 +23,13 @@ The native frontend uses the existing authenticated loopback API, keeping config
 
 ## Native workflow
 
-The main navigation is **Agents**, **Models**, **Activity** and **Settings**. An unconfigured first launch opens Settings for sign-in and organization selection; a configured app opens Agents.
+The main navigation is **Agents**, **Models**, **Activity** and **Settings**. An unconfigured launch opens a three-step guide: **Account & team → Models → Start**. Existing installations with a connected account, selected organization and saved model library open Agents directly.
 
-- **Agents:** installed-agent cards, direct Open actions, project-folder choosers and recent folders. Codex Desktop and Codex CLI have distinct actions. Options contains installation guidance, integration setup and exports.
+The guide opens Kilo's device authorization page for the usual login or SSO, shows the authorization code while waiting, and lets the user select a team. API key and organization ID entry is available as an alternative. **Save & choose models** saves the connection before continuing; **Remember my login in the system credential store** controls whether the credential survives quitting. With Remember off, a later launch asks the user to sign in again while retaining saved models.
+
+After selecting at least one model and letting its automatic save complete, **Start proxy & go to agents** starts the listener and opens Agents only after success. Startup errors remain visible, with connection settings available to fix an occupied port. Leaving the guide early is allowed: Agents offers **Continue setup**, and the next launch resumes from the stored account and model configuration. Completing SSO alone does not skip the connection save.
+
+- **Agents:** installed-agent cards, direct Open actions, project-folder choosers and recent folders. **Start proxy** and **Stop proxy** sit beside the connection status. Opening an agent also starts the proxy first; failed startup prevents dispatching the agent. Codex Desktop and Codex CLI have distinct actions. Options contains installation guidance, integration setup and exports.
 - **Models:** one automatically saved library with names, order, a default model and supported reasoning preferences. Agent exports apply only settings supported by that client. Image generation is under **Image generation for Codex** and is saved when a Codex profile is prepared/opened.
 - **Activity:** requests, conversation breakdowns, observed costs and cache reuse.
 - **Settings:** Kilo account and organization, local connection, language and tray appearance.
@@ -35,6 +39,8 @@ The library is `models.json` in the application configuration directory; project
 ## Interface preview
 
 These images are rendered by Gio with synthetic test data, using the same layout and GPU renderer as the native window. They are not browser mockups. CI also captures compact window sizes for each desktop target.
+
+![First-run sign-in guide](images/native-onboarding.png)
 
 ![Native Agents home](images/native-agents.png)
 

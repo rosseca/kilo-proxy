@@ -64,6 +64,12 @@ func (u *nativeUI) navButton(id, label string) layout.Widget {
 	}
 }
 func (u *nativeUI) sidebar(gtx layout.Context) layout.Dimensions {
+	connection := u.tr("Ready to connect", "Listo para conectar")
+	if nativeBool(u.state, "running") {
+		connection = u.tr("Your proxy is running", "Tu proxy está activo")
+	} else if u.agentConnectionReady() {
+		connection = u.tr("Proxy ready to start", "Proxy listo para arrancar")
+	}
 	gtx.Constraints.Min.X = gtx.Dp(196)
 	gtx.Constraints.Max.X = gtx.Dp(196)
 	gtx.Constraints.Min.Y = gtx.Constraints.Max.Y
@@ -79,7 +85,7 @@ func (u *nativeUI) sidebar(gtx layout.Context) layout.Dimensions {
 				layout.Rigid(layout.Spacer{Height: 44}.Layout), layout.Rigid(u.eyebrow(u.tr("Workspace", "Espacio de trabajo"))), layout.Rigid(layout.Spacer{Height: 15}.Layout),
 				layout.Rigid(u.column(u.navButton("agents", u.tr("Agents", "Agentes")), u.navButton("models", u.tr("Models", "Modelos")), u.navButton("activity", u.tr("Activity", "Actividad")), u.navButton("settings", u.tr("Settings", "Ajustes")))),
 				layout.Flexed(1, layout.Spacer{}.Layout),
-				layout.Rigid(u.column(u.textStyle(13, u.tr("Connected to your tools", "Conectado a tus herramientas"), nativeColor(0xffffff), font.Medium), u.textStyle(11, u.tr("Local → Kilo → Your team", "Local → Kilo → Tu equipo"), nativeColor(0x9da8ba), font.Normal))),
+				layout.Rigid(u.column(u.textStyle(13, connection, nativeColor(0xffffff), font.Medium), u.textStyle(11, u.tr("Local → Kilo → Your team", "Local → Kilo → Tu equipo"), nativeColor(0x9da8ba), font.Normal))),
 				layout.Rigid(layout.Spacer{Height: 32}.Layout), layout.Rigid(u.textStyle(10, "KILO PROXY   /   v"+version, nativeColor(0x8794a8), font.Normal)),
 			)
 		})
@@ -87,7 +93,7 @@ func (u *nativeUI) sidebar(gtx layout.Context) layout.Dimensions {
 }
 func (u *nativeUI) statusChip(gtx layout.Context) layout.Dimensions {
 	running := nativeBool(u.state, "running")
-	background, foreground := nativeColor(0xebeee5), nativeColor(0x66755b)
+	background, foreground := nativeColor(0xe9ecf1), nativeColor(0x626b79)
 	if running {
 		background, foreground = nativeColor(0xe8f0e1), nativeColor(0x327653)
 	}
@@ -98,10 +104,19 @@ func (u *nativeUI) statusChip(gtx layout.Context) layout.Dimensions {
 func (u *nativeUI) pageTop(gtx layout.Context) layout.Dimensions {
 	titles := map[string][2]string{"settings": {"Settings", "Ajustes"}, "connection": {"Settings", "Ajustes"}, "agents": {"Open your workspace", "Abre tu espacio de trabajo"}, "models": {"Models", "Modelos"}, "clients": {"Agent settings", "Ajustes del agente"}, "activity": {"Activity", "Actividad"}}
 	descriptions := map[string][2]string{"settings": {"Your Kilo account, appearance and connection.", "Tu cuenta de Kilo, apariencia y conexión."}, "connection": {"Your Kilo account, appearance and connection.", "Tu cuenta de Kilo, apariencia y conexión."}, "agents": {"Your agents, ready with the same model library.", "Tus agentes, con la misma biblioteca de modelos."}, "models": {"Choose once. Use them across your agents.", "Elige una vez. Úsalos en todos tus agentes."}, "clients": {"Integration options and configuration exports.", "Opciones de integración y exportación de configuración."}, "activity": {"Requests, reported costs and cache reuse.", "Peticiones, costes informados y reutilización de caché."}}
+	titles["setup"] = [2]string{"Welcome to Kilo Proxy", "Bienvenido a Kilo Proxy"}
+	descriptions["setup"] = [2]string{"Connect your team. Choose models. Open your agents.", "Conecta tu equipo. Elige modelos. Abre tus agentes."}
+	if u.page == "agents" && !nativeBool(u.state, "running") && u.agentConnectionReady() {
+		descriptions["agents"] = [2]string{"Opening an agent starts the proxy automatically. You can also start it here.", "Abrir un agente arranca el proxy automáticamente. También puedes arrancarlo aquí."}
+	}
 	title, description := titles[u.page], descriptions[u.page]
+	controls := u.statusChip
+	if u.page == "agents" {
+		controls = u.column(u.statusChip, u.proxyButton())
+	}
 	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 		layout.Flexed(1, u.column(u.textStyle(26, u.tr(title[0], title[1]), nativeColor(0x252b28), font.SemiBold), u.note(u.tr(description[0], description[1])))),
-		layout.Rigid(layout.Spacer{Width: 20}.Layout), layout.Rigid(u.statusChip),
+		layout.Rigid(layout.Spacer{Width: 20}.Layout), layout.Rigid(controls),
 	)
 }
 func (u *nativeUI) Layout(gtx layout.Context) layout.Dimensions {
@@ -131,7 +146,7 @@ func (u *nativeUI) Layout(gtx layout.Context) layout.Dimensions {
 		return layout.Inset{Top: 22, Bottom: 18, Left: padding, Right: padding}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, layout.Flexed(1, u.note(u.tr("Workspace  /  ", "Espacio  /  ")+u.tr(map[string]string{"connection": "Settings", "settings": "Settings", "agents": "Agents", "models": "Models", "clients": "Agent settings", "activity": "Activity"}[u.page], map[string]string{"connection": "Ajustes", "settings": "Ajustes", "agents": "Agentes", "models": "Modelos", "clients": "Ajustes del agente", "activity": "Actividad"}[u.page]))), layout.Rigid(u.button("language", u.tr("English ▾", "Español ▾"), func() {
+					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, layout.Flexed(1, u.note(u.tr("Workspace  /  ", "Espacio  /  ")+u.tr(map[string]string{"setup": "Setup", "connection": "Settings", "settings": "Settings", "agents": "Agents", "models": "Models", "clients": "Agent settings", "activity": "Activity"}[u.page], map[string]string{"setup": "Bienvenida", "connection": "Ajustes", "settings": "Ajustes", "agents": "Agentes", "models": "Modelos", "clients": "Ajustes del agente", "activity": "Actividad"}[u.page]))), layout.Rigid(u.button("language", u.tr("English ▾", "Español ▾"), func() {
 						lang := "en"
 						if u.language == "en" {
 							lang = "es"
@@ -161,6 +176,8 @@ func (u *nativeUI) Layout(gtx layout.Context) layout.Dimensions {
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 					var panel layout.Widget
 					switch u.page {
+					case "setup":
+						panel = u.setupPanel()
 					case "agents":
 						panel = u.agentsPanel()
 					case "models":

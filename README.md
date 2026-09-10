@@ -12,9 +12,11 @@ Connect with your personal Kilo account, choose your organization, add models on
 
 1. Download the archive for your operating system and architecture from **Releases**, then extract it.
 2. Open **Kilo Proxy.app** on macOS, **Kilo Proxy.exe** on Windows, or run `./kilo-proxy` on Linux.
-3. Click **Sign in with Kilo / SSO** and approve the device code on Kilo’s website using your usual login or SSO. Choose your organization, then click **Save & start**. Manual API key and organization ID entry is also available.
-4. Open **Models → Add models**. Choose your models, names, default and supported reasoning preferences. Changes save automatically.
-5. Return to **Agents**, choose a project folder, and click **Open Codex** or another installed agent. Profiles are prepared automatically from the shared library. Zed also receives its local credential automatically. Cursor and Xcode retain their one-time provider setup under **Options**.
+3. The first-run guide opens automatically. Click **Sign in with Kilo / SSO** and approve the device code on Kilo’s website using your usual login or SSO. Choose your team and click **Save & choose models**. **Use an API key or enter a team ID** provides manual entry.
+4. Choose at least one model, then **Continue**. Names, order, default and supported reasoning preferences save automatically to the shared library.
+5. Click **Start proxy & go to agents**, choose a project folder, and click **Open Codex** or another installed agent. Profiles are prepared automatically from the shared library. Zed also receives its local credential automatically. Cursor and Xcode retain their one-time provider setup under **Options**.
+
+Configured installations open **Agents** directly. **Start proxy** sits beside the stopped status; opening an agent also starts the proxy before launching it. If startup fails, the agent stays closed and the error appears in Kilo Proxy. Incomplete setup can be resumed with **Continue setup**.
 
 The default API URL is `http://127.0.0.1:8877/v1`. The editor uses a randomly generated **local API key**, not your personal Kilo key. Enable **Remember** to save the upstream credential in the operating system’s credential store when saving the connection.
 

@@ -67,3 +67,13 @@ The helper writes only to the fixed isolated profile on its own computer, not a 
 Validation covers new profiles, repeated saves, exact backups, preservation of unrelated TOML, changed models/ports, selected named profiles, authentication repair, invalid settings and unsafe destinations. Browser checks exercise preparation and updates in English and Spanish. No paid inference is needed to prepare the profile.
 
 The actual helper-written files were also loaded with the installed Codex 0.153.4 app-server in a disposable profile: model/list returned both exact IDs, short names, native reasoning levels and the chosen initial model. No thread or inference was started.
+
+## Messages sent from another task
+
+Codex Desktop can inject a delegated message as a named `function_call_output` without a `call_id`. This was verified in the installed Codex 0.153.4 protocol and a captured gateway rejection on 2026-09-10: Kilo returned `input.2.type: Invalid input` for a `codex_app.create_thread` notification. It is a protocol compatibility issue, not a missing API key. The usual [Responses function-calling flow](https://developers.openai.com/api/docs/guides/function-calling) pairs each result with a function call using `call_id`.
+
+Kilo Proxy translates these notifications into a call/result pair in upstream request history. The notification remains a tool result, with its original delegation text and source-task envelope preserved exactly. The synthetic call keeps the tool name and namespace, uses empty arguments and a stable, collision-checked ID, and is never executed. The original client request remains visible separately in Activity.
+
+Adaptation applies only to `codex_app` notifications from `create_thread`, `send_message_to_thread` and `handoff_thread`, with the `codex_delegation` envelope and a missing, null or empty call ID. Existing paired results and unrelated inputs pass through unchanged. It applies to the Responses route across model providers and composes with the Anthropic tool-schema adapter.
+
+Regression tests reproduce the rejection with a synthetic gateway, then verify successful forwarding for GLM, OpenAI and Anthropic, JSON and streaming responses, unchanged message roles and contents, credential redaction, stable IDs and request-size limits. These tests do not claim a paid end-to-end Kilo inference. The compatibility fix requires running the updated proxy executable; changing the Codex profile is unnecessary.
