@@ -36,27 +36,45 @@ func nativeFreshOnboarding(t *testing.T) *nativeUI {
 	return u
 }
 
-func nativeOnboardingListener(t *testing.T, u *nativeUI, want bool) {
+func nativeOnboardingListener(t *testing.T, u *nativeUI) *net.TCPListener {
 	t.Helper()
 	u.owner.mu.Lock()
 	address := net.JoinHostPort("127.0.0.1", strconv.Itoa(u.owner.config.Port))
+	listener, server := u.owner.proxyListener, u.owner.proxyServer
 	u.owner.mu.Unlock()
-	if !want {
-		// Rebinding proves Stop released the listener. A TCP handshake alone can
-		// still complete transiently after close on macOS and falsely look live.
-		listener, err := net.Listen("tcp4", address)
-		if err != nil {
-			t.Fatalf("stopped proxy has not released %s: %v", address, err)
-		}
-		listener.Close()
-		return
+	if listener == nil || server == nil || listener.Addr().String() != address {
+		t.Fatal("running proxy does not own the configured listener")
+	}
+	tcp, ok := listener.(*net.TCPListener)
+	if !ok {
+		t.Fatalf("proxy listener has unexpected type %T", listener)
 	}
 	conn, err := net.DialTimeout("tcp4", address, 300*time.Millisecond)
-	if err == nil {
+	if err != nil {
+		t.Fatalf("proxy listener is not reachable: %v", err)
+	}
+	conn.Close()
+	return tcp
+}
+
+func nativeOnboardingStopped(t *testing.T, u *nativeUI, listener *net.TCPListener) {
+	t.Helper()
+	u.owner.mu.Lock()
+	cleared := u.owner.proxyListener == nil && u.owner.proxyServer == nil
+	u.owner.mu.Unlock()
+	if !cleared {
+		t.Fatal("stopped proxy retained its listener or server")
+	}
+	// Check the socket that Start actually owned. Rebinding or dialing its old
+	// ephemeral port observes global TCP state, which can change independently
+	// of Stop on macOS. The deadline makes a leaked, open socket fail promptly.
+	_ = listener.SetDeadline(time.Now())
+	conn, err := listener.Accept()
+	if conn != nil {
 		conn.Close()
 	}
-	if (err == nil) != want {
-		t.Fatalf("proxy listener running=%v, want %v: %v", err == nil, want, err)
+	if !errors.Is(err, net.ErrClosed) {
+		t.Fatalf("stopped proxy did not close its original listener: %v", err)
 	}
 }
 
@@ -130,10 +148,10 @@ func TestNativeOnboardingManualCompletionPersistsAcrossRestart(t *testing.T) {
 	}
 	u.finishSetup()
 	nativeTestWait(t, u, func() bool { return u.page == "agents" && nativeBool(u.state, "running") })
-	nativeOnboardingListener(t, u, true)
+	listener := nativeOnboardingListener(t, u)
 	u.setProxyRunning(false, nil)
-	nativeTestWait(t, u, func() bool { return !nativeBool(u.state, "running") })
-	nativeOnboardingListener(t, u, false)
+	nativeTestWait(t, u, func() bool { return !u.busy["POST/api/stop"] && !nativeBool(u.state, "running") })
+	nativeOnboardingStopped(t, u, listener)
 
 	restored, err := newApp(u.owner.dir, u.owner.vault)
 	if err != nil {
@@ -182,7 +200,7 @@ func TestNativeOnboardingManualPointerWalkthrough(t *testing.T) {
 	}
 	h.click("Start proxy & go to agents", semantic.Button)
 	nativeTestWait(t, u, func() bool { return u.page == "agents" && nativeBool(u.state, "running") })
-	nativeOnboardingListener(t, u, true)
+	listener := nativeOnboardingListener(t, u)
 	saved, err := readSettings(u.owner.dir)
 	if err != nil || saved.OrgID != "e2e-team" || !saved.Remember || u.value("connection.key") != "" {
 		t.Fatal("pointer walkthrough did not save the selected team and remember preference safely")
@@ -192,8 +210,8 @@ func TestNativeOnboardingManualPointerWalkthrough(t *testing.T) {
 	}
 	h.frame()
 	h.click("Stop proxy", semantic.Button)
-	nativeTestWait(t, u, func() bool { return !nativeBool(u.state, "running") })
-	nativeOnboardingListener(t, u, false)
+	nativeTestWait(t, u, func() bool { return !u.busy["POST/api/stop"] && !nativeBool(u.state, "running") })
+	nativeOnboardingStopped(t, u, listener)
 }
 
 // Delay only a real API response. The app still validates settings, persists
@@ -294,7 +312,7 @@ func TestNativeOnboardingLateStartPreservesReviewModels(t *testing.T) {
 	if u.page != "setup" || u.setupStep != setupModels {
 		t.Fatal("late start response navigated away from model review")
 	}
-	nativeOnboardingListener(t, u, true)
+	nativeOnboardingListener(t, u)
 }
 
 func TestNativeOnboardingTeamSaveClearsCatalogBeforeStateRefresh(t *testing.T) {
@@ -379,11 +397,11 @@ func TestNativeOnboardingAgentsProxyPointerControls(t *testing.T) {
 				h.frame()
 				h.click(u.tr("Start proxy", "Arrancar proxy"), semantic.Button)
 				nativeTestWait(t, u, func() bool { return nativeBool(u.state, "running") })
-				nativeOnboardingListener(t, u, true)
+				listener := nativeOnboardingListener(t, u)
 				h.frame()
 				h.click(u.tr("Stop proxy", "Detener proxy"), semantic.Button)
-				nativeTestWait(t, u, func() bool { return !nativeBool(u.state, "running") })
-				nativeOnboardingListener(t, u, false)
+				nativeTestWait(t, u, func() bool { return !u.busy["POST/api/stop"] && !nativeBool(u.state, "running") })
+				nativeOnboardingStopped(t, u, listener)
 				h.now = h.now.Add(time.Second)
 				h.frame()
 				nativeGridCapture(t, h, "onboarding-agents-stopped-"+fmtSize(size)+"-"+lang)
