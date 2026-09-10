@@ -150,6 +150,15 @@ func (d *nativeDesktop) checkDesktop(checks *[]string) error {
 		return err
 	}
 	passed("rendered-ui-and-authenticated-backend")
+	if err := d.withUI(func() error {
+		if d.ui.page != "setup" || d.ui.setupStep != setupConnect || d.ui.buttons["connection.login"] == nil {
+			return errors.New("fresh application did not render the first-run sign-in guide")
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	passed("first-run-sign-in-guide")
 	for _, language := range []string{"en", "es"} {
 		if err := d.withUI(func() error { return d.ui.SmokeAction("set-language", language) }); err != nil {
 			return err

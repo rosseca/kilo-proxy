@@ -245,6 +245,9 @@ func (u *nativeUI) sharedModelSummary() string {
 	if initial != nil {
 		name = nativeCodexDisplayName(*initial)
 	}
+	if len(s.Models) == 1 {
+		return fmt.Sprintf(u.tr("1 shared model · Starts with %s", "1 modelo compartido · Empieza con %s"), name)
+	}
 	return fmt.Sprintf(u.tr("%d shared models · Starts with %s", "%d modelos compartidos · Empieza con %s"), len(s.Models), name)
 }
 

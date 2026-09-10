@@ -196,6 +196,7 @@ func (a *app) pollLogin(ctx context.Context, session *loginSession, code string,
 			a.catalogRevision++
 			a.apiKey = data.Token
 			a.keySaved = false
+			a.connectionNeedsSave = true
 			a.accountEmail = data.UserEmail
 			a.organizations = nil
 			a.config.OrgID = ""
@@ -273,6 +274,7 @@ func (a *app) loadOrganizations(w http.ResponseWriter, r *http.Request) {
 	}
 	if a.config.OrgID == "" && len(a.organizations) == 1 {
 		a.config.OrgID = a.organizations[0].ID
+		a.connectionNeedsSave = true
 		a.catalogRevision++
 	}
 	a.mu.Unlock()

@@ -198,13 +198,16 @@ func (u *nativeUI) agentModelSummary() layout.Widget {
 			}
 		}
 		text = fmt.Sprintf(u.tr("%d shared models · Default: %s", "%d modelos compartidos · Predeterminado: %s"), len(s.Models), name)
+		if len(s.Models) == 1 {
+			text = fmt.Sprintf(u.tr("1 shared model · Default: %s", "1 modelo compartido · Predeterminado: %s"), name)
+		}
 	}
 	widgets := []layout.Widget{u.actionRow(u.column(u.eyebrow(u.tr("YOUR MODELS", "TUS MODELOS")), u.label(text)), u.button("agents:edit-models", u.tr("Edit models", "Editar modelos"), func() { u.page = "models" }))}
 	if status, ready := u.libraryStatus(); !ready {
 		widgets = append(widgets, u.note(status))
 	}
-	if !u.agentConnectionReady() {
-		widgets = append(widgets, u.actionRow(u.note(u.tr("Connect your Kilo account and choose an organization before opening an agent.", "Conecta tu cuenta Kilo y elige una organización antes de abrir un agente.")), u.button("agents:connection", u.tr("Open settings", "Abrir ajustes"), func() { u.page = "settings" })))
+	if u.setupNeeded() {
+		widgets = append([]layout.Widget{u.card(u.actionRow(u.column(u.heading(u.tr("Finish setting up your workspace", "Termina de configurar tu espacio")), u.note(u.tr("Connect Kilo and choose at least one model. We'll guide you through it.", "Conecta Kilo y elige al menos un modelo. Te guiamos paso a paso."))), u.button("primary.agents.setup", u.tr("Continue setup", "Continuar configuración"), u.beginSetup)))}, widgets...)
 	}
 	return u.column(widgets...)
 }
@@ -306,6 +309,7 @@ func (u *nativeUI) agentCard(key string, primary bool) layout.Widget {
 			status = a.ClaudeError
 		}
 	}
+	canOpen = canOpen && !u.connectionWorking() && !u.setupConnectionNeeded()
 	label := u.tr("Open ", "Abrir ") + name
 	if c.Launching == key {
 		label = a.Phase

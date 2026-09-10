@@ -527,10 +527,26 @@ func (u *nativeUI) clientPicker(key string, s *nativeClientSelection) layout.Wid
 			u.setValue(prefix+"alias:"+alias, "")
 		}
 	})), u.note(fmt.Sprintf(u.tr("%d selected · %d matching · up to %d models", "%d seleccionados · %d resultados · hasta %d modelos"), len(s.Models), len(available), limit) + u.tr(" · Prices: input / output per 1M tokens", " · Precios: entrada / salida por 1M tokens"))}
+	compactSetup := shared && catalog && u.page == "setup" && !u.expanded["setup.filters"]
+	if shared && catalog && u.page == "setup" {
+		label := u.tr("Filters & options", "Filtros y opciones")
+		if u.checked(prefix+"selected") || u.checked(prefix+"coding") || u.value("models.lab") != "" {
+			label = u.tr("Filters active", "Filtros activos")
+		}
+		if !compactSetup {
+			label = u.tr("Hide filters", "Ocultar filtros")
+		}
+		toggle := u.button("setup.filters", label, func() { u.expanded["setup.filters"] = !u.expanded["setup.filters"] })
+		if compactSetup {
+			controls = []layout.Widget{u.actionRow(u.field(prefix+"search", u.tr("Search models or saved names", "Buscar modelos o nombres guardados"), "provider/model", false), u.button(prefix+"refresh", u.tr("Refresh catalog", "Actualizar catálogo"), u.refreshModels), toggle), controls[len(controls)-1]}
+		} else {
+			controls = append([]layout.Widget{u.pills(toggle)}, controls...)
+		}
+	}
 	if shared && !catalog {
 		available = u.sharedModelOrder()
 		controls = []layout.Widget{u.pills(u.check(prefix+"advanced", u.tr("Advanced model options", "Opciones avanzadas de modelos"), func(bool) {}))}
-	} else {
+	} else if !compactSetup {
 		controls = append(controls, u.note(u.modelSortHint(order)))
 	}
 	cards := []layout.Widget{}

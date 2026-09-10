@@ -283,6 +283,7 @@ func (a *app) saveConfig(w http.ResponseWriter, r *http.Request) {
 	a.catalogRevision++
 	a.config, a.apiKey, a.vaultWarning = cfg, key, ""
 	a.keySaved = cfg.Remember
+	a.connectionNeedsSave = false
 	jsonResponse(w, 200, map[string]bool{"ok": true})
 }
 

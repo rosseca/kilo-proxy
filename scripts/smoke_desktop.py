@@ -12,7 +12,7 @@ import tempfile
 import zipfile
 
 REQUIRED = {
-    'rendered-ui-and-authenticated-backend', 'window-and-tray-language-en',
+    'rendered-ui-and-authenticated-backend', 'first-run-sign-in-guide', 'window-and-tray-language-en',
     'window-and-tray-language-es', 'native-clipboard-via-ui', 'proxy-start-via-ui',
     'close-keeps-proxy', 'tray-reopen-preserves-session', 'tray-stop',
     'tray-appearance-persisted-icon', 'tray-appearance-persisted-spend',

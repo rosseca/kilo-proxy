@@ -64,6 +64,7 @@ type app struct {
 	organizations          []organization
 	accountEmail           string
 	keySaved               bool
+	connectionNeedsSave    bool // Device login and auto-selected teams still need an explicit config save.
 	mu                     sync.Mutex
 	dir                    string
 	config                 settings
