@@ -13,6 +13,8 @@ func (a *app) clientLaunchMessage(message string) string {
 		return message
 	}
 	known := map[string]string{
+		"Open Design desktop launch is available on macOS and Windows. Linux currently requires a source build.":            "Puedes abrir Open Design en macOS y Windows. Linux requiere compilarlo desde el código fuente.",
+		"Open Design opened. Complete its one-time custom provider setup with the Kilo Proxy connection details if needed.": "Open Design abierto. Si es la primera vez, configura su proveedor personalizado con los datos de conexión de Kilo Proxy.",
 		"Xcode is available on macOS only.":         "Xcode solo está disponible en macOS.",
 		"Unknown launch client.":                    "Cliente desconocido.",
 		"Method not allowed.":                       "Método no permitido.",

@@ -1,3 +1,4 @@
+import {createOpenDesignHelper} from './open-design-helper.mjs';
 import {createEditorHelper} from './editor-helper.mjs';
 import {configureDesktop, writeClipboard, openExternal, bindDesktopLinks} from './desktop-helper.mjs';
 import {createXcodeHelper} from './xcode-helper.mjs';
@@ -108,6 +109,7 @@ const descriptions = {
   cursor: ['Cursor: varios modelos, con un requisito de red.', 'Selecciona modelos y conecta el túnel HTTPS desde el helper de Cursor.', 'Guía de conexión de Cursor'],
   generic: ['Dos valores. Ninguna cabecera extra.', 'En tu herramienta, elige un proveedor compatible con OpenAI. Pega la URL y la clave local. El modelo mantiene su ID de Kilo.', 'Conexión compatible con OpenAI'],
   zed: ['Tu agente de Zed, con saldo de empresa.', 'En Agent Settings → LLM Providers, añade un proveedor compatible con OpenAI. Combina este bloque con tus ajustes y guarda la clave local en la interfaz del proveedor.', 'settings.json · combinar con tus ajustes'],
+  'open-design': ['Open Design', '', ''],
   opencode: ['OpenCode, conectado directamente.', 'Configuración para OpenCode v1. En /connect → Other usa el ID kilo-local y pega la clave local. Combina este bloque con tu configuración.', 'opencode.json · v1'],
   codex: ['Codex Desktop: dos instancias independientes.', 'Selecciona tus modelos y pulsa «Preparar Codex GUI». El helper crea el perfil aislado y guarda la configuración en este ordenador. Después copia el arranque para abrir una segunda instancia gráfica.', 'config.toml · plantilla opcional para otro ordenador'],
   'codex-cli': ['Codex CLI en otra terminal.', 'Selecciona modelos y pulsa «Preparar Codex CLI». El helper crea y actualiza su perfil independiente. Copia el arranque y usa /model en Codex para cambiar de modelo y razonamiento.', 'config.toml · plantilla opcional para otro ordenador'],
@@ -152,6 +154,7 @@ function snippet(reveal = false) {
 function launch(key) {
   return launchCommand({client,key,shell:$('launch-shell').value,platform:$('desktop-platform').value,appPath:$('desktop-app-path').value.trim(),language,catalog:isCodexClient() && codexSelection().models.size > 0});
 }
+const openDesignHelper=createOpenDesignHelper({copy,refreshCatalog:loadModels,onChange:renderClientLaunch});
 const editorHelper=createEditorHelper({api,notify,copy,refreshCatalog:loadModels,onChange:renderClientLaunch});
 const xcodeHelper=createXcodeHelper({api,notify,refreshCatalog:loadModels,onChange:renderClientLaunch});
 function clientLaunchSelection(){
@@ -160,6 +163,7 @@ function clientLaunchSelection(){
   return {id:client,count:selection.models.size,ready:selection.setup?.signature===fingerprint,fingerprint,working:selection.preparing,valid:imageGenerationValid(selection.imageGeneration,catalog),prepare:prepareCodex};
  }
  if(client==='claude')return {id:client,count:multiClients.claude.models.size,ready:claudeSetup?.signature===claudeSetupSignature(),fingerprint:claudeSetupSignature(),working:claudePreparing||claudeDetecting,prepare:prepareClaude};
+ if(client==='open-design')return openDesignHelper.launchState();
  if(['opencode','zed'].includes(client))return editorHelper.launchState();
  if(client==='xcode')return xcodeHelper.launchState();
  if(client==='cursor')return {id:client,count:cursorModels.size,ready:true,fingerprint:JSON.stringify(state?.cursor),working:busy};
@@ -172,11 +176,12 @@ function renderClientLaunch(){
  if(!launchDetected&&!launchDetecting)void detectLaunchClients();
  const installed=launchInfo?.clients?.[selection.id],custom=selection.id==='codex'&&$('client-launch-app').value.trim();
  const available=!!installed?.available||!!custom,terminal=installed?.kind==='terminal'||['codex-cli','claude','opencode'].includes(selection.id);
- const name=installed?.name||({'codex':'Codex Desktop','codex-cli':'Codex CLI',claude:'Claude Code',opencode:'OpenCode',zed:'Zed',cursor:'Cursor'}[selection.id]||'Xcode');
+ const name=installed?.name||({'codex':'Codex Desktop','codex-cli':'Codex CLI',claude:'Claude Code',opencode:'OpenCode','open-design':'Open Design',zed:'Zed',cursor:'Cursor'}[selection.id]||'Xcode');
  $('client-launch-title').textContent=L('Open on this computer','Abrir en este ordenador');
  $('client-launch-refresh').textContent=launchDetecting?L('Checking…','Comprobando…'):L('Check installed apps','Comprobar aplicaciones');
  $('client-launch-refresh').disabled=launchDetecting||launchBusy;
  $('client-launch-directory-label').textContent=L('Project folder (optional)','Carpeta del proyecto (opcional)');
+ $('client-launch-directory-field').hidden=selection.id==='open-design';
  $('client-launch-directory').placeholder=launchInfo?.directory||'';
  $('client-launch-custom').hidden=selection.id!=='codex';
  $('client-launch-custom-label').textContent=L('Custom Codex application','Aplicación de Codex personalizada');
@@ -185,8 +190,8 @@ function renderClientLaunch(){
  const runningTunnel=selection.id!=='cursor'||state?.cursor?.status==='running';
  $('client-launch').textContent=launchBusy?L('Launching…','Abriendo…'):L('Launch ',terminal?'Iniciar ':'Abrir ')+name;
  $('client-launch').disabled=launchBusy||launchDetecting||selection.working||selection.valid===false||!state||!selection.count||!available||!runningTunnel;
- $('client-launch-help').textContent=L('Opens with the current models and Kilo configuration. Changes are saved first. Command export settings below apply only to copied commands.','Abre con los modelos y la configuración de Kilo actuales. Los cambios se guardan antes. Los ajustes de exportación inferiores solo afectan a los comandos copiados.')+(selection.id==='cursor'?L(' Connect the HTTPS tunnel first and keep the one-time provider setup in Cursor.',' Conecta primero el túnel HTTPS y mantén la configuración inicial del proveedor en Cursor.'):selection.id==='zed'?L(' Paste the local key into Zed once using the instructions below.',' Pega la clave local en Zed una vez siguiendo las instrucciones inferiores.'):selection.id==='xcode-chat'?L(' Add the chat provider in Xcode once using the connection details below.',' Añade el proveedor de chat en Xcode una vez con la conexión indicada abajo.'):'');
- const reason=!runningTunnel?L('Connect the Cursor HTTPS tunnel before opening.','Conecta el túnel HTTPS de Cursor antes de abrir.'):!available&&!launchDetecting?(installed?.reason||L('Application not detected. Install it, then check again.','Aplicación no detectada. Instálala y vuelve a comprobar.')):!selection.count?L('Select at least one model.','Selecciona al menos un modelo.'):'';
+ $('client-launch-help').textContent=selection.id==='open-design'?L('Starts the proxy and opens Open Design. Complete the one-time API provider setup below inside Open Design; this button does not save its provider settings.','Arranca el proxy y abre Open Design. Completa la configuración inicial del proveedor de API dentro de Open Design siguiendo los pasos de abajo; este botón no guarda sus ajustes de proveedor.'):L('Opens with the current models and Kilo configuration. Changes are saved first. Command export settings below apply only to copied commands.','Abre con los modelos y la configuración de Kilo actuales. Los cambios se guardan antes. Los ajustes de exportación inferiores solo afectan a los comandos copiados.')+(selection.id==='cursor'?L(' Connect the HTTPS tunnel first and keep the one-time provider setup in Cursor.',' Conecta primero el túnel HTTPS y mantén la configuración inicial del proveedor en Cursor.'):selection.id==='zed'?L(' Paste the local key into Zed once using the instructions below.',' Pega la clave local en Zed una vez siguiendo las instrucciones inferiores.'):selection.id==='xcode-chat'?L(' Add the chat provider in Xcode once using the connection details below.',' Añade el proveedor de chat en Xcode una vez con la conexión indicada abajo.'):'');
+ const reason=selection.reason||(!runningTunnel?L('Connect the Cursor HTTPS tunnel before opening.','Conecta el túnel HTTPS de Cursor antes de abrir.'):!available&&!launchDetecting?(installed?.reason||L('Application not detected. Install it, then check again.','Aplicación no detectada. Instálala y vuelve a comprobar.')):!selection.count?L('Select at least one model.','Selecciona al menos un modelo.'):'');
  $('client-launch-status').textContent=launchMessage||reason;
  $('client-launch-status').classList.toggle('error',launchError);
 }
@@ -199,11 +204,11 @@ async function detectLaunchClients(){
  }catch(error){launchMessage=error.message;launchError=true;}
  finally{launchDetecting=false;renderClientLaunch();}
 }
-function launchFingerprint(){const selection=clientLaunchSelection();return JSON.stringify([selection?.id,selection?.fingerprint,$('client-launch-directory').value.trim(),selection?.id==='codex'?$('client-launch-app').value.trim():'']);}
+function launchFingerprint(){const selection=clientLaunchSelection();return JSON.stringify([selection?.id,selection?.fingerprint,selection?.id==='open-design'?'':$('client-launch-directory').value.trim(),selection?.id==='codex'?$('client-launch-app').value.trim():'']);}
 async function openClient(){
  if(launchBusy||$('client-launch').disabled)return;
  const selection=clientLaunchSelection(),fingerprint=launchFingerprint();
- const body={client:selection.id,directory:$('client-launch-directory').value.trim(),...(selection.id==='codex'&&$('client-launch-app').value.trim()?{appPath:$('client-launch-app').value.trim()}:{})};
+ const body={client:selection.id,directory:selection.id==='open-design'?'':$('client-launch-directory').value.trim(),...(selection.id==='codex'&&$('client-launch-app').value.trim()?{appPath:$('client-launch-app').value.trim()}:{})};
  launchBusy=true;launchMessage='';launchError=false;renderClientLaunch();
  try{
   if(!selection.ready)await selection.prepare();
@@ -217,12 +222,15 @@ $('client-launch-refresh').addEventListener('click',()=>{launchMessage='';launch
 $('client-launch-directory').addEventListener('input',()=>{launchDirectoryEdited=true;launchMessage='';launchError=false;renderClientLaunch();});
 $('client-launch-app').addEventListener('input',()=>{launchMessage='';launchError=false;renderClientLaunch();});
 function renderSnippet() {
+ const openDesignActive=client==='open-design';
+ $('open-design-helper').hidden=!openDesignActive;
+ if(openDesignActive)openDesignHelper.render({state,catalog,language});
  const xcodeActive=client==='xcode',editorActive=['opencode','zed'].includes(client);
  $('editor-helper').hidden=!editorActive;
  if(editorActive)editorHelper.render({client,state,catalog,language});
  $('xcode-helper').hidden=!xcodeActive;
- document.querySelector('#client-panel > .client-instructions').hidden=xcodeActive||editorActive;
- document.querySelector('#client-panel > .snippet-stack').hidden=xcodeActive||editorActive;
+ document.querySelector('#client-panel > .client-instructions').hidden=xcodeActive||editorActive||openDesignActive;
+ document.querySelector('#client-panel > .snippet-stack').hidden=xcodeActive||editorActive||openDesignActive;
  if(xcodeActive)xcodeHelper.render({state,catalog,language});
   const isCodex = ['codex','codex-cli'].includes(client);
   $('codex-copy-help').hidden = !isCodex;

@@ -54,6 +54,13 @@ func resolveLaunchClient(id, custom string) (string, error) {
 		}
 		return "", errors.New("The selected Codex application does not exist or cannot be executed.")
 	}
+	if reason := launchClientPlatformReason(id, runtime.GOOS); reason != "" {
+		return "", errors.New(reason)
+	}
+	if id == "open-design" {
+		home, _ := os.UserHomeDir()
+		return resolveOpenDesignLaunchClient(runtime.GOOS, home, os.Getenv("LOCALAPPDATA"))
+	}
 	if kind == "terminal" {
 		command := id
 		if id == "codex-cli" {
@@ -108,4 +115,28 @@ func resolveLaunchClient(id, custom string) (string, error) {
 		}
 	}
 	return "", missing
+}
+
+func resolveOpenDesignLaunchClient(platform, home, localAppData string) (string, error) {
+	if reason := launchClientPlatformReason("open-design", platform); reason != "" {
+		return "", errors.New(reason)
+	}
+	if platform == "darwin" || platform == "macos" {
+		for _, base := range []string{"/Applications", filepath.Join(home, "Applications")} {
+			bundle := filepath.Join(base, "Open Design.app")
+			if launchExecutable(filepath.Join(bundle, "Contents", "MacOS", "Open Design")) {
+				return bundle, nil
+			}
+		}
+	} else if platform == "windows" {
+		if localAppData == "" {
+			localAppData = filepath.Join(home, "AppData", "Local")
+		}
+		path := filepath.Join(localAppData, "Programs", "Open Design", "Open Design.exe")
+		if filepath.IsAbs(path) && launchExecutable(path) {
+			return path, nil
+		}
+	}
+	// Never fall back to `od`: that name also belongs to the system octal-dump utility.
+	return "", errors.New("Install Open Design on this computer, then refresh installed apps.")
 }

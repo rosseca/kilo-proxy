@@ -129,6 +129,14 @@ func nativeClientEndpoint(key string) string {
 }
 
 func nativeClientPayload(key string, s *nativeClientSelection) (any, error) {
+	if key == "open-design" {
+		// This describes the copy helper, not an importable Open Design profile.
+		library := modelLibrary{SchemaVersion: 1, DefaultModel: s.Initial}
+		for _, m := range s.Models {
+			library.Models = append(library.Models, modelLibraryItem{ID: m.Model.ID})
+		}
+		return library, validateModelLibrary(library)
+	}
 	if key == "codex" || key == "codex-cli" || key == "xcode-codex" {
 		catalog, err := buildCodexCatalog(s.Models, s.Initial, key == "xcode-codex")
 		payload := map[string]any{"catalog": json.RawMessage(catalog)}
@@ -390,7 +398,7 @@ func (u *nativeUI) clientsPanel() layout.Widget {
 			}
 		})
 	}
-	widgets := []layout.Widget{u.pills(u.button("agents.back", u.tr("← All agents", "← Todos los agentes"), func() { u.page = "agents" })), u.heading(map[string]string{"codex": "Codex Desktop", "codex-cli": "Codex CLI", "claude": "Claude Code", "opencode": "OpenCode", "zed": "Zed", "cursor": "Cursor", "xcode": "Xcode", "generic": u.tr("Other agents", "Otros agentes")}[u.client])}
+	widgets := []layout.Widget{u.pills(u.button("agents.back", u.tr("← All agents", "← Todos los agentes"), func() { u.page = "agents" })), u.heading(map[string]string{"codex": "Codex Desktop", "codex-cli": "Codex CLI", "claude": "Claude Code", "opencode": "OpenCode", "zed": "Zed", "open-design": "Open Design", "cursor": "Cursor", "xcode": "Xcode", "generic": u.tr("Other agents", "Otros agentes")}[u.client])}
 	key := u.client
 	if key == "xcode" {
 		variants := []layout.Widget{}
@@ -451,12 +459,20 @@ func (u *nativeUI) clientsPanel() layout.Widget {
 		protocol = u.tr("Uses Anthropic Messages. All selected models and internal-task aliases must support it.", "Usa Anthropic Messages. Los modelos y los alias de tareas internas deben admitirlo.")
 	}
 	widgets = append(widgets, u.note(protocol))
-	widgets = append(widgets, u.actionRow(u.note(u.sharedModelSummary()), u.button("agents.models.edit", u.tr("Edit shared models", "Editar modelos compartidos"), func() { u.page = "models" })))
+	modelSummary := u.sharedModelSummary()
+	if key == "open-design" {
+		modelSummary = u.tr("Copy model IDs from your shared library below.", "Copia abajo los IDs de tu biblioteca compartida.")
+	}
+	widgets = append(widgets, u.actionRow(u.note(modelSummary), u.button("agents.models.edit", u.tr("Edit shared models", "Editar modelos compartidos"), func() { u.page = "models" })))
 	if key == "codex" || key == "codex-cli" {
 		widgets = append(widgets, u.button("agents.images.edit", u.tr("Image generation settings", "Ajustes de generación de imágenes"), func() { u.page = "models"; u.expanded["library.images"] = true }))
 	}
 	if key == "cursor" {
 		widgets = append(widgets, u.cursorClientPanel(s))
+		return u.column(widgets...)
+	}
+	if key == "open-design" {
+		widgets = append(widgets, u.openDesignClientPanel(s))
 		return u.column(widgets...)
 	}
 	if key == "generic" {

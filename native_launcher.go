@@ -115,6 +115,10 @@ func (u *nativeUI) launchClient(key string) {
 
 func (u *nativeUI) launchAgent(key string) {
 	u.agentsState()
+	if key == "open-design" {
+		u.launchClientFrom(key, "")
+		return
+	}
 	field := agentProjectField(key)
 	if u.value(field) == "" {
 		u.setValue(field, u.agentProject(key))
@@ -155,6 +159,9 @@ func (u *nativeUI) launchSettingsChangedMessage() string {
 }
 
 func (u *nativeUI) launchClientFrom(key, directoryField string) {
+	if key == "open-design" {
+		directoryField = "" // Open Design has no supported project-folder launch argument.
+	}
 	a := u.agentsState()
 	c := u.clientState()
 	if c.Launching != "" {
@@ -208,6 +215,9 @@ func (u *nativeUI) launchClientFrom(key, directoryField string) {
 		return
 	}
 	directory, appPath := u.value(directoryField), u.value("clients-launch-app-path")
+	if key == "open-design" {
+		directory = ""
+	}
 	resolvedDirectory, err := launchPath(directory, c.LaunchInfo.Directory)
 	if err != nil {
 		u.notice = nativeMessage(err.Error(), u.language)
@@ -256,7 +266,9 @@ func (u *nativeUI) launchClientFrom(key, directoryField string) {
 				return
 			}
 			finish(nil)
-			u.rememberAgentProject(key, resolvedDirectory)
+			if key != "open-design" {
+				u.rememberAgentProject(key, resolvedDirectory)
+			}
 			u.notice = result.Message
 			if u.notice == "" {
 				u.notice = u.tr("Editor launched.", "Editor abierto.")
@@ -266,7 +278,7 @@ func (u *nativeUI) launchClientFrom(key, directoryField string) {
 	}
 	// A managed profile can be edited externally between launches. Reapply the
 	// shared library each time; the backend preserves unrelated preferences.
-	if key == "cursor" {
+	if key == "cursor" || key == "open-design" {
 		launch(nil)
 	} else {
 		u.prepareClientAfter(key, launch)

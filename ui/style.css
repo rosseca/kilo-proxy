@@ -50,7 +50,7 @@
 
 /* Model cards use the helper's available width, not the browser viewport. */
 .client-panel{grid-template-columns:minmax(0,1fr);container-type:inline-size}
-.model-helper #model-picker.model-grid,#editor-picker.model-grid,#xcode-picker.model-grid{
+.model-helper #model-picker.model-grid,#editor-picker.model-grid,#xcode-picker.model-grid,#open-design-picker.model-grid{
   display:grid;grid-template-columns:minmax(0,1fr);align-items:start;align-content:start;
   gap:12px;height:auto;max-height:640px;min-height:180px;padding:4px 6px 8px 2px;
   border:0;border-radius:0;background:transparent;overflow:auto;scrollbar-gutter:stable;
@@ -95,9 +95,9 @@
 #editor-helper .model-grid details label{display:block;margin:10px 0 0}
 #editor-helper .model-grid details input[type=number]{display:block;width:100%;margin-top:5px;height:34px}
 .model-grid>p{grid-column:1/-1;margin:0;padding:20px;font-size:11px;color:var(--muted)}
-@container(min-width:540px){.model-helper #model-picker.model-grid,#editor-picker.model-grid,#xcode-picker.model-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@container(min-width:830px){.model-helper #model-picker.model-grid,#editor-picker.model-grid,#xcode-picker.model-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
-@media(max-width:650px){.model-helper #model-picker.model-grid,#editor-picker.model-grid,#xcode-picker.model-grid{max-height:600px}}
+@container(min-width:540px){.model-helper #model-picker.model-grid,#editor-picker.model-grid,#xcode-picker.model-grid,#open-design-picker.model-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@container(min-width:830px){.model-helper #model-picker.model-grid,#editor-picker.model-grid,#xcode-picker.model-grid,#open-design-picker.model-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:650px){.model-helper #model-picker.model-grid,#editor-picker.model-grid,#xcode-picker.model-grid,#open-design-picker.model-grid{max-height:600px}}
 
 .image-generation-panel{margin:20px 0;padding:20px;border:1px solid #d7e0c8;border-radius:12px;background:linear-gradient(120deg,#f5f8ed,#fff)}
 .image-generation-heading{display:flex;align-items:center;justify-content:space-between;gap:20px}
@@ -115,3 +115,5 @@
 .cost-source{display:block;margin-top:3px;font:10px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--muted);white-space:normal}
 #codex-image-save-help{padding-top:12px;border-top:1px solid #e1e8d7;color:#637055}
 @media(max-width:650px){.image-generation-panel{padding:15px}.image-generation-heading{gap:12px;align-items:flex-start}.image-generation-options{grid-template-columns:minmax(0,1fr)}.image-generation-options button{justify-self:start}.image-generation-panel h4{font-size:15px}}
+
+#open-design-helper{grid-column:1/-1;min-width:0}#open-design-search{width:100%;padding:12px;border:1px solid var(--border);border-radius:6px;margin:14px 0}#open-design-picker{max-height:540px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:8px;margin:12px 0}#open-design-helper pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f7f9f2;padding:14px;border:1px solid var(--border);border-radius:6px}.open-design-steps{padding-left:20px;line-height:1.6}.open-design-steps li+li{margin-top:10px}.open-design-fields{display:grid;gap:16px}.open-design-fields label{display:block;margin-bottom:6px}.open-design-copy-row{display:flex;align-items:center;gap:10px}.open-design-copy-row input{width:100%;min-width:0;padding:12px;border:1px solid var(--border);border-radius:6px;background:#fff;font:12px ui-monospace,monospace}.open-design-copy-row button{flex:0 0 auto}#open-design-helper .model-option-title small{display:block}#client-launch-directory-field[hidden]{display:none}@media(max-width:650px){.open-design-copy-row{flex-direction:column;align-items:stretch}}
