@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 )
 
 // The API accepts client identities, never commands, environment maps or profile paths.
@@ -15,6 +16,7 @@ type clientLaunchRequest struct {
 	Client    string `json:"client"`
 	Directory string `json:"directory,omitempty"`
 	AppPath   string `json:"appPath,omitempty"`
+	Engine    string `json:"engine,omitempty"`
 }
 type clientLaunchPlan struct {
 	Client, Name, Kind, Executable, Directory string
@@ -113,6 +115,12 @@ func (a *app) clientsLaunch(w http.ResponseWriter, r *http.Request) {
 			} else {
 				info.Path = path
 				info.Available = true
+				if id == "open-design" {
+					if err := openDesignCompatibility(path, rt.platform); err != nil {
+						info.Available = false
+						info.Reason = err.Error()
+					}
+				}
 			}
 			if kind == "terminal" && info.Available && !terminal {
 				info.Available = false
@@ -163,7 +171,10 @@ func (a *app) clientsLaunch(w http.ResponseWriter, r *http.Request) {
 		message = "Cursor opened. Connect its provider to the existing tunnel if needed."
 	}
 	if input.Client == "open-design" {
-		message = "Open Design opened. Complete its one-time custom provider setup with the Kilo Proxy connection details if needed."
+		message = "Open Design opened with its Kilo CLI profile. Use Local CLI mode in Open Design."
+		a.mu.Lock()
+		a.openDesignLaunchUntil = time.Now().Add(30 * time.Second)
+		a.mu.Unlock()
 	}
 	if strings.HasPrefix(input.Client, "xcode-") {
 		message = "Xcode opened. Existing projects stay open; complete its provider setup if needed."
@@ -195,6 +206,9 @@ func (a *app) planClientLaunch(input clientLaunchRequest, rt clientLaunchRuntime
 	if name == "" {
 		return p, errors.New("Unknown launch client.")
 	}
+	if input.Engine != "" && (input.Client != "open-design" || !validOpenDesignEngine(input.Engine)) {
+		return p, errors.New("Choose a supported Open Design CLI engine.")
+	}
 	if input.AppPath != "" && input.Client != "codex" {
 		return p, errors.New("A custom application path is supported only for Codex Desktop.")
 	}
@@ -221,7 +235,11 @@ func (a *app) planClientLaunch(input clientLaunchRequest, rt clientLaunchRuntime
 		}
 	}
 	a.mu.Lock()
-	err = a.launchProfile(&p, rt.home)
+	if input.Client == "open-design" {
+		err = a.applyOpenDesignProfile(&p, input.Engine, rt)
+	} else {
+		err = a.launchProfile(&p, rt.home)
+	}
 	a.mu.Unlock()
 	if err != nil {
 		return p, err
@@ -257,10 +275,7 @@ func (a *app) planClientLaunch(input clientLaunchRequest, rt clientLaunchRuntime
 			p.Executable = filepath.Join(p.Executable, "Contents", "MacOS", binary)
 		}
 	} else if input.Client == "open-design" {
-		if rt.platform == "macos" && strings.HasSuffix(p.Executable, ".app") {
-			p.Args = []string{"-a", p.Executable}
-			p.Executable = "/usr/bin/open"
-		}
+		// configureOpenDesignLaunch already selected its isolated native executable.
 	} else if kind == "desktop" {
 		if rt.platform == "macos" && strings.HasSuffix(p.Executable, ".app") {
 			p.Args = []string{"-a", p.Executable}

@@ -74,6 +74,10 @@ func (a *app) adminHandler() http.Handler {
 			a.clientsLaunch(w, r)
 			return
 		}
+		if r.URL.Path == "/api/open-design/profile" {
+			a.openDesignProfileAPI(w, r)
+			return
+		}
 		if r.URL.Path == "/api/terminal/commands" {
 			a.terminalCommandsAPI(w, r)
 			return

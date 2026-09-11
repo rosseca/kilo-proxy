@@ -154,7 +154,7 @@ function snippet(reveal = false) {
 function launch(key) {
   return launchCommand({client,key,shell:$('launch-shell').value,platform:$('desktop-platform').value,appPath:$('desktop-app-path').value.trim(),language,catalog:isCodexClient() && codexSelection().models.size > 0});
 }
-const openDesignHelper=createOpenDesignHelper({copy,refreshCatalog:loadModels,onChange:renderClientLaunch});
+const openDesignHelper=createOpenDesignHelper({api,refreshCatalog:loadModels,onChange:renderClientLaunch});
 const editorHelper=createEditorHelper({api,notify,copy,refreshCatalog:loadModels,onChange:renderClientLaunch});
 const xcodeHelper=createXcodeHelper({api,notify,refreshCatalog:loadModels,onChange:renderClientLaunch});
 function clientLaunchSelection(){
@@ -190,7 +190,7 @@ function renderClientLaunch(){
  const runningTunnel=selection.id!=='cursor'||state?.cursor?.status==='running';
  $('client-launch').textContent=launchBusy?L('Launching…','Abriendo…'):L('Launch ',terminal?'Iniciar ':'Abrir ')+name;
  $('client-launch').disabled=launchBusy||launchDetecting||selection.working||selection.valid===false||!state||!selection.count||!available||!runningTunnel;
- $('client-launch-help').textContent=selection.id==='open-design'?L('Starts the proxy and opens Open Design. Complete the one-time API provider setup below inside Open Design; this button does not save its provider settings.','Arranca el proxy y abre Open Design. Completa la configuración inicial del proveedor de API dentro de Open Design siguiendo los pasos de abajo; este botón no guarda sus ajustes de proveedor.'):L('Opens with the current models and Kilo configuration. Changes are saved first. Command export settings below apply only to copied commands.','Abre con los modelos y la configuración de Kilo actuales. Los cambios se guardan antes. Los ajustes de exportación inferiores solo afectan a los comandos copiados.')+(selection.id==='cursor'?L(' Connect the HTTPS tunnel first and keep the one-time provider setup in Cursor.',' Conecta primero el túnel HTTPS y mantén la configuración inicial del proveedor en Cursor.'):selection.id==='zed'?L(' Paste the local key into Zed once using the instructions below.',' Pega la clave local en Zed una vez siguiendo las instrucciones inferiores.'):selection.id==='xcode-chat'?L(' Add the chat provider in Xcode once using the connection details below.',' Añade el proveedor de chat en Xcode una vez con la conexión indicada abajo.'):'');
+ $('client-launch-help').textContent=selection.id==='open-design'?L('Prepares the selected CLI with your Kilo models, starts the proxy and opens Open Design in its separate Kilo profile.','Prepara el CLI elegido con tus modelos de Kilo, arranca el proxy y abre Open Design en su perfil de Kilo independiente.'):L('Opens with the current models and Kilo configuration. Changes are saved first. Command export settings below apply only to copied commands.','Abre con los modelos y la configuración de Kilo actuales. Los cambios se guardan antes. Los ajustes de exportación inferiores solo afectan a los comandos copiados.')+(selection.id==='cursor'?L(' Connect the HTTPS tunnel first and keep the one-time provider setup in Cursor.',' Conecta primero el túnel HTTPS y mantén la configuración inicial del proveedor en Cursor.'):selection.id==='zed'?L(' Paste the local key into Zed once using the instructions below.',' Pega la clave local en Zed una vez siguiendo las instrucciones inferiores.'):selection.id==='xcode-chat'?L(' Add the chat provider in Xcode once using the connection details below.',' Añade el proveedor de chat en Xcode una vez con la conexión indicada abajo.'):'');
  const reason=selection.reason||(!runningTunnel?L('Connect the Cursor HTTPS tunnel before opening.','Conecta el túnel HTTPS de Cursor antes de abrir.'):!available&&!launchDetecting?(installed?.reason||L('Application not detected. Install it, then check again.','Aplicación no detectada. Instálala y vuelve a comprobar.')):!selection.count?L('Select at least one model.','Selecciona al menos un modelo.'):'');
  $('client-launch-status').textContent=launchMessage||reason;
  $('client-launch-status').classList.toggle('error',launchError);
@@ -208,7 +208,7 @@ function launchFingerprint(){const selection=clientLaunchSelection();return JSON
 async function openClient(){
  if(launchBusy||$('client-launch').disabled)return;
  const selection=clientLaunchSelection(),fingerprint=launchFingerprint();
- const body={client:selection.id,directory:selection.id==='open-design'?'':$('client-launch-directory').value.trim(),...(selection.id==='codex'&&$('client-launch-app').value.trim()?{appPath:$('client-launch-app').value.trim()}:{})};
+ const body={client:selection.id,...(selection.id==='open-design'?{engine:selection.engine}:{}),directory:selection.id==='open-design'?'':$('client-launch-directory').value.trim(),...(selection.id==='codex'&&$('client-launch-app').value.trim()?{appPath:$('client-launch-app').value.trim()}:{})};
  launchBusy=true;launchMessage='';launchError=false;renderClientLaunch();
  try{
   if(!selection.ready)await selection.prepare();
@@ -218,7 +218,7 @@ async function openClient(){
  finally{launchBusy=false;renderClientLaunch();}
 }
 $('client-launch').addEventListener('click',openClient);
-$('client-launch-refresh').addEventListener('click',()=>{launchMessage='';launchError=false;void detectLaunchClients();});
+$('client-launch-refresh').addEventListener('click',()=>{launchMessage='';launchError=false;void detectLaunchClients();if(client==='open-design')void openDesignHelper.reload();});
 $('client-launch-directory').addEventListener('input',()=>{launchDirectoryEdited=true;launchMessage='';launchError=false;renderClientLaunch();});
 $('client-launch-app').addEventListener('input',()=>{launchMessage='';launchError=false;renderClientLaunch();});
 function renderSnippet() {

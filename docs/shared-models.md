@@ -18,12 +18,12 @@ Catalog sorting controls the discovery view. Library order is a separate saved p
 | Codex Desktop and CLI | Names, default model and supported reasoning levels. Each has a separate generated profile; the default is put first in its exported catalog. Desktop opens the GUI, CLI opens an interactive terminal. |
 | Claude Code | Names and default model, with native picker/effort behavior limited by the detected version and model. Unsupported Codex reasoning levels are not forwarded as invented Claude settings. Older versions use aliases and a global initial effort. |
 | OpenCode and Zed | Model IDs, names, default and token limits. Reasoning remains automatic; the library's Codex effort preferences are not exported as equivalent native controls. The client controls its final model-picker ordering. |
-| Open Design | The connection helper provides exact shared IDs and the default for manual BYOK setup. Open Design's saved provider, active model and catalog are not synchronized; names, reasoning and limits are not exported. See [setup](open-design.md). |
+| Open Design | Private Codex CLI, Claude Code or OpenCode profiles receive the same supported shared settings as those engines. Open Design selects **CLI default** for the shared default; its own picker may not list every shared model. Quit its Kilo instance before applying model, engine or connection changes. See [setup](open-design.md). |
 | Cursor | The exact model list is published when you explicitly connect its HTTPS tunnel. Disconnect and reconnect to publish library changes. Names and reasoning controls remain subject to Cursor's own behavior. |
 | Xcode | Chat, Codex and Claude derive their selections from the library, with protocol and installed-version restrictions. Xcode controls its active picker. Older bundled Claude versions can require reducing the selection to their supported alias limit. |
 | Other clients | Connection guidance includes the library's default model ID. Configure the client according to its supported protocol. |
 
-Profiles keep their own readiness state, paths, credentials and integration details. A model must support the protocol used by the chosen agent: Responses for Codex, Anthropic Messages for Claude, and Chat Completions for OpenCode/Zed/Open Design/Cursor/Xcode Chat. Preparing or opening an agent does not perform an inference compatibility test.
+Profiles keep their own readiness state, paths, credentials and integration details. A model must support the protocol used by the chosen agent: Responses for Codex, Anthropic Messages for Claude, and Chat Completions for OpenCode/Zed/Cursor/Xcode Chat. Open Design uses the protocol of its selected Local CLI engine. Preparing or opening an agent does not perform an inference compatibility test.
 
 ## Saved files
 

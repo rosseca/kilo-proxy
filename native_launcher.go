@@ -244,6 +244,9 @@ func (u *nativeUI) launchClientFrom(key, directoryField string) {
 			return
 		}
 		payload := map[string]string{"client": key, "directory": directory}
+		if key == "open-design" {
+			payload["engine"] = u.openDesignEngine()
+		}
 		a.Phase = u.tr("Opening…", "Abriendo…")
 		if key == "codex" {
 			payload["appPath"] = appPath
@@ -278,7 +281,7 @@ func (u *nativeUI) launchClientFrom(key, directoryField string) {
 	}
 	// A managed profile can be edited externally between launches. Reapply the
 	// shared library each time; the backend preserves unrelated preferences.
-	if key == "cursor" || key == "open-design" {
+	if key == "cursor" {
 		launch(nil)
 	} else {
 		u.prepareClientAfter(key, launch)

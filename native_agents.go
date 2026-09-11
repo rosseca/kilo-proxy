@@ -179,7 +179,7 @@ func (u *nativeUI) agentCompatibility(key string) string {
 	case "zed":
 		return u.tr("Uses Chat Completions with shared names and default model; reasoning stays automatic. Open Zed saves the local key in the system credential store and updates its models.", "Usa Chat Completions con nombres y modelo inicial compartidos; el razonamiento sigue automático. Abrir Zed guarda la clave local en el almacén de credenciales del sistema y actualiza sus modelos.")
 	case "open-design":
-		return u.tr("Uses Chat Completions on this computer. Configure its API provider once with the connection helper. Open Design's API mode does not include project file tools.", "Usa Chat Completions en este equipo. Configura su proveedor API una vez con el asistente de conexión. El modo API de Open Design no incluye herramientas para los archivos del proyecto.")
+		return u.tr("Uses Codex CLI, Claude Code or OpenCode as its engine, with a private Kilo profile and the shared model library.", "Usa Codex CLI, Claude Code u OpenCode como motor, con un perfil Kilo privado y la biblioteca de modelos compartida.")
 	case "cursor":
 		return u.tr("Requires a connected HTTPS tunnel and one-time provider setup in Cursor. Cursor uses the tunnel's published model list.", "Requiere un túnel HTTPS conectado y configurar el proveedor en Cursor. Usa los modelos publicados en el túnel.")
 	default:
@@ -230,7 +230,7 @@ func (u *nativeUI) agentProjectPicker(key string) layout.Widget {
 func (u *nativeUI) agentOptions(key string) layout.Widget {
 	a, c := u.agentsState(), u.clientState()
 	if key == "open-design" {
-		return u.column(u.note(u.agentCompatibility(key)), u.pills(u.button("agent:open-design:detect", u.tr("Refresh detection", "Actualizar detección"), u.detectLaunchers), u.button("agent:open-design:install", u.tr("Installation instructions", "Instrucciones de instalación"), func() { u.open(u.openDesignInstallURL()) })))
+		return u.column(u.note(u.agentCompatibility(key)), u.pills(u.button("agent:open-design:detect", u.tr("Refresh detection", "Actualizar detección"), func() { u.detectLaunchers(); u.detectOpenDesign() }), u.button("agent:open-design:install", u.tr("Installation instructions", "Instrucciones de instalación"), func() { u.open(u.openDesignInstallURL()) })))
 	}
 	widgets := []layout.Widget{u.note(u.agentCompatibility(key)), u.field(agentProjectField(key), u.tr("Project folder path", "Ruta de la carpeta del proyecto"), c.LaunchInfo.Directory, false)}
 	if key != "codex" {
@@ -315,6 +315,9 @@ func (u *nativeUI) agentCard(key string, primary bool) layout.Widget {
 		}
 	}
 	canOpen = canOpen && !u.connectionWorking() && !u.setupConnectionNeeded()
+	if key == "open-design" {
+		canOpen = canOpen && u.openDesignEngineAvailable()
+	}
 	label := u.tr("Open ", "Abrir ") + name
 	if key == "open-design" {
 		label = u.tr("Launch Open Design", "Abrir Open Design")
@@ -331,7 +334,8 @@ func (u *nativeUI) agentCard(key string, primary bool) layout.Widget {
 	}
 	widgets := []layout.Widget{u.actionRow(u.column(u.heading(name), u.note(status)), controls...)}
 	if key == "open-design" {
-		widgets = append(widgets, u.actionRow(u.note(u.tr("One-time API provider setup required.", "Requiere configurar el proveedor API una vez.")), u.button("agent:open-design:setup", u.tr("Set up connection", "Configurar conexión"), func() { u.agentSetup(key) })))
+		engineName, _ := launchClientIdentity(u.openDesignEngine())
+		widgets = append(widgets, u.actionRow(u.note(u.tr("Engine: ", "Motor: ")+engineName), u.button("agent:open-design:setup", u.tr("Engine settings", "Ajustes del motor"), func() { u.agentSetup(key) })))
 	} else if primary {
 		widgets = append(widgets, u.agentProjectPicker(key))
 	} else if project := u.agentProject(key); project != "" {
@@ -364,6 +368,9 @@ func (u *nativeUI) agentsPanel() layout.Widget {
 		u.detectLaunchers()
 	}
 	u.detectAgentCapabilities()
+	if !c.OpenDesignDetectStarted {
+		u.detectOpenDesign()
+	}
 	widgets := []layout.Widget{u.agentModelSummary(), u.agentCard("codex", true), u.topRow(u.agentCard("claude", false), u.agentCard("opencode", false)), u.topRow(u.agentCard("codex-cli", false), u.agentCard("zed", false)), u.topRow(u.agentCard("open-design", false), u.agentCard("cursor", false))}
 	if a.Error != "" {
 		widgets = append([]layout.Widget{u.note(a.Error)}, widgets...)

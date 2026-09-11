@@ -18,9 +18,7 @@ func (a *app) launchProfile(p *clientLaunchPlan, home string) error {
 	fail := profileLaunchError(p.Name)
 	id := p.Client
 	if id == "open-design" {
-		// BYOK is configured inside Open Design. Launch its existing profile without
-		// reading, rewriting or injecting credentials into its renderer storage.
-		return nil
+		return errors.New("Prepare the selected Open Design CLI engine before launching.")
 	}
 	if id == "cursor" {
 		if a.cursor == nil || a.cursor.Status != "running" || a.cursor.URL == "" {

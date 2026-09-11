@@ -63,6 +63,12 @@ func TestE2EServer(t *testing.T) {
 		return control
 	}
 	var launchRecordMu sync.Mutex
+	openDesignBinary := filepath.Join(root, "Open Design")
+	if err := os.WriteFile(openDesignBinary, []byte("synthetic; never executed"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	openCodeBinary := syntheticOpenCodeExecutable(t, root)
+	a.openDesignCheckRunning = func(string) (bool, error) { return readLaunchControl()["openDesignRunning"] == true, nil }
 	records := []map[string]string{}
 	a.launcher = &clientLaunchRuntime{
 		platform: "macos", home: root,
@@ -72,6 +78,12 @@ func TestE2EServer(t *testing.T) {
 			}
 			if custom != "" {
 				return custom, nil
+			}
+			if client == "open-design" {
+				return openDesignBinary, nil
+			}
+			if client == "opencode" {
+				return openCodeBinary, nil
 			}
 			return "/synthetic/" + client, nil
 		},
@@ -216,6 +228,11 @@ func TestE2EServer(t *testing.T) {
 		if r.URL.Path == "/api/state" && control["cursorRunning"] == true {
 			a.mu.Lock()
 			a.cursor = &cursorSession{Status: "running", URL: "https://synthetic.example/v1", Key: "synthetic-cursor-local-key", Models: []string{"vendor/one"}}
+			a.mu.Unlock()
+		}
+		if readLaunchControl()["openDesignIdle"] == true {
+			a.mu.Lock()
+			a.openDesignLaunchUntil = time.Time{}
 			a.mu.Unlock()
 		}
 		admin.ServeHTTP(w, r)

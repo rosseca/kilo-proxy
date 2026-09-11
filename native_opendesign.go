@@ -3,8 +3,7 @@
 package main
 
 import (
-	"fmt"
-	"strconv"
+	"encoding/json"
 
 	"gioui.org/layout"
 )
@@ -18,75 +17,113 @@ func (u *nativeUI) openDesignInstallURL() string {
 	return openDesignDownloadURL
 }
 
-// Read saved settings at click time: a completed connection save may precede
-// the next UI refresh. Never expose the upstream Kilo credential here.
-func (u *nativeUI) openDesignConnection() (string, string) {
-	u.owner.mu.Lock()
-	defer u.owner.mu.Unlock()
-	return "http://127.0.0.1:" + strconv.Itoa(u.owner.config.Port) + "/v1", u.owner.config.LocalKey
+type nativeOpenDesignInfo struct {
+	Engine   string                        `json:"engine"`
+	Engines  map[string]nativeLaunchClient `json:"engines"`
+	Prepared bool                          `json:"prepared"`
+}
+
+func (u *nativeUI) openDesignEngine() string {
+	if u.value("open-design-engine") == "Claude Code" {
+		return "claude"
+	}
+	if u.value("open-design-engine") == "OpenCode" {
+		return "opencode"
+	}
+	return "codex-cli"
+}
+
+func (u *nativeUI) detectOpenDesign() {
+	c := u.clientState()
+	if u.busy["GET"+openDesignProfileEndpoint] {
+		return
+	}
+	c.OpenDesignDetectStarted = true
+	before := u.value("open-design-engine")
+	u.clientRequest("GET", openDesignProfileEndpoint, nil, func(data json.RawMessage, err error) {
+		if err == nil {
+			err = json.Unmarshal(data, &c.OpenDesign)
+		}
+		if err != nil {
+			c.LaunchError = nativeMessage(err.Error(), u.language)
+			return
+		}
+		c.OpenDesignChecked = true
+		if before == "" && u.value("open-design-engine") == "" {
+			label := "Codex CLI"
+			if c.OpenDesign.Engine == "claude" {
+				label = "Claude Code"
+			}
+			if c.OpenDesign.Engine == "opencode" {
+				label = "OpenCode"
+			}
+			u.setValue("open-design-engine", label)
+		}
+	})
+}
+
+func (u *nativeUI) openDesignEngineAvailable() bool {
+	c := u.clientState()
+	return c.OpenDesignChecked && c.OpenDesign.Engines[u.openDesignEngine()].Available
 }
 
 func (u *nativeUI) openDesignClientPanel(s *nativeClientSelection) layout.Widget {
 	c := u.clientState()
-	base, local := u.openDesignConnection()
+	if !c.OpenDesignDetectStarted {
+		u.detectOpenDesign()
+	}
+	if u.value("open-design-engine") == "" && c.OpenDesignChecked {
+		u.setValue("open-design-engine", "Codex CLI")
+	}
 	connectionReady := u.agentConnectionReady() && !u.setupConnectionNeeded() && !u.connectionWorking()
 	_, libraryReady := u.libraryStatus()
 	_, validation := nativeClientPayload("open-design", s)
-	canLaunch := connectionReady && libraryReady && len(s.Models) > 0 && validation == nil && u.nativeLaunchAvailable("open-design") && c.Launching == ""
-	launchLabel := u.tr("Launch Open Design", "Abrir Open Design")
+	canLaunch := connectionReady && libraryReady && len(s.Models) > 0 && validation == nil && u.nativeLaunchAvailable("open-design") && u.openDesignEngineAvailable() && c.Launching == ""
+	label := u.tr("Launch Open Design", "Abrir Open Design")
 	if c.Launching == "open-design" {
-		launchLabel = u.tr("Opening…", "Abriendo…")
+		label = u.agentsState().Phase
 	}
-	running := nativeBool(u.state, "running")
-	startLabel := u.tr("Start proxy", "Arrancar proxy")
-	if running {
-		startLabel = u.tr("Proxy running", "Proxy activo")
-	}
-	widgets := []layout.Widget{
-		u.card(u.heading(u.tr("Connect once, then launch", "Conecta una vez y abre la aplicación")),
-			u.note(u.tr("Launch starts the proxy before opening the installed app. On first use, enter the connection below in Open Design on this computer.", "Abrir inicia el proxy antes de abrir la aplicación instalada. La primera vez, introduce la conexión de abajo en Open Design en este equipo.")),
-			u.pills(u.disabled(canLaunch, u.button("client:open-design:launch", launchLabel, func() { u.launchAgent("open-design") })), u.disabled(connectionReady && !running && c.Launching == "", u.button("open-design:start", startLabel, func() { u.setProxyRunning(true, nil) })), u.button("open-design:detect", u.tr("Refresh detection", "Actualizar detección"), u.detectLaunchers))),
-	}
-	if !connectionReady {
-		widgets = append(widgets, u.actionRow(u.note(u.tr("Save your Kilo connection before continuing.", "Guarda tu conexión de Kilo antes de continuar.")), u.button("open-design:connect", u.tr("Connect Kilo", "Conectar Kilo"), u.beginSetup)))
-	}
-	if c.LaunchError != "" {
-		widgets = append(widgets, u.note(c.LaunchError))
-	}
-	if c.LaunchChecked && !u.nativeLaunchAvailable("open-design") {
-		widgets = append(widgets, u.note(c.LaunchInfo.Clients["open-design"].Reason), u.button("open-design:install", u.tr("Installation instructions", "Instrucciones de instalación"), func() { u.open(u.openDesignInstallURL()) }))
-	}
-	fields := []layout.Widget{
-		u.heading(u.tr("1. Add an OpenAI-compatible provider", "1. Añade un proveedor compatible con OpenAI")),
-		u.note(u.tr("In Open Design: Settings → Models & providers → API providers → OpenAI. Then set Provider preset to Custom provider.", "En Open Design: Settings → Models & providers → API providers → OpenAI. Después elige Custom provider en Provider preset.")),
-		u.actionRow(u.column(u.eyebrow("BASE URL"), u.label(base)), u.button("open-design:copy-url", u.tr("Copy base URL", "Copiar URL base"), func() { value, _ := u.openDesignConnection(); u.copy(value) })),
-		u.actionRow(u.column(u.eyebrow("API KEY"), u.label("kl_local_••••••••••••••••")), u.disabled(local != "" && !u.connectionWorking(), u.button("open-design:copy-key", u.tr("Copy local API key", "Copiar API key local"), func() { _, value := u.openDesignConnection(); u.copy(value) }))),
-		u.note(u.tr("The copy button includes the real local key. Your personal Kilo key stays in Kilo Proxy.", "El botón copia la clave local real. Tu clave personal de Kilo permanece en Kilo Proxy.")),
-	}
-	widgets = append(widgets, u.card(fields...))
-	models := []layout.Widget{u.heading(u.tr("2. Choose a model and test", "2. Elige un modelo y prueba la conexión")), u.note(u.tr("Paste an exact model ID in Model. If needed, select Custom (type below)… and fill Custom model id. Click Test, then wait for All changes saved.", "Pega el ID exacto en Model. Si hace falta, selecciona Custom (type below)… y rellena Custom model id. Pulsa Test y espera a All changes saved."))}
-	if len(s.Models) == 0 {
-		models = append(models, u.note(u.tr("Add a model in your shared library first.", "Añade primero un modelo a tu biblioteca compartida.")))
-	} else {
-		models = append(models, u.actionRow(u.column(u.eyebrow(u.tr("DEFAULT MODEL", "MODELO PREDETERMINADO")), u.label(s.Initial)), u.button("open-design:copy-model", u.tr("Copy model ID", "Copiar ID de modelo"), func() { u.copy(u.sharedClientSelection("open-design").Initial) })))
-		if len(s.Models) > 1 {
-			models = append(models, u.button("open-design:models", fmt.Sprintf(u.tr("Other shared models (%d)  ▾", "Otros modelos compartidos (%d)  ▾"), len(s.Models)-1), func() { u.expanded["open-design:models"] = !u.expanded["open-design:models"] }))
-			if u.expanded["open-design:models"] {
-				for _, choice := range s.Models {
-					id := choice.Model.ID
-					if id == s.Initial {
-						continue
-					}
-					name := choice.DisplayName
-					if name == "" {
-						name = choice.Model.Name
-					}
-					models = append(models, u.actionRow(u.column(u.label(name), u.note(id)), u.button("open-design:copy-model:"+id, u.tr("Copy model ID", "Copiar ID de modelo"), func() { u.copy(id) })))
-				}
-			}
+	engine := u.openDesignEngine()
+	info := c.OpenDesign.Engines[engine]
+	status := u.tr("Checking CLI installation…", "Comprobando instalación del CLI…")
+	if c.OpenDesignChecked {
+		status = u.tr("Installed · runs inside Open Design", "Instalado · se ejecuta dentro de Open Design")
+		if !info.Available {
+			status = info.Reason
 		}
 	}
-	models = append(models, u.note(u.tr("These IDs come from your shared library. Open Design manages its own model selection; library edits are not synced automatically. Update its settings when the URL, key or model changes.", "Estos IDs vienen de tu biblioteca compartida. Open Design gestiona su selección de modelos; los cambios no se sincronizan automáticamente. Actualiza sus ajustes si cambia la URL, clave o modelo.")))
-	widgets = append(widgets, u.card(models...), u.note(u.agentCompatibility("open-design")))
+	widgets := []layout.Widget{
+		u.card(u.heading(u.tr("Choose the engine behind Open Design", "Elige el motor de Open Design")),
+			u.note(u.tr("Open Design provides the design workspace. Codex CLI, Claude Code or OpenCode does the work using your Kilo models and its file tools.", "Open Design pone el espacio de diseño. Codex CLI, Claude Code u OpenCode trabaja con tus modelos de Kilo y sus herramientas de archivos.")),
+			u.disabled(c.Launching == "", u.selectField("open-design-engine", u.tr("CLI engine", "Motor CLI"), []string{"Codex CLI", "Claude Code", "OpenCode"})),
+			u.note(status),
+			u.pills(u.disabled(canLaunch, u.button("client:open-design:launch", label, func() { u.launchAgent("open-design") })), u.button("open-design:detect", u.tr("Refresh detection", "Actualizar detección"), func() { u.detectLaunchers(); u.detectOpenDesign() })),
+			u.note(u.tr("Launch prepares a private Kilo profile, starts the proxy, then opens Open Design. No key or command to copy.", "Abrir prepara un perfil Kilo privado, arranca el proxy y abre Open Design. No hay que copiar claves ni comandos."))),
+		u.card(u.heading(u.tr("Your models, ready for the CLI", "Tus modelos, listos para el CLI")), u.label(u.sharedModelSummary()),
+			u.note(u.tr("Open Design's CLI default model uses the CLI profile's shared default. Its own picker depends on the selected engine; you can also enter an exact model ID there.", "El modelo CLI default de Open Design usa el predeterminado del perfil CLI. Su selector depende del motor elegido; también puedes introducir allí un ID exacto.")),
+			u.note(u.tr("The engine applies the reasoning settings it supports. Open Design may supply its own reasoning choice. Separate image or media providers remain Open Design settings.", "El motor aplica el razonamiento que admite. Open Design puede enviar su propio nivel. Los proveedores de imágenes o multimedia se configuran aparte en Open Design."))),
+		u.card(u.heading(u.tr("An Open Design workspace for Kilo", "Un espacio de Open Design para Kilo")),
+			u.note(u.tr("This opens a separate Kilo workspace and keeps your ordinary Open Design setup intact. Complete Open Design's welcome flow if shown. Use Models & providers → Local CLI if you changed its mode to API providers.", "Se abre un espacio Kilo separado y se conserva tu configuración habitual de Open Design. Completa su bienvenida si aparece. Usa Models & providers → Local CLI si cambiaste el modo a API providers.")),
+			u.note(u.tr("Quit the Open Design Kilo instance before applying a different engine, model library or connection. Update the installed Open Design app normally; this managed workspace does not run its own updater.", "Sal de la instancia Open Design Kilo antes de aplicar otro motor, biblioteca o conexión. Actualiza la aplicación Open Design instalada de forma habitual; este espacio gestionado no ejecuta su propio actualizador."))),
+	}
+	if !connectionReady {
+		widgets = append([]layout.Widget{u.actionRow(u.note(u.tr("Save your Kilo connection first.", "Guarda primero tu conexión de Kilo.")), u.button("open-design:connect", u.tr("Connect Kilo", "Conectar Kilo"), u.beginSetup))}, widgets...)
+	}
+	if c.LaunchError != "" {
+		widgets = append([]layout.Widget{u.note(c.LaunchError)}, widgets...)
+	}
+	if c.LaunchChecked && !u.nativeLaunchAvailable("open-design") {
+		widgets = append([]layout.Widget{u.actionRow(u.note(c.LaunchInfo.Clients["open-design"].Reason), u.button("open-design:install", u.tr("Get Open Design", "Obtener Open Design"), func() { u.open(u.openDesignInstallURL()) }))}, widgets...)
+	}
+	if c.OpenDesignChecked && !info.Available {
+		url := "https://developers.openai.com/codex/cli/"
+		if engine == "claude" {
+			url = "https://code.claude.com/docs/en/overview"
+		}
+		if engine == "opencode" {
+			url = "https://opencode.ai/"
+		}
+		widgets = append(widgets, u.button("open-design:install-engine", u.tr("Install CLI engine", "Instalar motor CLI"), func() { u.open(url) }))
+	}
 	return u.column(widgets...)
 }
