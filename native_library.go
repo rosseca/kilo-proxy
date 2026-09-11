@@ -196,6 +196,9 @@ func (u *nativeUI) sharedClientSelection(key string) *nativeClientSelection {
 	source := u.library.selection
 	u.syncClientSelection(sharedModelKey, source)
 	s := u.clientState().selection(key)
+	if key == "open-design" {
+		s.Mode = u.openDesignEngine()
+	}
 	models := make([]nativeModelChoice, 0, len(source.Models))
 	for _, value := range source.Models {
 		m := value

@@ -115,6 +115,10 @@ func (u *nativeUI) launchClient(key string) {
 
 func (u *nativeUI) launchAgent(key string) {
 	u.agentsState()
+	if key == "open-design" {
+		u.launchClientFrom(key, "")
+		return
+	}
 	field := agentProjectField(key)
 	if u.value(field) == "" {
 		u.setValue(field, u.agentProject(key))
@@ -155,6 +159,9 @@ func (u *nativeUI) launchSettingsChangedMessage() string {
 }
 
 func (u *nativeUI) launchClientFrom(key, directoryField string) {
+	if key == "open-design" {
+		directoryField = "" // Open Design has no supported project-folder launch argument.
+	}
 	a := u.agentsState()
 	c := u.clientState()
 	if c.Launching != "" {
@@ -208,6 +215,9 @@ func (u *nativeUI) launchClientFrom(key, directoryField string) {
 		return
 	}
 	directory, appPath := u.value(directoryField), u.value("clients-launch-app-path")
+	if key == "open-design" {
+		directory = ""
+	}
 	resolvedDirectory, err := launchPath(directory, c.LaunchInfo.Directory)
 	if err != nil {
 		u.notice = nativeMessage(err.Error(), u.language)
@@ -234,6 +244,9 @@ func (u *nativeUI) launchClientFrom(key, directoryField string) {
 			return
 		}
 		payload := map[string]string{"client": key, "directory": directory}
+		if key == "open-design" {
+			payload["engine"] = u.openDesignEngine()
+		}
 		a.Phase = u.tr("Opening…", "Abriendo…")
 		if key == "codex" {
 			payload["appPath"] = appPath
@@ -256,7 +269,9 @@ func (u *nativeUI) launchClientFrom(key, directoryField string) {
 				return
 			}
 			finish(nil)
-			u.rememberAgentProject(key, resolvedDirectory)
+			if key != "open-design" {
+				u.rememberAgentProject(key, resolvedDirectory)
+			}
 			u.notice = result.Message
 			if u.notice == "" {
 				u.notice = u.tr("Editor launched.", "Editor abierto.")

@@ -35,6 +35,8 @@ type app struct {
 	imageGenerationMu      sync.Mutex
 	imageGenerationActive  int
 	launcher               *clientLaunchRuntime
+	openDesignCheckRunning func(string) (bool, error)
+	openDesignLaunchUntil  time.Time
 	terminalCommandsBinary string
 	terminalCommandsShell  string
 	launchMu               sync.Mutex

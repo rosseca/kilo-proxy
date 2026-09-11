@@ -18,8 +18,12 @@ async function choose(page,id){
 const endpoint=id=>['codex','codex-cli'].includes(id)?id+'/catalog':id==='claude'?'claude/profile':['opencode','zed'].includes(id)?'editors/'+id+'/profile':'xcode/'+id.slice(6);
 
 for(const id of ['codex','codex-cli','claude','opencode','zed','xcode-chat','xcode-codex','xcode-claude']) {
- test(`launcher prepares, opens and reuses the current ${id} profile`,async({page,gateway},testInfo)=>{
+ test(`launcher prepares, opens and reuses the current ${id} profile`,async({page,gateway,request},testInfo)=>{
   await startProxy(page,gateway);
+  const discovery=await request.get(new URL('/api/clients/launch',gateway.url).href,{headers:{Authorization:'Bearer '+gateway.token}});
+  expect(discovery.ok()).toBe(true);
+  const detected=(await discovery.json()).clients[id];
+  expect(detected.available).toBe(true);expect(detected.path).toBeTruthy();
   const name=await choose(page,id),folder=path.join(gateway.root,'project with spaces');
   await mkdir(folder);
   await page.locator('#client-launch-directory').fill(folder);
@@ -28,7 +32,7 @@ for(const id of ['codex','codex-cli','claude','opencode','zed','xcode-chat','xco
   await expect(page.locator('#client-launch')).toBeEnabled();
   await page.locator('#client-launch').click();
   await expect(page.locator('#client-launch-status')).toContainText('opened.');
-  expect(await records(gateway)).toEqual([{client:id,directory:folder,executable:'/synthetic/'+id,kind:['codex-cli','claude','opencode'].includes(id)?'terminal':'desktop'}]);
+  expect(await records(gateway)).toEqual([{client:id,directory:folder,executable:detected.path,kind:['codex-cli','claude','opencode'].includes(id)?'terminal':'desktop'}]);
   expect(prepares).toBe(1);
   await page.locator('#client-launch').click();
   await expect.poll(async()=>(await records(gateway)).length).toBe(2);

@@ -16,20 +16,23 @@ import (
 )
 
 type nativeClients struct {
-	Grids               map[string]*nativeModelGridState
-	Selections          map[string]*nativeClientSelection
-	Claude              claudeCapabilities
-	ClaudeChecked       bool
-	ClaudeDetectStarted bool
-	Xcode               xcodeInstallation
-	XcodeChecked        bool
-	XcodeDetectStarted  bool
-	LaunchInfo          nativeLaunchInfo
-	LaunchChecked       bool
-	LaunchDetectStarted bool
-	LaunchError         string
-	Launching           string
-	Variant             string
+	Grids                   map[string]*nativeModelGridState
+	Selections              map[string]*nativeClientSelection
+	Claude                  claudeCapabilities
+	ClaudeChecked           bool
+	ClaudeDetectStarted     bool
+	Xcode                   xcodeInstallation
+	XcodeChecked            bool
+	XcodeDetectStarted      bool
+	LaunchInfo              nativeLaunchInfo
+	LaunchChecked           bool
+	LaunchDetectStarted     bool
+	LaunchError             string
+	Launching               string
+	Variant                 string
+	OpenDesign              nativeOpenDesignInfo
+	OpenDesignChecked       bool
+	OpenDesignDetectStarted bool
 }
 
 // A selection belongs to one editor/variant. Labels never replace gateway IDs.
@@ -116,6 +119,8 @@ func (s *nativeClientSelection) ids() []string {
 
 func nativeClientEndpoint(key string) string {
 	switch key {
+	case "open-design":
+		return openDesignProfileEndpoint
 	case "codex", "codex-cli":
 		return "/api/" + key + "/catalog"
 	case "claude":
@@ -129,6 +134,17 @@ func nativeClientEndpoint(key string) string {
 }
 
 func nativeClientPayload(key string, s *nativeClientSelection) (any, error) {
+	if key == "open-design" {
+		library := modelLibrary{SchemaVersion: 1, DefaultModel: s.Initial}
+		for _, m := range s.Models {
+			library.Models = append(library.Models, modelLibraryItem{ID: m.Model.ID, DisplayName: m.DisplayName, ReasoningEffort: m.DefaultReasoning, ReasoningLevels: m.ReasoningLevels, ReasoningCustom: m.ReasoningCustom, ContextWindow: m.Model.ContextWindow, MaxOutputTokens: m.Model.MaxOutputTokens})
+		}
+		engine := s.Mode
+		if !validOpenDesignEngine(engine) {
+			engine = "codex-cli"
+		}
+		return openDesignPrepareRequest{Engine: engine, Library: &library}, validateModelLibrary(library)
+	}
 	if key == "codex" || key == "codex-cli" || key == "xcode-codex" {
 		catalog, err := buildCodexCatalog(s.Models, s.Initial, key == "xcode-codex")
 		payload := map[string]any{"catalog": json.RawMessage(catalog)}
@@ -390,7 +406,7 @@ func (u *nativeUI) clientsPanel() layout.Widget {
 			}
 		})
 	}
-	widgets := []layout.Widget{u.pills(u.button("agents.back", u.tr("← All agents", "← Todos los agentes"), func() { u.page = "agents" })), u.heading(map[string]string{"codex": "Codex Desktop", "codex-cli": "Codex CLI", "claude": "Claude Code", "opencode": "OpenCode", "zed": "Zed", "cursor": "Cursor", "xcode": "Xcode", "generic": u.tr("Other agents", "Otros agentes")}[u.client])}
+	widgets := []layout.Widget{u.pills(u.button("agents.back", u.tr("← All agents", "← Todos los agentes"), func() { u.page = "agents" })), u.heading(map[string]string{"codex": "Codex Desktop", "codex-cli": "Codex CLI", "claude": "Claude Code", "opencode": "OpenCode", "zed": "Zed", "open-design": "Open Design", "cursor": "Cursor", "xcode": "Xcode", "generic": u.tr("Other agents", "Otros agentes")}[u.client])}
 	key := u.client
 	if key == "xcode" {
 		variants := []layout.Widget{}
@@ -450,13 +466,24 @@ func (u *nativeUI) clientsPanel() layout.Widget {
 	if key == "claude" || key == "xcode-claude" {
 		protocol = u.tr("Uses Anthropic Messages. All selected models and internal-task aliases must support it.", "Usa Anthropic Messages. Los modelos y los alias de tareas internas deben admitirlo.")
 	}
+	if key == "open-design" {
+		protocol = u.tr("Uses your selected CLI engine with its Kilo configuration.", "Usa el motor CLI elegido con su configuración de Kilo.")
+	}
 	widgets = append(widgets, u.note(protocol))
-	widgets = append(widgets, u.actionRow(u.note(u.sharedModelSummary()), u.button("agents.models.edit", u.tr("Edit shared models", "Editar modelos compartidos"), func() { u.page = "models" })))
+	modelSummary := u.sharedModelSummary()
+	if key == "open-design" {
+		modelSummary = u.tr("Your CLI engine uses the shared models and default.", "Tu motor CLI usa los modelos compartidos y el predeterminado.")
+	}
+	widgets = append(widgets, u.actionRow(u.note(modelSummary), u.button("agents.models.edit", u.tr("Edit shared models", "Editar modelos compartidos"), func() { u.page = "models" })))
 	if key == "codex" || key == "codex-cli" {
 		widgets = append(widgets, u.button("agents.images.edit", u.tr("Image generation settings", "Ajustes de generación de imágenes"), func() { u.page = "models"; u.expanded["library.images"] = true }))
 	}
 	if key == "cursor" {
 		widgets = append(widgets, u.cursorClientPanel(s))
+		return u.column(widgets...)
+	}
+	if key == "open-design" {
+		widgets = append(widgets, u.openDesignClientPanel(s))
 		return u.column(widgets...)
 	}
 	if key == "generic" {

@@ -40,6 +40,12 @@ func (r *nativeLaunchRecorder) unblock()   { r.once.Do(func() { close(r.release)
 func nativeLaunchTestUI(t *testing.T, key string, delay, failPrepare bool) (*nativeUI, *nativeLaunchRecorder) {
 	t.Helper()
 	u := nativeTestUI(t)
+	openDesignBinary := filepath.Join(u.owner.editorTestRoot, "Open Design")
+	if err := os.WriteFile(openDesignBinary, []byte("synthetic; never executed"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	openCodeBinary := syntheticOpenCodeExecutable(t, u.owner.editorTestRoot)
+	u.owner.openDesignCheckRunning = func(string) (bool, error) { return false, nil }
 	recorder := &nativeLaunchRecorder{entered: make(chan struct{}, 1), release: make(chan struct{}), failPrepare: failPrepare}
 	if !delay {
 		recorder.unblock()
@@ -48,6 +54,12 @@ func nativeLaunchTestUI(t *testing.T, key string, delay, failPrepare bool) (*nat
 	u.owner.launcher = &clientLaunchRuntime{
 		platform: "macos", home: u.owner.editorTestRoot,
 		resolve: func(client, customPath string) (string, error) {
+			if client == "open-design" {
+				return openDesignBinary, nil
+			}
+			if client == "opencode" {
+				return openCodeBinary, nil
+			}
 			if customPath != "" {
 				return customPath, nil
 			}
@@ -110,6 +122,10 @@ func nativeLaunchTestUI(t *testing.T, key string, delay, failPrepare bool) (*nat
 	u.sharedClientSelection(key)
 	u.detectLaunchers()
 	nativeTestWait(t, u, func() bool { return u.clientState().LaunchChecked })
+	if key == "open-design" {
+		u.detectOpenDesign()
+		nativeTestWait(t, u, func() bool { return u.clientState().OpenDesignChecked })
+	}
 	u.page = "clients"
 	return u, recorder
 }

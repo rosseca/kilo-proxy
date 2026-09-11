@@ -17,6 +17,9 @@ import (
 func (a *app) launchProfile(p *clientLaunchPlan, home string) error {
 	fail := profileLaunchError(p.Name)
 	id := p.Client
+	if id == "open-design" {
+		return errors.New("Prepare the selected Open Design CLI engine before launching.")
+	}
 	if id == "cursor" {
 		if a.cursor == nil || a.cursor.Status != "running" || a.cursor.URL == "" {
 			return errors.New("Start the Cursor HTTPS tunnel before launching Cursor.")

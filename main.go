@@ -42,6 +42,9 @@ func randomKey(prefix string) string {
 }
 
 func main() {
+	if handled, code := runOpenDesignOpenCodeShim(); handled {
+		os.Exit(code)
+	}
 	if len(os.Args) > 1 && os.Args[1] == terminalAgentFlag {
 		os.Exit(runTerminalAgentMode(os.Args[2:]))
 	}

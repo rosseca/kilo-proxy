@@ -59,7 +59,7 @@ func (a *app) adminHandler() http.Handler {
 			return
 		}
 		if !strings.HasPrefix(r.URL.Path, "/api/") {
-			if r.Method != "GET" || (r.URL.Path != "/" && r.URL.Path != "/app.js" && r.URL.Path != "/desktop-helper.mjs" && r.URL.Path != "/editor-helper.mjs" && r.URL.Path != "/xcode-helper.mjs" && r.URL.Path != "/activity-helper.mjs" && r.URL.Path != "/usage-helper.mjs" && r.URL.Path != "/codex-catalog.mjs" && r.URL.Path != "/model-helper.mjs" && r.URL.Path != "/client-config.mjs" && r.URL.Path != "/claude-helper.mjs" && r.URL.Path != "/i18n.mjs" && r.URL.Path != "/style.css" && r.URL.Path != "/icon.svg") {
+			if r.Method != "GET" || (r.URL.Path != "/" && r.URL.Path != "/app.js" && r.URL.Path != "/desktop-helper.mjs" && r.URL.Path != "/editor-helper.mjs" && r.URL.Path != "/open-design-helper.mjs" && r.URL.Path != "/xcode-helper.mjs" && r.URL.Path != "/activity-helper.mjs" && r.URL.Path != "/usage-helper.mjs" && r.URL.Path != "/codex-catalog.mjs" && r.URL.Path != "/model-helper.mjs" && r.URL.Path != "/client-config.mjs" && r.URL.Path != "/claude-helper.mjs" && r.URL.Path != "/i18n.mjs" && r.URL.Path != "/style.css" && r.URL.Path != "/icon.svg") {
 				http.NotFound(w, r)
 				return
 			}
@@ -72,6 +72,10 @@ func (a *app) adminHandler() http.Handler {
 		}
 		if r.URL.Path == "/api/clients/launch" {
 			a.clientsLaunch(w, r)
+			return
+		}
+		if r.URL.Path == "/api/open-design/profile" {
+			a.openDesignProfileAPI(w, r)
 			return
 		}
 		if r.URL.Path == "/api/terminal/commands" {
