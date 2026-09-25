@@ -23,7 +23,7 @@ import (
 
 func nativeTerminalCommandsTestUI(t *testing.T, platform string) *nativeUI {
 	t.Helper()
-	if runtime.GOOS == "windows" && platform != "windows" {
+	if runtime.GOOS == "windows" && (platform == "macos" || platform == "linux") {
 		t.Skip("The macOS/Linux command installer requires POSIX file permissions.")
 	}
 	t.Setenv("ZDOTDIR", "")
@@ -32,6 +32,13 @@ func nativeTerminalCommandsTestUI(t *testing.T, platform string) *nativeUI {
 	u.owner.launcher = &clientLaunchRuntime{platform: platform, home: u.owner.editorTestRoot}
 	u.owner.terminalCommandsShell = "/bin/zsh"
 	u.owner.terminalCommandsBinary = filepath.Join(u.owner.editorTestRoot, "Kilo Proxy")
+	if platform == "windows" {
+		u.owner.terminalCommandsBinary += ".exe"
+		u.owner.terminalCommandsProfiles = []string{
+			filepath.Join(u.owner.editorTestRoot, "Documents", "WindowsPowerShell", "profile.ps1"),
+			filepath.Join(u.owner.editorTestRoot, "Documents", "PowerShell", "profile.ps1"),
+		}
+	}
 	if err := os.WriteFile(u.owner.terminalCommandsBinary, []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -139,6 +146,92 @@ func TestNativeTerminalCommandsCopyWithAndWithoutPATH(t *testing.T) {
 	}
 }
 
+func TestNativeTerminalCommandsPowerShellInstallUpdateAndCopy(t *testing.T) {
+	for _, lang := range []string{"en", "es"} {
+		t.Run(lang, func(t *testing.T) {
+			u := nativeTerminalCommandsTestUI(t, "windows")
+			u.language = lang
+			u.owner.mu.Lock()
+			u.owner.config.Language = lang
+			u.owner.mu.Unlock()
+			const original = "# Existing PowerShell preferences\r\n$global:UserPreference = 'keep'\r\n"
+			for _, profile := range u.owner.terminalCommandsProfiles {
+				if err := os.MkdirAll(filepath.Dir(profile), 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(profile, []byte(original), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			h := &nativePointerHarness{t: t, u: u, size: image.Pt(1180, 1000), now: time.Now()}
+			h.frame()
+			s := u.terminalCommandsState()
+			nativeTestWait(t, u, func() bool { return s.Checked && s.ManualChecked })
+			if !s.Info.Supported || s.Info.Shell != "powershell" || s.Info.Installed || !reflect.DeepEqual(s.Info.StartupFiles, u.owner.terminalCommandsProfiles) {
+				t.Fatalf("PowerShell installation status did not describe the test profiles: %+v", s.Info)
+			}
+			h.frame()
+			label := u.tr("Install PowerShell functions", "Instalar funciones de PowerShell")
+			h.reveal(label, semantic.Button)
+			h.click(label, semantic.Button)
+			nativeTestWait(t, u, func() bool { return !u.busy["POST"+nativeTerminalCommandsEndpoint] })
+			if !s.Info.Installed || s.Error != "" || len(s.Info.Commands) != 4 {
+				t.Fatalf("PowerShell installation did not finish: %+v", s)
+			}
+			installed := map[string]string{}
+			for _, profile := range u.owner.terminalCommandsProfiles {
+				data, err := os.ReadFile(profile)
+				if err != nil || !strings.Contains(string(data), original) {
+					t.Fatalf("PowerShell installation lost unrelated preferences: %v", err)
+				}
+				installed[profile] = string(data)
+				for _, name := range nativeTerminalCommandNames {
+					if !strings.Contains(string(data), "function "+name) {
+						t.Fatalf("PowerShell profile omitted %s", name)
+					}
+				}
+			}
+			h.frame()
+			label = u.tr("Update PowerShell functions", "Actualizar funciones de PowerShell")
+			h.reveal(label, semantic.Button)
+			h.click(label, semantic.Button)
+			nativeTestWait(t, u, func() bool { return !u.busy["POST"+nativeTerminalCommandsEndpoint] })
+			if s.Error != "" || !s.Info.Installed {
+				t.Fatalf("PowerShell update failed: %+v", s)
+			}
+			for profile, want := range installed {
+				data, err := os.ReadFile(profile)
+				if err != nil || string(data) != want {
+					t.Fatalf("repeated PowerShell install changed or duplicated its profile block: %v", err)
+				}
+			}
+			if _, err := os.Stat(filepath.Join(u.owner.editorTestRoot, ".local", "bin")); !os.IsNotExist(err) {
+				t.Fatal("PowerShell installer created Unix wrappers")
+			}
+			h.frame()
+			for _, name := range nativeTerminalCommandNames {
+				label = u.tr("Copy ", "Copiar ") + name
+				h.reveal(label, semantic.Button)
+				h.click(label, semantic.Button)
+				bridge := u.owner.desktop.(*nativeRecordingBridge)
+				bridge.mu.Lock()
+				copied := bridge.Text
+				bridge.mu.Unlock()
+				if copied != name {
+					t.Fatalf("PowerShell installed shortcut copied %q instead of %q", copied, name)
+				}
+			}
+			nativeMenuWheel(h, image.Pt(1080, 900), 10000)
+			for _, node := range h.nodes() {
+				if strings.Contains(node.Desc.Label, "~/.local/bin") || strings.Contains(node.Desc.Label, "from PATH") || strings.Contains(node.Desc.Label, "desde PATH") {
+					t.Fatalf("PowerShell UI showed Unix or PATH setup advice: %q", node.Desc.Label)
+				}
+			}
+			nativeGridCapture(t, h, "terminal-powershell-installed-"+lang)
+		})
+	}
+}
+
 func TestNativeTerminalCommandsBusyFailureAndRetry(t *testing.T) {
 	u := nativeTerminalCommandsTestUI(t, "linux")
 	entered, release := make(chan struct{}), make(chan struct{})
@@ -190,11 +283,11 @@ func TestNativeTerminalCommandsBusyFailureAndRetry(t *testing.T) {
 }
 
 func TestNativeTerminalCommandsUnsupportedPlatformHidesInstall(t *testing.T) {
-	u := nativeTerminalCommandsTestUI(t, "windows")
+	u := nativeTerminalCommandsTestUI(t, "unsupported")
 	u.requestTerminalCommands("GET")
 	nativeTestWait(t, u, func() bool { return u.terminalCommandsState().Checked })
 	if u.terminalCommandsState().Info.Supported {
-		t.Fatal("Windows should not offer terminal command installation")
+		t.Fatal("unsupported platform offered terminal command installation")
 	}
 	h := &nativePointerHarness{t: t, u: u, size: image.Pt(780, 700), now: time.Now()}
 	h.frame()
@@ -256,7 +349,7 @@ func nativeTerminalHomeSnapshot(t *testing.T, root string) map[string]string {
 }
 
 func TestNativeTerminalManualAvailableWithoutInstallationOrHomeWrites(t *testing.T) {
-	for _, platform := range []string{"macos", "linux"} {
+	for _, platform := range []string{"macos", "linux", "windows"} {
 		t.Run(platform, func(t *testing.T) {
 			u := nativeTerminalCommandsTestUI(t, platform)
 			for _, name := range []string{".zshrc", ".bashrc"} {
@@ -268,7 +361,11 @@ func TestNativeTerminalManualAvailableWithoutInstallationOrHomeWrites(t *testing
 			u.requestTerminalManual()
 			nativeTestWait(t, u, func() bool { return u.terminalCommandsState().ManualChecked })
 			s := u.terminalCommandsState()
-			if !s.Manual.Supported || s.Manual.Shell != "zsh-bash" || s.ManualError != "" || s.Info.Installed {
+			wantShell, argumentForwarding := "zsh-bash", `"$@"`
+			if platform == "windows" {
+				wantShell, argumentForwarding = "powershell", "--encoded-args"
+			}
+			if !s.Manual.Supported || s.Manual.Shell != wantShell || s.ManualError != "" || s.Info.Installed {
 				t.Fatalf("manual setup should be available before installing: %+v", s)
 			}
 			if len(s.Manual.Commands) != 4 || s.Manual.All == "" {
@@ -277,7 +374,7 @@ func TestNativeTerminalManualAvailableWithoutInstallationOrHomeWrites(t *testing
 			for _, name := range []string{"kilo-codex", "kilo-claude", "kilo-omp", "kilo-opencode"} {
 				function := s.Manual.Commands[name]
 				declaresFunction := strings.Contains(function, name+"()") || strings.Contains(function, "function "+name+" {")
-				if !declaresFunction || !strings.Contains(function, "--terminal-agent") || !strings.Contains(function, `"$@"`) || !strings.Contains(s.Manual.All, function) {
+				if !declaresFunction || !strings.Contains(function, "--terminal-agent") || !strings.Contains(function, argumentForwarding) || !strings.Contains(s.Manual.All, function) {
 					t.Fatalf("manual setup omitted a complete forwarding function for %s: %q", name, function)
 				}
 			}
@@ -300,68 +397,81 @@ func TestNativeTerminalManualAvailableWithoutInstallationOrHomeWrites(t *testing
 }
 
 func TestNativeTerminalManualPointerClipboardAndPreview(t *testing.T) {
-	for _, size := range []image.Point{{1180, 1000}, {780, 1000}} {
-		for _, lang := range []string{"en", "es"} {
-			t.Run(fmtSize(size)+"-"+lang, func(t *testing.T) {
-				u := nativeTerminalCommandsTestUI(t, "macos")
-				u.language = lang
-				u.owner.mu.Lock()
-				u.owner.config.Language = lang
-				u.owner.mu.Unlock()
-				before := nativeTerminalHomeSnapshot(t, u.owner.editorTestRoot)
-				h := &nativePointerHarness{t: t, u: u, size: size, now: time.Now()}
-				h.frame()
-				nativeTestWait(t, u, func() bool { return u.terminalCommandsState().ManualChecked && u.terminalCommandsState().Checked })
-				h.frame()
-				toggle := u.tr("Manual setup · Zsh / Bash", "Configuración manual · Zsh / Bash")
-				h.reveal(toggle, semantic.Button)
-				h.click(toggle, semantic.Button)
-				if !u.expanded["terminal-commands.manual.toggle"] {
-					t.Fatal("pointer did not expand manual setup")
-				}
-				s := u.terminalCommandsState()
-				preview := u.editor("terminal-commands.manual.preview")
-				if s.ManualSelected != "" || preview.Text() != s.Manual.All || !preview.ReadOnly || preview.SingleLine {
-					t.Fatal("manual setup did not start with a selectable, read-only multiline preview of all functions")
-				}
-				copyAndCheck := func(label, want string) {
-					t.Helper()
-					h.reveal(label, semantic.Button)
-					h.click(label, semantic.Button)
-					bridge := u.owner.desktop.(*nativeRecordingBridge)
-					bridge.mu.Lock()
-					copied := bridge.Text
-					bridge.mu.Unlock()
-					if copied != want {
-						t.Fatalf("%q copied %q, want complete function %q", label, copied, want)
+	for _, platform := range []string{"macos", "windows"} {
+		for _, size := range []image.Point{{1180, 1000}, {780, 1000}} {
+			for _, lang := range []string{"en", "es"} {
+				t.Run(platform+"-"+fmtSize(size)+"-"+lang, func(t *testing.T) {
+					u := nativeTerminalCommandsTestUI(t, platform)
+					u.language = lang
+					u.owner.mu.Lock()
+					u.owner.config.Language = lang
+					u.owner.mu.Unlock()
+					before := nativeTerminalHomeSnapshot(t, u.owner.editorTestRoot)
+					h := &nativePointerHarness{t: t, u: u, size: size, now: time.Now()}
+					h.frame()
+					nativeTestWait(t, u, func() bool { return u.terminalCommandsState().ManualChecked && u.terminalCommandsState().Checked })
+					h.frame()
+					toggle := u.tr("Manual setup · Zsh / Bash", "Configuración manual · Zsh / Bash")
+					if platform == "windows" {
+						toggle = u.tr("Manual setup · PowerShell", "Configuración manual · PowerShell")
 					}
-					if u.notice != u.tr("Copied", "Copiado") || u.noticeTone != nativeToneSuccess {
-						t.Fatalf("manual copy omitted localized success feedback: %q", u.notice)
+					h.reveal(toggle, semantic.Button)
+					h.click(toggle, semantic.Button)
+					if !u.expanded["terminal-commands.manual.toggle"] {
+						t.Fatal("pointer did not expand manual setup")
 					}
-				}
-				copyAndCheck(u.tr("Copy all", "Copiar todo"), s.Manual.All)
-				for _, name := range []string{"kilo-codex", "kilo-claude", "kilo-omp", "kilo-opencode"} {
-					h.reveal(name, semantic.Button)
-					h.click(name, semantic.Button)
-					if s.ManualSelected != name || preview.Text() != s.Manual.Commands[name] {
-						t.Fatalf("selecting %s did not update the manual preview", name)
+					s := u.terminalCommandsState()
+					preview := u.editor("terminal-commands.manual.preview")
+					if s.ManualSelected != "" || preview.Text() != s.Manual.All || !preview.ReadOnly || preview.SingleLine {
+						t.Fatal("manual setup did not start with a selectable, read-only multiline preview of all functions")
 					}
-					copyAndCheck(u.tr("Copy "+name+" function", "Copiar función "+name), s.Manual.Commands[name])
-				}
-				nativeMenuWheel(h, image.Pt(size.X-100, size.Y-100), 10000)
-				nativeGridCapture(t, h, "terminal-manual-selected-"+fmtSize(size)+"-"+lang)
-				all := u.tr("All functions", "Todas las funciones")
-				h.reveal(all, semantic.Button)
-				h.click(all, semantic.Button)
-				if s.ManualSelected != "" || preview.Text() != s.Manual.All {
-					t.Fatal("all-functions selector did not restore the combined preview")
-				}
-				nativeMenuWheel(h, image.Pt(size.X-100, size.Y-100), 10000)
-				nativeGridCapture(t, h, "terminal-manual-all-"+fmtSize(size)+"-"+lang)
-				if s.Info.Installed || !reflect.DeepEqual(before, nativeTerminalHomeSnapshot(t, u.owner.editorTestRoot)) {
-					t.Fatal("viewing or copying manual functions installed commands or changed home files")
-				}
-			})
+					copyAndCheck := func(label, want string) {
+						t.Helper()
+						h.reveal(label, semantic.Button)
+						h.click(label, semantic.Button)
+						bridge := u.owner.desktop.(*nativeRecordingBridge)
+						bridge.mu.Lock()
+						copied := bridge.Text
+						bridge.mu.Unlock()
+						if copied != want {
+							t.Fatalf("%q copied %q, want complete function %q", label, copied, want)
+						}
+						if u.notice != u.tr("Copied", "Copiado") || u.noticeTone != nativeToneSuccess {
+							t.Fatalf("manual copy omitted localized success feedback: %q", u.notice)
+						}
+					}
+					copyAndCheck(u.tr("Copy all", "Copiar todo"), s.Manual.All)
+					for _, name := range []string{"kilo-codex", "kilo-claude", "kilo-omp", "kilo-opencode"} {
+						h.reveal(name, semantic.Button)
+						h.click(name, semantic.Button)
+						if s.ManualSelected != name || preview.Text() != s.Manual.Commands[name] {
+							t.Fatalf("selecting %s did not update the manual preview", name)
+						}
+						copyAndCheck(u.tr("Copy "+name+" function", "Copiar función "+name), s.Manual.Commands[name])
+					}
+					nativeMenuWheel(h, image.Pt(size.X-100, size.Y-100), 10000)
+					if platform == "windows" {
+						u.list("terminal-commands.manual.scroll").ScrollTo(0)
+						h.frame()
+					}
+					nativeGridCapture(t, h, "terminal-manual-selected-"+platform+"-"+fmtSize(size)+"-"+lang)
+					all := u.tr("All functions", "Todas las funciones")
+					h.reveal(all, semantic.Button)
+					h.click(all, semantic.Button)
+					if s.ManualSelected != "" || preview.Text() != s.Manual.All {
+						t.Fatal("all-functions selector did not restore the combined preview")
+					}
+					nativeMenuWheel(h, image.Pt(size.X-100, size.Y-100), 10000)
+					if platform == "windows" {
+						u.list("terminal-commands.manual.scroll").ScrollTo(0)
+						h.frame()
+					}
+					nativeGridCapture(t, h, "terminal-manual-all-"+platform+"-"+fmtSize(size)+"-"+lang)
+					if s.Info.Installed || !reflect.DeepEqual(before, nativeTerminalHomeSnapshot(t, u.owner.editorTestRoot)) {
+						t.Fatal("viewing or copying manual functions installed commands or changed home files")
+					}
+				})
+			}
 		}
 	}
 }
@@ -483,20 +593,20 @@ func TestNativeTerminalManualBusyFailureAndPointerRetry(t *testing.T) {
 	}
 }
 
-func TestNativeTerminalManualHiddenOnWindows(t *testing.T) {
-	u := nativeTerminalCommandsTestUI(t, "windows")
+func TestNativeTerminalManualHiddenOnUnsupportedPlatform(t *testing.T) {
+	u := nativeTerminalCommandsTestUI(t, "unsupported")
 	u.requestTerminalCommands("GET")
 	u.requestTerminalManual()
 	nativeTestWait(t, u, func() bool { return u.terminalCommandsState().Checked && u.terminalCommandsState().ManualChecked })
 	if u.terminalCommandsState().Manual.Supported {
-		t.Fatal("Windows advertised Zsh/Bash manual functions")
+		t.Fatal("unsupported platform advertised manual functions")
 	}
 	h := &nativePointerHarness{t: t, u: u, size: image.Pt(780, 700), now: time.Now()}
 	h.frame()
 	nativeMenuWheel(h, image.Pt(680, 600), 10000)
 	for _, node := range h.nodes() {
 		if node.Desc.Label == "Manual setup · Zsh / Bash" || node.Desc.Label == "Copy all" || strings.HasPrefix(node.Desc.Label, "Copy kilo-") {
-			t.Fatalf("Windows rendered an unsupported manual control: %q", node.Desc.Label)
+			t.Fatalf("unsupported platform rendered a manual control: %q", node.Desc.Label)
 		}
 	}
 }

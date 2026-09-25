@@ -16,7 +16,7 @@ func terminalClientSupported(client string) bool {
 }
 
 func terminalPlatformSupported(platform string) bool {
-	return platform == "darwin" || platform == "macos" || platform == "linux"
+	return platform == "darwin" || platform == "macos" || platform == "linux" || platform == "windows"
 }
 
 func (a *app) terminalCommandsAPI(w http.ResponseWriter, r *http.Request) {
@@ -27,7 +27,7 @@ func (a *app) terminalCommandsAPI(w http.ResponseWriter, r *http.Request) {
 	rt := a.launchRuntime()
 	if !terminalPlatformSupported(rt.platform) {
 		if r.Method == "POST" {
-			jsonError(w, 409, "Terminal commands are available on macOS and Linux.")
+			jsonError(w, 409, "Terminal commands are available on macOS, Linux and Windows.")
 			return
 		}
 		jsonResponse(w, 200, map[string]any{"supported": false, "installed": false})
@@ -48,9 +48,9 @@ func (a *app) terminalCommandsAPI(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		defer a.launchMu.Unlock()
-		result, err = installTerminalCommands(rt.home, a.dir, binary, shell, rt.platform)
+		result, err = installTerminalCommands(rt.home, a.dir, binary, shell, rt.platform, a.terminalCommandsProfiles)
 	} else {
-		result, err = terminalCommandsStatus(rt.home, a.dir, binary, shell, rt.platform)
+		result, err = terminalCommandsStatus(rt.home, a.dir, binary, shell, rt.platform, a.terminalCommandsProfiles)
 	}
 	if err != nil {
 		jsonError(w, 409, err.Error())
@@ -88,7 +88,7 @@ func (a *app) terminalPrepareAPI(w http.ResponseWriter, r *http.Request) {
 	defer a.launchMu.Unlock()
 	rt := a.launchRuntime()
 	if !terminalPlatformSupported(rt.platform) {
-		jsonError(w, 409, "Terminal commands are available on macOS and Linux.")
+		jsonError(w, 409, "Terminal commands are available on macOS, Linux and Windows.")
 		return
 	}
 	directory, err := launchPath(input.Directory, rt.home)

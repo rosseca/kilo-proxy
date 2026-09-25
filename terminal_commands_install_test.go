@@ -105,7 +105,7 @@ func TestTerminalCommandsInstallKeepsCurrentTerminalArgumentsAndCredentialsOutOf
 
 func TestTerminalCommandsInstallPreservesStartupAndIsIdempotent(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("POSIX permissions and executable modes; terminal commands are unsupported on Windows")
+		t.Skip("POSIX permissions and executable modes")
 	}
 	home, configDir, binary := terminalInstallerFixture(t)
 	startup := filepath.Join(home, ".zshrc")
@@ -300,7 +300,7 @@ func TestTerminalCommandsPathBlockAddsPathExactlyOnce(t *testing.T) {
 func TestTerminalCommandsInstallRejectsUnsupportedPlatformShellAndBadPaths(t *testing.T) {
 	home, configDir, binary := terminalInstallerFixture(t)
 	for _, input := range []struct{ home, config, binary, shell, platform string }{
-		{home, configDir, binary, "zsh", "windows"},
+		{home, configDir, binary, "zsh", "freebsd"},
 		{home, configDir, binary, "zsh", "freebsd"},
 		{home, configDir, binary, "tcsh", "linux"},
 		{home, configDir, binary, "", "linux"},

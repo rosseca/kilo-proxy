@@ -91,12 +91,12 @@ func TestTerminalManualAPIAuthenticationMethodsAndPlatforms(t *testing.T) {
 			t.Fatal("supported platform did not use the application executable", platform)
 		}
 	}
-	a.launcher.platform = "windows"
+	a.launcher.platform = "freebsd"
 	a.terminalCommandsBinary = "invalid"
 	response := adminRequest(a, "terminal/manual", "")
 	var result map[string]any
 	if response.Code != http.StatusOK || json.Unmarshal(response.Body.Bytes(), &result) != nil || !reflect.DeepEqual(result, map[string]any{"supported": false}) {
-		t.Fatal("Windows returned a Unix shell snippet", response.Body.String())
+		t.Fatal("unsupported platform returned a shell snippet", response.Body.String())
 	}
 }
 

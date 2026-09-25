@@ -14,7 +14,7 @@ Inside OMP, `/model` opens its model picker and `Ctrl+P` cycles the enabled mode
 
 ## Use your current terminal
 
-On macOS and Linux, **Settings → Terminal commands → Install terminal commands** installs `kilo-omp` together with `kilo-codex`, `kilo-claude` and `kilo-opencode`. If you installed an older set of commands, use **Install terminal commands** or **Update terminal commands** once to add any missing wrappers. Install Oh My Pi separately first; the wrapper needs an existing `omp` executable.
+On macOS, Linux and Windows, **Settings → Terminal commands** installs `kilo-omp` together with `kilo-codex`, `kilo-claude` and `kilo-opencode`. Use **Install terminal commands** on macOS/Linux or **Install PowerShell functions** on Windows; manual copy blocks are also available for Zsh/Bash and PowerShell. If you installed an older set of commands, use **Install terminal commands** or **Update terminal commands** once to add any missing wrappers. Install Oh My Pi separately first; the wrapper needs an existing `omp` executable.
 
 Open a new terminal, change to your project, and run:
 

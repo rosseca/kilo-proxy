@@ -49,6 +49,7 @@ type app struct {
 	openDesignLaunchUntil     time.Time
 	terminalCommandsBinary    string
 	terminalCommandsShell     string
+	terminalCommandsProfiles  []string
 	launchMu                  sync.Mutex
 	desktop                   desktopBridge
 	desktopProbes             chan desktopProbe

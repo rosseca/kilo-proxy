@@ -43,7 +43,8 @@ func (a *app) terminalManualAPI(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusMethodNotAllowed, "Method not allowed.")
 		return
 	}
-	if !terminalPlatformSupported(a.launchRuntime().platform) {
+	platform := a.launchRuntime().platform
+	if !terminalPlatformSupported(platform) {
 		jsonResponse(w, http.StatusOK, terminalManualResult{})
 		return
 	}
@@ -56,7 +57,13 @@ func (a *app) terminalManualAPI(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	result, err := terminalManualCommands(binary, a.dir)
+	var result terminalManualResult
+	var err error
+	if platform == "windows" {
+		result, err = terminalPowerShellManualCommands(binary, a.dir)
+	} else {
+		result, err = terminalManualCommands(binary, a.dir)
+	}
 	if err != nil {
 		jsonError(w, http.StatusConflict, errTerminalManualPaths.Error())
 		return
