@@ -26,6 +26,8 @@ Closing the application window leaves the proxy running. The system tray / menu 
 
 On macOS and Linux, **Settings → Terminal commands → Install terminal commands** adds `kilo-codex`, `kilo-claude`, `kilo-opencode` and `kilo-omp` together. Open a new terminal in your project and run the command for your installed CLI to use the latest saved shared models in that terminal. Arguments pass through, including `kilo-codex resume`, `kilo-claude --resume`, `kilo-opencode --continue` and `kilo-omp --resume`. Keep Kilo Proxy open, including in the tray; the commands start its saved connection when needed. Your ordinary CLI authentication is preserved. If you installed the commands before OpenCode support, use **Install terminal commands** or **Update terminal commands** once to add `kilo-opencode`. See [terminal command setup](docs/terminal-commands.md).
 
+Prefer to configure your shell yourself? **Manual setup · Zsh / Bash** on the same Settings page offers a separate copy button for each command and **Copy all**. Paste the generated functions into `.zshrc` or `.bashrc`; no installer or PATH changes are needed, and the blocks contain no API keys.
+
 ## Downloads
 
 | System | Architecture | Archive contents |

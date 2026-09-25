@@ -14,6 +14,16 @@ The installer writes all four commands, `kilo-codex`, `kilo-claude`, `kilo-openc
 
 If you installed terminal commands before `kilo-opencode` was available, click **Install terminal commands** again to add it; complete installations show **Update terminal commands** instead. Installing a newer Kilo Proxy build alone does not create the new wrapper.
 
+## Set up Zsh or Bash manually
+
+If you prefer to edit your shell configuration, open **Settings → Terminal commands → Manual setup · Zsh / Bash**. Copy the function for any of `kilo-codex`, `kilo-claude`, `kilo-opencode` or `kilo-omp`, or use **Copy all**.
+
+Paste the copied block into your Zsh configuration (`~/.zshrc`, or `$ZDOTDIR/.zshrc` when you use a custom Zsh configuration directory) or your Bash configuration (`~/.bashrc`). Open a new terminal, or reload that file in an existing terminal. Bash login shells must source `.bashrc` from their login configuration for its functions to be available.
+
+Each block already contains this installation's application and Kilo configuration paths. It runs the same terminal entrypoint as the installer, using your current directory, arguments and saved models. No wrapper installation or PATH change is required. Copying a block does not modify shell files, launch an agent or save credentials. Keep Kilo Proxy open and install each underlying CLI separately.
+
+The manual blocks are shell functions for Zsh and Bash; Fish users can use the automatic installer. If you previously defined an alias with the same name, remove that alias before using the function. To remove a manual shortcut later, delete its function from your shell configuration and open a new terminal. If you move Kilo Proxy, reopen it at the new location and replace your copied blocks with freshly generated ones.
+
 ## Use your current terminal
 
 ```sh
@@ -70,14 +80,14 @@ No additional terminal window opens. The CLI uses the current working directory 
 
 `kilo-opencode` refreshes `~/.opencode-kilo/opencode.json`, the configuration used by **Open OpenCode**, with the shared models, display names, default and context limits. It also updates the managed `kilo_images` MCP entry from the image-generation setting while preserving unrelated settings and MCP servers. The command sets `OPENCODE_CONFIG` for its child process and clears inherited `OPENCODE_CONFIG_CONTENT`. It does not edit your ordinary OpenCode configuration or authentication; global/project settings still merge, and OpenCode's usual session storage is shared. Those settings can affect the effective configuration. See [OpenCode setup](opencode-and-zed.md).
 
-The installed commands contain no API keys. They contact the running local Kilo Proxy app, which prepares the profile and supplies the local connection credential to the child process. Your personal Kilo key is not placed in the shell command or shell startup files. Profile compatibility and model protocol requirements are described in [client setup](clients.md).
+The installed commands and manual functions contain no API keys. They contact the running local Kilo Proxy app, which prepares the profile and supplies the local connection credential to the child process. Your personal Kilo key is not placed in the shell command or shell startup files. Profile compatibility and model protocol requirements are described in [client setup](clients.md).
 
 ## Troubleshooting
 
 - **Command not found:** Open a new terminal after installation. If it still cannot find the commands, check their paths in Settings and use the full path or add the install directory to PATH.
 - **Kilo Proxy is unavailable:** Reopen the app with the same configuration directory used when installing the commands. Save a working account and organization in Settings, then try again.
 - **Agent not found:** Install the matching client: Codex CLI, Claude Code, OpenCode or Oh My Pi (`omp`). The terminal commands launch existing clients; they do not install them.
-- **Commands stopped working after moving the app:** Open Kilo Proxy from its new location and use **Update terminal commands**.
+- **Commands stopped working after moving the app:** Open Kilo Proxy from its new location and use **Update terminal commands**, or replace your manual functions with newly copied blocks.
 - **Model selection is empty or stale:** Save models in the common library and launch again. An already running agent does not automatically reload it.
 
 Windows users can continue to launch Codex CLI, Claude Code, OpenCode and Oh My Pi from their **Open** buttons in Agents; these terminal commands are available on macOS and Linux.
@@ -85,6 +95,8 @@ Windows users can continue to launch Codex CLI, Claude Code, OpenCode and Oh My 
 ## Verification
 
 Automated tests cover installation, preserved shell startup files, repeated updates, argument quoting, long prompts, current directory, stdin/stdout, exit codes, saved model changes and local authentication. They use temporary homes, fake clients and a local app instance, without Kilo inference.
+
+Manual setup tests also execute the generated functions in available Zsh and Bash shells, verify that the caller's shell survives, and check that snippets remain available when automatic installation is blocked. Native interface tests cover copying individual functions and the complete block before installing any wrappers.
 
 Before packaging, GitHub Actions also runs the production executable's terminal entrypoint on both macOS and Linux architectures with no graphical session. To repeat that check locally:
 

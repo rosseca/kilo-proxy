@@ -86,6 +86,10 @@ func (a *app) adminHandler() http.Handler {
 			a.terminalCommandsAPI(w, r)
 			return
 		}
+		if r.URL.Path == "/api/terminal/manual" {
+			a.terminalManualAPI(w, r)
+			return
+		}
 		if r.URL.Path == "/api/terminal/prepare" {
 			a.terminalPrepareAPI(w, r)
 			return

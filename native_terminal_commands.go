@@ -11,6 +11,9 @@ import (
 )
 
 const nativeTerminalCommandsEndpoint = "/api/terminal/commands"
+const nativeTerminalManualEndpoint = "/api/terminal/manual"
+
+var nativeTerminalCommandNames = []string{"kilo-codex", "kilo-claude", "kilo-omp", "kilo-opencode"}
 
 type nativeTerminalCommandsInfo struct {
 	Supported      bool              `json:"supported"`
@@ -28,6 +31,19 @@ type nativeTerminalCommands struct {
 	Started bool
 	Checked bool
 	Error   string
+
+	Manual         nativeTerminalManualInfo
+	ManualStarted  bool
+	ManualChecked  bool
+	ManualError    string
+	ManualSelected string
+}
+
+type nativeTerminalManualInfo struct {
+	Supported bool              `json:"supported"`
+	Shell     string            `json:"shell"`
+	Commands  map[string]string `json:"commands"`
+	All       string            `json:"all"`
 }
 
 func (u *nativeUI) terminalCommandsState() *nativeTerminalCommands {
@@ -69,9 +85,55 @@ func (u *nativeUI) requestTerminalCommands(method string) {
 	}()
 }
 
+func (u *nativeUI) requestTerminalManual() {
+	key := "GET" + nativeTerminalManualEndpoint
+	if u.busy[key] {
+		return
+	}
+	s := u.terminalCommandsState()
+	s.ManualStarted, s.ManualError = true, ""
+	u.busy[key] = true
+	go func() {
+		raw, err := nativeRequest(u.owner, "GET", nativeTerminalManualEndpoint, nil)
+		u.enqueue(func() {
+			delete(u.busy, key)
+			if err != nil {
+				s.ManualError = err.Error()
+				return
+			}
+			var info nativeTerminalManualInfo
+			if json.Unmarshal(raw, &info) != nil || !validNativeTerminalManualInfo(info) {
+				s.ManualError = "Could not read manual terminal functions."
+				return
+			}
+			s.Manual, s.ManualChecked = info, true
+			if info.Commands[s.ManualSelected] == "" {
+				s.ManualSelected = ""
+			}
+		})
+	}()
+}
+
+func validNativeTerminalManualInfo(info nativeTerminalManualInfo) bool {
+	if !info.Supported {
+		return true
+	}
+	if info.Shell != "zsh-bash" || strings.TrimSpace(info.All) == "" {
+		return false
+	}
+	for _, name := range nativeTerminalCommandNames {
+		if strings.TrimSpace(info.Commands[name]) == "" {
+			return false
+		}
+	}
+	return true
+}
+
 func nativeTerminalCommandsMessage(message, language string) string {
 	if language == "es" {
 		translations := map[string]string{
+			"Could not read manual terminal functions.":                                                                                          "No se pudieron leer las funciones de terminal para la configuración manual.",
+			"Cannot prepare manual terminal commands. Check the Kilo Proxy application and configuration paths.":                                 "No se pueden preparar los comandos manuales de terminal. Revisa las rutas de la aplicación Kilo Proxy y de su configuración.",
 			"Could not read terminal command status.":                                                                                            "No se pudo leer el estado de los comandos de terminal.",
 			"Another launch or installation is being prepared.":                                                                                  "Se está preparando otro inicio o instalación.",
 			"Automatic terminal command installation supports Zsh, Bash and Fish. Choose one of these as your login shell.":                      "La instalación automática de comandos admite Zsh, Bash y Fish. Elige uno como shell de inicio de sesión.",
@@ -87,7 +149,7 @@ func nativeTerminalCommandsMessage(message, language string) string {
 		if translated := translations[message]; translated != "" {
 			return translated
 		}
-		for _, name := range []string{"kilo-codex", "kilo-claude", "kilo-omp", "kilo-opencode"} {
+		for _, name := range nativeTerminalCommandNames {
 			if message == "An unrelated "+name+" already exists. Move or rename it before installing terminal commands." {
 				return "Ya existe un " + name + " ajeno a Kilo Proxy. Muévelo o cámbiale el nombre antes de instalar los comandos de terminal."
 			}
@@ -100,6 +162,9 @@ func (u *nativeUI) terminalCommandsPanel() layout.Widget {
 	s := u.terminalCommandsState()
 	if !s.Started {
 		u.requestTerminalCommands("GET")
+	}
+	if !s.ManualStarted {
+		u.requestTerminalManual()
 	}
 	checking, installing := u.busy["GET"+nativeTerminalCommandsEndpoint], u.busy["POST"+nativeTerminalCommandsEndpoint]
 	if s.Checked && !s.Info.Supported {
@@ -147,7 +212,7 @@ func (u *nativeUI) terminalCommandsPanel() layout.Widget {
 		if len(s.Info.StartupFiles) > 0 {
 			children = append(children, u.note(u.tr("Shell startup files: ", "Archivos de inicio del shell: ")+strings.Join(s.Info.StartupFiles, ", ")))
 		}
-		for _, name := range []string{"kilo-codex", "kilo-claude", "kilo-omp", "kilo-opencode"} {
+		for _, name := range nativeTerminalCommandNames {
 			if path := s.Info.Commands[name]; path != "" {
 				command := name
 				if !s.Info.PathConfigured {
@@ -160,7 +225,53 @@ func (u *nativeUI) terminalCommandsPanel() layout.Widget {
 			}
 		}
 	}
-	return nativeSettingsPanelWithGap(u.section(u.tr("Terminal commands", "Comandos de terminal"), u.tr("Install and run shortcuts for the coding CLIs you use.", "Instala y ejecuta accesos directos para tus CLI de programación."), children...))
+	children = append(children, u.terminalManualWidgets()...)
+	return nativeSettingsPanelWithGap(u.section(u.tr("Terminal commands", "Comandos de terminal"), u.tr("Set up shortcuts for the coding CLIs you use.", "Configura accesos directos para tus CLI de programación."), children...))
+}
+
+func (u *nativeUI) terminalManualWidgets() []layout.Widget {
+	s := u.terminalCommandsState()
+	if s.ManualChecked && !s.Manual.Supported {
+		return nil
+	}
+	const toggleID = "terminal-commands.manual.toggle"
+	children := []layout.Widget{u.disclosure(toggleID, u.tr("Manual setup · Zsh / Bash", "Configuración manual · Zsh / Bash"))}
+	if !u.expanded[toggleID] {
+		return children
+	}
+	loading := u.busy["GET"+nativeTerminalManualEndpoint]
+	ready := s.ManualChecked && s.Manual.Supported && s.ManualError == "" && !loading
+	children = append(children,
+		u.note(u.tr("Paste these functions into ~/.zshrc for Zsh or ~/.bashrc for Bash, then open a new terminal. No installer or PATH changes are needed.", "Pega estas funciones en ~/.zshrc para Zsh o ~/.bashrc para Bash y abre una terminal nueva. No hace falta usar el instalador ni cambiar el PATH.")),
+		u.note(u.tr("Keep Kilo Proxy open. If you move the app or change its settings folder, refresh these functions and replace the copies in your shell file.", "Mantén Kilo Proxy abierto. Si mueves la aplicación o cambias su carpeta de configuración, actualiza estas funciones y sustituye las copias en el archivo de inicio del shell.")),
+	)
+	actions := []layout.Widget{
+		u.disabled(ready, u.iconButton("terminal-commands.manual.copy-all", u.tr("Copy all", "Copiar todo"), nativeButtonSecondary, nativeIconCopy, func() { u.copyTerminalCommand(s.Manual.All) })),
+		u.disabled(!loading, u.button("terminal-commands.manual.refresh", u.tr("Refresh manual setup", "Actualizar configuración manual"), u.requestTerminalManual)),
+	}
+	if s.ManualSelected != "" {
+		name := s.ManualSelected
+		actions = append(actions, u.disabled(ready, u.iconButton("terminal-commands.manual.copy."+name, u.tr("Copy "+name+" function", "Copiar función "+name), nativeButtonSecondary, nativeIconCopy, func() { u.copyTerminalCommand(s.Manual.Commands[name]) })))
+	}
+	children = append(children, u.pills(actions...))
+	if loading {
+		children = append(children, u.statusBadge(nativeToneInfo, u.tr("Loading manual functions…", "Cargando funciones manuales…")))
+	}
+	if s.ManualError != "" {
+		children = append(children, u.message(nativeToneError, nativeTerminalCommandsMessage(s.ManualError, u.language)))
+	}
+	if s.ManualChecked && s.Manual.Supported {
+		choices := []layout.Widget{u.buttonKind("terminal-commands.manual.select-all", u.tr("All functions", "Todas las funciones"), nativeButtonSecondary, nil, s.ManualSelected == "", func() { s.ManualSelected = "" })}
+		for _, name := range nativeTerminalCommandNames {
+			choices = append(choices, u.buttonKind("terminal-commands.manual.select."+name, name, nativeButtonSecondary, nil, s.ManualSelected == name, func() { s.ManualSelected = name }))
+		}
+		value := s.Manual.All
+		if s.ManualSelected != "" {
+			value = s.Manual.Commands[s.ManualSelected]
+		}
+		children = append(children, u.pills(choices...), u.terminalCommandCode("terminal-commands.manual.preview", value))
+	}
+	return children
 }
 
 func (u *nativeUI) terminalCommandCode(id, value string) layout.Widget {
