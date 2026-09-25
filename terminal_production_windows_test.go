@@ -166,8 +166,15 @@ func main() {
 					if client == "omp" {
 						wantArgs = append([]string{"--model", "kilo-local/vendor/two"}, arguments...)
 					}
-					if !reflect.DeepEqual(got.Args, wantArgs) || got.Input != "stdin preserved\n" || !strings.EqualFold(got.Cwd, project) || stderr.String() != "synthetic client stderr\n" {
-						t.Fatalf("CLI state changed: %+v; stderr=%s", got, stderr.String())
+					if !reflect.DeepEqual(got.Args, wantArgs) {
+						t.Errorf("CLI arguments = %q; want %q", got.Args, wantArgs)
+					}
+					if got.Input != "stdin preserved\n" {
+						t.Errorf("CLI stdin = %q; want %q", got.Input, "stdin preserved\n")
+					}
+					assertTerminalProductionDirectory(t, got.Cwd, project)
+					if stderr.String() != "synthetic client stderr\n" {
+						t.Errorf("CLI stderr = %q; want %q", stderr.String(), "synthetic client stderr\n")
 					}
 					if client == "codex-cli" && (got.CodexHome != a.codexCLIProfileDir || got.LocalKey != a.config.LocalKey) {
 						t.Fatal("Codex profile lost")
@@ -234,11 +241,42 @@ func main() {
 						t.Fatal(err, output.String())
 					}
 					_, config, _, err := a.editorPaths("opencode")
-					if err != nil || !reflect.DeepEqual(got.Args, arguments) || strings.ReplaceAll(got.Input, "\r\n", "\n") != wantInput || !strings.EqualFold(got.Cwd, project) || got.OpenCodeConfig != config || got.OpenCodeContent != "" || !strings.Contains(stderr.String(), "synthetic client stderr") {
-						t.Fatalf("pipeline changed CLI state: %+v; stderr=%s", got, stderr.String())
+					if err != nil {
+						t.Fatal("cannot locate expected OpenCode profile:", err)
+					}
+					if !reflect.DeepEqual(got.Args, arguments) {
+						t.Errorf("pipeline CLI arguments = %q; want %q", got.Args, arguments)
+					}
+					if strings.ReplaceAll(got.Input, "\r\n", "\n") != wantInput {
+						t.Errorf("pipeline CLI stdin = %q; want %q (allowing PowerShell CRLF)", got.Input, wantInput)
+					}
+					assertTerminalProductionDirectory(t, got.Cwd, project)
+					if got.OpenCodeConfig != config {
+						t.Errorf("pipeline OpenCode profile = %q; want %q", got.OpenCodeConfig, config)
+					}
+					if got.OpenCodeContent != "" {
+						t.Error("pipeline retained inherited OpenCode inline configuration")
+					}
+					if !strings.Contains(stderr.String(), "synthetic client stderr") {
+						t.Errorf("pipeline CLI stderr = %q; want the synthetic client stderr marker", stderr.String())
 					}
 				})
 			}
 		}
+	}
+}
+
+func assertTerminalProductionDirectory(t *testing.T, got, want string) {
+	t.Helper()
+	// PowerShell can expand Go's temporary 8.3 path (RUNNER~1) to the long
+	// directory name. Check filesystem identity without rewriting either path.
+	gotDirectory, gotErr := os.Stat(got)
+	wantDirectory, wantErr := os.Stat(want)
+	if gotErr != nil || wantErr != nil {
+		t.Errorf("cannot inspect CLI cwd %q or expected directory %q: got error=%v; want error=%v", got, want, gotErr, wantErr)
+		return
+	}
+	if !gotDirectory.IsDir() || !wantDirectory.IsDir() || !os.SameFile(gotDirectory, wantDirectory) {
+		t.Errorf("CLI cwd %q is not the expected directory %q", got, want)
 	}
 }
