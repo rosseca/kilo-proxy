@@ -51,6 +51,8 @@ type nativeUI struct {
 
 	imageDependencyDismissed bool
 	imageSettingsFocus       bool
+	updateRevision           uint64
+	updateRequestFailed      bool
 
 	owner                          *app
 	invalidate                     func()
@@ -548,11 +550,24 @@ func (u *nativeUI) call(method, path string, payload any, done func(json.RawMess
 }
 func (u *nativeUI) refreshState() {
 	revision, saving := u.languageRevision, u.languageTarget != ""
+	updateRevision, updateSaving := u.updateRevision, u.busy["POST/api/updates"]
 	c := u.clientState()
 	desktopRevision, desktopSaving := c.DesktopExperimentalRevision, c.DesktopExperimentalTarget != nil
 	u.call("GET", "/api/state", nil, func(raw json.RawMessage) {
 		desktopExperimental := u.claudeDesktopExperimentalModels()
+		update := u.state["update"]
 		u.acceptState(raw)
+		// A poll captured before a manual check must not restore its old status.
+		if updateSaving || updateRevision != u.updateRevision || u.busy["POST/api/updates"] {
+			u.state["update"] = update
+		} else if u.updateRequestFailed {
+			var previous releaseUpdateState
+			nativeDecode(update, &previous)
+			current := u.releaseUpdate()
+			if current.Checking || current.CheckedAt != "" && current.CheckedAt != previous.CheckedAt {
+				u.updateRequestFailed = false
+			}
+		}
 		// Ignore a Desktop option snapshot captured before or during its save.
 		if desktopSaving || desktopRevision != c.DesktopExperimentalRevision || c.DesktopExperimentalTarget != nil {
 			u.state["claudeDesktopExperimentalModels"] = desktopExperimental

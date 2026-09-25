@@ -40,6 +40,12 @@ Every release includes six archives and `SHA256SUMS.txt`. Linux’s installer ad
 
 macOS bundles have an **ad-hoc signature** covering the executable, bundle metadata, and resources. They are **not Developer ID signed or notarized**; Windows binaries are unsigned. macOS and Windows may show origin warnings. Company-wide managed distribution can add publisher signing and macOS notarization separately. The project does not install an auto-updater or change system startup settings.
 
+## App updates
+
+Kilo Proxy checks this repository's latest stable GitHub release in the background when it starts and every six hours while it remains open. A newer version shows a download notice. **Settings → App updates** shows the installed version, last check, and a manual **Check for updates** button. The optional browser interface has the same controls in **App updates**.
+
+Checks use GitHub's public release API without your Kilo credentials, organization, conversations, or GitHub authentication. Manual checks are limited to once per minute. Offline or rate-limited checks show an unavailable status and do not stop the proxy. The download button opens the exact release page; installation stays under your control. Drafts and prereleases are excluded, and development builds with an unrecognized version do not claim to be up to date.
+
 ## Editors and models
 
 | Client | What the helper configures |

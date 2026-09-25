@@ -30,6 +30,7 @@ type event struct {
 }
 
 type app struct {
+	updates                   *releaseUpdateChecker
 	imageURLBackends          imageURLBackendManager
 	imageDependencyLookup     func(string) string
 	imageURLLeaseFactory      func(context.Context, string, string) (imageURLLease, error)
@@ -116,6 +117,7 @@ func newApp(dir string, vault credentialVault) (*app, error) {
 	tr.Proxy = nil
 	tr.ResponseHeaderTimeout = 120 * time.Second
 	a := &app{dir: dir, config: cfg, vault: vault, adminToken: randomKey(""), upstream: u, transport: tr, quit: make(chan struct{})}
+	a.updates = newReleaseUpdateChecker(version)
 	a.modelLibrary = newModelLibraryStore(dir)
 	a.usageHistory = newUsageHistoryStore(dir)
 	a.zedCredentialStore = storeZedCredential

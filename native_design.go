@@ -387,10 +387,13 @@ func (u *nativeUI) Layout(gtx layout.Context) layout.Dimensions {
 					case "activity":
 						panel = u.activityPanel()
 					default:
-						panel = u.column(u.imageSettingsConnectionPanel(), u.imageTransportPanel(), u.appearancePanel(), u.terminalCommandsPanel())
+						panel = u.column(u.imageSettingsConnectionPanel(), u.imageTransportPanel(), u.appearancePanel(), u.updatesPanel(), u.terminalCommandsPanel())
 					}
 					if u.imageDependencyNoticeVisible() && u.page != "settings" && u.page != "connection" {
 						panel = u.column(u.imageDependencyNotice(false), panel)
+					}
+					if u.updateAvailable() && u.page != "settings" && u.page != "connection" {
+						panel = u.column(u.updateNotice(), panel)
 					}
 					return material.List(u.theme, u.list("page."+u.page)).Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
 						return layout.Inset{Right: 14, Bottom: 20}.Layout(gtx, panel)

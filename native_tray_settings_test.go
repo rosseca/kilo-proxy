@@ -15,10 +15,19 @@ func TestNativeTrayAppearancePointerAndPersistence(t *testing.T) {
 		for _, lang := range []string{"en", "es"} {
 			t.Run(fmtSize(size)+"-"+lang, func(t *testing.T) {
 				u := nativeTestUI(t)
-				u.page, u.language = "settings", lang
+				u.setLanguage(lang)
+				nativeTestWait(t, u, func() bool { return u.languageTarget == "" && !u.busy["GET/api/state"] })
+				u.page = "settings"
 				h := &nativePointerHarness{t: t, u: u, size: size, now: time.Now()}
 				h.frame()
-				nativeMenuWheel(h, image.Pt(size.X-100, size.Y-100), 10000)
+				// Terminal discovery below Appearance can change the scroll extent.
+				// Wait for that layout to settle, then reveal the control itself;
+				// scrolling to the bottom depends on unrelated Settings sections.
+				nativeTestWait(t, u, func() bool {
+					return !u.busy["GET"+nativeTerminalCommandsEndpoint] && !u.busy["GET"+nativeTerminalManualEndpoint] && !u.busy["GET/api/state"]
+				})
+				h.frame()
+				h.reveal(u.tr("Session cost", "Coste de esta sesión"), semantic.Button)
 				h.click(u.tr("Session cost", "Coste de esta sesión"), semantic.Button)
 				nativeTestWait(t, u, func() bool { return !u.busy["PUT/api/tray-settings"] })
 				h.frame()

@@ -137,3 +137,7 @@
 .image-dependency-notice code,.image-dependency-status code{display:block;margin-top:12px;font-size:12px;overflow-wrap:anywhere;white-space:pre-wrap}
 .image-dependency-status{border-top:1px solid #d9e0e5;padding-top:14px;margin-top:18px}.image-dependency-status>p:first-child{font-size:13px;font-weight:600;margin:0 0 6px}.image-dependency-status .field-help{margin:0}
 @media(max-width:650px){.image-dependency-notice{padding:17px}.image-dependency-actions{gap:10px}.image-dependency-actions a{flex-basis:100%}}
+.update-notice{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;padding:16px 20px;margin-bottom:20px;border:1px solid #cbd7e1;border-radius:9px;background:#f1f5f9;color:#324357;font-size:13px}
+.update-notice[hidden]{display:none}.update-notice a,.update-actions a{color:#345778;font-size:12px;font-weight:600}
+.update-actions{display:flex;align-items:center;flex-wrap:wrap;gap:16px}.update-actions .secondary-button{flex:0 1 auto}
+#app-updates p{font-size:12px;line-height:1.7}#app-updates .update-error{color:#9a4c2d}.sidebar-bottom #version{color:inherit;text-underline-offset:3px}

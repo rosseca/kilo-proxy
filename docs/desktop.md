@@ -34,9 +34,11 @@ After selecting at least one model and letting its automatic save complete, **St
 - **Agents:** installed-agent cards, direct Open actions, project-folder choosers and recent folders. **Start proxy** and **Stop proxy** sit beside the connection status. Opening an agent also starts the proxy first; failed startup prevents dispatching the agent. Codex Desktop and Codex CLI have distinct actions. Options contains installation guidance, integration setup and exports.
 - **Models:** one automatically saved library with names, order, a default model and supported reasoning preferences. Agent exports apply only settings supported by that client. Image generation is under **Image generation for Codex** and is saved when a Codex profile is prepared/opened.
 - **Activity:** requests, conversation breakdowns, observed costs and cache reuse.
-- **Settings:** Kilo account and organization, local connection, language and tray appearance.
+- **Settings:** Kilo account and organization, local connection, language, tray appearance, terminal commands and **App updates**.
 
 The library is `models.json` in the application configuration directory; project choices live in `agent-preferences.json`. Neither is a generated agent credential file. See [shared-model paths, recovery and propagation limits](shared-models.md).
+
+**App updates** checks the latest stable GitHub release on startup and every six hours without blocking the proxy. A newer version adds a compact download notice; Settings also shows the installed version, last check and a manual check button. Download opens the release page in your browser, and you install it when ready. Offline checks report that the version could not be checked. Prereleases and drafts are excluded; no Kilo credentials are used.
 
 ## Interface preview
 

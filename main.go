@@ -138,6 +138,9 @@ func main() {
 		})
 	}
 	defer cleanup()
+	if *selfTest == "" {
+		app.updates.start(app.quit)
+	}
 	panelURL := "http://" + app.adminHost + "/#" + app.adminToken
 	fmt.Printf("Kilo Proxy %s\nControl panel: %s\nClosing the window keeps the proxy running. Use Quit to stop the application.\n", version, panelURL)
 	if *useBrowser && !*noBrowser {
@@ -167,7 +170,12 @@ func main() {
 }
 
 func (a *app) requestQuit() {
-	a.quitOnce.Do(func() { close(a.quit) })
+	a.quitOnce.Do(func() {
+		close(a.quit)
+		if a.updates != nil {
+			a.updates.close()
+		}
+	})
 }
 
 func openBrowser(address string) error {

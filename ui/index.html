@@ -8,13 +8,14 @@
     <div class="workspace-label">TU ESPACIO LOCAL</div>
     <nav aria-label="Secciones"><a href="#connection" class="nav-link selected"><span>↗</span> Conexión <span class="nav-dot"></span></a><a href="#clients" class="nav-link"><span>⌘</span> Conectar un editor</a><a href="#account-usage" class="nav-link"><span>≋</span> Actividad</a></nav>
     <div class="sidebar-note"><div class="tiny-label">UN PUENTE PEQUEÑO.</div><p>Tu organización.<br>Tu editor.<br><span>Sin vueltas.</span></p><div class="route-line"><span>Editor</span><b>→</b><span>Local</span><b>→</b><span>Kilo</span></div></div>
-    <div class="sidebar-bottom"><span class="device-dot"></span> Solo en este equipo <span id="version"></span></div>
+    <div class="sidebar-bottom"><span class="device-dot"></span> Solo en este equipo <a id="version" href="#app-updates"></a></div>
   </aside>
   <main>
     <header class="topbar"><div class="breadcrumb">Workspace <span>/</span> Conexión</div><div class="top-actions"><label class="language-picker"><span class="sr-only">Idioma</span><select id="language" aria-label="Idioma"><option value="en" lang="en">English</option><option value="es" lang="es">Español</option></select></label><span class="privacy-label"><span class="lock-icon">▣</span> 127.0.0.1</span><button id="quit" class="text-button">Cerrar aplicación <span>↗</span></button></div></header>
     <div class="content">
       <div class="page-heading"><div><div class="eyebrow">KILO, DONDE TÚ TRABAJAS</div><h1>Un gateway.<br class="mobile-break"> Cualquier editor.</h1><p>Conecta el saldo de tu organización con las herramientas que ya usas.</p></div><div id="status-pill" class="status-pill"><span></span><span id="status-label">Proxy detenido</span></div></div>
       <div id="notice" class="notice" role="status" hidden></div>
+      <section id="update-notice" class="update-notice" aria-labelledby="update-notice-title" hidden><strong id="update-notice-title"></strong><a id="update-notice-download" target="_blank" rel="noopener noreferrer"></a></section>
       <section id="image-dependency-notice" class="image-dependency-notice" aria-labelledby="image-dependency-title" hidden>
         <div><h2 id="image-dependency-title"></h2><p id="image-dependency-description"></p></div>
         <div class="image-dependency-actions"><a id="image-dependency-install" target="_blank" rel="noopener noreferrer"></a><button id="image-dependency-copy" class="secondary-button" type="button" hidden></button><button id="image-dependency-check" class="secondary-button" type="button"></button><button id="image-dependency-dismiss" class="text-button" type="button"></button></div>
@@ -183,6 +184,11 @@
 <div id="trace-tabs" class="tabs" role="tablist" aria-label="Tramo de la petición"><button id="trace-tab-request" role="tab" aria-controls="trace-panel" aria-selected="true" data-part="request">Codex → Local</button><button id="trace-tab-upstreamRequest" role="tab" aria-controls="trace-panel" aria-selected="false" tabindex="-1" data-part="upstreamRequest">Local → Kilo</button><button id="trace-tab-upstreamResponse" role="tab" aria-controls="trace-panel" aria-selected="false" tabindex="-1" data-part="upstreamResponse">Kilo → Local</button><button id="trace-tab-response" role="tab" aria-controls="trace-panel" aria-selected="false" tabindex="-1" data-part="response">Local → Codex</button></div>
 <div id="trace-panel" role="tabpanel" aria-labelledby="trace-tab-request"><p id="trace-summary" class="field-help"></p><h4>Cabeceras</h4><pre id="trace-headers"></pre><div class="inspector-heading"><h4>Cuerpo · JSON / SSE</h4><label><input id="trace-format" type="checkbox" checked> Formatear JSON</label></div><pre id="trace-body"></pre></div>
 </section></section>
+      <section class="card clients-card" id="app-updates" aria-labelledby="updates-title">
+        <h2 id="updates-title"></h2><p id="updates-description" class="field-help"></p>
+        <p id="updates-current"></p><p id="updates-status" role="status"></p><p id="updates-checked" class="field-help" hidden></p>
+        <div class="update-actions"><button id="updates-check" class="secondary-button" type="button"></button><a id="updates-download" target="_blank" rel="noopener noreferrer" hidden></a></div>
+      </section>
       <footer><span><b>Kilo Proxy</b> · Companion independiente, sin afiliación oficial.</span><span>Go por dentro. Tu flujo por fuera.</span></footer>
     </div>
   </main>

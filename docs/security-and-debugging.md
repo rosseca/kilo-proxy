@@ -45,6 +45,12 @@ Upstream payload limits can be lower than the local upload limit. When an upstre
 
 The catalog is public and can be retrieved without login. When credentials and an organization are saved, both are included in the backend request. Only normalized metadata reaches the browser. Changing the connection invalidates prior catalog requests. Catalog access and prices do not prove balance, negotiated discounts, or organization policy.
 
+## Release update checks
+
+Normal app startup and a six-hour background timer query `GET https://api.github.com/repos/rosseca/kilo-proxy/releases/latest`. This uses a separate unauthenticated HTTP client: it sends no Kilo key, organization, local/admin key, request content or GitHub token. Checks have a ten-second timeout, bounded response size, no redirects, and at most one request per minute. The status cache is in memory. Isolated desktop self-tests and terminal command runners do not start this background check.
+
+Only a newer stable version produces a download notice. GitHub failures, missing releases, invalid responses and unknown development versions cannot produce an up-to-date status. Download actions open a validated release tag in this repository; no package is downloaded, executed or installed automatically. **Settings → App updates** and the browser helper provide a manual check and show the last attempt.
+
 ## Large image handling
 
 **Settings → Large images** saves `imageTransport.mode` (`off`, `compress`, `upload`, `cloudflare`, `litterbox`, or `tailscale`), `imageTransport.profile` (`high`, `balanced`, or `small`) and `imageTransport.litterboxTTL` (`1h`, `12h`, `24h`, or `72h`) in `settings.json`. Fresh profiles and settings without a saved image mode default to **Cloudflare quick tunnel**, with **High quality** as the initial compression profile and one hour as the Litterbox expiry. Explicitly saved modes, including **Off**, remain unchanged on upgrade. Choices take effect for new Responses, Chat Completions and Anthropic Messages requests without restarting; smaller requests are unchanged. A failure never switches automatically to a different backend.

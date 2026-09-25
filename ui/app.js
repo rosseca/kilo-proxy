@@ -1,5 +1,6 @@
 import {contextControls,contextModel,syncContextModels,contextError,contextPreview} from './context-policy.mjs';
 import {renderAccountUsage} from './account-usage.mjs';
+import {renderUpdates} from './update-helper.mjs';
 import {createOpenDesignHelper} from './open-design-helper.mjs';
 import {createEditorHelper} from './editor-helper.mjs';
 import {configureDesktop, writeClipboard, openExternal, bindDesktopLinks} from './desktop-helper.mjs';
@@ -42,6 +43,9 @@ if (token && /^[a-f0-9]{64}$/.test(token)) {
 } else token = sessionStorage.getItem('kilo-local-control') || '';
 let state, client = 'generic', busy = false, stopped = false, initialized = false, toastTimer, imageTransportPending = null;
 let imageDependencyPrompt={};
+let updateCheckPending = false, updateRequestError = false;
+let updateCheckRevision = 0;
+let updateFailedCheck = '';
 try { const saved=JSON.parse(sessionStorage.getItem('kilo-cloudflare-prompt')||'{}');if(saved&&typeof saved==='object')imageDependencyPrompt={dismissed:saved.dismissed===true,mode:saved.mode,running:saved.running===true}; } catch {}
 let lastAuthStatus, teamSignature = '';
 const clientModels = {};
@@ -372,6 +376,8 @@ function render(s) {
     if (s.warning) notify(s.warning, true);
   }
   renderImageTransport(s);
+  if (updateRequestError && (s.update?.checking || (s.update?.checkedAt || '') !== updateFailedCheck)) updateRequestError = false;
+  renderUpdates(document, s, language, updateCheckPending, updateRequestError);
   $('toggle-key').textContent = t($('api-key').type === 'password' ? 'Ver' : 'Ocultar');
   $('toggle-key').setAttribute('aria-label', t($('api-key').type === 'password' ? 'Mostrar API key' : 'Ocultar API key'));
   $('version').textContent = 'v' + s.version;
@@ -785,7 +791,13 @@ $('model-picker').addEventListener('change', event => {
   if (!event.target.matches(isCodexClient() ? 'input[type=checkbox]' : 'input[type=radio]')) return;
   $('model').value = event.target.value; applyModelContext(); renderModels(); renderSnippet();
 });
-async function refresh() { if (!stopped) render(await api('state')); }
+async function refresh() {
+  if (stopped) return;
+  const revision = updateCheckRevision, next = await api('state');
+  // A state poll already in flight must not undo a newer manual check.
+  if (revision !== updateCheckRevision && state) next.update = state.update;
+  render(next);
+}
 async function action(fn) {
   if (busy) return;
   busy = true; if (state) render(state);
@@ -978,3 +990,21 @@ for(const prefix of ['image-dependency','image-cloudflare']) {
   $(prefix+'-check').addEventListener('click',()=>void action(async()=>{}));
 }
 $('image-dependency-dismiss').addEventListener('click',()=>{imageDependencyPrompt.dismissed=true;if(state)renderImageTransport(state);});
+$('updates-check').addEventListener('click', async () => {
+  if (updateCheckPending || state?.update?.checking) return;
+  updateCheckPending = true;
+  updateCheckRevision++;
+  updateRequestError = false;
+  renderUpdates(document, state, language, true);
+  try {
+    const update = await api('updates', {});
+    if (state) state.update = update;
+  } catch {
+    updateRequestError = true;
+    updateFailedCheck = state?.update?.checkedAt || '';
+  } finally {
+    updateCheckRevision++;
+    updateCheckPending = false;
+    renderUpdates(document, state, language, false, updateRequestError);
+  }
+});
