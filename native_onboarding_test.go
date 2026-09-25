@@ -325,6 +325,14 @@ func TestNativeOnboardingLateStartPreservesReviewModels(t *testing.T) {
 			return false
 		}
 	})
+	// The backend has started but the POST response is still held. A poll
+	// during that operation must not publish an intermediate UI snapshot.
+	nativeOnboardingListener(t, u)
+	u.refreshState()
+	nativeTestWait(t, u, func() bool { return !u.busy["GET/api/state"] })
+	if nativeBool(u.state, "running") {
+		t.Fatal("a poll published proxy state before the start response completed")
+	}
 	h.click("Back", semantic.Button)
 	if u.page != "setup" || u.setupStep != setupModels {
 		t.Fatal("Back was unavailable while the start response was pending")
@@ -446,6 +454,90 @@ func TestNativeOnboardingAgentsProxyPointerControls(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// Delay an authenticated state response after its snapshot has been read. This
+// reproduces a poll crossing a start/stop response without relying on timing.
+func nativeOnboardingHoldStateSnapshot(t *testing.T, u *nativeUI) func() {
+	t.Helper()
+	nativeTestWait(t, u, func() bool { return !u.busy["GET/api/state"] })
+	api := u.owner.adminHandler()
+	var armed atomic.Bool
+	armed.Store(true)
+	started, gate := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	release := func() { once.Do(func() { close(gate) }) }
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/api/state" && armed.CompareAndSwap(true, false) {
+			response := httptest.NewRecorder()
+			api.ServeHTTP(response, r)
+			close(started)
+			select {
+			case <-gate:
+			case <-r.Context().Done():
+				return
+			}
+			for key, values := range response.Header() {
+				w.Header()[key] = append([]string(nil), values...)
+			}
+			w.WriteHeader(response.Code)
+			_, _ = w.Write(response.Body.Bytes())
+			return
+		}
+		api.ServeHTTP(w, r)
+	}))
+	t.Cleanup(func() { release(); server.Close() })
+	u.owner.adminHost = strings.TrimPrefix(server.URL, "http://")
+	u.refreshState()
+	nativeTestWait(t, u, func() bool {
+		select {
+		case <-started:
+			return true
+		default:
+			return false
+		}
+	})
+	return release
+}
+
+func TestNativeOnboardingProxyControlsIgnoreOlderState(t *testing.T) {
+	for _, lang := range []string{"en", "es"} {
+		t.Run(lang, func(t *testing.T) {
+			u := nativeTestUI(t)
+			nativeSeedSharedForTest(t, u, u.models[0])
+			u.setLanguage(lang)
+			nativeTestWait(t, u, func() bool { return u.languageTarget == "" && !u.busy["GET/api/state"] })
+			// Installation detection is unrelated to the global proxy control.
+			c := u.clientState()
+			c.LaunchChecked, c.LaunchDetectStarted = true, true
+			c.OpenDesignChecked, c.OpenDesignDetectStarted = true, true
+			u.page = "agents"
+			h := &nativePointerHarness{t: t, u: u, size: image.Pt(720, 700), now: time.Now()}
+			h.frame()
+			release := nativeOnboardingHoldStateSnapshot(t, u)
+			h.click(u.tr("Start proxy", "Arrancar proxy"), semantic.Button)
+			nativeTestWait(t, u, func() bool { return !u.busy["POST/api/start"] && nativeBool(u.state, "running") })
+			listener := nativeOnboardingListener(t, u)
+			release()
+			nativeTestWait(t, u, func() bool { return !u.busy["GET/api/state"] })
+			h.frame()
+			if !nativeBool(u.state, "running") {
+				t.Fatal("older stopped snapshot erased the completed start")
+			}
+			h.target(u.tr("Stop proxy", "Detener proxy"), semantic.Button)
+			release = nativeOnboardingHoldStateSnapshot(t, u)
+			h.click(u.tr("Stop proxy", "Detener proxy"), semantic.Button)
+			nativeTestWait(t, u, func() bool { return !u.busy["POST/api/stop"] && !nativeBool(u.state, "running") })
+			nativeOnboardingStopped(t, u, listener)
+			release()
+			nativeTestWait(t, u, func() bool { return !u.busy["GET/api/state"] })
+			h.frame()
+			if nativeBool(u.state, "running") {
+				t.Fatal("older running snapshot erased the completed stop")
+			}
+			h.target(u.tr("Start proxy", "Arrancar proxy"), semantic.Button)
+		})
 	}
 }
 

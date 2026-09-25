@@ -53,6 +53,7 @@ type nativeUI struct {
 	imageSettingsFocus       bool
 	updateRevision           uint64
 	updateRequestFailed      bool
+	proxyRevision            uint64
 
 	owner                          *app
 	invalidate                     func()
@@ -534,10 +535,17 @@ func (u *nativeUI) call(method, path string, payload any, done func(json.RawMess
 		return
 	}
 	u.busy[key] = true
+	changesProxy := method == "POST" && (path == "/api/start" || path == "/api/stop")
+	if changesProxy {
+		u.proxyRevision++
+	}
 	go func() {
 		raw, err := nativeRequest(u.owner, method, path, payload)
 		u.enqueue(func() {
 			delete(u.busy, key)
+			if changesProxy {
+				u.proxyRevision++
+			}
 			if err != nil {
 				u.noticeError(err)
 				return
@@ -550,10 +558,17 @@ func (u *nativeUI) call(method, path string, payload any, done func(json.RawMess
 }
 func (u *nativeUI) refreshState() {
 	revision, saving := u.languageRevision, u.languageTarget != ""
+	proxyRevision, proxySaving := u.proxyRevision, u.busy["POST/api/start"] || u.busy["POST/api/stop"]
 	updateRevision, updateSaving := u.updateRevision, u.busy["POST/api/updates"]
 	c := u.clientState()
 	desktopRevision, desktopSaving := c.DesktopExperimentalRevision, c.DesktopExperimentalTarget != nil
 	u.call("GET", "/api/state", nil, func(raw json.RawMessage) {
+		// A snapshot that overlaps Start or Stop can predate the completed
+		// operation. Discard it before applying any state-derived effects;
+		// the next poll will fetch a coherent snapshot, including after errors.
+		if proxySaving || proxyRevision != u.proxyRevision || u.busy["POST/api/start"] || u.busy["POST/api/stop"] {
+			return
+		}
 		desktopExperimental := u.claudeDesktopExperimentalModels()
 		update := u.state["update"]
 		u.acceptState(raw)
