@@ -70,12 +70,26 @@ func terminalPowerShellManualCommands(binary, configDir string) (terminalManualR
 		// ASCII default or a BOM-emitting caller preference cannot alter prompts.
 		// Use a constructor expression: PS5.1 ignores New-Object's PSObject
 		// wrapper in a child-scope preference (PowerShell/PowerShell#5763).
+		// .NET Framework Process.Start also creates and AutoFlushes its first
+		// stdin writer with Console.InputEncoding, before PowerShell replaces it.
+		// Suppress that writer's BOM, then restore the encoding and Console.In
+		// reader (the encoding setter resets it, potentially losing buffered input).
 		block := "function " + command.name + " {\n" +
 			"  $kiloEncodedArgs = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes((Microsoft.PowerShell.Utility\\ConvertTo-Json -InputObject ([string[]]$args) -Compress)))\n" +
 			"  if ($MyInvocation.ExpectingInput) {\n" +
 			"    $OutputEncoding = [System.Text.UTF8Encoding]::new($false)\n" +
-			"    $input | " + invoke +
-			"    $global:LASTEXITCODE = $LASTEXITCODE\n    return\n  }\n" +
+			"    $kiloInputEncoding = [Console]::InputEncoding\n" +
+			"    $kiloInputReader = [Console]::In\n" +
+			"    $kiloInputHasPreamble = $kiloInputEncoding.GetPreamble().Length -gt 0\n" +
+			"    try {\n" +
+			"      if ($kiloInputHasPreamble) { [Console]::InputEncoding = $OutputEncoding }\n" +
+			"      $input | " + invoke +
+			"      $global:LASTEXITCODE = $LASTEXITCODE\n" +
+			"    } finally {\n" +
+			"      if ($kiloInputHasPreamble) {\n" +
+			"        [Console]::InputEncoding = $kiloInputEncoding\n" +
+			"        [Console]::SetIn($kiloInputReader)\n" +
+			"      }\n    }\n    return\n  }\n" +
 			"  if ($MyInvocation.PipelinePosition -lt $MyInvocation.PipelineLength) {\n" +
 			"    " + invoke +
 			"    $global:LASTEXITCODE = $LASTEXITCODE\n    return\n  }\n" +

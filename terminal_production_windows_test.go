@@ -186,20 +186,25 @@ func main() {
 					}
 				})
 			}
-			for _, inputMode := range []string{"input-and-output", "output-only"} {
+			for _, inputMode := range []string{"input-and-output", "input-literal-bom", "output-only"} {
 				t.Run(shell+"/"+mode+"/opencode-pipeline-"+inputMode, func(t *testing.T) {
 					invocation := "kilo-opencode " + strings.Join(literals, " ")
 					wantInput := "stdin preserved\n"
-					if inputMode == "input-and-output" {
-						invocation = "'pipeline stdin café 日本語 😀' | " + invocation
-						wantInput = "pipeline stdin café 日本語 😀\n"
+					if inputMode != "output-only" {
+						input := "pipeline stdin café 日本語 😀"
+						if inputMode == "input-literal-bom" {
+							input = "\ufeff" + input
+						}
+						invocation = quote(input) + " | " + invocation
+						wantInput = input + "\n"
 					}
 					// Windows PowerShell exposes native stderr as error records. Keep
 					// that stream separate while checking the native exit code; Stop
 					// would turn the fixture's stderr into a terminating shell error.
-					code := "$ErrorActionPreference = 'Continue'\n$PSNativeCommandUseErrorActionPreference = $false\n[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)\n$OutputEncoding = [Text.Encoding]::UTF8\n$kiloPreviousEncoding = $OutputEncoding\n" + setup +
+					code := "$ErrorActionPreference = 'Continue'\n$PSNativeCommandUseErrorActionPreference = $false\n[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)\n$OutputEncoding = [Text.Encoding]::UTF8\n[Console]::InputEncoding = [Text.Encoding]::UTF8\n$kiloPreviousEncoding = $OutputEncoding\n$kiloPreviousInputEncoding = [Console]::InputEncoding\n$kiloPreviousInputReader = [Console]::In\n" + setup +
 						"\n$kiloCaptured = @(" + invocation + " | Microsoft.PowerShell.Utility\\Write-Output)\n" +
 						"$kiloResult = $LASTEXITCODE\nif (-not [Object]::ReferenceEquals($OutputEncoding, $kiloPreviousEncoding)) { throw 'Caller output encoding changed.' }\nif ($kiloCaptured.Count -ne 1) { throw 'CLI output was not returned through the pipeline.' }\n" +
+						"if (-not [Console]::InputEncoding.Equals($kiloPreviousInputEncoding) -or -not [Object]::ReferenceEquals([Console]::In, $kiloPreviousInputReader)) { throw 'Caller console input changed.' }\n" +
 						"[Console]::Out.WriteLine([string]$kiloCaptured[0])\n[Console]::Out.WriteLine('SHELL_ALIVE')\nexit $kiloResult\n"
 					script := filepath.Join(t.TempDir(), "pipeline.ps1")
 					if err := os.WriteFile(script, append([]byte{0xef, 0xbb, 0xbf}, []byte(code)...), 0600); err != nil {

@@ -317,18 +317,21 @@ func main(){
 			for _, arg := range args {
 				literalArgs = append(literalArgs, "("+terminalPowerShellLiteral(arg)+")")
 			}
-			for _, mode := range []string{"console", "input-pipeline", "input-pipeline-ascii", "input-pipeline-literal-bom", "output-pipeline"} {
+			for _, mode := range []string{"console", "input-pipeline", "input-pipeline-ascii", "input-pipeline-console-ascii", "input-pipeline-literal-bom", "output-pipeline"} {
 				t.Run(filepath.Base(shell)+"/"+name+"/"+mode, func(t *testing.T) {
 					// A literal typed array also preserves zero arguments and one empty
 					// argument on Windows PowerShell 5.1, unlike ConvertFrom-Json output.
 					script := "[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)\n. (" + terminalPowerShellLiteral(functions) + ")\n[string[]]$manualArgs = @(" + strings.Join(literalArgs, ", ") + ")\n"
 					// Reproduce a caller's BOM-emitting UTF-8 encoding even in PS7,
 					// and PS5.1's ASCII preference without depending on host defaults.
-					script += "$OutputEncoding = [Text.Encoding]::UTF8\n"
+					script += "$OutputEncoding = [Text.Encoding]::UTF8\n[Console]::InputEncoding = [Text.Encoding]::UTF8\n"
 					if mode == "input-pipeline-ascii" {
 						script += "$OutputEncoding = [Text.Encoding]::ASCII\n"
 					}
-					script += "$manualOutputEncoding = $OutputEncoding\n"
+					if mode == "input-pipeline-console-ascii" {
+						script += "[Console]::InputEncoding = [Text.Encoding]::ASCII\n"
+					}
+					script += "$manualOutputEncoding = $OutputEncoding\n$manualInputEncoding = [Console]::InputEncoding\n$manualInputReader = [Console]::In\n"
 					pipelineInput := "pipeline input café 日本語 😀"
 					if mode == "input-pipeline-literal-bom" {
 						pipelineInput = "\ufeff" + pipelineInput
@@ -344,6 +347,7 @@ func main(){
 						script += " | Microsoft.PowerShell.Utility\\Write-Output"
 					}
 					script += "\nif (-not [Object]::ReferenceEquals($OutputEncoding, $manualOutputEncoding)) { throw 'caller output encoding changed' }\n"
+					script += "if (-not [Console]::InputEncoding.Equals($manualInputEncoding) -or -not [Object]::ReferenceEquals([Console]::In, $manualInputReader)) { throw 'caller console input changed' }\n"
 					if mode != "console" {
 						script += "if ($null -eq $manualCaptured) { throw 'pipeline output was consumed' }\n[Console]::Out.WriteLine($manualCaptured)\n"
 					}
@@ -382,5 +386,30 @@ func main(){
 				})
 			}
 		}
+		t.Run(filepath.Base(shell)+"/input-pipeline-start-failure-restores-console", func(t *testing.T) {
+			missing, err := terminalPowerShellManualCommands(filepath.Join(home, "missing.exe"), configDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			script := "[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)\n" +
+				"[Console]::InputEncoding = [Text.Encoding]::UTF8\n$OutputEncoding = [Text.Encoding]::ASCII\n" +
+				"[Console]::SetIn([IO.StringReader]::new('buffered caller input'))\n" +
+				"$manualInputEncoding = [Console]::InputEncoding\n$manualInputReader = [Console]::In\n$manualOutputEncoding = $OutputEncoding\n" +
+				"$ErrorActionPreference = 'Stop'\n" + missing.Commands["kilo-codex"] +
+				"$manualFailed = $false\ntry { 'input' | kilo-codex | Out-Null } catch { $manualFailed = $true }\n" +
+				"if (-not $manualFailed) { throw 'missing executable succeeded' }\n" +
+				"if (-not [Console]::InputEncoding.Equals($manualInputEncoding) -or -not [Object]::ReferenceEquals([Console]::In, $manualInputReader)) { throw 'caller console input changed after failure' }\n" +
+				"if ([Console]::In.ReadToEnd() -ne 'buffered caller input') { throw 'caller console buffer lost after failure' }\n" +
+				"if (-not [Object]::ReferenceEquals($OutputEncoding, $manualOutputEncoding)) { throw 'caller output encoding changed after failure' }\n" +
+				"[Console]::Out.Write('RESTORED')\n"
+			path := filepath.Join(home, "failure.ps1")
+			if err := os.WriteFile(path, append([]byte{0xef, 0xbb, 0xbf}, []byte(script)...), 0600); err != nil {
+				t.Fatal(err)
+			}
+			command := exec.Command(shell, "-NoLogo", "-NoProfile", "-NonInteractive", "-File", path)
+			if output, err := command.CombinedOutput(); err != nil || string(output) != "RESTORED" {
+				t.Fatalf("failed native invocation did not restore console preferences: %v; %s", err, output)
+			}
+		})
 	}
 }
