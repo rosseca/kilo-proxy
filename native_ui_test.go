@@ -52,6 +52,7 @@ func nativeTestUI(t *testing.T) *nativeUI {
 		t.Fatal(err)
 	}
 	a.editorTestRoot = root
+	a.imageDependencyLookup = func(string) string { return "/synthetic/cloudflared" }
 	a.claudeDesktopCheckRunning = func(string) (bool, error) { return false, nil }
 	a.launcher = &clientLaunchRuntime{home: root}
 	a.terminalCommandsShell = "/bin/zsh"

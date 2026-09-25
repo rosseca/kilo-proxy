@@ -49,6 +49,9 @@ type nativeUI struct {
 	modelMenuAnchors    map[string]image.Point
 	activeModelMenu     *nativeModelMenuState
 
+	imageDependencyDismissed bool
+	imageSettingsFocus       bool
+
 	owner                          *app
 	invalidate                     func()
 	theme                          *material.Theme
@@ -573,6 +576,7 @@ func (u *nativeUI) acceptState(raw json.RawMessage) {
 	oldEpoch := nativeNumber(u.state, "activityEpoch")
 	oldOrg := nativeString(u.state, "orgId")
 	loginApproved := nativeString(nativeMap(state["auth"]), "status") == "approved" && nativeString(nativeMap(u.state["auth"]), "status") != "approved"
+	u.acceptImageDependencyState(state)
 	u.state = state
 	u.authenticated = true
 	if !first && oldEpoch != nativeNumber(state, "activityEpoch") {

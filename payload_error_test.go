@@ -45,6 +45,9 @@ func TestPayloadErrorProxyPreservesLargeRequestAndOriginalTrace(t *testing.T) {
 			}))
 			defer upstream.Close()
 			a := captureTestApp(t)
+			// This test covers unchanged forwarding, independently of the
+			// default large-image backend used by fresh installations.
+			a.config.ImageTransport.Mode = "off"
 			setUpstream(a, upstream.URL)
 			r := httptest.NewRequest("POST", "http://127.0.0.1:8877/v1/responses", bytes.NewReader(payload))
 			r.Header.Set("Authorization", "Bearer synthetic-local")

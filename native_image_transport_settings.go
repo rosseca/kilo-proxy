@@ -13,6 +13,13 @@ func (u *nativeUI) saveImageTransportSettings(value imageTransportSettings) {
 		var saved imageTransportSettings
 		if json.Unmarshal(raw, &saved) == nil {
 			u.state["imageTransport"] = saved
+			dependency := u.imageDependency()
+			if saved.Mode != "cloudflare" || !dependency.Required {
+				u.imageDependencyDismissed = false
+			}
+			dependency.Required = saved.Mode == "cloudflare"
+			u.state["imageTransportDependency"] = dependency
+			u.refreshState()
 		}
 	})
 }
@@ -38,6 +45,11 @@ func (u *nativeUI) imageTransportPanel() layout.Widget {
 		profileChoices := []nativeChoice{{Value: "high", Label: u.tr("High quality", "Alta calidad")}, {Value: "balanced", Label: u.tr("Balanced", "Equilibrado")}, {Value: "small", Label: u.tr("Small size", "Tamaño pequeño")}}
 		children = append(children, u.subheading(u.tr("Compression profile", "Perfil de compresión")), u.segmented("images.profile.", profileChoices, settings.Profile, !saving, func(profile string) { next := settings; next.Profile = profile; u.saveImageTransportSettings(next) }), u.note(u.tr("High quality: up to 3072 px / quality 92. Balanced: 2048 px / quality 85. Small size: 1280 px / quality 75. Aspect ratio is preserved.", "Alta calidad: hasta 3072 px / calidad 92. Equilibrado: 2048 px / calidad 85. Tamaño pequeño: 1280 px / calidad 75. Se conserva la proporción.")), u.note(u.tr("Tries lossless optimization first, then your selected profile if needed. Only outbound copies change. If the request still does not fit, it stops with an explanation; it never lowers quality further or uploads images automatically.", "Primero intenta optimizar sin pérdidas y después aplica el perfil elegido si hace falta. Solo cambian las copias enviadas. Si la petición sigue sin caber, se detiene con una explicación; nunca reduce más la calidad ni sube las imágenes automáticamente.")))
 	case "cloudflare":
+		if dependency := u.imageDependency(); dependency.Installed {
+			children = append(children, u.message(nativeToneSuccess, u.tr("cloudflared found", "cloudflared encontrado")))
+		} else if dependency.Required {
+			children = append(children, u.imageDependencyNotice(true))
+		}
 		children = append(children,
 			u.subheading(u.tr("Cloudflare quick tunnel", "Túnel rápido de Cloudflare")),
 			u.note(u.tr("Requires cloudflared installed on this computer and available on PATH. No Cloudflare account or S3 bucket is needed. The tunnel starts when a large request needs it.", "Requiere cloudflared instalado en este equipo y disponible en PATH. No necesita cuenta de Cloudflare ni un bucket S3. El túnel se inicia cuando lo necesita una petición grande.")),
@@ -71,7 +83,7 @@ func (u *nativeUI) imageTransportPanel() layout.Widget {
 		children = append(children, u.note(u.tr("Images pass through unchanged. Large requests can still exceed Kilo's limit and need conversation compaction or fewer attachments.", "Las imágenes se envían sin cambios. Las peticiones grandes pueden superar el límite de Kilo y requerir compactar la conversación o reducir los adjuntos.")))
 	}
 	children = append(children, u.learnMore("images.learn-more", "https://github.com/rosseca/kilo-proxy/blob/main/docs/security-and-debugging.md#large-image-handling"))
-	children = append(children, u.note(u.tr("Off by default. Changes save automatically for new requests, without restarting. Only the selected method is used; failures never switch to another backend or upload service. Earlier uploads still receive their scheduled cleanup.", "Desactivado por defecto. Los cambios se guardan automáticamente para nuevas peticiones, sin reiniciar. Solo se usa el método elegido; los fallos nunca cambian a otro backend o servicio de subida. Las subidas anteriores conservan su limpieza programada.")))
+	children = append(children, u.note(u.tr("Cloudflare is the default for new profiles. Your saved choice is kept. Changes save automatically for new requests, without restarting. Only the selected method is used; failures never switch to another backend or upload service. Earlier uploads still receive their scheduled cleanup.", "Cloudflare es la opción predeterminada para perfiles nuevos. Se conserva tu elección guardada. Los cambios se guardan automáticamente para nuevas peticiones, sin reiniciar. Solo se usa el método elegido; los fallos nunca cambian a otro backend o servicio de subida. Las subidas anteriores conservan su limpieza programada.")))
 	if warning := nativeString(u.state, "imageUploadWarning"); warning != "" {
 		children = append(children, u.message(nativeToneWarning, u.tr("Image cleanup needs attention", "Revisa la limpieza de imágenes")+": "+nativeMessage(warning, u.language)))
 	}

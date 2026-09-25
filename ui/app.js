@@ -41,6 +41,8 @@ if (token && /^[a-f0-9]{64}$/.test(token)) {
   history.replaceState(null, '', '/');
 } else token = sessionStorage.getItem('kilo-local-control') || '';
 let state, client = 'generic', busy = false, stopped = false, initialized = false, toastTimer, imageTransportPending = null;
+let imageDependencyPrompt={};
+try { const saved=JSON.parse(sessionStorage.getItem('kilo-cloudflare-prompt')||'{}');if(saved&&typeof saved==='object')imageDependencyPrompt={dismissed:saved.dismissed===true,mode:saved.mode,running:saved.running===true}; } catch {}
 let lastAuthStatus, teamSignature = '';
 const clientModels = {};
 const codexClients = Object.fromEntries(['codex','codex-cli'].map(id=>[id,{models:new Map(),initial:'',setup:null,preparing:false,imageGeneration:null,imageGenerationBaseline:null,queueMode:'queue'}]));
@@ -267,14 +269,36 @@ function renderSnippet() {
   $('snippet-code').textContent = snippet();
   renderClientLaunch();
 }
+function renderImageDependency(s,current) {
+  const L=(en,es)=>language==='es'?es:en,dependency=s.imageTransportDependency;
+  const mode=s.imageTransport?.mode||'cloudflare',missing=dependency?.tool==='cloudflared'&&dependency.required===true&&dependency.installed===false;
+  if(imageDependencyPrompt.mode!==mode||(!imageDependencyPrompt.running&&s.running)||dependency?.installed===true)imageDependencyPrompt.dismissed=false;
+  imageDependencyPrompt.mode=mode;imageDependencyPrompt.running=!!s.running;
+  try { sessionStorage.setItem('kilo-cloudflare-prompt',JSON.stringify(imageDependencyPrompt)); } catch {}
+  $('image-dependency-notice').hidden=!missing||current.mode!=='cloudflare'||imageDependencyPrompt.dismissed;
+  $('image-dependency-title').textContent=L('Set up large images','Prepara las imágenes grandes');
+  $('image-dependency-description').textContent=L('Cloudflare is selected for large images, but cloudflared was not found. Install it to send original images through temporary links. Text and smaller requests can still run.','Cloudflare está seleccionado para las imágenes grandes, pero no se ha encontrado cloudflared. Instálalo para enviar las imágenes originales mediante enlaces temporales. El texto y las peticiones pequeñas pueden seguir funcionando.');
+  $('image-dependency-dismiss').textContent=L('Not now','Ahora no');
+  $('image-cloudflare-dependency').hidden=current.mode!=='cloudflare';
+  $('image-cloudflare-dependency-status').textContent=dependency?.installed===true?L('cloudflared found','cloudflared encontrado'):dependency?.installed===false?L('cloudflared not found','No se ha encontrado cloudflared'):L('cloudflared status unavailable','Estado de cloudflared no disponible');
+  $('image-cloudflare-dependency-help').textContent=dependency?.installed===true?L('The executable is available. The tunnel starts only when a large request needs it; connectivity has not been tested.','El ejecutable está disponible. El túnel se inicia solo cuando lo necesita una petición grande; no se ha probado la conexión.'):L('Install cloudflared, then check again. Kilo Proxy does not install software or test a tunnel automatically. You can also choose local compression.','Instala cloudflared y vuelve a comprobarlo. Kilo Proxy no instala programas ni prueba un túnel automáticamente. También puedes elegir la compresión local.');
+  let installURL='https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/';
+  try { const candidate=new URL(dependency?.installURL);if(candidate.protocol==='https:'&&candidate.hostname==='developers.cloudflare.com')installURL=candidate.href; } catch {}
+  for(const prefix of ['image-dependency','image-cloudflare']) {
+    $(prefix+'-install').textContent=L('Installation instructions ↗','Instrucciones de instalación ↗');$(prefix+'-install').href=installURL;
+    $(prefix+'-copy').textContent=L('Copy install command','Copiar comando de instalación');$(prefix+'-copy').hidden=!dependency?.installCommand||dependency.installed===true;$(prefix+'-copy').disabled=busy;
+    $(prefix+'-command').textContent=dependency?.installCommand||'';$(prefix+'-command').hidden=!dependency?.installCommand||dependency.installed===true;
+    $(prefix+'-check').textContent=L('Check again','Comprobar de nuevo');$(prefix+'-check').disabled=busy;
+  }
+}
 function renderImageTransport(s) {
   const L=(en,es)=>language==='es'?es:en;
-  const current=imageTransportPending??s.imageTransport??{mode:'off',profile:'high',litterboxTTL:'1h'};
+  const current=imageTransportPending??s.imageTransport??{mode:'cloudflare',profile:'high',litterboxTTL:'1h'};
   $('image-transport-title').textContent=L('Large images','Imágenes grandes');
   $('image-transport-description').textContent=L("Choose one method for inline images when a request exceeds 4.4 MB. Works with Responses, Chat Completions, and Anthropic Messages. Smaller requests and your original files stay unchanged.", 'Elige un método para las imágenes cuando una petición supera 4,4 MB. Funciona con Responses, Chat Completions y Anthropic Messages. Las peticiones pequeñas y tus archivos originales no cambian.');
   $('image-transport-mode-label').textContent=L('Large image handling','Tratamiento de imágenes grandes');
   for(const [mode,en,es] of [['off','Off','Desactivado'],['compress','Compress locally','Comprimir en local'],['cloudflare','Cloudflare quick tunnel','Túnel rápido de Cloudflare'],['tailscale','Tailscale Funnel','Tailscale Funnel'],['litterbox','Litterbox · Experimental','Litterbox · Experimental'],['upload','Upload to Kilo · Experimental','Subir a Kilo · Experimental']])$('image-transport-mode').querySelector(`option[value="${mode}"]`).textContent=L(en,es);
-  $('image-transport-mode').value=current.mode||'off';
+  $('image-transport-mode').value=current.mode||'cloudflare';
   $('image-transport-mode').disabled=busy;
   $('image-compression-options').hidden=current.mode!=='compress';
   $('image-compression-profile-label').textContent=L('Compression profile','Perfil de compresión');
@@ -321,9 +345,10 @@ function renderImageTransport(s) {
   $('image-litterbox-ttl').value=current.litterboxTTL||'1h';
   $('image-litterbox-ttl').disabled=busy;
   $('image-litterbox-cleanup').textContent=L('Litterbox handles expiry. Kilo Proxy cannot delete these uploads early, even after you switch modes or close the app.','Litterbox gestiona la caducidad. Kilo Proxy no puede borrar estas subidas antes, aunque cambies de modo o cierres la app.');
-  $('image-transport-saving').textContent=L('Off by default. Changes save automatically for new requests, without restarting. Only the selected method is used; failures never switch to another backend or upload service. Earlier uploads still receive their scheduled cleanup.', 'Desactivado por defecto. Los cambios se guardan automáticamente para nuevas peticiones, sin reiniciar. Solo se usa el método elegido; los fallos nunca cambian a otro backend o servicio de subida. Las subidas anteriores conservan su limpieza programada.');
+  $('image-transport-saving').textContent=L('Cloudflare is the default for new settings. Your saved choice is preserved. Changes save automatically for new requests, without restarting. Only the selected method is used; failures never switch to another backend or upload service. Earlier uploads still receive their scheduled cleanup.', 'Cloudflare es la opción inicial para ajustes nuevos. Se conserva tu elección guardada. Los cambios se guardan automáticamente para nuevas peticiones, sin reiniciar. Solo se usa el método elegido; los fallos nunca cambian a otro backend o servicio de subida. Las subidas anteriores conservan su limpieza programada.');
   $('image-upload-warning').hidden=!s.imageUploadWarning;
   $('image-upload-warning').textContent=s.imageUploadWarning?L('Image cleanup needs attention: ','Revisa la limpieza de imágenes: ')+t(s.imageUploadWarning):'';
+  renderImageDependency(s,current);
 }
 function render(s) {
   state = s;
@@ -929,9 +954,14 @@ $('account-usage').addEventListener('change', event => {
   }
 });
 for(const id of ['image-transport-mode','image-compression-profile','image-litterbox-ttl'])$(id).addEventListener('change', async event => {
-  const current={mode:state?.imageTransport?.mode||'off',profile:state?.imageTransport?.profile||'high',litterboxTTL:state?.imageTransport?.litterboxTTL||'1h'};
+  const current={mode:state?.imageTransport?.mode||'cloudflare',profile:state?.imageTransport?.profile||'high',litterboxTTL:state?.imageTransport?.litterboxTTL||'1h'};
   if(id==='image-transport-mode')current.mode=event.target.value;else if(id==='image-litterbox-ttl')current.litterboxTTL=event.target.value;else current.profile=event.target.value;
   imageTransportPending=current;
   try { await action(() => api('image-transport-settings', current, 'PUT')); }
   finally { imageTransportPending=null; if(state)renderImageTransport(state); }
 });
+for(const prefix of ['image-dependency','image-cloudflare']) {
+  $(prefix+'-copy').addEventListener('click',()=>{const command=state?.imageTransportDependency?.installCommand;if(command)void copy(command);});
+  $(prefix+'-check').addEventListener('click',()=>void action(async()=>{}));
+}
+$('image-dependency-dismiss').addEventListener('click',()=>{imageDependencyPrompt.dismissed=true;if(state)renderImageTransport(state);});

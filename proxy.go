@@ -31,6 +31,7 @@ type event struct {
 
 type app struct {
 	imageURLBackends          imageURLBackendManager
+	imageDependencyLookup     func(string) string
 	imageURLLeaseFactory      func(context.Context, string, string) (imageURLLease, error)
 	attachmentClientFactory   func(string, string) *imageAttachmentClient
 	imageUploadsActive        int

@@ -15,6 +15,11 @@
     <div class="content">
       <div class="page-heading"><div><div class="eyebrow">KILO, DONDE TÚ TRABAJAS</div><h1>Un gateway.<br class="mobile-break"> Cualquier editor.</h1><p>Conecta el saldo de tu organización con las herramientas que ya usas.</p></div><div id="status-pill" class="status-pill"><span></span><span id="status-label">Proxy detenido</span></div></div>
       <div id="notice" class="notice" role="status" hidden></div>
+      <section id="image-dependency-notice" class="image-dependency-notice" aria-labelledby="image-dependency-title" hidden>
+        <div><h2 id="image-dependency-title"></h2><p id="image-dependency-description"></p></div>
+        <div class="image-dependency-actions"><a id="image-dependency-install" target="_blank" rel="noopener noreferrer"></a><button id="image-dependency-copy" class="secondary-button" type="button" hidden></button><button id="image-dependency-check" class="secondary-button" type="button"></button><button id="image-dependency-dismiss" class="text-button" type="button"></button></div>
+        <code id="image-dependency-command" hidden></code>
+      </section>
       <div class="main-grid">
         <section class="card connection-card" id="connection" aria-labelledby="connection-title">
           <div class="card-heading"><div><div class="step-label">01 / CONEXIÓN</div><h2 id="connection-title">Tu cuenta de Kilo</h2></div><span class="card-symbol">↗</span></div>
@@ -56,6 +61,11 @@
           <p id="image-litterbox-experimental" class="field-help" hidden></p>
           <p id="image-public-description" class="field-help"></p>
           <p id="image-public-requirements" class="field-help"></p>
+          <div id="image-cloudflare-dependency" class="image-dependency-status" hidden>
+            <p id="image-cloudflare-dependency-status" role="status"></p><p id="image-cloudflare-dependency-help" class="field-help"></p>
+            <div class="image-dependency-actions"><a id="image-cloudflare-install" target="_blank" rel="noopener noreferrer"></a><button id="image-cloudflare-copy" class="secondary-button" type="button" hidden></button><button id="image-cloudflare-check" class="secondary-button" type="button"></button></div>
+            <code id="image-cloudflare-command" hidden></code>
+          </div>
           <div id="image-litterbox-options" hidden>
             <p class="field-help"><span id="image-litterbox-terms"></span> <a id="image-litterbox-faq" href="https://litterbox.catbox.moe/faq.php" target="_blank" rel="noopener noreferrer"></a></p>
             <label for="image-litterbox-ttl" id="image-litterbox-ttl-label"></label>

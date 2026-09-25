@@ -4,16 +4,18 @@
 
 | Mode | Behavior | Additional requirements |
 | --- | --- | --- |
-| **Off** (default) | Send image data unchanged. Oversized requests can still fail with HTTP 413. | None |
+| **Off** | Send image data unchanged. Oversized requests can still fail with HTTP 413. | None |
 | **Compress locally** | Optimize outbound copies using the selected quality profile. | None |
 | **Upload to Kilo · Experimental** | Upload original bytes to Kilo's Cloud Agent attachment storage and request deletion after inference. | Your configured Kilo account |
-| **Cloudflare quick tunnel** | Serve original bytes from a temporary local image server through a public Cloudflare URL. | Installed `cloudflared`; no Cloudflare account or domain required |
+| **Cloudflare quick tunnel** (default) | Serve original bytes from a temporary local image server through a public Cloudflare URL. | Installed `cloudflared`; no Cloudflare account or domain required |
 | **Litterbox · Experimental** | Upload original bytes anonymously to temporary third-party storage. | Internet access; no account or extra executable; live availability has not been confirmed |
 | **Tailscale Funnel** | Serve original bytes from a temporary local image server through a public Tailscale URL. | Installed Tailscale CLI, signed-in account, and Funnel enabled |
 
+New profiles and settings without a saved image mode default to **Cloudflare quick tunnel**. Existing explicit selections, including **Off**, are preserved when upgrading.
+
 The selected mode, compression profile, and Litterbox expiry save automatically in `settings.json` as `imageTransport.mode`, `imageTransport.profile`, and `imageTransport.litterboxTTL`. They apply to new requests without restarting. The optional browser helper exposes the same choices. Switching modes does not cancel cleanup for earlier requests.
 
-**Each mode is explicit: a failure never falls back to another service or to a different compression profile.** Requests at or below **4,400,000 bytes** pass through unchanged. This budget leaves room below the Gateway's 4.5 MB body limit.
+**Only the selected mode is used: a failure never falls back to another service or to a different compression profile.** Requests at or below **4,400,000 bytes** pass through unchanged. This budget leaves room below the Gateway's 4.5 MB body limit.
 
 Only recognized inline PNG, JPEG, GIF, and WebP image parts are eligible. This includes Responses `input_image` parts in messages and `function_call_output` arrays, Chat Completions `image_url` parts in message content, and Anthropic base64 image blocks in messages and `tool_result` content. Text, arbitrary base64 strings, tool arguments, file attachments, local paths, existing remote image URLs, and unknown content structures are not searched or rewritten. Invalid data in a recognized image part produces a validation error before publication.
 
@@ -50,7 +52,7 @@ If text or other attachments keep the body above the budget, the request fails b
 
 ## Cloudflare quick tunnel
 
-Install `cloudflared`, then select **Cloudflare quick tunnel**. Kilo Proxy starts its own foreground process and a separate loopback image server. The tunnel publishes only registered images at unguessable URLs; it does not expose the administration panel, inference endpoints, or arbitrary local files.
+Install `cloudflared` to use **Cloudflare quick tunnel**, the default for new profiles. Existing users can select it under **Settings → Large images**. Kilo Proxy starts its own foreground process and a separate loopback image server. The tunnel publishes only registered images at unguessable URLs; it does not expose the administration panel, inference endpoints, or arbitrary local files.
 
 Cloudflare quick tunnels use a temporary `trycloudflare.com` hostname without an account or custom domain. Cloudflare describes them as a development and testing service without an uptime guarantee. See its [Quick Tunnels documentation](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/).
 
@@ -78,11 +80,21 @@ Cloudflare and Tailscale are optional external dependencies. **They are not bund
 
 | System | Cloudflare | Tailscale |
 | --- | --- | --- |
-| macOS | Install `cloudflared` through Homebrew or the official Darwin download. | Install Tailscale and make its CLI available to Kilo Proxy; sign in and configure Funnel. |
-| Windows | Install/download `cloudflared.exe` and make it available on `PATH`. | Install Tailscale with its CLI, then sign in and configure Funnel. |
+| macOS | Run `brew install cloudflared` with Homebrew, or use the official Darwin download. | Install Tailscale and make its CLI available to Kilo Proxy; sign in and configure Funnel. |
+| Windows | Run `winget install --id Cloudflare.cloudflared --exact`, or download `cloudflared.exe` and make it available on `PATH`. | Install Tailscale with its CLI, then sign in and configure Funnel. |
 | Linux | Install the Cloudflare package or binary and make it available on `PATH`. | Install Tailscale and its daemon, then sign in and configure Funnel. |
 
-Use the official [Cloudflare downloads](https://developers.cloudflare.com/tunnel/downloads/) and [Tailscale installation instructions](https://tailscale.com/download). The executable must be visible to the desktop app's environment, which can differ from an interactive shell's `PATH`. A missing executable or unavailable service produces an error for the chosen backend; it does not select another mode.
+Use the official [Cloudflare downloads](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/) and [Tailscale installation instructions](https://tailscale.com/download). The executable must be visible to the desktop app's environment, which can differ from an interactive shell's `PATH`. A missing executable or unavailable service produces an error for the chosen backend; it does not select another mode.
+
+### Startup installation notice
+
+When Cloudflare is selected and `cloudflared` cannot be found, the desktop app and browser helper show a notice on opening and after starting the proxy. It offers installation instructions, a copyable installation command on macOS/Windows, and **Check again**. The check searches the app's PATH and common installation folders; it does not run an installer, start a tunnel, publish images, or contact Cloudflare.
+
+**Not now** dismisses the startup notice for the current UI session. The notice can appear again when the proxy starts or Cloudflare is selected again. **Settings → Large images** always shows the current dependency status while Cloudflare is selected. After installation, use **Check again**; if the executable is still missing, make it accessible to the desktop app and reopen Kilo Proxy when its inherited PATH needs updating.
+
+A missing executable does not block the proxy from starting or handling ordinary requests. Oversized requests that need Cloudflare still require it; the proxy does not silently switch to compression or another service. You can explicitly select **Compress locally** or **Off** in Large images. A detected executable only confirms installation, not tunnel connectivity. The tunnel starts lazily when an oversized image request needs it.
+
+The Windows command uses the [Cloudflare.cloudflared package in Microsoft's WinGet repository](https://github.com/microsoft/winget-pkgs/tree/master/manifests/c/Cloudflare/cloudflared). Package-manager installation may require its normal permissions. Linux instructions link to Cloudflare's packages and downloads so users can choose their distribution and architecture.
 
 ## Experimental Kilo uploads
 

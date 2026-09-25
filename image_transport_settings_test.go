@@ -25,10 +25,10 @@ func TestImageTransportSettingsDefaultAndPersistence(t *testing.T) {
 	a.config.Language, a.config.OrgID = "es", "test-org"
 	a.config.ImageGeneration = imageGenerationSettings{Enabled: true, Model: "openai/test-image"}
 	before := a.config
-	if a.config.ImageTransport.Mode != "off" {
-		t.Fatal("image uploads must require opt-in")
+	if a.config.ImageTransport.Mode != "cloudflare" {
+		t.Fatal("new profiles must default to Cloudflare image transport")
 	}
-	if w := imageTransportSettingsRequest(a, http.MethodGet, "", a.adminToken); w.Code != 200 || !strings.Contains(w.Body.String(), `"mode":"off","profile":"high"`) {
+	if w := imageTransportSettingsRequest(a, http.MethodGet, "", a.adminToken); w.Code != 200 || !strings.Contains(w.Body.String(), `"mode":"cloudflare","profile":"high"`) {
 		t.Fatalf("default image preference: %d %s", w.Code, w.Body.String())
 	}
 	for _, preference := range []imageTransportSettings{{"compress", "high", "1h"}, {"compress", "balanced", "1h"}, {"compress", "small", "1h"}, {"upload", "small", "1h"}, {"cloudflare", "small", "1h"}, {"tailscale", "small", "1h"}, {"litterbox", "small", "1h"}, {"litterbox", "small", "12h"}, {"litterbox", "small", "24h"}, {"litterbox", "small", "72h"}, {"off", "small", "72h"}} {
@@ -101,7 +101,7 @@ func TestImageTransportSettingsFailedWriteDoesNotApply(t *testing.T) {
 	}
 }
 
-func TestImageTransportSettingsLegacyDefaultsOff(t *testing.T) {
+func TestImageTransportSettingsLegacyDefaultsCloudflare(t *testing.T) {
 	a := testApp(t)
 	encoded, _ := json.Marshal(a.config)
 	var legacy map[string]any
@@ -112,8 +112,32 @@ func TestImageTransportSettingsLegacyDefaultsOff(t *testing.T) {
 		t.Fatal(err)
 	}
 	loaded, err := readSettings(a.dir)
-	if err != nil || loaded.ImageTransport != (imageTransportSettings{Mode: "off", Profile: "high", LitterboxTTL: "1h"}) {
-		t.Fatalf("legacy settings enabled uploads: %+v %v", loaded, err)
+	if err != nil || loaded.ImageTransport != (imageTransportSettings{Mode: "cloudflare", Profile: "high", LitterboxTTL: "1h"}) {
+		t.Fatalf("missing legacy image settings did not use the new default: %+v %v", loaded, err)
+	}
+}
+
+func TestImageTransportSettingsPreserveEveryExplicitSavedMode(t *testing.T) {
+	for _, mode := range []string{"off", "compress", "upload", "cloudflare", "litterbox", "tailscale"} {
+		t.Run(mode, func(t *testing.T) {
+			a := testApp(t)
+			a.config.ImageTransport = imageTransportSettings{Mode: mode, Profile: "balanced", LitterboxTTL: "24h"}
+			if err := writeSettings(a.dir, a.config); err != nil {
+				t.Fatal(err)
+			}
+			before, err := os.ReadFile(filepath.Join(a.dir, "settings.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			loaded, err := readSettings(a.dir)
+			if err != nil || !reflect.DeepEqual(loaded, a.config) {
+				t.Fatalf("new default replaced an explicit saved preference: %+v %v", loaded, err)
+			}
+			after, err := os.ReadFile(filepath.Join(a.dir, "settings.json"))
+			if err != nil || string(after) != string(before) {
+				t.Fatal("reading existing settings rewrote the user's file")
+			}
+		})
 	}
 }
 
@@ -148,7 +172,7 @@ func TestImageTransportSettingsReadValidation(t *testing.T) {
 		t.Fatal(err)
 	}
 	loaded, err := readSettings(a.dir)
-	if err != nil || loaded.ImageTransport != (imageTransportSettings{"off", "high", "1h"}) {
+	if err != nil || loaded.ImageTransport != (imageTransportSettings{"cloudflare", "high", "1h"}) {
 		t.Fatalf("empty values not normalized: %+v %v", loaded.ImageTransport, err)
 	}
 }

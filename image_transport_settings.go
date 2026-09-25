@@ -13,7 +13,7 @@ type imageTransportSettings struct {
 
 func normalizeImageTransportSettings(value imageTransportSettings) imageTransportSettings {
 	if value.Mode == "" {
-		value.Mode = "off"
+		value.Mode = "cloudflare"
 	}
 	if value.Profile == "" {
 		value.Profile = "high"

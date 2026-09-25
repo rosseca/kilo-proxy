@@ -88,7 +88,7 @@ sudo apt-get install libwayland-client0 libwayland-cursor0 libwayland-egl1 \
 
 Linux executables use system libraries; they are not universal binaries with all graphics dependencies bundled. Package names and availability vary between distributions.
 
-Optional image tunnels have their own dependencies: **Cloudflare quick tunnel** needs `cloudflared`, and **Tailscale Funnel** needs the Tailscale CLI and a configured account. They are not bundled or installed automatically. **Off**, local compression, Kilo uploads and Litterbox require no extra image-transport executable. See [image backend setup for each operating system](image-uploads.md#tunnel-dependencies).
+Optional image tunnels have their own dependencies: **Cloudflare quick tunnel** needs `cloudflared`, and **Tailscale Funnel** needs the Tailscale CLI and a configured account. They are not bundled or installed automatically. New profiles select Cloudflare by default; a missing `cloudflared` triggers startup installation guidance, with a check-again action. Saved image-mode preferences are preserved. **Off**, local compression, Kilo uploads and Litterbox require no extra image-transport executable. See [image backend setup for each operating system](image-uploads.md#tunnel-dependencies).
 
 ## Optional launch modes
 

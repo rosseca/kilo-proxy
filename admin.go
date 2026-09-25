@@ -193,8 +193,11 @@ func (a *app) adminHandler() http.Handler {
 }
 
 func (a *app) state(w http.ResponseWriter) {
+	imageDependency := a.imageTransportDependencySnapshot()
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	// The preference may have changed during static executable discovery.
+	imageDependency.Required = normalizeImageTransportSettings(a.config.ImageTransport).Mode == "cloudflare"
 	a.ensureBillingRefreshLocked(false)
 	uptime := int64(0)
 	if a.proxyServer != nil {
@@ -203,6 +206,7 @@ func (a *app) state(w http.ResponseWriter) {
 	jsonResponse(w, 200, map[string]any{
 		"claudeDesktopExperimentalModels": a.config.ClaudeDesktopExperimentalModels,
 		"imageTransport":                  a.config.ImageTransport,
+		"imageTransportDependency":        imageDependency,
 		"imageUploadWarning":              a.imageUploadWarning,
 		"imageGeneration":                 a.config.ImageGeneration,
 		"trayDisplay":                     normalizeTrayDisplay(a.config.TrayDisplay),
