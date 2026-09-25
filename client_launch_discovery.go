@@ -61,6 +61,10 @@ func resolveLaunchClient(id, custom string) (string, error) {
 		home, _ := os.UserHomeDir()
 		return resolveOpenDesignLaunchClient(runtime.GOOS, home, os.Getenv("LOCALAPPDATA"))
 	}
+	if id == "claude-desktop" {
+		home, _ := os.UserHomeDir()
+		return resolveClaudeDesktop(runtime.GOOS, home, os.Getenv("LOCALAPPDATA"))
+	}
 	if kind == "terminal" {
 		if id == "omp" {
 			if path, err := exec.LookPath("omp"); err == nil && filepath.IsAbs(path) {

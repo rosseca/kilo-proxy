@@ -52,6 +52,7 @@ func nativeTestUI(t *testing.T) *nativeUI {
 		t.Fatal(err)
 	}
 	a.editorTestRoot = root
+	a.claudeDesktopCheckRunning = func(string) (bool, error) { return false, nil }
 	a.launcher = &clientLaunchRuntime{home: root}
 	a.terminalCommandsShell = "/bin/zsh"
 	a.zedCredentialStore = fakeZedCredentialStore

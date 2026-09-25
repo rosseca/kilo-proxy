@@ -12,6 +12,9 @@ func (a *app) clientLaunchMessage(message string) string {
 	if language != "es" {
 		return message
 	}
+	if translated := nativeMessage(message, language); translated != message {
+		return translated
+	}
 	known := map[string]string{
 		"Cannot resolve the detected Codex CLI executable.": "No se pudo localizar el ejecutable del Codex CLI detectado.",
 		"Cannot inspect the detected Codex CLI executable.": "No se pudo comprobar el ejecutable del Codex CLI detectado.",

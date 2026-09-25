@@ -126,6 +126,8 @@ func nativeClientEndpoint(key string) string {
 		return "/api/" + key + "/catalog"
 	case "claude":
 		return "/api/claude/profile"
+	case "claude-desktop":
+		return "/api/claude-desktop/profile"
 	case "omp":
 		return "/api/omp/profile"
 	case "opencode", "zed":
@@ -173,6 +175,17 @@ func nativeClientPayload(key string, s *nativeClientSelection) (any, error) {
 			payload["followUpQueueMode"] = mode
 		}
 		return payload, err
+	}
+	if key == "claude-desktop" {
+		selection := editorSelection{Initial: s.Initial}
+		for _, m := range s.Models {
+			name := m.DisplayName
+			if name == "" {
+				name = m.Model.Name
+			}
+			selection.Models = append(selection.Models, editorModel{ID: m.Model.ID, Name: name})
+		}
+		return selection, validateClaudeDesktopSelection(selection)
 	}
 	if key == "opencode" || key == "zed" {
 		selection := editorSelection{Initial: s.Initial}
@@ -441,7 +454,7 @@ func (u *nativeUI) clientsPanel() layout.Widget {
 			}
 		})
 	}
-	clientNames := map[string]string{"codex": "Codex Desktop", "codex-cli": "Codex CLI", "claude": "Claude Code", "opencode": "OpenCode", "omp": "Oh My Pi", "zed": "Zed", "open-design": "Open Design", "cursor": "Cursor", "xcode": "Xcode", "generic": u.tr("Other agents", "Otros agentes")}
+	clientNames := map[string]string{"codex": "Codex Desktop", "codex-cli": "Codex CLI", "claude": "Claude Code", "claude-desktop": "Claude Desktop", "opencode": "OpenCode", "omp": "Oh My Pi", "zed": "Zed", "open-design": "Open Design", "cursor": "Cursor", "xcode": "Xcode", "generic": u.tr("Other agents", "Otros agentes")}
 	widgets := []layout.Widget{
 		u.pills(u.iconButton("agents.back", u.tr("All agents", "Todos los agentes"), nativeButtonGhost, nativeIconBack, func() { u.page = "agents" })),
 		u.heading(clientNames[u.client]),
@@ -511,6 +524,9 @@ func (u *nativeUI) clientsPanel() layout.Widget {
 		protocol = u.tr("Uses Responses with shared models in an isolated Oh My Pi profile.", "Usa Responses con modelos compartidos en un perfil aislado de Oh My Pi.")
 	}
 	modelSummary := u.sharedModelSummary()
+	if key == "claude-desktop" {
+		modelSummary = u.claudeDesktopModelSummary(s)
+	}
 	if key == "open-design" {
 		modelSummary = u.tr("Your CLI engine uses the shared models and default.", "Tu motor CLI usa los modelos compartidos y el predeterminado.")
 	}
@@ -542,6 +558,9 @@ func (u *nativeUI) clientsPanel() layout.Widget {
 	if key == "open-design" {
 		return u.column(append(widgets, u.openDesignClientPanel(s))...)
 	}
+	if key == "claude-desktop" {
+		return u.column(append(widgets, u.claudeDesktopClientPanel(s))...)
+	}
 	if key == "generic" {
 		base, local, _ := u.clientBase()
 		id := s.Initial
@@ -561,6 +580,72 @@ func (u *nativeUI) clientsPanel() layout.Widget {
 		}
 	}
 	return u.column(append(widgets, u.clientActions(key, s, protocol, launchSetup...))...)
+}
+
+func (u *nativeUI) claudeDesktopModelSummary(s *nativeClientSelection) string {
+	if len(s.Models) == 0 {
+		return u.tr("Add a Claude model to your shared library.", "Añade un modelo Claude a tu biblioteca compartida.")
+	}
+	name := s.Initial
+	if initial := s.choice(s.Initial); initial != nil {
+		name = nativeCodexDisplayName(*initial)
+	}
+	if len(s.Models) == 1 {
+		return fmt.Sprintf(u.tr("1 Claude model · Starts with %s", "1 modelo Claude · Empieza con %s"), name)
+	}
+	return fmt.Sprintf(u.tr("%d Claude models · Starts with %s", "%d modelos Claude · Empieza con %s"), len(s.Models), name)
+}
+
+func (u *nativeUI) claudeDesktopSelectionNote(s *nativeClientSelection) string {
+	source := u.library.selection
+	omitted := len(source.Models) - len(s.Models)
+	text := u.tr("Claude Desktop currently accepts Claude models only.", "Claude Desktop actualmente solo acepta modelos Claude.")
+	if omitted == 1 {
+		text += " " + u.tr("1 shared model omitted; it remains available to other agents.", "1 modelo compartido omitido; sigue disponible para otros agentes.")
+	} else if omitted > 1 {
+		text += " " + fmt.Sprintf(u.tr("%d shared models omitted; they remain available to other agents.", "%d modelos compartidos omitidos; siguen disponibles para otros agentes."), omitted)
+	}
+	if s.Initial != "" && s.Initial != source.Initial {
+		text += " " + u.tr("The first Claude model is used because your shared default is unsupported.", "Se usa el primer modelo Claude porque el predeterminado compartido no es compatible.")
+	}
+	return text
+}
+
+func (u *nativeUI) claudeDesktopClientPanel(s *nativeClientSelection) layout.Widget {
+	const key = "claude-desktop"
+	base, local, _ := u.clientBase()
+	_, validation := nativeClientPayload(key, s)
+	working := u.busy["POST"+nativeClientEndpoint(key)] || u.busy["GET"+nativeClientEndpoint(key)] || u.clientState().Launching != ""
+	canPrepare := len(s.Models) > 0 && validation == nil && !working
+	ready := s.Saved != "" && s.Saved == nativeSelectionFingerprint(key, s, base, local, u.clientCaps(key))
+	tone, status := nativeToneNeutral, u.tr("Kilo configuration not prepared", "Configuración Kilo sin preparar")
+	if ready {
+		tone, status = nativeToneSuccess, u.tr("Kilo configuration ready", "Configuración Kilo lista")
+	} else if s.Saved != "" {
+		tone, status = nativeToneWarning, u.tr("Changes need preparing", "Hay cambios por preparar")
+	}
+	widgets := []layout.Widget{
+		u.note(u.claudeDesktopSelectionNote(s)),
+		u.clientLauncherPanel(key, s, canPrepare),
+		u.pills(u.disabled(canPrepare, u.button("client:claude-desktop:prepare", u.tr("Prepare without opening", "Preparar sin abrir"), func() { u.prepareClient(key) }))),
+		u.statusBadge(tone, status),
+	}
+	if ready {
+		widgets = append(widgets, u.note(s.Path))
+	}
+	if len(s.Models) == 0 {
+		widgets = append(widgets, u.hint(u.tr("Add at least one Claude model to your shared library to prepare Kilo.", "Añade al menos un modelo Claude a tu biblioteca compartida para preparar Kilo.")))
+	} else if validation != nil {
+		widgets = append(widgets, u.message(nativeToneError, nativeMessage(validation.Error(), u.language)))
+	}
+	return u.column(
+		u.section(u.tr("Launch", "Arranque"), u.tr("Prepares the named Kilo third-party configuration with your shared models, names and default.", "Prepara la configuración de terceros Kilo con tus modelos compartidos, nombres y modelo inicial."), widgets...),
+		u.section(u.tr("Compatibility", "Compatibilidad"), u.agentCompatibility(key),
+			u.note(u.tr("Context and output limits are managed by Claude Desktop and the model. Shared context presets are not applied.", "Claude Desktop y el modelo gestionan los límites de contexto y salida. Los preajustes de contexto compartidos no se aplican.")),
+			u.note(u.tr("Claude Desktop uses one applied third-party configuration at a time. Features depend on the installed app and operating system.", "Claude Desktop usa una configuración de terceros activa cada vez. Las funciones dependen de la app y del sistema operativo.")),
+			u.pills(u.iconButton("client:claude-desktop:install", u.tr("Get Claude Desktop", "Obtener Claude Desktop"), nativeButtonGhost, nativeIconOpenInNew, func() { u.open("https://claude.ai/download") })),
+		),
+	)
 }
 
 func (u *nativeUI) clientPicker(key string, s *nativeClientSelection) layout.Widget {
@@ -1028,6 +1113,9 @@ func (u *nativeUI) prepareClientAfter(key string, done func(error)) {
 			u.acceptClientImages(imagesSent)
 		}
 		u.setNotice(nativeToneSuccess, u.tr("Editor profile prepared.", "Perfil del editor preparado."))
+		if key == "claude-desktop" {
+			u.setNotice(nativeToneSuccess, u.tr("Kilo configuration prepared. Reopen Claude Desktop to apply changes.", "Configuración Kilo preparada. Vuelve a abrir Claude Desktop para aplicar los cambios."))
+		}
 		done(nil)
 	})
 }
@@ -1142,7 +1230,7 @@ func decodeNativeClientSelection(key string, data []byte, catalog []modelInfo) (
 		}
 		return s, nil
 	}
-	if key == "opencode" || key == "zed" {
+	if key == "opencode" || key == "zed" || key == "claude-desktop" {
 		var source struct {
 			Selection  editorSelection `json:"selection"`
 			ConfigPath string          `json:"configPath"`
@@ -1150,13 +1238,21 @@ func decodeNativeClientSelection(key string, data []byte, catalog []modelInfo) (
 		if err := json.Unmarshal(data, &source); err != nil {
 			return nil, err
 		}
-		if err := validateEditorSelection(source.Selection); err != nil {
+		validate := validateEditorSelection
+		if key == "claude-desktop" {
+			validate = validateClaudeDesktopSelection
+		}
+		if err := validate(source.Selection); err != nil {
 			return nil, err
 		}
 		s.Initial = source.Selection.Initial
 		s.Path = source.ConfigPath
 		for _, m := range source.Selection.Models {
 			model := lookup(m.ID)
+			if key == "claude-desktop" {
+				s.Models = append(s.Models, nativeModelChoice{Model: model, DisplayName: m.Name, ContextPreset: contextPresetRecommended, MaximumOutputTokens: model.MaxOutputTokens})
+				continue
+			}
 			maximumOutput := model.MaxOutputTokens
 			model.MaxOutputTokens = m.Output
 			s.Models = append(s.Models, nativeModelChoice{Model: model, DisplayName: m.Name, ContextPreset: contextPresetCustom, ContextTokens: m.Context, MaximumOutputTokens: maximumOutput})
@@ -1216,6 +1312,9 @@ func (u *nativeUI) clientLaunch(key string, s *nativeClientSelection, reveal boo
 }
 
 func (u *nativeUI) clientExport(key string, s *nativeClientSelection, reveal bool) (string, error) {
+	if key == "claude-desktop" {
+		return "", errors.New("Prepare the Kilo configuration through Claude Desktop integration settings.")
+	}
 	base, local, port := u.clientBase()
 	// Zed exports only a credential-versioned URL, never the local key itself.
 	if !reveal && key != "zed" {

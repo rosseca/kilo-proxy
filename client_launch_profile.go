@@ -17,6 +17,9 @@ import (
 func (a *app) launchProfile(p *clientLaunchPlan, home string) error {
 	fail := profileLaunchError(p.Name)
 	id := p.Client
+	if id == "claude-desktop" {
+		return a.verifyClaudeDesktopProfile()
+	}
 	if id == "omp" {
 		return a.applyOMPLaunch(p)
 	}

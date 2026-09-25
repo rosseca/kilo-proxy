@@ -72,6 +72,7 @@ func TestE2EServer(t *testing.T) {
 	openCodeBinary := syntheticOpenCodeExecutable(t, root)
 	codexBinary := writeOpenDesignCodexFixture(t, filepath.Join(root, "codex-cli"), []byte("synthetic; never executed"))
 	a.openDesignCheckRunning = func(string) (bool, error) { return readLaunchControl()["openDesignRunning"] == true, nil }
+	a.claudeDesktopCheckRunning = func(string) (bool, error) { return readLaunchControl()["claudeDesktopRunning"] == true, nil }
 	records := []map[string]string{}
 	a.launcher = &clientLaunchRuntime{
 		platform: "macos", home: root,

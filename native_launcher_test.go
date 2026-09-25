@@ -126,7 +126,11 @@ func nativeLaunchTestUI(t *testing.T, key string, delay, failPrepare bool) (*nat
 		// The supported Claude compaction range is 100K–1M.
 		u.models[0].ContextWindow = 128000
 	}
-	nativeSeedSharedForTest(t, u, u.models[0])
+	if key == "claude-desktop" {
+		nativeSeedSharedForTest(t, u, u.models...)
+	} else {
+		nativeSeedSharedForTest(t, u, u.models[0])
+	}
 	u.sharedClientSelection(key)
 	u.detectLaunchers()
 	nativeTestWait(t, u, func() bool { return u.clientState().LaunchChecked })

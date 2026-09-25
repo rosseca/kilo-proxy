@@ -48,6 +48,7 @@ macOS bundles have an **ad-hoc signature** covering the executable, bundle metad
 | Oh My Pi | Isolated OMP terminal profile, shared models, names, supported reasoning, and Kilo image MCP |
 | Open Design | Codex CLI, Claude Code or OpenCode engine, private profiles from shared models, separate desktop workspace, and automatic proxy startup |
 | Claude Code | Automatic isolated profile, version-aware model picker, short names, native effort and terminal launcher |
+| Claude Desktop | Official gateway configuration, shared Claude models and names, automatic preparation and desktop launch |
 | Zed | Automatic local credentials and JSONC settings updates, multiple models, names, and initial model |
 | Xcode | Dedicated Chat model list, automatic Codex/Claude agent profiles, version-aware Claude aliases and setup guidance |
 | Cursor | Managed ngrok HTTPS connection, dedicated key, selected models, and public connection check |
@@ -73,6 +74,8 @@ From v0.23.1, image results include a preview bounded to **1024 pixels per side 
 **Settings → Large images** handles oversized Responses, Chat Completions and Anthropic Messages requests. Choose **Off** (default), **Compress locally**, **Upload to Kilo · Experimental**, **Cloudflare quick tunnel**, **Litterbox**, or **Tailscale Funnel**. Compression has fixed **High quality**, **Balanced**, and **Small size** profiles. URL modes preserve the image bytes; local originals stay unchanged in every mode. Cloudflare and Tailscale require their installed executables and expose only a separate temporary image server. Litterbox needs no extra executable, but uploads to a third party with a chosen expiry and no early deletion. Modes never fall back to another service automatically. Read [setup, limits, and image lifetime](docs/image-uploads.md).
 
 The Claude Code card detects the installed version, prepares a separate profile with backups, and opens an interactive terminal. Shared names and reasoning preferences apply only where that version and model support them. See [client setup](docs/clients.md) for profile isolation, saving, and compatibility limits.
+
+**Claude Desktop** has its own full-width row immediately below Codex. **Open Claude Desktop** prepares its official third-party gateway configuration using compatible Claude models from the shared library. Quit an already running Claude Desktop before opening it with the new configuration. Its current model validation rejects non-Claude models even though Kilo's Messages API accepts other providers. See [Desktop setup and compatibility](docs/claude-desktop.md).
 
 OpenCode and Zed receive the shared IDs, names, default and token limits through JSONC-preserving updates. Their reasoning remains automatic. OpenCode includes local authentication in its dedicated profile; Zed receives its local key in the system credential store and refreshes the provider when the key changes, including in an already-open editor. See [their setup guide](docs/opencode-and-zed.md).
 

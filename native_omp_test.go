@@ -95,6 +95,7 @@ func TestNativeOMPAgentCardOpensPreparedSharedProfile(t *testing.T) {
 			u.page, u.language = "agents", lang
 			h := &nativePointerHarness{t: t, u: u, size: image.Pt(1180, 1200), now: time.Now()}
 			h.frame()
+			h.reveal(u.tr("Open Oh My Pi", "Abrir Oh My Pi"), semantic.Button)
 			nativeGridCapture(t, h, "native-omp-agents-"+lang)
 			h.click(u.tr("Open Oh My Pi", "Abrir Oh My Pi"), semantic.Button)
 			nativeTestWait(t, u, func() bool { return u.clientState().Launching == "" })

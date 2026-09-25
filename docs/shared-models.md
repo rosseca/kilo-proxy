@@ -52,6 +52,7 @@ Context tokens and HTTP payload size are different limits. These presets do not 
 | --- | --- |
 | Codex Desktop and CLI | Names, default model, supported reasoning levels, and per-model context/compaction budgets. Each has a separate generated profile; the default is put first in its exported catalog. Desktop opens the GUI, CLI opens an interactive terminal. |
 | Claude Code | Names, default model and a session-wide context budget, with native picker/effort behavior limited by the detected version and model. Unsupported Codex reasoning levels are not forwarded as invented Claude settings. Older versions use aliases and a global initial effort. |
+| Claude Desktop | Compatible Claude IDs, names and default only. Other models stay in the shared library but are excluded from this agent. Desktop controls context and reasoning; shared numeric limits are not exported. See [Desktop compatibility](claude-desktop.md). |
 | Oh My Pi | Names, default model, supported reasoning, per-model context and output limits, and the optional Kilo images MCP. |
 | OpenCode and Zed | Model IDs, names, default and token limits. Reasoning remains automatic; the library's Codex effort preferences are not exported as equivalent native controls. The client controls its final model-picker ordering. |
 | Open Design | Private Codex CLI, Claude Code or OpenCode profiles receive the same supported shared settings as those engines. Open Design selects **CLI default** for the shared default; its own picker may not list every shared model. Quit its Kilo instance before applying model, engine or connection changes. See [setup](open-design.md). |
@@ -59,7 +60,7 @@ Context tokens and HTTP payload size are different limits. These presets do not 
 | Xcode | Chat, Codex and Claude derive their selections from the library, with protocol and installed-version restrictions. Xcode controls its active picker. Older bundled Claude versions can require reducing the selection to their supported alias limit. |
 | Other clients | Connection guidance includes the library's default model ID. Configure the client according to its supported protocol. |
 
-Profiles keep their own readiness state, paths, credentials and integration details. A model must support the protocol used by the chosen agent: Responses for Codex, Anthropic Messages for Claude, and Chat Completions for OpenCode/Zed/Cursor/Xcode Chat. Open Design uses the protocol of its selected Local CLI engine. Preparing or opening an agent does not perform an inference compatibility test.
+Profiles keep their own readiness state, paths, credentials and integration details. A model must support the protocol used by the chosen agent: Responses for Codex, Anthropic Messages for Claude, and Chat Completions for OpenCode/Zed/Cursor/Xcode Chat. Open Design uses the protocol of its selected Local CLI engine. Kilo Proxy does not run inference to test each model when preparing a profile. The opened application can perform its own connection check; Claude Desktop probes the configured gateway on startup.
 
 ## Saved files
 

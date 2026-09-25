@@ -38,7 +38,7 @@ type clientLaunchAvailability struct {
 	Reason    string `json:"reason"`
 }
 
-var launchClients = []string{"codex", "codex-cli", "claude", "opencode", "omp", "open-design", "zed", "cursor", "xcode-chat", "xcode-codex", "xcode-claude"}
+var launchClients = []string{"codex", "claude-desktop", "codex-cli", "claude", "opencode", "omp", "open-design", "zed", "cursor", "xcode-chat", "xcode-codex", "xcode-claude"}
 
 func launchClientIdentity(id string) (string, string) {
 	switch id {
@@ -46,6 +46,8 @@ func launchClientIdentity(id string) (string, string) {
 		return "Codex Desktop", "desktop"
 	case "codex-cli":
 		return "Codex CLI", "terminal"
+	case "claude-desktop":
+		return "Claude Desktop", "desktop"
 	case "claude":
 		return "Claude Code", "terminal"
 	case "opencode":
@@ -166,6 +168,9 @@ func (a *app) clientsLaunch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	message := plan.Name + " opened."
+	if input.Client == "claude-desktop" {
+		message = "Claude Desktop opened with its Kilo gateway configuration."
+	}
 	if input.Client == "zed" {
 		message = "Zed opened. Local credentials and models are ready; existing projects stay open."
 	}
@@ -219,8 +224,9 @@ func (a *app) planClientLaunch(input clientLaunchRequest, rt clientLaunchRuntime
 	}
 	var err error
 	directory := input.Directory
-	if input.Client == "open-design" {
-		// Open Design restores its own workspace; it has no project-folder launch contract.
+	if input.Client == "open-design" || input.Client == "claude-desktop" {
+		// These desktop clients restore their own workspace; neither has a
+		// supported project-folder launch contract.
 		directory = ""
 	}
 	p.Directory, err = launchPath(directory, rt.home)
@@ -230,6 +236,19 @@ func (a *app) planClientLaunch(input clientLaunchRequest, rt clientLaunchRuntime
 	p.Executable, err = rt.resolve(input.Client, input.AppPath)
 	if err != nil {
 		return p, err
+	}
+	if input.Client == "claude-desktop" {
+		check := a.claudeDesktopCheckRunning
+		if check == nil {
+			check = claudeDesktopRunning
+		}
+		running, checkErr := check(p.Executable)
+		if checkErr != nil {
+			return p, errors.New("Cannot check whether Claude Desktop is running. Quit Claude Desktop and try again.")
+		}
+		if running {
+			return p, errors.New("Quit Claude Desktop, then open it here to load the Kilo configuration. Existing sessions are not closed automatically.")
+		}
 	}
 	if kind == "terminal" {
 		if ok, why := rt.terminal(); !ok {
@@ -275,6 +294,12 @@ func (a *app) planClientLaunch(input clientLaunchRequest, rt clientLaunchRuntime
 				return p, errors.New("The Codex application bundle is invalid.")
 			}
 			p.Executable = filepath.Join(p.Executable, "Contents", "MacOS", binary)
+		}
+	} else if input.Client == "claude-desktop" {
+		p.Directory = ""
+		if rt.platform == "macos" && strings.HasSuffix(p.Executable, ".app") {
+			p.Args = []string{"-a", p.Executable}
+			p.Executable = "/usr/bin/open"
 		}
 	} else if input.Client == "open-design" {
 		// configureOpenDesignLaunch already selected its isolated native executable.

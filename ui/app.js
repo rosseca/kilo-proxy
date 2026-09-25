@@ -123,6 +123,7 @@ const descriptions = {
   zed: ['Tu agente de Zed, con saldo de empresa.', 'En Agent Settings → LLM Providers, añade un proveedor compatible con OpenAI. Combina este bloque con tus ajustes y guarda la clave local en la interfaz del proveedor.', 'settings.json · combinar con tus ajustes'],
   'open-design': ['Open Design', '', ''],
   omp: ['Oh My Pi', '', ''],
+  'claude-desktop': ['Claude Desktop', '', ''],
   opencode: ['OpenCode, conectado directamente.', 'Configuración para OpenCode v1. En /connect → Other usa el ID kilo-local y pega la clave local. Combina este bloque con tu configuración.', 'opencode.json · v1'],
   codex: ['Codex Desktop: dos instancias independientes.', 'Selecciona tus modelos y pulsa «Preparar Codex GUI». El helper crea el perfil aislado y guarda la configuración en este ordenador. Después copia el arranque para abrir una segunda instancia gráfica.', 'config.toml · plantilla opcional para otro ordenador'],
   'codex-cli': ['Codex CLI en otra terminal.', 'Selecciona modelos y pulsa «Preparar Codex CLI». El helper crea y actualiza su perfil independiente. Copia el arranque y usa /model en Codex para cambiar de modelo y razonamiento.', 'config.toml · plantilla opcional para otro ordenador'],
@@ -177,7 +178,7 @@ function clientLaunchSelection(){
  }
  if(client==='claude')return {id:client,count:multiClients.claude.models.size,valid:!contextError(multiClients.claude.models),reason:contextError(multiClients.claude.models),ready:claudeSetup?.signature===claudeSetupSignature(),fingerprint:claudeSetupSignature(),working:claudePreparing||claudeDetecting,prepare:prepareClaude};
  if(client==='open-design')return openDesignHelper.launchState();
- if(['opencode','zed','omp'].includes(client))return editorHelper.launchState();
+ if(['opencode','zed','omp','claude-desktop'].includes(client))return editorHelper.launchState();
  if(client==='xcode')return xcodeHelper.launchState();
  if(client==='cursor')return {id:client,count:cursorModels.size,ready:true,fingerprint:JSON.stringify(state?.cursor),working:busy};
  return null;
@@ -189,12 +190,12 @@ function renderClientLaunch(){
  if(!launchDetected&&!launchDetecting)void detectLaunchClients();
  const installed=launchInfo?.clients?.[selection.id],custom=selection.id==='codex'&&$('client-launch-app').value.trim();
  const available=!!installed?.available||!!custom,terminal=installed?.kind==='terminal'||['codex-cli','claude','opencode','omp'].includes(selection.id);
- const name=installed?.name||({'codex':'Codex Desktop','codex-cli':'Codex CLI',claude:'Claude Code',opencode:'OpenCode',omp:'Oh My Pi','open-design':'Open Design',zed:'Zed',cursor:'Cursor'}[selection.id]||'Xcode');
+ const name=installed?.name||({'codex':'Codex Desktop','codex-cli':'Codex CLI',claude:'Claude Code','claude-desktop':'Claude Desktop',opencode:'OpenCode',omp:'Oh My Pi','open-design':'Open Design',zed:'Zed',cursor:'Cursor'}[selection.id]||'Xcode');
  $('client-launch-title').textContent=L('Open on this computer','Abrir en este ordenador');
  $('client-launch-refresh').textContent=launchDetecting?L('Checking…','Comprobando…'):L('Check installed apps','Comprobar aplicaciones');
  $('client-launch-refresh').disabled=launchDetecting||launchBusy;
  $('client-launch-directory-label').textContent=L('Project folder (optional)','Carpeta del proyecto (opcional)');
- $('client-launch-directory-field').hidden=selection.id==='open-design';
+ $('client-launch-directory-field').hidden=['open-design','claude-desktop'].includes(selection.id);
  $('client-launch-directory').placeholder=launchInfo?.directory||'';
  $('client-launch-custom').hidden=selection.id!=='codex';
  $('client-launch-custom-label').textContent=L('Custom Codex application','Aplicación de Codex personalizada');
@@ -203,7 +204,7 @@ function renderClientLaunch(){
  const runningTunnel=selection.id!=='cursor'||state?.cursor?.status==='running';
  $('client-launch').textContent=launchBusy?L('Launching…','Abriendo…'):L('Launch ',terminal?'Iniciar ':'Abrir ')+name;
  $('client-launch').disabled=launchBusy||launchDetecting||selection.working||selection.valid===false||!state||!selection.count||!available||!runningTunnel;
- $('client-launch-help').textContent=selection.id==='open-design'?L('Prepares the selected CLI with your Kilo models, starts the proxy and opens Open Design in its separate Kilo profile.','Prepara el CLI elegido con tus modelos de Kilo, arranca el proxy y abre Open Design en su perfil de Kilo independiente.'):L('Opens with the current models and Kilo configuration. Changes are saved first. Command export settings below apply only to copied commands.','Abre con los modelos y la configuración de Kilo actuales. Los cambios se guardan antes. Los ajustes de exportación inferiores solo afectan a los comandos copiados.')+(selection.id==='cursor'?L(' Connect the HTTPS tunnel first and keep the one-time provider setup in Cursor.',' Conecta primero el túnel HTTPS y mantén la configuración inicial del proveedor en Cursor.'):selection.id==='zed'?L(' Paste the local key into Zed once using the instructions below.',' Pega la clave local en Zed una vez siguiendo las instrucciones inferiores.'):selection.id==='xcode-chat'?L(' Add the chat provider in Xcode once using the connection details below.',' Añade el proveedor de chat en Xcode una vez con la conexión indicada abajo.'):'');
+ $('client-launch-help').textContent=selection.id==='claude-desktop'?L('Prepares Kilo with the selected models and starts the proxy before opening Claude Desktop. Close Claude first to apply configuration changes.','Prepara Kilo con los modelos seleccionados y arranca el proxy antes de abrir Claude Desktop. Cierra Claude primero para aplicar los cambios de configuración.'):selection.id==='open-design'?L('Prepares the selected CLI with your Kilo models, starts the proxy and opens Open Design in its separate Kilo profile.','Prepara el CLI elegido con tus modelos de Kilo, arranca el proxy y abre Open Design en su perfil de Kilo independiente.'):L('Opens with the current models and Kilo configuration. Changes are saved first. Command export settings below apply only to copied commands.','Abre con los modelos y la configuración de Kilo actuales. Los cambios se guardan antes. Los ajustes de exportación inferiores solo afectan a los comandos copiados.')+(selection.id==='cursor'?L(' Connect the HTTPS tunnel first and keep the one-time provider setup in Cursor.',' Conecta primero el túnel HTTPS y mantén la configuración inicial del proveedor en Cursor.'):selection.id==='zed'?L(' Paste the local key into Zed once using the instructions below.',' Pega la clave local en Zed una vez siguiendo las instrucciones inferiores.'):selection.id==='xcode-chat'?L(' Add the chat provider in Xcode once using the connection details below.',' Añade el proveedor de chat en Xcode una vez con la conexión indicada abajo.'):'');
  const reason=selection.reason||(!runningTunnel?L('Connect the Cursor HTTPS tunnel before opening.','Conecta el túnel HTTPS de Cursor antes de abrir.'):!available&&!launchDetecting?(installed?.reason||L('Application not detected. Install it, then check again.','Aplicación no detectada. Instálala y vuelve a comprobar.')):!selection.count?L('Select at least one model.','Selecciona al menos un modelo.'):'');
  $('client-launch-status').textContent=launchMessage||reason;
  $('client-launch-status').classList.toggle('error',launchError);
@@ -217,14 +218,14 @@ async function detectLaunchClients(){
  }catch(error){launchMessage=error.message;launchError=true;}
  finally{launchDetecting=false;renderClientLaunch();}
 }
-function launchFingerprint(){const selection=clientLaunchSelection();return JSON.stringify([selection?.id,selection?.fingerprint,selection?.id==='open-design'?'':$('client-launch-directory').value.trim(),selection?.id==='codex'?$('client-launch-app').value.trim():'']);}
+function launchFingerprint(){const selection=clientLaunchSelection();return JSON.stringify([selection?.id,selection?.fingerprint,['open-design','claude-desktop'].includes(selection?.id)?'':$('client-launch-directory').value.trim(),selection?.id==='codex'?$('client-launch-app').value.trim():'']);}
 async function openClient(){
  if(launchBusy||$('client-launch').disabled)return;
  const selection=clientLaunchSelection(),fingerprint=launchFingerprint();
- const body={client:selection.id,...(selection.id==='open-design'?{engine:selection.engine}:{}),directory:selection.id==='open-design'?'':$('client-launch-directory').value.trim(),...(selection.id==='codex'&&$('client-launch-app').value.trim()?{appPath:$('client-launch-app').value.trim()}:{})};
+ const body={client:selection.id,...(selection.id==='open-design'?{engine:selection.engine}:{}),...(['open-design','claude-desktop'].includes(selection.id)?{}:{directory:$('client-launch-directory').value.trim()}),...(selection.id==='codex'&&$('client-launch-app').value.trim()?{appPath:$('client-launch-app').value.trim()}:{})};
  launchBusy=true;launchMessage='';launchError=false;renderClientLaunch();
  try{
-  if(!selection.ready)await selection.prepare();
+  if(!selection.ready||selection.id==='claude-desktop')await selection.prepare();
   if(fingerprint!==launchFingerprint())throw new Error(language==='en'?'Your selection changed while preparing. Review it and open again.':'La selección cambió durante la preparación. Revísala y vuelve a abrir.');
   const result=await api('clients/launch',body);launchMessage=result.message;await refresh();
  }catch(error){launchMessage=error.message;launchError=true;}
@@ -238,7 +239,7 @@ function renderSnippet() {
  const openDesignActive=client==='open-design';
  $('open-design-helper').hidden=!openDesignActive;
  if(openDesignActive)openDesignHelper.render({state,catalog,language});
- const xcodeActive=client==='xcode',editorActive=['opencode','zed','omp'].includes(client);
+ const xcodeActive=client==='xcode',editorActive=['opencode','zed','omp','claude-desktop'].includes(client);
  $('editor-helper').hidden=!editorActive;
  if(editorActive)editorHelper.render({client,state,catalog,language});
  $('xcode-helper').hidden=!xcodeActive;

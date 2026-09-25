@@ -203,6 +203,9 @@ func (u *nativeUI) sharedClientSelection(key string) *nativeClientSelection {
 	}
 	models := make([]nativeModelChoice, 0, len(source.Models))
 	for _, value := range source.Models {
+		if key == "claude-desktop" && !claudeDesktopModelSupported(value.Model.ID) {
+			continue
+		}
 		m := value
 		m.ReasoningLevels = slices.Clone(value.ReasoningLevels)
 		if key == "claude" || key == "xcode-claude" {
@@ -217,8 +220,15 @@ func (u *nativeUI) sharedClientSelection(key string) *nativeClientSelection {
 		}
 		models = append(models, m)
 	}
-	if !reflect.DeepEqual(s.Models, models) || s.Initial != source.Initial {
-		s.Models, s.Initial = models, source.Initial
+	initial := source.Initial
+	if key == "claude-desktop" && !claudeDesktopModelSupported(initial) {
+		initial = ""
+		if len(models) > 0 {
+			initial = models[0].Model.ID
+		}
+	}
+	if !reflect.DeepEqual(s.Models, models) || s.Initial != initial {
+		s.Models, s.Initial = models, initial
 		for _, m := range s.Models {
 			u.seedClientChoice(key, m)
 		}
@@ -330,7 +340,7 @@ func (u *nativeUI) modelsPanel() layout.Widget {
 		widgets = append(widgets, u.disclosure("models.import.toggle", u.tr("Import an existing agent selection", "Importar la selección de un agente")))
 		if u.expanded["models.import.toggle"] {
 			imports := []layout.Widget{u.note(u.tr("Choose which saved profile to import. You can review before replacing your shared models.", "Elige un perfil guardado para importar. Puedes revisarlo antes de sustituir los modelos compartidos."))}
-			for _, option := range []struct{ key, name string }{{"codex", "Codex Desktop"}, {"codex-cli", "Codex CLI"}, {"claude", "Claude Code"}, {"opencode", "OpenCode"}, {"omp", "Oh My Pi"}, {"zed", "Zed"}} {
+			for _, option := range []struct{ key, name string }{{"codex", "Codex Desktop"}, {"claude-desktop", "Claude Desktop"}, {"codex-cli", "Codex CLI"}, {"claude", "Claude Code"}, {"opencode", "OpenCode"}, {"omp", "Oh My Pi"}, {"zed", "Zed"}} {
 				key, name := option.key, option.name
 				imports = append(imports, u.button("models.import."+key, name, func() { u.importModelLibrary(key) }))
 			}

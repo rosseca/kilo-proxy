@@ -92,8 +92,13 @@ func (u *nativeUI) clientLauncherPanel(key string, s *nativeClientSelection, can
 	if key == "codex" {
 		widgets = append(widgets, u.field("clients-launch-app-path", u.tr("Codex application path (optional)", "Ruta de la aplicación Codex (opcional)"), info.Path, false))
 	}
+	openButton := u.disabled(enabled, u.primaryButton("client:"+key+":launch", label, func() { u.launchClient(key) }))
+	if key == "claude-desktop" {
+		widgets = append(widgets, u.pills(openButton))
+	} else {
+		widgets = append(widgets, u.actionRow(u.field("clients-project-directory", u.tr("Project folder", "Carpeta del proyecto"), c.LaunchInfo.Directory, false), openButton))
+	}
 	widgets = append(widgets,
-		u.actionRow(u.field("clients-project-directory", u.tr("Project folder", "Carpeta del proyecto"), c.LaunchInfo.Directory, false), u.disabled(enabled, u.primaryButton("client:"+key+":launch", label, func() { u.launchClient(key) }))),
 		u.pills(u.disabled(!u.busy["GET"+nativeLaunchEndpoint], u.iconButton("clients-launch-detect", u.tr("Refresh installed apps", "Actualizar aplicaciones instaladas"), nativeButtonGhost, nativeIconRefresh, u.detectLaunchers))),
 	)
 	installTone, installStatus := nativeToneInfo, u.tr("Checking installation…", "Comprobando instalación…")
@@ -136,7 +141,7 @@ func (u *nativeUI) launchClient(key string) {
 
 func (u *nativeUI) launchAgent(key string) {
 	u.agentsState()
-	if key == "open-design" {
+	if key == "open-design" || key == "claude-desktop" {
 		u.launchClientFrom(key, "")
 		return
 	}
@@ -180,8 +185,8 @@ func (u *nativeUI) launchSettingsChangedMessage() string {
 }
 
 func (u *nativeUI) launchClientFrom(key, directoryField string) {
-	if key == "open-design" {
-		directoryField = "" // Open Design has no supported project-folder launch argument.
+	if key == "open-design" || key == "claude-desktop" {
+		directoryField = "" // These desktop clients have no supported project-folder launch argument.
 	}
 	a := u.agentsState()
 	c := u.clientState()
@@ -236,13 +241,17 @@ func (u *nativeUI) launchClientFrom(key, directoryField string) {
 		return
 	}
 	directory, appPath := u.value(directoryField), u.value("clients-launch-app-path")
-	if key == "open-design" {
+	if key == "open-design" || key == "claude-desktop" {
 		directory = ""
 	}
-	resolvedDirectory, err := launchPath(directory, c.LaunchInfo.Directory)
-	if err != nil {
-		u.noticeError(err)
-		return
+	resolvedDirectory := ""
+	if key != "claude-desktop" {
+		var err error
+		resolvedDirectory, err = launchPath(directory, c.LaunchInfo.Directory)
+		if err != nil {
+			u.noticeError(err)
+			return
+		}
 	}
 	prepared := u.launchSettingsFingerprint(key, directoryField)
 	c.Launching = key
@@ -265,6 +274,9 @@ func (u *nativeUI) launchClientFrom(key, directoryField string) {
 			return
 		}
 		payload := map[string]string{"client": key, "directory": directory}
+		if key == "claude-desktop" {
+			delete(payload, "directory")
+		}
 		if key == "open-design" {
 			payload["engine"] = u.openDesignEngine()
 		}
@@ -290,7 +302,7 @@ func (u *nativeUI) launchClientFrom(key, directoryField string) {
 				return
 			}
 			finish(nil)
-			if key != "open-design" {
+			if key != "open-design" && key != "claude-desktop" {
 				u.rememberAgentProject(key, resolvedDirectory)
 			}
 			u.setNotice(nativeToneWarning, result.Message)

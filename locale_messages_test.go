@@ -20,6 +20,9 @@ func TestNativeMessagesTranslateBackendWithoutChangingDetails(t *testing.T) {
 		{"API key local incorrecta. Cópiala desde Kilo Proxy.", "unknown", "Incorrect local API key. Copy it from Kilo Proxy."},
 		{"El puerto debe estar entre 1024 y 65535.", "es", "El puerto debe estar entre 1024 y 65535."},
 		{"Enter your personal Kilo API key.", "es", "Introduce tu API key personal de Kilo."},
+		{"Choose 1–50 Claude models.", "es", "Elige entre 1 y 50 modelos Claude."},
+		{"Invalid Claude Desktop setup JSON.", "es", "El JSON de configuración de Claude Desktop no es válido."},
+		{"Claude Desktop third-party mode is not active; prepare the profile again.", "es", "El modo de terceros de Claude Desktop no está activo; vuelve a preparar el perfil."},
 	} {
 		if got := nativeMessage(test.source, test.language); got != test.want {
 			t.Fatalf("nativeMessage(%q,%q)=%q, want%q", test.source, test.language, got, test.want)
@@ -31,6 +34,22 @@ func TestNativeMessagesTranslateBackendWithoutChangingDetails(t *testing.T) {
 				t.Fatalf("translated data/unknown details %q", value)
 			}
 		}
+	}
+}
+
+func TestClaudeDesktopLaunchMessagesUseSavedLanguage(t *testing.T) {
+	a := testApp(t)
+	const message = "Claude Desktop opened with its Kilo gateway configuration."
+	a.config.Language = "es"
+	if got := a.clientLaunchMessage(message); got != "Claude Desktop abierto con su configuración de gateway de Kilo." {
+		t.Fatalf("Desktop launch result was not translated: %s", got)
+	}
+	if got := a.clientLaunchMessage("Quit Claude Desktop, then open it here to load the Kilo configuration. Existing sessions are not closed automatically."); !strings.HasPrefix(got, "Cierra Claude Desktop") {
+		t.Fatalf("running-app guidance was not translated: %s", got)
+	}
+	a.config.Language = "en"
+	if got := a.clientLaunchMessage(message); got != message {
+		t.Fatalf("English launch message changed: %s", got)
 	}
 }
 

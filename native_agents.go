@@ -177,6 +177,8 @@ func (u *nativeUI) agentCompatibility(key string) string {
 		return u.tr("Uses Responses through an isolated Kilo profile, with the library's names, default and supported reasoning levels. Model support depends on the gateway.", "Usa Responses con un perfil Kilo separado: nombres, modelo inicial y niveles de razonamiento compatibles de la biblioteca. La compatibilidad depende del gateway.")
 	case "claude":
 		return u.tr("Uses Anthropic Messages. Applies only reasoning levels supported by each model and installed Claude Code version. Gateway support is also required.", "Usa Anthropic Messages. Aplica solo niveles de razonamiento compatibles con cada modelo y la versión de Claude Code. También requiere compatibilidad del gateway.")
+	case "claude-desktop":
+		return u.tr("Uses the Kilo third-party configuration for Chat, Cowork and Code. Close Claude before opening to apply changes. This app currently rejects non-Claude models; use another agent for those models.", "Usa la configuración de terceros Kilo para Chat, Cowork y Code. Cierra Claude antes de abrir para aplicar cambios. Esta app actualmente rechaza los modelos no Claude; usa otro agente para esos modelos.")
 	case "opencode":
 		return u.tr("Uses Chat Completions with shared names and default model; reasoning stays automatic. Opens a terminal in your project. Local OpenCode settings can override this profile.", "Usa Chat Completions con nombres y modelo inicial compartidos; el razonamiento sigue automático. Abre una terminal en tu proyecto. Los ajustes de OpenCode pueden prevalecer.")
 	case "omp":
@@ -252,7 +254,7 @@ func (u *nativeUI) agentMonogram(key string) layout.Widget {
 		initials = "CD"
 	case "codex-cli":
 		initials = "CC"
-	case "claude":
+	case "claude", "claude-desktop":
 		initials = "CL"
 	case "opencode":
 		initials = "OC"
@@ -284,6 +286,8 @@ func (u *nativeUI) agentPurpose(key string) string {
 		return u.tr("Terminal with shared Kilo models.", "Terminal con modelos Kilo compartidos.")
 	case "claude":
 		return u.tr("Claude Code with compatible models.", "Claude Code con modelos compatibles.")
+	case "claude-desktop":
+		return u.tr("Chat, Cowork and Code with Claude models from Kilo.", "Chat, Cowork y Code con modelos Claude de Kilo.")
 	case "opencode":
 		return u.tr("OpenCode in your project terminal.", "OpenCode en tu terminal de proyecto.")
 	case "omp":
@@ -301,6 +305,12 @@ func (u *nativeUI) agentOptions(key string) layout.Widget {
 	a, c := u.agentsState(), u.clientState()
 	if key == "open-design" {
 		return u.column(u.note(u.agentCompatibility(key)), u.pills(u.button("agent:open-design:detect", u.tr("Refresh detection", "Actualizar detección"), func() { u.detectLaunchers(); u.detectOpenDesign() }), u.button("agent:open-design:install", u.tr("Installation instructions", "Instrucciones de instalación"), func() { u.open(u.openDesignInstallURL()) })))
+	}
+	if key == "claude-desktop" {
+		return u.column(u.note(u.agentCompatibility(key)), u.pills(
+			u.button("agent:claude-desktop:setup", u.tr("Integration settings", "Ajustes de integración"), func() { u.agentSetup(key) }),
+			u.button("agent:claude-desktop:detect", u.tr("Refresh detection", "Actualizar detección"), u.detectLaunchers),
+		))
 	}
 	widgets := []layout.Widget{u.note(u.agentCompatibility(key)), u.field(agentProjectField(key), u.tr("Project folder path", "Ruta de la carpeta del proyecto"), c.LaunchInfo.Directory, false)}
 	if len(a.Preferences.Recent) > 0 {
@@ -403,6 +413,8 @@ func (u *nativeUI) agentCard(key string) layout.Widget {
 		if disabledReason == "" {
 			disabledReason = u.tr("Install the selected CLI engine before opening Open Design.", "Instala el motor CLI seleccionado antes de abrir Open Design.")
 		}
+	case len(s.Models) == 0 && key == "claude-desktop":
+		disabledReason = u.tr("Add a Claude model to your shared library before opening Claude Desktop.", "Añade un modelo Claude a tu biblioteca compartida antes de abrir Claude Desktop.")
 	case len(s.Models) == 0 && key != "cursor":
 		disabledReason = u.tr("Add at least one shared model before opening this agent.", "Añade al menos un modelo compartido antes de abrir este agente.")
 	case validation != nil:
@@ -437,8 +449,11 @@ func (u *nativeUI) agentCard(key string) layout.Widget {
 	if key == "open-design" {
 		engineName, _ := launchClientIdentity(u.openDesignEngine())
 		widgets = append(widgets, u.actionRow(u.column(u.note(u.tr("Engine", "Motor")), u.label(engineName)), u.ghostButton("agent:open-design:setup", u.tr("Engine settings", "Ajustes del motor"), func() { u.agentSetup(key) })))
-	} else {
+	} else if key != "claude-desktop" {
 		widgets = append(widgets, u.agentProjectPicker(key))
+	}
+	if key == "claude-desktop" {
+		widgets = append(widgets, u.note(u.claudeDesktopModelSummary(s)), u.note(u.claudeDesktopSelectionNote(s)))
 	}
 	widgets = append(widgets, layout.Spacer{Height: 4}.Layout, u.pills(controls...))
 	if disabledReason != "" {
@@ -465,7 +480,7 @@ func (u *nativeUI) agentsPanel() layout.Widget {
 	if !c.OpenDesignDetectStarted {
 		u.detectOpenDesign()
 	}
-	widgets := []layout.Widget{u.agentModelSummary(), u.agentCard("codex"), u.topRow(u.agentCard("claude"), u.agentCard("opencode")), u.topRow(u.agentCard("omp"), u.agentCard("codex-cli")), u.topRow(u.agentCard("zed"), u.agentCard("open-design")), u.agentCard("cursor")}
+	widgets := []layout.Widget{u.agentModelSummary(), u.agentCard("codex"), u.agentCard("claude-desktop"), u.topRow(u.agentCard("claude"), u.agentCard("opencode")), u.topRow(u.agentCard("omp"), u.agentCard("codex-cli")), u.topRow(u.agentCard("zed"), u.agentCard("open-design")), u.agentCard("cursor")}
 	if a.Error != "" {
 		widgets = append([]layout.Widget{u.message(nativeToneError, a.Error)}, widgets...)
 	}

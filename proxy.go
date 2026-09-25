@@ -44,6 +44,7 @@ type app struct {
 	imageGenerationMu       sync.Mutex
 	imageGenerationActive   int
 	launcher                *clientLaunchRuntime
+	claudeDesktopCheckRunning func(string) (bool, error)
 	openDesignCheckRunning  func(string) (bool, error)
 	openDesignLaunchUntil   time.Time
 	terminalCommandsBinary  string
@@ -171,6 +172,7 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 		},
 		ModifyResponse: func(r *http.Response) error {
 			normalizeUpstreamPayloadError(r)
+			normalizeMessagesToolStop(r)
 			if bridge, ok := r.Request.Context().Value(schemaBridgeContextKey{}).(*schemaBridge); ok {
 				if err := bridge.adaptResponse(r); err != nil {
 					return err
@@ -193,7 +195,7 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
-		if !localHostMatches(r, host) || r.Header.Get("Origin") != "" || r.Header.Get("Sec-Fetch-Site") != "" {
+		if !localHostMatches(r, host) || r.Header.Get("Origin") != "" || (r.Header.Get("Sec-Fetch-Site") != "" && !claudeDesktopMessagesRequest(r, host)) {
 			jsonError(w, http.StatusForbidden, "Este endpoint solo admite clientes locales de API.")
 			return
 		}
