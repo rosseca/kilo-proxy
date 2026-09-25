@@ -67,7 +67,7 @@ func TestTerminalCommandsInstallKeepsCurrentTerminalArgumentsAndCredentialsOutOf
 	if err != nil {
 		t.Fatal(err)
 	}
-	for name, client := range map[string]string{"kilo-codex": "codex-cli", "kilo-claude": "claude", "kilo-omp": "omp"} {
+	for name, client := range map[string]string{"kilo-codex": "codex-cli", "kilo-claude": "claude", "kilo-omp": "omp", "kilo-opencode": "opencode"} {
 		path := result.Commands[name]
 		data := terminalInstallerRead(t, path)
 		for _, secret := range []string{"synthetic-local-secret", "synthetic-upstream-secret", "KILO_LOCAL_API_KEY=", "ANTHROPIC_AUTH_TOKEN="} {
@@ -136,7 +136,7 @@ func TestTerminalCommandsInstallPreservesStartupAndIsIdempotent(t *testing.T) {
 	}
 	// Moving the app updates only its owned shims; startup configuration stays put.
 	third, err := installTerminalCommands(home, configDir, filepath.Join(home, "Moved Kilo Proxy"), "zsh", "linux")
-	if err != nil || len(third.Backups) != 3 || !bytes.Equal(saved, terminalInstallerRead(t, startup)) {
+	if err != nil || len(third.Backups) != 4 || !bytes.Equal(saved, terminalInstallerRead(t, startup)) {
 		t.Fatalf("app path update = %+v, %v", third, err)
 	}
 	for _, backup := range third.Backups {
@@ -188,7 +188,7 @@ func TestTerminalCommandsInstallBashLoginFiles(t *testing.T) {
 }
 
 func TestTerminalCommandsInstallRejectsConflictsBeforeWriting(t *testing.T) {
-	for _, conflict := range []string{"unowned-command", "omp-conflict", "command-link", "directory-link", "startup-link", "malformed-block", "duplicate-block"} {
+	for _, conflict := range []string{"unowned-command", "omp-conflict", "opencode-conflict", "opencode-link", "command-link", "directory-link", "startup-link", "malformed-block", "duplicate-block"} {
 		t.Run(conflict, func(t *testing.T) {
 			home, configDir, binary := terminalInstallerFixture(t)
 			outside := t.TempDir()
@@ -209,6 +209,14 @@ func TestTerminalCommandsInstallRejectsConflictsBeforeWriting(t *testing.T) {
 			case "omp-conflict":
 				if err := os.WriteFile(filepath.Join(bin, "kilo-omp"), []byte("#!/bin/sh\n# Unrelated command\n"), 0700); err != nil {
 					t.Fatal(err)
+				}
+			case "opencode-conflict":
+				if err := os.WriteFile(filepath.Join(bin, "kilo-opencode"), []byte("#!/bin/sh\n# Unrelated command\n"), 0700); err != nil {
+					t.Fatal(err)
+				}
+			case "opencode-link":
+				if err := os.Symlink(filepath.Join(outside, "target"), filepath.Join(bin, "kilo-opencode")); err != nil {
+					t.Skip(err)
 				}
 			case "command-link":
 				if err := os.Symlink(filepath.Join(outside, "target"), filepath.Join(bin, "kilo-claude")); err != nil {

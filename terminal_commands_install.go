@@ -199,7 +199,7 @@ func terminalCommandsPlan(home, configDir, binary, shell, platform string) (term
 	}
 	files := []terminalInstallFile{}
 	result.Installed, result.PathConfigured = true, true
-	for _, command := range []struct{ name, client string }{{"kilo-codex", "codex-cli"}, {"kilo-claude", "claude"}, {"kilo-omp", "omp"}} {
+	for _, command := range []struct{ name, client string }{{"kilo-codex", "codex-cli"}, {"kilo-claude", "claude"}, {"kilo-omp", "omp"}, {"kilo-opencode", "opencode"}} {
 		path := filepath.Join(result.Directory, command.name)
 		result.Commands[command.name] = path
 		f, err := readTerminalInstallFile(home, path)
@@ -234,9 +234,9 @@ func terminalCommandsPlan(home, configDir, binary, shell, platform string) (term
 		files = append(files, f)
 	}
 	if result.Installed && result.PathConfigured {
-		result.Message = "kilo-codex, kilo-claude and kilo-omp are installed. Open a new terminal to use them; keep Kilo Proxy open."
+		result.Message = "kilo-codex, kilo-claude, kilo-omp and kilo-opencode are installed. Open a new terminal to use them; keep Kilo Proxy open."
 	} else {
-		result.Message = "Install kilo-codex, kilo-claude and kilo-omp for your current login shell."
+		result.Message = "Install kilo-codex, kilo-claude, kilo-omp and kilo-opencode for your current login shell."
 	}
 	return result, files, nil
 }
@@ -344,6 +344,6 @@ func installTerminalCommands(home, configDir, binary, shell, platform string) (t
 		changed = append(changed, f)
 	}
 	result.Installed, result.PathConfigured = true, true
-	result.Message = "kilo-codex, kilo-claude and kilo-omp are installed. Open a new terminal to use them; keep Kilo Proxy open."
+	result.Message = "kilo-codex, kilo-claude, kilo-omp and kilo-opencode are installed. Open a new terminal to use them; keep Kilo Proxy open."
 	return result, nil
 }

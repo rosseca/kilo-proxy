@@ -6,7 +6,7 @@ The local key grants access to your organization’s credits while the proxy is 
 
 ## Launch installed clients
 
-Choose models once in **Models → Add models** and set their names, default, order and supported reasoning preferences. The library survives restarts; see [shared models and storage](shared-models.md). Return to **Agents**, choose a project folder and click **Open Codex** or another agent's Open button. The action saves pending library edits, prepares that agent's generated profile when necessary, starts the saved proxy and opens the installed client on this computer. It does not install applications.
+Choose models once in **Models → Add models** and set their names, default, order and supported reasoning preferences. The library survives restarts; see [shared models and storage](shared-models.md). Return to **Agents** and click **Open Codex** or another agent's Open button. Choose your project inside Codex Desktop; terminal agents and editors use the folder selected on their card. The action saves pending library edits, prepares that agent's generated profile when necessary, starts the saved proxy and opens the installed client on this computer. It does not install applications.
 
 Codex Desktop opens the GUI with an isolated profile. **Codex CLI**, **Claude Code**, **OpenCode** and **Oh My Pi** open interactive terminals: Terminal on macOS, a console on Windows and an installed desktop terminal on Linux. **Zed** and **Cursor** open their editors. **Set up Xcode** and **Other clients** lead to provider-specific guidance. Existing editor windows may be focused by the editor itself.
 
@@ -16,9 +16,9 @@ Codex Desktop opens the GUI with an isolated profile. **Codex CLI**, **Claude Co
 
 **Open Design** runs **Codex CLI**, **Claude Code** or **OpenCode** in its **Local CLI** mode. Choose an engine under **Engine settings** on its card, then click **Launch Open Design**. Kilo Proxy prepares private engine profiles from the shared models, starts the proxy and opens a separate Open Design workspace on macOS or Windows. Keep **CLI default** for the shared default and open your project inside Open Design. Its model picker can differ from the CLI catalog. See [Open Design setup, restart behavior and Linux guidance](open-design.md).
 
-To use your existing terminal on macOS or Linux, install `kilo-codex`, `kilo-claude` and `kilo-omp` together from **Settings → Terminal commands → Install terminal commands**. They run in that terminal's current project folder, forward arguments, and prepare the latest saved shared models on each invocation. Install the underlying CLI separately and keep Kilo Proxy open, including in the tray; a stopped saved proxy connection starts automatically. Existing installations can add `kilo-omp` with **Update terminal commands**. See [terminal commands](terminal-commands.md) for installation, resume examples and PATH setup.
+To use your existing terminal on macOS or Linux, install `kilo-codex`, `kilo-claude`, `kilo-opencode` and `kilo-omp` together from **Settings → Terminal commands → Install terminal commands**. They run in that terminal's current project folder, forward arguments, and prepare the latest saved shared models on each invocation. Install the underlying CLI separately and keep Kilo Proxy open, including in the tray; a stopped saved proxy connection starts automatically. Existing installations can add `kilo-opencode` with **Install terminal commands** or **Update terminal commands**. See [terminal commands](terminal-commands.md) for installation, resume examples and PATH setup.
 
-**Choose folder** opens a platform folder chooser. Each agent remembers its own project, with up to six recent folders in **Options**; a new agent defaults to your home folder. Folder paths and a custom Codex path are saved separately in `agent-preferences.json`. Linux uses an installed zenity or kdialog; if neither is available, enter the path under Options. **Locate Codex** chooses a nonstandard Desktop installation. Missing applications show installation guidance; use **Options → Refresh detection** after installing them.
+For agents with a project picker, **Choose folder** opens a platform folder chooser. Each remembers its own project, with up to six recent folders in **Options**; a new agent defaults to your home folder. Codex Desktop manages projects inside its own window and has no folder picker in Kilo Proxy. Folder paths and a custom Codex application path are saved separately in `agent-preferences.json`. Linux uses an installed zenity or kdialog; if neither is available, enter the path under Options. **Locate Codex** chooses a nonstandard Desktop installation. Missing applications show installation guidance; use **Options → Refresh detection** after installing them.
 
 Launch validates saved profile files and the current connection. Preparation failures stop it. Changes to models, connection, project or the Codex application path during preparation cancel that launch; click again with the new choices. Installation status and a successful open confirm discovery/process handoff, not a running-agent health check or successful paid inference. Library changes apply on the next preparation/open; already running agents may need reopening.
 
@@ -55,7 +55,7 @@ Rank, coding index, and speed come from [Kilo's public model statistics](https:/
 The **Codex** card opens the installed Desktop GUI with separate configuration and interface data, allowing your normal Codex to remain open. **Codex CLI** is a separate terminal action.
 
 1. Edit the shared library in **Models**, including names, a default model and supported reasoning preferences.
-2. On **Agents**, use **Choose folder** and **Open Codex**. Kilo Proxy prepares `~/.codex-kilo-desktop` (`%USERPROFILE%\.codex-kilo-desktop` on Windows), including `config.toml` and its generated `models.json`.
+2. On **Agents**, click **Open Codex**, then choose your project inside Codex Desktop. Kilo Proxy prepares `~/.codex-kilo-desktop` (`%USERPROFILE%\.codex-kilo-desktop` on Windows), including `config.toml` and its generated `models.json`.
 3. If Desktop is not detected, use **Locate Codex**, or enter the application path in **Options**. On macOS the installed bundle may be `/Applications/Codex.app` or `/Applications/ChatGPT.app`.
 
 The child receives `CODEX_HOME`, `CODEX_ELECTRON_USER_DATA_PATH`, `--user-data-dir` and `KILO_LOCAL_API_KEY`. The normal Codex profile stays separate.
@@ -113,6 +113,8 @@ Reference: [OpenAI configuration reference: model_catalog_json](https://learn.ch
 ## OpenCode
 
 The OpenCode card derives IDs, names, limits and the default from the shared library, then creates or updates `~/.opencode-kilo/opencode.json` with the local proxy credential. Click **Open OpenCode** to open it in a terminal, and use `/models` to switch models; `/connect` is not needed for this prepared profile. JSONC settings are preserved with exact backups. Global/project OpenCode configuration still merges. See [OpenCode and Zed setup](opencode-and-zed.md).
+
+On macOS and Linux, `kilo-opencode` uses this same configuration in your current terminal and project directory. Each launch refreshes shared models, names, default, context limits and the managed image MCP setting. Use `kilo-opencode --continue` to resume or pass other OpenCode arguments normally. OpenCode's global/project configuration and session storage still apply. [Command setup and examples](terminal-commands.md).
 
 ## Claude Code: automatic isolated setup
 

@@ -200,9 +200,13 @@ func TestNativeLaunchPreparesEveryClientAndKeepsCommandsSeparate(t *testing.T) {
 func TestNativeLaunchPreservesEditsWhilePreparing(t *testing.T) {
 	for _, field := range []string{"model", "directory", "appPath"} {
 		t.Run(field, func(t *testing.T) {
-			u, r := nativeLaunchTestUI(t, "codex", true, false)
+			key := "codex"
+			if field == "directory" {
+				key = "codex-cli"
+			}
+			u, r := nativeLaunchTestUI(t, key, true, false)
 			nativeTestFrame(t, u)
-			u.clickable("client:codex:launch").Click()
+			u.clickable("client:" + key + ":launch").Click()
 			nativeTestFrame(t, u)
 			<-r.entered
 			switch field {
@@ -213,7 +217,7 @@ func TestNativeLaunchPreservesEditsWhilePreparing(t *testing.T) {
 			case "appPath":
 				u.setValue("clients-launch-app-path", "/different/Codex.app")
 			}
-			u.launchClient("codex")
+			u.launchClient(key)
 			r.unblock()
 			nativeTestWait(t, u, func() bool { return u.clientState().Launching == "" })
 			if r.count() != 0 || r.prepares.Load() != 1 {
@@ -274,7 +278,11 @@ func nativeHoldLaunchLibrarySave(t *testing.T, u *nativeUI, fail bool) (<-chan s
 func TestNativeLaunchLibrarySaveWaitPreservesRequestedSettings(t *testing.T) {
 	for _, change := range []string{"none", "model", "directory", "appPath", "connection", "raw-limit"} {
 		t.Run(change, func(t *testing.T) {
-			u, r := nativeLaunchTestUI(t, "codex", false, false)
+			key := "codex"
+			if change == "directory" {
+				key = "codex-cli"
+			}
+			u, r := nativeLaunchTestUI(t, key, false, false)
 			// An invalid numeric edit can still parse as the previous zero. The
 			// launch boundary must compare the raw draft, not only exported JSON.
 			if change == "raw-limit" {
@@ -282,20 +290,20 @@ func TestNativeLaunchLibrarySaveWaitPreservesRequestedSettings(t *testing.T) {
 			}
 			entered, release := nativeHoldLaunchLibrarySave(t, u, false)
 			u.setValue(nativeClientField(sharedModelKey, "vendor/one", "name"), "Requested model name")
-			u.launchAgent("codex")
+			u.launchAgent(key)
 			select {
 			case <-entered:
 			case <-time.After(3 * time.Second):
 				t.Fatal("launch did not wait for its library save")
 			}
-			if u.clients.Launching != "codex" || u.agents.Phase != "Saving models…" || r.prepares.Load() != 0 {
+			if u.clients.Launching != key || u.agents.Phase != "Saving models…" || r.prepares.Load() != 0 {
 				t.Fatal("profile preparation started before library persistence")
 			}
 			switch change {
 			case "model":
 				u.setValue(nativeClientField(sharedModelKey, "vendor/one", "name"), "Newer model name")
 			case "directory":
-				u.setValue(agentProjectField("codex"), t.TempDir())
+				u.setValue(agentProjectField(key), t.TempDir())
 			case "appPath":
 				u.setValue("clients-launch-app-path", "/different/codex")
 			case "connection":
@@ -305,7 +313,7 @@ func TestNativeLaunchLibrarySaveWaitPreservesRequestedSettings(t *testing.T) {
 			case "raw-limit":
 				u.setValue(nativeClientField(sharedModelKey, "vendor/one", "output"), "not a number")
 			}
-			u.launchAgent("codex") // A second click cannot queue a second waiter.
+			u.launchAgent(key) // A second click cannot queue a second waiter.
 			release()
 			nativeTestWait(t, u, func() bool { return u.clients.Launching == "" })
 			if u.agents.Phase != "" {
@@ -324,7 +332,7 @@ func TestNativeLaunchLibrarySaveWaitPreservesRequestedSettings(t *testing.T) {
 				if u.value(nativeClientField(sharedModelKey, "vendor/one", "name")) != "Newer model name" {
 					t.Fatal("save waiter overwrote the latest model edit")
 				}
-				u.launchAgent("codex")
+				u.launchAgent(key)
 				nativeTestWait(t, u, func() bool { return u.clients.Launching == "" })
 				if r.count() != 1 || r.prepares.Load() != 1 {
 					t.Fatalf("explicit retry failed: %s", u.notice)

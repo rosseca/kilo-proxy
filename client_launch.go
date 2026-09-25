@@ -40,6 +40,10 @@ type clientLaunchAvailability struct {
 
 var launchClients = []string{"codex", "claude-desktop", "codex-cli", "claude", "opencode", "omp", "open-design", "zed", "cursor", "xcode-chat", "xcode-codex", "xcode-claude"}
 
+func clientLaunchUsesProject(client string) bool {
+	return client != "codex" && client != "claude-desktop" && client != "open-design"
+}
+
 func launchClientIdentity(id string) (string, string) {
 	switch id {
 	case "codex":
@@ -228,9 +232,9 @@ func (a *app) planClientLaunch(input clientLaunchRequest, rt clientLaunchRuntime
 	}
 	var err error
 	directory := input.Directory
-	if input.Client == "open-design" || input.Client == "claude-desktop" {
-		// These desktop clients restore their own workspace; neither has a
-		// supported project-folder launch contract.
+	if !clientLaunchUsesProject(input.Client) {
+		// Let these desktop clients manage their own workspace. Ignore old
+		// remembered folders, while retaining a valid internal working directory.
 		directory = ""
 	}
 	p.Directory, err = launchPath(directory, rt.home)
@@ -291,7 +295,7 @@ func (a *app) planClientLaunch(input clientLaunchRequest, rt clientLaunchRuntime
 			return p, errors.New("Cannot create the isolated Codex window profile.")
 		}
 		p.Env["CODEX_ELECTRON_USER_DATA_PATH"] = ui
-		p.Args = []string{"--user-data-dir=" + ui, p.Directory}
+		p.Args = []string{"--user-data-dir=" + ui}
 		if rt.platform == "macos" && strings.HasSuffix(p.Executable, ".app") {
 			binary := plistValue(filepath.Join(p.Executable, "Contents", "Info.plist"), "CFBundleExecutable")
 			if binary == "" || filepath.Base(binary) != binary {

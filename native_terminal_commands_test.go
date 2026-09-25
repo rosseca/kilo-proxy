@@ -55,10 +55,10 @@ func TestNativeTerminalCommandsPointerInstallAndUpdate(t *testing.T) {
 				if !s.Info.Installed || !s.Info.PathConfigured || s.Error != "" {
 					t.Fatalf("install did not finish: %+v", s)
 				}
-				if len(s.Info.Commands) != 3 {
-					t.Fatalf("installer did not report all three commands: %#v", s.Info.Commands)
+				if len(s.Info.Commands) != 4 {
+					t.Fatalf("installer did not report all four commands: %#v", s.Info.Commands)
 				}
-				for _, name := range []string{"kilo-codex", "kilo-claude", "kilo-omp"} {
+				for _, name := range []string{"kilo-codex", "kilo-claude", "kilo-omp", "kilo-opencode"} {
 					want := filepath.Join(u.owner.editorTestRoot, ".local", "bin", name)
 					if s.Info.Commands[name] != want {
 						t.Fatalf("command path escaped test home: %q", s.Info.Commands[name])
@@ -74,6 +74,7 @@ func TestNativeTerminalCommandsPointerInstallAndUpdate(t *testing.T) {
 					}
 				}
 				h.frame()
+				h.reveal(u.tr("Update terminal commands", "Actualizar comandos de terminal"), semantic.Button)
 				h.click(u.tr("Update terminal commands", "Actualizar comandos de terminal"), semantic.Button)
 				nativeTestWait(t, u, func() bool { return !u.busy["POST"+nativeTerminalCommandsEndpoint] })
 				if !s.Info.Installed || s.Error != "" {
@@ -87,7 +88,7 @@ func TestNativeTerminalCommandsPointerInstallAndUpdate(t *testing.T) {
 	}
 }
 
-func TestNativeTerminalCommandsCopyOMPWithAndWithoutPATH(t *testing.T) {
+func TestNativeTerminalCommandsCopyWithAndWithoutPATH(t *testing.T) {
 	for _, lang := range []string{"en", "es"} {
 		for _, configured := range []bool{true, false} {
 			name := lang + "-full-path"
@@ -97,30 +98,37 @@ func TestNativeTerminalCommandsCopyOMPWithAndWithoutPATH(t *testing.T) {
 			t.Run(name, func(t *testing.T) {
 				u := nativeTerminalCommandsTestUI(t, "macos")
 				u.language = lang
+				u.owner.mu.Lock()
+				u.owner.config.Language = lang
+				u.owner.mu.Unlock()
 				directory := filepath.Join(u.owner.editorTestRoot, "tools ' and spaces")
 				s := u.terminalCommandsState()
 				s.Started, s.Checked = true, true
 				s.Info = nativeTerminalCommandsInfo{Supported: true, Installed: true, Directory: directory, PathConfigured: configured, Commands: map[string]string{}}
-				for _, command := range []string{"kilo-codex", "kilo-claude", "kilo-omp"} {
+				for _, command := range []string{"kilo-codex", "kilo-claude", "kilo-omp", "kilo-opencode"} {
 					s.Info.Commands[command] = filepath.Join(directory, command)
 				}
 				h := &nativePointerHarness{t: t, u: u, size: image.Pt(780, 700), now: time.Now()}
 				h.frame()
 				nativeMenuWheel(h, image.Pt(680, 600), 10000)
-				h.click(u.tr("Copy kilo-omp", "Copiar kilo-omp"), semantic.Button)
-				bridge := u.owner.desktop.(*nativeRecordingBridge)
-				bridge.mu.Lock()
-				copied := bridge.Text
-				bridge.mu.Unlock()
-				want := "kilo-omp"
-				if !configured {
-					want = helperShellQuote(s.Info.Commands["kilo-omp"])
-				}
-				if copied != want {
-					t.Fatalf("copy returned %q, want runnable command %q", copied, want)
-				}
-				if u.notice != u.tr("Copied", "Copiado") || u.noticeTone != nativeToneSuccess {
-					t.Fatalf("copy feedback is missing or not successful: %q (%v)", u.notice, u.noticeTone)
+				for _, command := range []string{"kilo-omp", "kilo-opencode"} {
+					label := u.tr("Copy ", "Copiar ") + command
+					h.reveal(label, semantic.Button)
+					h.click(label, semantic.Button)
+					bridge := u.owner.desktop.(*nativeRecordingBridge)
+					bridge.mu.Lock()
+					copied := bridge.Text
+					bridge.mu.Unlock()
+					want := command
+					if !configured {
+						want = helperShellQuote(s.Info.Commands[command])
+					}
+					if copied != want {
+						t.Fatalf("copy returned %q, want runnable command %q", copied, want)
+					}
+					if u.notice != u.tr("Copied", "Copiado") || u.noticeTone != nativeToneSuccess {
+						t.Fatalf("copy feedback is missing or not successful: %q (%v)", u.notice, u.noticeTone)
+					}
 				}
 				nativeGridCapture(t, h, "terminal-commands-copy-"+name)
 			})
@@ -194,5 +202,24 @@ func TestNativeTerminalCommandsUnsupportedPlatformHidesInstall(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(u.owner.editorTestRoot, ".local", "bin")); !os.IsNotExist(err) {
 		t.Fatal("unsupported platform created command files")
+	}
+	found := false
+	for _, node := range h.nodes() {
+		if strings.Contains(node.Desc.Label, "kilo-opencode") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("unsupported-platform guidance omitted kilo-opencode")
+	}
+}
+
+func TestNativeTerminalCommandsOpenCodeCollisionIsLocalized(t *testing.T) {
+	message := "An unrelated kilo-opencode already exists. Move or rename it before installing terminal commands."
+	if got := nativeTerminalCommandsMessage(message, "es"); got != "Ya existe un kilo-opencode ajeno a Kilo Proxy. Muévelo o cámbiale el nombre antes de instalar los comandos de terminal." {
+		t.Fatalf("OpenCode collision was not localized: %s", got)
+	}
+	if got := nativeTerminalCommandsMessage(message, "en"); got != message {
+		t.Fatalf("English collision changed: %s", got)
 	}
 }

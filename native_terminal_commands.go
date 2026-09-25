@@ -87,7 +87,7 @@ func nativeTerminalCommandsMessage(message, language string) string {
 		if translated := translations[message]; translated != "" {
 			return translated
 		}
-		for _, name := range []string{"kilo-codex", "kilo-claude", "kilo-omp"} {
+		for _, name := range []string{"kilo-codex", "kilo-claude", "kilo-omp", "kilo-opencode"} {
 			if message == "An unrelated "+name+" already exists. Move or rename it before installing terminal commands." {
 				return "Ya existe un " + name + " ajeno a Kilo Proxy. Muévelo o cámbiale el nombre antes de instalar los comandos de terminal."
 			}
@@ -106,12 +106,12 @@ func (u *nativeUI) terminalCommandsPanel() layout.Widget {
 		return nativeSettingsPanelWithGap(u.section(
 			u.tr("Terminal commands", "Comandos de terminal"),
 			u.tr("Shortcuts for using your saved Kilo Proxy connection.", "Accesos directos para usar tu conexión guardada de Kilo Proxy."),
-			u.note(u.tr("kilo-codex, kilo-claude and kilo-omp are available on macOS and Linux.", "kilo-codex, kilo-claude y kilo-omp están disponibles en macOS y Linux.")),
+			u.note(u.tr("kilo-codex, kilo-claude, kilo-omp and kilo-opencode are available on macOS and Linux.", "kilo-codex, kilo-claude, kilo-omp y kilo-opencode están disponibles en macOS y Linux.")),
 		))
 	}
 	children := []layout.Widget{
 		u.note(u.tr("Run these commands from any project terminal. They pass arguments through and use your latest saved shared models.", "Ejecuta estos comandos desde cualquier terminal de proyecto. Pasan los argumentos y usan los últimos modelos compartidos guardados.")),
-		u.note(u.tr("Keep Kilo Proxy open. The commands start its saved connection if stopped; install Codex CLI, Claude Code or Oh My Pi separately.", "Mantén Kilo Proxy abierto. Los comandos inician la conexión guardada si está detenida; instala Codex CLI, Claude Code u Oh My Pi por separado.")),
+		u.note(u.tr("Keep Kilo Proxy open. The commands start its saved connection if stopped; install Codex CLI, Claude Code, Oh My Pi or OpenCode separately.", "Mantén Kilo Proxy abierto. Los comandos inician la conexión guardada si está detenida; instala Codex CLI, Claude Code, Oh My Pi u OpenCode por separado.")),
 	}
 	children = append(children, u.note(u.tr("Installs to ~/.local/bin and configures PATH for zsh, bash or fish.", "Se instalan en ~/.local/bin y configuran PATH para zsh, bash o fish.")))
 	label := u.tr("Install terminal commands", "Instalar comandos de terminal")
@@ -147,7 +147,7 @@ func (u *nativeUI) terminalCommandsPanel() layout.Widget {
 		if len(s.Info.StartupFiles) > 0 {
 			children = append(children, u.note(u.tr("Shell startup files: ", "Archivos de inicio del shell: ")+strings.Join(s.Info.StartupFiles, ", ")))
 		}
-		for _, name := range []string{"kilo-codex", "kilo-claude", "kilo-omp"} {
+		for _, name := range []string{"kilo-codex", "kilo-claude", "kilo-omp", "kilo-opencode"} {
 			if path := s.Info.Commands[name]; path != "" {
 				command := name
 				if !s.Info.PathConfigured {

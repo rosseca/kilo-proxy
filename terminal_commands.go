@@ -12,7 +12,7 @@ import (
 const terminalAgentFlag = "--terminal-agent"
 
 func terminalClientSupported(client string) bool {
-	return client == "codex-cli" || client == "claude" || client == "omp"
+	return client == "codex-cli" || client == "claude" || client == "omp" || client == "opencode"
 }
 
 func terminalPlatformSupported(platform string) bool {
@@ -78,7 +78,7 @@ func (a *app) terminalPrepareAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !terminalClientSupported(input.Client) || len(input.ClaudeVersion) > 64 || strings.ContainsAny(input.ClaudeVersion, "\r\n\x00") {
-		jsonError(w, 400, "Choose kilo-codex, kilo-claude or kilo-omp.")
+		jsonError(w, 400, "Choose kilo-codex, kilo-claude, kilo-omp or kilo-opencode.")
 		return
 	}
 	if !a.launchMu.TryLock() {
@@ -112,6 +112,12 @@ func (a *app) terminalPrepareAPI(w http.ResponseWriter, r *http.Request) {
 	err = a.prepareTerminalProfile(input.Client, rt.home, state.Library, claudeCaps(input.ClaudeVersion))
 	if err == nil {
 		err = a.launchProfile(&plan, rt.home)
+		if input.Client == "opencode" {
+			// The profile already names the default model. Unlike the GUI's TUI
+			// launch, terminal commands also support subcommands such as models,
+			// which reject --model. Forward only the user's OpenCode arguments.
+			plan.Args = nil
+		}
 	}
 	if err != nil {
 		a.mu.Unlock()
@@ -145,6 +151,9 @@ func terminalLibraryChoices(library modelLibrary, catalog []modelInfo) []nativeM
 func (a *app) prepareTerminalProfile(client, home string, library modelLibrary, caps claudeCapabilities) error {
 	if err := validateModelLibrary(library); err != nil {
 		return err
+	}
+	if client == "opencode" {
+		return a.prepareTerminalOpenCodeProfile(library)
 	}
 	if client == "omp" {
 		selection, err := ompSelectionFromChoices(terminalLibraryChoices(library, readNativeCatalogCache(a.dir, a.config.OrgID)), library.DefaultModel)

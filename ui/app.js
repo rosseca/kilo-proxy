@@ -195,7 +195,7 @@ function renderClientLaunch(){
  $('client-launch-refresh').textContent=launchDetecting?L('Checking…','Comprobando…'):L('Check installed apps','Comprobar aplicaciones');
  $('client-launch-refresh').disabled=launchDetecting||launchBusy;
  $('client-launch-directory-label').textContent=L('Project folder (optional)','Carpeta del proyecto (opcional)');
- $('client-launch-directory-field').hidden=['open-design','claude-desktop'].includes(selection.id);
+ $('client-launch-directory-field').hidden=['codex','open-design','claude-desktop'].includes(selection.id);
  $('client-launch-directory').placeholder=launchInfo?.directory||'';
  $('client-launch-custom').hidden=selection.id!=='codex';
  $('client-launch-custom-label').textContent=L('Custom Codex application','Aplicación de Codex personalizada');
@@ -218,11 +218,11 @@ async function detectLaunchClients(){
  }catch(error){launchMessage=error.message;launchError=true;}
  finally{launchDetecting=false;renderClientLaunch();}
 }
-function launchFingerprint(){const selection=clientLaunchSelection();return JSON.stringify([selection?.id,selection?.fingerprint,['open-design','claude-desktop'].includes(selection?.id)?'':$('client-launch-directory').value.trim(),selection?.id==='codex'?$('client-launch-app').value.trim():'']);}
+function launchFingerprint(){const selection=clientLaunchSelection();return JSON.stringify([selection?.id,selection?.fingerprint,['codex','open-design','claude-desktop'].includes(selection?.id)?'':$('client-launch-directory').value.trim(),selection?.id==='codex'?$('client-launch-app').value.trim():'']);}
 async function openClient(){
  if(launchBusy||$('client-launch').disabled)return;
  const selection=clientLaunchSelection(),fingerprint=launchFingerprint();
- const body={client:selection.id,...(selection.id==='open-design'?{engine:selection.engine}:{}),...(['open-design','claude-desktop'].includes(selection.id)?{}:{directory:$('client-launch-directory').value.trim()}),...(selection.id==='codex'&&$('client-launch-app').value.trim()?{appPath:$('client-launch-app').value.trim()}:{})};
+ const body={client:selection.id,...(selection.id==='open-design'?{engine:selection.engine}:{}),...(['codex','open-design','claude-desktop'].includes(selection.id)?{}:{directory:$('client-launch-directory').value.trim()}),...(selection.id==='codex'&&$('client-launch-app').value.trim()?{appPath:$('client-launch-app').value.trim()}:{})};
  launchBusy=true;launchMessage='';launchError=false;renderClientLaunch();
  try{
   if(!selection.ready||selection.id==='claude-desktop')await selection.prepare();

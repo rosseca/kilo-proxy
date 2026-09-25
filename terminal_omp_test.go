@@ -126,7 +126,7 @@ func TestTerminalCommandsUpgradeAddsOMPWithoutRewritingExistingCommands(t *testi
 		t.Fatal("old two-command install did not report a needed update", err)
 	}
 	result, err := installTerminalCommands(home, configDir, binary, "zsh", "darwin")
-	if err != nil || !result.Installed || len(result.Commands) != 3 || len(result.Backups) != 0 || !bytes.Equal(original, terminalInstallerRead(t, startup)) {
+	if err != nil || !result.Installed || len(result.Commands) != 4 || len(result.Backups) != 0 || !bytes.Equal(original, terminalInstallerRead(t, startup)) {
 		t.Fatal("upgrade changed existing commands or shell preferences", err)
 	}
 	if !bytes.Contains(terminalInstallerRead(t, result.Commands["kilo-omp"]), []byte("--terminal-agent omp")) {

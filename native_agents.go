@@ -85,7 +85,9 @@ func (u *nativeUI) agentProject(key string) string {
 
 func (u *nativeUI) rememberAgentProject(key, directory string) {
 	a := u.agentsState()
-	a.Preferences.rememberProject(key, directory)
+	if clientLaunchUsesProject(key) {
+		a.Preferences.rememberProject(key, directory)
+	}
 	a.Preferences.CodexAppPath = strings.TrimSpace(u.value("clients-launch-app-path"))
 	if err := writeAgentPreferences(u.owner.dir, a.Preferences); err != nil {
 		a.Error = u.tr("The project folder could not be remembered. You can still open the agent.", "No se pudo recordar la carpeta. Puedes abrir el agente igualmente.")
@@ -312,8 +314,11 @@ func (u *nativeUI) agentOptions(key string) layout.Widget {
 			u.button("agent:claude-desktop:detect", u.tr("Refresh detection", "Actualizar detección"), u.detectLaunchers),
 		))
 	}
-	widgets := []layout.Widget{u.note(u.agentCompatibility(key)), u.field(agentProjectField(key), u.tr("Project folder path", "Ruta de la carpeta del proyecto"), c.LaunchInfo.Directory, false)}
-	if len(a.Preferences.Recent) > 0 {
+	widgets := []layout.Widget{u.note(u.agentCompatibility(key))}
+	if clientLaunchUsesProject(key) {
+		widgets = append(widgets, u.field(agentProjectField(key), u.tr("Project folder path", "Ruta de la carpeta del proyecto"), c.LaunchInfo.Directory, false))
+	}
+	if clientLaunchUsesProject(key) && len(a.Preferences.Recent) > 0 {
 		recent := []layout.Widget{}
 		for i, directory := range a.Preferences.Recent {
 			directory := directory
@@ -452,7 +457,7 @@ func (u *nativeUI) agentCard(key string) layout.Widget {
 	if key == "open-design" {
 		engineName, _ := launchClientIdentity(u.openDesignEngine())
 		widgets = append(widgets, u.actionRow(u.column(u.note(u.tr("Engine", "Motor")), u.label(engineName)), u.ghostButton("agent:open-design:setup", u.tr("Engine settings", "Ajustes del motor"), func() { u.agentSetup(key) })))
-	} else if key != "claude-desktop" {
+	} else if clientLaunchUsesProject(key) {
 		widgets = append(widgets, u.agentProjectPicker(key))
 	}
 	if key == "claude-desktop" {

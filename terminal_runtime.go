@@ -22,15 +22,16 @@ import (
 const terminalRuntimeFile = "terminal-runtime.json"
 
 type terminalRuntime struct {
-	Version       int    `json:"version"`
-	Host          string `json:"host"`
-	Token         string `json:"token"`
-	CodexProfile  string `json:"codexProfile"`
-	ClaudeProfile string `json:"claudeProfile"`
-	OMPProfile    string `json:"ompProfile,omitempty"`
+	Version        int    `json:"version"`
+	Host           string `json:"host"`
+	Token          string `json:"token"`
+	CodexProfile   string `json:"codexProfile"`
+	ClaudeProfile  string `json:"claudeProfile"`
+	OMPProfile     string `json:"ompProfile,omitempty"`
+	OpenCodeConfig string `json:"openCodeConfig,omitempty"`
 }
 
-var errTerminalAppUnavailable = errors.New("Open the updated Kilo Proxy app first. It can stay in the system tray while you use kilo-codex, kilo-claude or kilo-omp.")
+var errTerminalAppUnavailable = errors.New("Open the updated Kilo Proxy app first. It can stay in the system tray while you use kilo-codex, kilo-claude, kilo-omp or kilo-opencode.")
 
 func validateTerminalRuntime(info terminalRuntime) error {
 	host, port, err := net.SplitHostPort(info.Host)
@@ -40,10 +41,13 @@ func validateTerminalRuntime(info terminalRuntime) error {
 		return errTerminalAppUnavailable
 	}
 	paths := []string{info.CodexProfile, info.ClaudeProfile}
-	// Older app descriptors still support Codex/Claude; OMP requires its own
-	// trusted profile path before a response can be accepted.
+	// Older app descriptors still support their original clients. Each newer
+	// client requires its own trusted path before a response can be accepted.
 	if info.OMPProfile != "" {
 		paths = append(paths, info.OMPProfile)
+	}
+	if info.OpenCodeConfig != "" {
+		paths = append(paths, info.OpenCodeConfig)
 	}
 	for _, path := range paths {
 		if !filepath.IsAbs(path) || filepath.Clean(path) != path || len(path) > 4096 || strings.ContainsAny(path, "\x00\r\n") {
@@ -82,6 +86,10 @@ func (a *app) publishTerminalRuntime() (func(), error) {
 		return func() {}, err
 	}
 	info.OMPProfile = ompProfile
+	_, info.OpenCodeConfig, _, err = a.editorPaths("opencode")
+	if err != nil {
+		return func() {}, err
+	}
 	if err := validateTerminalRuntime(info); err != nil {
 		return func() {}, err
 	}
@@ -178,6 +186,10 @@ func validateTerminalProfile(plan clientLaunchPlan, info terminalRuntime) error 
 			return invalid
 		}
 		if len(plan.Args) != 2 || plan.Args[0] != "--model" || !strings.HasPrefix(plan.Args[1], "kilo-local/") || !helperValidModelID(strings.TrimPrefix(plan.Args[1], "kilo-local/")) {
+			return invalid
+		}
+	case "opencode":
+		if info.OpenCodeConfig == "" || len(plan.Args) != 0 || !reflect.DeepEqual(plan.Env, map[string]string{"OPENCODE_CONFIG": info.OpenCodeConfig}) || !reflect.DeepEqual(plan.Unset, []string{"OPENCODE_CONFIG_CONTENT"}) {
 			return invalid
 		}
 	default:

@@ -29,13 +29,13 @@ func nativeSeedSharedForTest(t *testing.T, u *nativeUI, models ...modelInfo) *na
 }
 
 func TestNativeAgentHomeLaunchRemembersProject(t *testing.T) {
-	u, r := nativeLaunchTestUI(t, "codex", false, false)
+	u, r := nativeLaunchTestUI(t, "codex-cli", false, false)
 	u.page = "agents"
 	directory := t.TempDir()
 	u.agentsState().chooseFolder = func(initial string) (string, error) { return directory, nil }
-	u.chooseAgentProject("codex")
+	u.chooseAgentProject("codex-cli")
 	nativeTestWait(t, u, func() bool { return u.agentsState().FolderBusy == "" })
-	u.launchAgent("codex")
+	u.launchAgent("codex-cli")
 	nativeTestWait(t, u, func() bool { return u.clientState().Launching == "" })
 	if r.count() != 1 || r.prepares.Load() != 1 {
 		t.Fatalf("home launch failed: %s", u.notice)
@@ -47,24 +47,24 @@ func TestNativeAgentHomeLaunchRemembersProject(t *testing.T) {
 		t.Fatalf("wrong project launched: %s", actual)
 	}
 	p, err := readAgentPreferences(u.owner.dir)
-	if err != nil || p.Projects["codex"] != directory {
+	if err != nil || p.Projects["codex-cli"] != directory {
 		t.Fatalf("project not saved: %+v %v", p, err)
 	}
 	u.agents = nil
-	if restored := u.agentProject("codex"); restored != directory {
+	if restored := u.agentProject("codex-cli"); restored != directory {
 		t.Fatalf("project not restored: %s", restored)
 	}
 }
 
 func TestNativeAgentFolderChooserCancellationAndFailure(t *testing.T) {
 	for _, failure := range []error{errNativePickerCancelled, errors.New("synthetic chooser failure")} {
-		u, _ := nativeLaunchTestUI(t, "codex", false, false)
+		u, _ := nativeLaunchTestUI(t, "codex-cli", false, false)
 		a := u.agentsState()
-		u.setValue(agentProjectField("codex"), "unchanged")
+		u.setValue(agentProjectField("codex-cli"), "unchanged")
 		a.chooseFolder = func(string) (string, error) { return "", failure }
-		u.chooseAgentProject("codex")
+		u.chooseAgentProject("codex-cli")
 		nativeTestWait(t, u, func() bool { return a.FolderBusy == "" })
-		if u.value(agentProjectField("codex")) != "unchanged" {
+		if u.value(agentProjectField("codex-cli")) != "unchanged" {
 			t.Fatal("chooser failure changed folder")
 		}
 		if errors.Is(failure, errNativePickerCancelled) && a.Error != "" {
@@ -79,12 +79,12 @@ func TestNativeAgentFolderChooserCancellationAndFailure(t *testing.T) {
 func TestNativeAgentLaunchRejectsProjectAndConnectionChangesDuringPrepare(t *testing.T) {
 	for _, changed := range []string{"project", "connection"} {
 		t.Run(changed, func(t *testing.T) {
-			u, r := nativeLaunchTestUI(t, "codex", true, false)
+			u, r := nativeLaunchTestUI(t, "codex-cli", true, false)
 			u.page = "agents"
-			u.launchAgent("codex")
+			u.launchAgent("codex-cli")
 			<-r.entered
 			if changed == "project" {
-				u.setValue(agentProjectField("codex"), t.TempDir())
+				u.setValue(agentProjectField("codex-cli"), t.TempDir())
 			} else {
 				u.owner.mu.Lock()
 				u.owner.config.OrgID = "new-team"
@@ -105,10 +105,15 @@ func TestNativeAgentHomePrimaryLaunchAboveFold(t *testing.T) {
 			t.Run(fmtSize(size)+"-"+lang, func(t *testing.T) {
 				u, r := nativeLaunchTestUI(t, "codex", false, false)
 				u.page, u.language = "agents", lang
+				u.setValue(agentProjectField("codex"), "/missing/remembered-project")
+				u.setValue("clients-project-directory", "/missing/advanced-project")
 				h := &nativePointerHarness{t: t, u: u, size: size, now: time.Now()}
 				h.frame()
+				if _, exists := u.buttons["agent:codex:folder"]; exists {
+					t.Fatal("Codex Desktop still exposes a folder picker")
+				}
 				nativeGridCapture(t, h, "native-agents-"+fmtSize(size)+"-"+lang)
-				for _, label := range []string{u.tr("Open Codex", "Abrir Codex"), u.tr("Choose folder", "Elegir carpeta"), u.tr("Edit models", "Editar modelos")} {
+				for _, label := range []string{u.tr("Open Codex", "Abrir Codex"), u.tr("Edit models", "Editar modelos")} {
 					if !h.target(label, semantic.Button).Desc.Bounds.In(image.Rectangle{Max: size}) {
 						t.Fatalf("primary control clipped: %s", label)
 					}
@@ -118,22 +123,36 @@ func TestNativeAgentHomePrimaryLaunchAboveFold(t *testing.T) {
 				if r.count() != 1 {
 					t.Fatalf("pointer did not open Codex: %s", u.notice)
 				}
+				u.expanded["agent:codex:options"] = true
+				h.frame()
+				for _, node := range h.nodes() {
+					if node.Desc.Label == u.tr("Project folder path", "Ruta de la carpeta del proyecto") || node.Desc.Label == u.tr("Recent folders", "Carpetas recientes") {
+						t.Fatal("Codex options still offer project selection")
+					}
+				}
+				u.agentSetup("codex")
+				h.frame()
+				for _, node := range h.nodes() {
+					if node.Desc.Label == u.tr("Project folder", "Carpeta del proyecto") {
+						t.Fatal("Codex Desktop integration still exposes a project field")
+					}
+				}
 			})
 		}
 	}
 }
 
 func TestNativeAgentChooserPreservesConcurrentFolderEdit(t *testing.T) {
-	u, _ := nativeLaunchTestUI(t, "codex", false, false)
+	u, _ := nativeLaunchTestUI(t, "codex-cli", false, false)
 	a := u.agentsState()
 	release := make(chan struct{})
 	directory := t.TempDir()
 	a.chooseFolder = func(string) (string, error) { <-release; return directory, nil }
-	u.chooseAgentProject("codex")
-	u.setValue(agentProjectField("codex"), "latest folder")
+	u.chooseAgentProject("codex-cli")
+	u.setValue(agentProjectField("codex-cli"), "latest folder")
 	close(release)
 	nativeTestWait(t, u, func() bool { return a.FolderBusy == "" })
-	if u.value(agentProjectField("codex")) != "latest folder" || !strings.Contains(a.Error, "changed while") {
+	if u.value(agentProjectField("codex-cli")) != "latest folder" || !strings.Contains(a.Error, "changed while") {
 		t.Fatalf("concurrent folder edit lost: %s", a.Error)
 	}
 }

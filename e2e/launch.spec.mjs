@@ -26,13 +26,14 @@ for(const id of ['codex','codex-cli','claude','opencode','zed','xcode-chat','xco
   expect(detected.available).toBe(true);expect(detected.path).toBeTruthy();
   const name=await choose(page,id),folder=path.join(gateway.root,'project with spaces');
   await mkdir(folder);
-  await page.locator('#client-launch-directory').fill(folder);
+  if(id==='codex')await expect(page.locator('#client-launch-directory-field')).toBeHidden();
+  else await page.locator('#client-launch-directory').fill(folder);
   let prepares=0;
   page.on('request',request=>{if(request.method()==='POST'&&new URL(request.url()).pathname==='/api/'+endpoint(id))prepares++;});
   await expect(page.locator('#client-launch')).toBeEnabled();
   await page.locator('#client-launch').click();
   await expect(page.locator('#client-launch-status')).toContainText('opened.');
-  expect(await records(gateway)).toEqual([{client:id,directory:folder,executable:detected.path,kind:['codex-cli','claude','opencode'].includes(id)?'terminal':'desktop'}]);
+  expect(await records(gateway)).toEqual([{client:id,directory:id==='codex'?gateway.root:folder,executable:detected.path,kind:['codex-cli','claude','opencode'].includes(id)?'terminal':'desktop'}]);
   expect(prepares).toBe(1);
   await page.locator('#client-launch').click();
   await expect.poll(async()=>(await records(gateway)).length).toBe(2);

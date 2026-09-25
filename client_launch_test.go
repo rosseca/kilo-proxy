@@ -117,6 +117,27 @@ func TestClientLaunchRejectsMissingStaleAndUnsafeProfiles(t *testing.T) {
 		t.Fatal("nonregular profile accepted")
 	}
 }
+func TestCodexDesktopLaunchLeavesProjectSelectionToDesktop(t *testing.T) {
+	a := launchTestApp(t)
+	launchPrepareFixture(t, a, "codex")
+	plan, err := a.planClientLaunch(clientLaunchRequest{Client: "codex", Directory: "/missing/remembered-project"}, a.launchRuntime())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateClientProcessPlan(plan); err != nil {
+		t.Fatal(err)
+	}
+	if plan.Directory != a.launcher.home || len(plan.Args) != 1 || !strings.HasPrefix(plan.Args[0], "--user-data-dir=") {
+		t.Fatalf("Desktop still receives a project argument: %+v", plan)
+	}
+	launchPrepareFixture(t, a, "codex-cli")
+	project := t.TempDir()
+	cli, err := a.planClientLaunch(clientLaunchRequest{Client: "codex-cli", Directory: project}, a.launchRuntime())
+	if err != nil || cli.Directory != project {
+		t.Fatalf("CLI lost its project: %+v %v", cli, err)
+	}
+}
+
 func launchPrepareFixture(t *testing.T, a *app, client string) {
 	t.Helper()
 	endpoint := ""

@@ -15,7 +15,7 @@ import (
 
 func runTerminalAgentMode(args []string) int {
 	if !terminalPlatformSupported(runtime.GOOS) || len(args) == 0 || !terminalClientSupported(args[0]) {
-		fmt.Fprintln(os.Stderr, "Use kilo-codex, kilo-claude or kilo-omp on macOS or Linux.")
+		fmt.Fprintln(os.Stderr, "Use kilo-codex, kilo-claude, kilo-omp or kilo-opencode on macOS or Linux.")
 		return 1
 	}
 	flags := flag.NewFlagSet(terminalAgentFlag, flag.ContinueOnError)

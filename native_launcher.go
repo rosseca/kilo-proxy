@@ -93,7 +93,7 @@ func (u *nativeUI) clientLauncherPanel(key string, s *nativeClientSelection, can
 		widgets = append(widgets, u.field("clients-launch-app-path", u.tr("Codex application path (optional)", "Ruta de la aplicación Codex (opcional)"), info.Path, false))
 	}
 	openButton := u.disabled(enabled, u.primaryButton("client:"+key+":launch", label, func() { u.launchClient(key) }))
-	if key == "claude-desktop" {
+	if !clientLaunchUsesProject(key) {
 		widgets = append(widgets, u.pills(openButton))
 	} else {
 		widgets = append(widgets, u.actionRow(u.field("clients-project-directory", u.tr("Project folder", "Carpeta del proyecto"), c.LaunchInfo.Directory, false), openButton))
@@ -141,7 +141,7 @@ func (u *nativeUI) launchClient(key string) {
 
 func (u *nativeUI) launchAgent(key string) {
 	u.agentsState()
-	if key == "open-design" || key == "claude-desktop" {
+	if !clientLaunchUsesProject(key) {
 		u.launchClientFrom(key, "")
 		return
 	}
@@ -185,8 +185,8 @@ func (u *nativeUI) launchSettingsChangedMessage() string {
 }
 
 func (u *nativeUI) launchClientFrom(key, directoryField string) {
-	if key == "open-design" || key == "claude-desktop" {
-		directoryField = "" // These desktop clients have no supported project-folder launch argument.
+	if !clientLaunchUsesProject(key) {
+		directoryField = "" // Desktop apps manage their own project selection.
 	}
 	a := u.agentsState()
 	c := u.clientState()
@@ -241,11 +241,11 @@ func (u *nativeUI) launchClientFrom(key, directoryField string) {
 		return
 	}
 	directory, appPath := u.value(directoryField), u.value("clients-launch-app-path")
-	if key == "open-design" || key == "claude-desktop" {
+	if !clientLaunchUsesProject(key) {
 		directory = ""
 	}
 	resolvedDirectory := ""
-	if key != "claude-desktop" {
+	if clientLaunchUsesProject(key) {
 		var err error
 		resolvedDirectory, err = launchPath(directory, c.LaunchInfo.Directory)
 		if err != nil {
@@ -274,7 +274,7 @@ func (u *nativeUI) launchClientFrom(key, directoryField string) {
 			return
 		}
 		payload := map[string]string{"client": key, "directory": directory}
-		if key == "claude-desktop" {
+		if !clientLaunchUsesProject(key) {
 			delete(payload, "directory")
 		}
 		if key == "open-design" {
