@@ -36,8 +36,11 @@ func TestClaudeDesktopLaunchUsesAppliedProfileWithoutCLIEnvironment(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan.Directory != "" || plan.Executable != "/usr/bin/open" || !reflect.DeepEqual(plan.Args, []string{"-a", "/Applications/Claude.app"}) {
+	if plan.Directory != a.launcher.home || plan.Executable != "/usr/bin/open" || !reflect.DeepEqual(plan.Args, []string{"-a", "/Applications/Claude.app"}) {
 		t.Fatal("unexpected Desktop dispatch", plan)
+	}
+	if err := validateClientProcessPlan(plan); err != nil {
+		t.Fatalf("prepared Desktop plan cannot reach the process launcher: %v", err)
 	}
 	if len(plan.Env) != 0 || len(plan.Unset) != 0 || plan.Kind != "desktop" {
 		t.Fatal("Desktop inherited a CLI launch contract")

@@ -164,7 +164,11 @@ func (a *app) clientsLaunch(w http.ResponseWriter, r *http.Request) {
 	}
 	if err = rt.start(plan); err != nil {
 		// Process errors can contain arguments or environment values. Keep them out of API responses and logs.
-		a.clientLaunchError(w, 500, "Could not open "+plan.Name+". Check that the application and a terminal are available, then try again.")
+		message := "Could not open " + plan.Name + ". Check that the application and a terminal are available, then try again."
+		if plan.Kind == "desktop" {
+			message = "Could not open " + plan.Name + ". Check that the application is available, then try again."
+		}
+		a.clientLaunchError(w, 500, message)
 		return
 	}
 	message := plan.Name + " opened."
@@ -296,7 +300,8 @@ func (a *app) planClientLaunch(input clientLaunchRequest, rt clientLaunchRuntime
 			p.Executable = filepath.Join(p.Executable, "Contents", "MacOS", binary)
 		}
 	} else if input.Client == "claude-desktop" {
-		p.Directory = ""
+		// Keep the validated home as the child process working directory. Desktop
+		// restores its own workspace, so no project folder is passed as an argument.
 		if rt.platform == "macos" && strings.HasSuffix(p.Executable, ".app") {
 			p.Args = []string{"-a", p.Executable}
 			p.Executable = "/usr/bin/open"

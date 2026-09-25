@@ -196,6 +196,39 @@ func TestClientLaunchDispatchAndFailureIsolation(t *testing.T) {
 		t.Fatal("missing application started proxy")
 	}
 }
+
+func TestClientLaunchFailureMessageMatchesKindAndLanguage(t *testing.T) {
+	for _, tc := range []struct {
+		client, language, want string
+	}{
+		{"claude-desktop", "en", "Could not open Claude Desktop. Check that the application is available, then try again."},
+		{"claude-desktop", "es", "No se pudo abrir Claude Desktop. Comprueba que la aplicación está disponible e inténtalo de nuevo."},
+		{"codex-cli", "en", "Could not open Codex CLI. Check that the application and a terminal are available, then try again."},
+		{"codex-cli", "es", "No se pudo abrir Codex CLI. Comprueba que la aplicación y una terminal están disponibles e inténtalo de nuevo."},
+	} {
+		t.Run(tc.client+"/"+tc.language, func(t *testing.T) {
+			a := launchTestApp(t)
+			if tc.client == "claude-desktop" {
+				a.claudeDesktopCheckRunning = func(string) (bool, error) { return false, nil }
+				prepareDesktopLaunchTest(t, a)
+			} else {
+				launchPrepareFixture(t, a, tc.client)
+			}
+			a.config.Language = tc.language
+			a.launcher.start = func(clientLaunchPlan) error {
+				return errors.New("private-runtime-detail " + a.config.LocalKey)
+			}
+			body, _ := json.Marshal(clientLaunchRequest{Client: tc.client})
+			w := adminRequest(a, "clients/launch", string(body))
+			if w.Code != http.StatusInternalServerError || !strings.Contains(w.Body.String(), tc.want) {
+				t.Fatalf("wrong launch failure: %d %s", w.Code, w.Body.String())
+			}
+			if strings.Contains(w.Body.String(), "private-runtime-detail") || strings.Contains(w.Body.String(), a.config.LocalKey) {
+				t.Fatal("launch failure exposed private process details")
+			}
+		})
+	}
+}
 func TestClientLaunchCursorDoesNotStartTunnel(t *testing.T) {
 	a := launchTestApp(t)
 	w := adminRequest(a, "clients/launch", `{"client":"cursor"}`)

@@ -52,6 +52,7 @@ func (a *app) clientLaunchMessage(message string) string {
 		patterns := map[string]string{
 			"Install {client} on this computer, then refresh installed apps.": "Instala {client} en este equipo y actualiza las aplicaciones instaladas.",
 			"{client} opened.": "{client} abierto.",
+			"Could not open {client}. Check that the application is available, then try again.":                       "No se pudo abrir {client}. Comprueba que la aplicación está disponible e inténtalo de nuevo.",
 			"Could not open {client}. Check that the application and a terminal are available, then try again.":       "No se pudo abrir {client}. Comprueba que la aplicación y una terminal están disponibles e inténtalo de nuevo.",
 			"Prepare {client} again: its saved profile is missing, unsafe or no longer matches the proxy connection.": "Vuelve a preparar {client}: su perfil guardado falta, no es seguro o ya no coincide con la conexión del proxy.",
 		}

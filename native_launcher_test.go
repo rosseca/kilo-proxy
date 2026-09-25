@@ -71,6 +71,11 @@ func nativeLaunchTestUI(t *testing.T, key string, delay, failPrepare bool) (*nat
 		},
 		terminal: func() (bool, string) { return true, "" },
 		start: func(plan clientLaunchPlan) error {
+			// Keep the real process boundary in UI tests: a prepared profile alone
+			// does not prove that the generated launch plan can be executed.
+			if err := validateClientProcessPlan(plan); err != nil {
+				return err
+			}
 			recorder.mu.Lock()
 			defer recorder.mu.Unlock()
 			if recorder.failLaunch {
