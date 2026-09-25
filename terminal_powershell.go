@@ -68,10 +68,12 @@ func terminalPowerShellManualCommands(binary, configDir string) (terminalManualR
 		// Text piped into a native command uses $OutputEncoding, independently
 		// of Console.OutputEncoding. Shadow it only in this function so PS5.1's
 		// ASCII default or a BOM-emitting caller preference cannot alter prompts.
+		// Use a constructor expression: PS5.1 ignores New-Object's PSObject
+		// wrapper in a child-scope preference (PowerShell/PowerShell#5763).
 		block := "function " + command.name + " {\n" +
 			"  $kiloEncodedArgs = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes((Microsoft.PowerShell.Utility\\ConvertTo-Json -InputObject ([string[]]$args) -Compress)))\n" +
 			"  if ($MyInvocation.ExpectingInput) {\n" +
-			"    $OutputEncoding = New-Object System.Text.UTF8Encoding($false)\n" +
+			"    $OutputEncoding = [System.Text.UTF8Encoding]::new($false)\n" +
 			"    $input | " + invoke +
 			"    $global:LASTEXITCODE = $LASTEXITCODE\n    return\n  }\n" +
 			"  if ($MyInvocation.PipelinePosition -lt $MyInvocation.PipelineLength) {\n" +
