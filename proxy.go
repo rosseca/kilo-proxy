@@ -55,7 +55,6 @@ type app struct {
 	editorTestRoot            string
 	editorMu                  sync.Mutex
 	zedCredentialStore        func(context.Context, string, string, string) error
-	cursor                    *cursorSession
 	usageTotal                usageSummary
 	usageSessions             map[string]*usageSummary
 	captureEnabled            bool
@@ -430,7 +429,6 @@ func (a *app) startLocked() error {
 
 func (a *app) stop() {
 	a.mu.Lock()
-	a.stopCursorLocked()
 	srv := a.proxyServer
 	// Serve runs asynchronously and may not have registered the listener yet.
 	// Release our listener before exposing the stopped state to another start.

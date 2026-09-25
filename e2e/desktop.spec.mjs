@@ -3,7 +3,7 @@ import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 
 const first='vendor/one', second='anthropic/claude-sonnet-4.6';
-const helperClients=['generic','codex','codex-cli','claude','opencode','zed','cursor','xcode'];
+const helperClients=['generic','codex','codex-cli','claude','opencode','zed','xcode'];
 const helperPrefix=client=>['opencode','zed'].includes(client)?'editor':client==='xcode'?'xcode':'model';
 const sortLabels={en:['Code Mode Rank','Coding Index','Speed','Price','Name'],es:['Ranking de Code Mode','Índice de programación','Velocidad','Precio','Nombre']};
 const model=(page,id)=>page.locator('input[name="model-choice"]').filter({visible:true}).and(page.locator(`[value="${id}"]`));
@@ -32,7 +32,9 @@ test('connection, team selection, language persistence, all clients and mobile n
   await expect(page.locator('#org-id')).toHaveValue('other-team');
   await page.locator('#team-select').selectOption('e2e-team');
 
-  for(const client of ['generic','codex','codex-cli','claude','opencode','zed','cursor','xcode']) {
+  const clients=['generic','zed','opencode','omp','open-design','xcode','codex','claude-desktop','codex-cli','claude'];
+  expect(await page.locator('[role="tab"][data-client]').evaluateAll(tabs=>tabs.map(tab=>tab.dataset.client))).toEqual(clients);
+  for(const client of clients) {
     await page.locator('#tab-'+client).click();
     await expect(page.locator('#tab-'+client)).toHaveAttribute('aria-selected','true');
     await expect(page.locator('#client-panel')).toHaveAttribute('aria-labelledby','tab-'+client);

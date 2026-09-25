@@ -39,6 +39,9 @@ func launchLookPath(name string) string {
 }
 func resolveLaunchClient(id, custom string) (string, error) {
 	name, kind := launchClientIdentity(id)
+	if name == "" {
+		return "", errors.New("Unknown launch client.")
+	}
 	missing := errors.New("Install " + name + " on this computer, then refresh installed apps.")
 	if custom != "" {
 		if id != "codex" || len(custom) > 8192 || !filepath.IsAbs(custom) || strings.ContainsAny(custom, "\x00\r\n") {
@@ -103,7 +106,7 @@ func resolveLaunchClient(id, custom string) (string, error) {
 		return "", missing
 	}
 	if runtime.GOOS == "darwin" {
-		apps := map[string][]string{"codex": {"Codex.app", "ChatGPT.app"}, "zed": {"Zed.app", "Zed Preview.app"}, "cursor": {"Cursor.app"}}[id]
+		apps := map[string][]string{"codex": {"Codex.app", "ChatGPT.app"}, "zed": {"Zed.app", "Zed Preview.app"}}[id]
 		for _, base := range []string{"/Applications", filepath.Join(home, "Applications")} {
 			for _, app := range apps {
 				path := filepath.Join(base, app)
@@ -121,7 +124,7 @@ func resolveLaunchClient(id, custom string) (string, error) {
 			return path, nil
 		}
 		if runtime.GOOS == "windows" {
-			for _, relative := range map[string][]string{"cursor": {"Programs/cursor/Cursor.exe"}, "zed": {"Programs/Zed/zed.exe"}, "codex": {"Programs/Codex/Codex.exe", "Programs/ChatGPT/ChatGPT.exe"}}[id] {
+			for _, relative := range map[string][]string{"zed": {"Programs/Zed/zed.exe"}, "codex": {"Programs/Codex/Codex.exe", "Programs/ChatGPT/ChatGPT.exe"}}[id] {
 				path := filepath.Join(os.Getenv("LOCALAPPDATA"), filepath.FromSlash(relative))
 				if filepath.IsAbs(path) && launchExecutable(path) {
 					return path, nil

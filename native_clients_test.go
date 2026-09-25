@@ -4,8 +4,6 @@ package main
 
 import (
 	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -37,7 +35,7 @@ func nativeQueueModeFromTOML(t *testing.T, data []byte) (string, bool) {
 
 func TestNativeClientProfileSelectionIsolationAndValidation(t *testing.T) {
 	c := nativeClients{}
-	for _, key := range []string{"codex", "codex-cli", "claude", "opencode", "omp", "zed", "cursor", "xcode-chat", "xcode-codex", "xcode-claude"} {
+	for _, key := range []string{"codex", "codex-cli", "claude", "opencode", "omp", "zed", "xcode-chat", "xcode-codex", "xcode-claude"} {
 		s := c.selection(key)
 		for _, m := range nativeClientModelsForTest() {
 			if err := s.add(m, 50); err != nil {
@@ -489,62 +487,5 @@ func TestNativeClientsImportRequiresExplicitReplacement(t *testing.T) {
 	u.flushModelLibrary()
 	if u.library.selection == s || u.library.selection.choice("vendor/one").DisplayName != "Saved profile name" || u.owner.modelLibrary.snapshot().Library.Models[0].DisplayName != "Saved profile name" {
 		t.Fatal("explicit acceptance did not persist the imported selection")
-	}
-}
-
-func TestNativeClientsCursorCheckCopyAndDisconnect(t *testing.T) {
-	u := nativeTestUI(t)
-	u.page = "clients"
-	u.client = "cursor"
-	// A synthetic ingress replaces the public network boundary. The native UI
-	// still calls the production API/check/stop code; no ngrok is launched.
-	public := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/models" || r.Header.Get("Authorization") != "Bearer kl_cursor_synthetic" {
-			http.Error(w, "bad ingress request", http.StatusUnauthorized)
-			return
-		}
-		jsonResponse(w, 200, map[string]any{"object": "list", "data": []any{map[string]string{"id": "vendor/one"}}})
-	}))
-	t.Cleanup(public.Close)
-	session := &cursorSession{Status: "running", URL: public.URL + "/v1", Key: "kl_cursor_synthetic", Models: []string{"vendor/one"}}
-	u.owner.mu.Lock()
-	u.owner.cursor = session
-	u.owner.mu.Unlock()
-	u.state["cursor"] = session
-	nativeSeedSharedForTest(t, u, modelInfo{ID: "unsaved/different-model"})
-	s := u.sharedClientSelection("cursor")
-	nativeTestFrame(t, u)
-	u.clickable("cursor-check").Click()
-	nativeTestFrame(t, u)
-	nativeTestWait(t, u, func() bool { return !u.busy["POST/api/cursor"] })
-	if !strings.Contains(u.notice, "verified") || u.state["cursor"] == nil {
-		t.Fatalf("successful check discarded connection: %s", u.notice)
-	}
-	for _, action := range []struct{ id, expected string }{
-		{"cursor-copy-url", session.URL},
-		{"cursor-copy-key", session.Key},
-		{"cursor-copy-guide", cursorSetupGuide(session, s.ids(), "en", true)},
-	} {
-		u.clickable(action.id).Click()
-		nativeTestFrame(t, u)
-		bridge := u.owner.desktop.(*nativeRecordingBridge)
-		bridge.mu.Lock()
-		copied := bridge.Text
-		bridge.mu.Unlock()
-		if copied != action.expected {
-			t.Fatal("incorrect native Cursor clipboard output", action.id)
-		}
-		if strings.Contains(copied, "unsaved/different-model") || strings.Contains(copied, "synthetic-kilo-personal-key") {
-			t.Fatal("Cursor copy used unsaved models or upstream credentials")
-		}
-	}
-	u.clickable("cursor-disconnect").Click()
-	nativeTestFrame(t, u)
-	nativeTestWait(t, u, func() bool { return !u.busy["POST/api/cursor"] })
-	u.owner.mu.Lock()
-	disconnected := u.owner.cursor == nil
-	u.owner.mu.Unlock()
-	if !disconnected || u.state["cursor"] != (*cursorSession)(nil) {
-		t.Fatal("native disconnect did not revoke the synthetic session")
 	}
 }

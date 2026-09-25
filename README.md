@@ -14,7 +14,7 @@ Connect with your personal Kilo account, choose your organization, add models on
 2. Open **Kilo Proxy.app** on macOS, **Kilo Proxy.exe** on Windows, or run `./kilo-proxy` on Linux.
 3. The first-run guide opens automatically. Click **Sign in with Kilo / SSO** and approve the device code on Kilo’s website using your usual login or SSO. Choose your team and click **Save & choose models**. **Use an API key or team ID instead** provides manual entry.
 4. Choose at least one model, then **Continue**. Names, order, default and supported reasoning preferences save automatically to the shared library.
-5. Click **Start proxy and go to agents**, then **Open Codex** or another installed agent. Choose your project inside Codex Desktop; terminal agents and editors have their own folder picker. Supported profiles are prepared automatically from the shared library. Zed also receives its local credential automatically. Cursor and Xcode retain their one-time provider setup under **Options**; choose Open Design's local CLI under **Engine settings** on its card.
+5. Click **Start proxy and go to agents**, then **Open Codex** or another installed agent. Choose your project inside Codex Desktop; terminal agents and editors have their own folder picker. Supported profiles are prepared automatically from the shared library. Zed also receives its local credential automatically. Xcode retains its one-time provider setup under **Options**; choose Open Design's local CLI under **Engine settings** on its card.
 
 Configured installations open **Agents** directly. **Start proxy** sits beside the stopped status; opening an agent also starts the proxy before launching it. If startup fails, the agent stays closed and the error appears in Kilo Proxy. Incomplete setup can be resumed with **Continue setup**.
 
@@ -51,9 +51,6 @@ macOS bundles have an **ad-hoc signature** covering the executable, bundle metad
 | Claude Desktop | Official gateway configuration, shared Claude models and names, automatic preparation and desktop launch |
 | Zed | Automatic local credentials and JSONC settings updates, multiple models, names, and initial model |
 | Xcode | Dedicated Chat model list, automatic Codex/Claude agent profiles, version-aware Claude aliases and setup guidance |
-| Cursor | Managed ngrok HTTPS connection, dedicated key, selected models, and public connection check |
-
-**Cursor connects through a dedicated HTTPS tunnel.** Install and configure ngrok once, choose shared models, and use **Agents → Cursor → Set up tunnel → Connect HTTPS tunnel**. Copy its URL and dedicated key into Cursor. [Setup, privacy, and compatibility limits](docs/cursor.md).
 
 **Open Design uses Codex CLI, Claude Code or OpenCode through the local proxy.** Choose **Agents → Open Design → Engine settings**, select an installed engine, and click **Launch Open Design**. Kilo Proxy prepares private profiles from the shared library and starts a separate Open Design workspace on macOS or Windows, without copying credentials manually. Keep **CLI default** in Open Design for the shared default; its own model picker may not list every shared choice. See [Open Design setup and Linux guidance](docs/open-design.md).
 

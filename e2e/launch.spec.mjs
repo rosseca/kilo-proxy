@@ -115,19 +115,3 @@ test('launcher stops after preparation errors and clears launch errors after ret
  await expect.poll(async()=>(await records(gateway)).length).toBe(1);
  await expect(page.locator('#client-launch-status')).not.toHaveClass(/error/);
 });
-
-test('Cursor launcher requires the existing tunnel and does not create one',async({page,gateway})=>{
- await startProxy(page,gateway);
- await choose(page,'cursor');
- let tunnelRequests=0;
- page.on('request',request=>{if(request.method()==='POST'&&new URL(request.url()).pathname==='/api/cursor')tunnelRequests++;});
- await expect(page.locator('#client-launch')).toBeDisabled();
- await expect(page.locator('#client-launch-status')).toContainText('Connect the Cursor HTTPS tunnel');
- await control(gateway,{cursorRunning:true});
- await expect(page.locator('#client-launch')).toBeEnabled();
- await page.locator('#client-launch').click();
- await expect.poll(async()=>(await records(gateway)).length).toBe(1);
- expect((await records(gateway))[0].client).toBe('cursor');
- expect(tunnelRequests).toBe(0);
- await expect(page.locator('#cursor-steps')).toContainText('Settings → Models');
-});

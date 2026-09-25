@@ -32,6 +32,9 @@ func readAgentPreferences(dir string) (agentPreferences, error) {
 	if p.Projects == nil {
 		p.Projects = map[string]string{}
 	}
+	// Older installations can remember a Cursor project. Ignore that retired
+	// integration without discarding the other agents' folders or app paths.
+	delete(p.Projects, "cursor")
 	if err = validateAgentPreferences(p); err != nil {
 		return agentPreferences{Projects: map[string]string{}}, err
 	}

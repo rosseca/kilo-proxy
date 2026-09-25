@@ -395,34 +395,6 @@ func xcodeChatGuide(baseURL, key, language string) string {
 	return strings.NewReplacer("NATIVE_BASE_SENTINEL", baseURL, "NATIVE_KEY_SENTINEL", key).Replace(guide)
 }
 
-func cursorSetupGuide(session *cursorSession, selected []string, language string, reveal bool) string {
-	if session != nil && session.Status == "running" {
-		key := "••••••••••••••••"
-		if reveal {
-			key = session.Key
-		}
-		ending := helperText(language, "Enable the OpenAI key and URL override. Add each model ID, then select it in chat. Disable the override to return to Cursor built-in models. Tab and Composer are not provided by Kilo.", "Activa la clave OpenAI y la URL alternativa. Añade cada ID y selecciónalo en el chat. Desactiva la URL alternativa para volver a los modelos propios de Cursor. Kilo no proporciona Tab ni Composer.")
-		return "Cursor → Settings → Models\n\nOverride OpenAI Base URL: " + session.URL + "\nOpenAI API Key: " + key + "\n\nAdd Custom Model:\n" + strings.Join(session.Models, "\n") + "\n\n" + ending
-	}
-	seen := map[string]bool{}
-	ids := []string{}
-	for _, id := range selected {
-		if helperValidModelID(id) && !seen[id] {
-			seen[id] = true
-			ids = append(ids, id)
-		}
-	}
-	models := strings.Join(ids, "\n")
-	if models == "" {
-		models = helperText(language, "(Select and add models in the helper.)", "(Selecciona y añade modelos en el helper.)")
-	}
-	return strings.ReplaceAll(helperText(language, nativeCursorGuideEN, nativeCursorGuideES), "NATIVE_MODELS_SENTINEL", models)
-}
-
 const nativeXcodeGuideEN = "Xcode → Settings → Intelligence → Add a Chat Provider (or Add a Model Provider)\n\nChoose Internet Hosted to supply authentication for this local URL.\nURL: NATIVE_BASE_SENTINEL/xcode\nAPI Key Header: Authorization\nAPI Key: Bearer NATIVE_KEY_SENTINEL\n\nDo not append /v1: Xcode adds it. Keep Kilo Proxy running.\nXcode fetches the saved selection from NATIVE_BASE_SENTINEL/xcode/v1/models.\nSelect a model in Xcode. Re-add or refresh the provider if its list is stale.\nModels must support Chat Completions; listing does not verify generation access."
 
-const nativeCursorGuideEN = "Cursor · setup guide (external HTTPS endpoint required)\n\nKilo Proxy is loopback-only. Cursor's servers cannot reach it.\nDo not paste its localhost URL or local key into Cursor.\n\nConnect the ngrok tunnel in the Cursor helper to obtain the public URL and Cursor key. Then:\n1. Cursor Settings > Models: enable OpenAI API Key.\n2. Override OpenAI Base URL: use that gateway's public HTTPS API URL.\n3. API key: use the credential issued for that gateway.\n4. Add Custom Model / Add model: add each exact ID below and enable it.\n5. Choose a model in Cursor's picker and verify a request.\n\nDo not remove the provider prefix or use a display name instead of the ID.\nAdding an ID does not prove protocol or organization compatibility.\nCursor Tab keeps using Cursor's own models.\n\nModel IDs (add one at a time):\nNATIVE_MODELS_SENTINEL"
-
 const nativeXcodeGuideES = "Xcode → Settings → Intelligence → Add a Chat Provider (o Add a Model Provider)\n\nElige Internet Hosted para introducir autenticación con esta URL local.\nURL: NATIVE_BASE_SENTINEL/xcode\nAPI Key Header: Authorization\nAPI Key: Bearer NATIVE_KEY_SENTINEL\n\nNo añadas /v1: lo añade Xcode. Mantén Kilo Proxy abierto.\nXcode obtiene la selección guardada de NATIVE_BASE_SENTINEL/xcode/v1/models.\nElige un modelo en Xcode. Actualiza o vuelve a añadir el proveedor si la lista no cambia.\nLos modelos deben admitir Chat Completions; listar no verifica el acceso al generar."
-
-const nativeCursorGuideES = "Cursor · guía de configuración (requiere HTTPS externo)\n\nKilo Proxy solo escucha en loopback. Los servidores de Cursor no pueden acceder.\nNo pegues su URL localhost ni su clave local en Cursor.\n\nConecta el túnel ngrok del helper de Cursor para obtener la URL pública y la clave de Cursor. Después:\n1. Cursor Settings > Models: activa OpenAI API Key.\n2. Override OpenAI Base URL: usa la URL HTTPS pública de la API de ese gateway.\n3. API key: usa la credencial emitida para ese gateway.\n4. Add Custom Model / Add model: añade y activa cada ID exacto de abajo.\n5. Elige un modelo en el selector de Cursor y verifica una petición.\n\nNo quites el prefijo del proveedor ni sustituyas el ID por el nombre visible.\nAñadir un ID no verifica el protocolo ni los permisos de la organización.\nCursor Tab sigue usando los modelos propios de Cursor.\n\nIDs de modelos (añadir uno a uno):\nNATIVE_MODELS_SENTINEL"

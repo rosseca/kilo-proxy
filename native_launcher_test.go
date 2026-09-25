@@ -439,32 +439,6 @@ func TestNativeLaunchDetectionAndValidation(t *testing.T) {
 	}
 }
 
-func TestNativeCursorLaunchRequiresRunningTunnel(t *testing.T) {
-	u, r := nativeLaunchTestUI(t, "cursor", false, false)
-	for _, status := range []string{"disconnected", "starting"} {
-		u.state["cursor"] = cursorSession{Status: status}
-		nativeTestFrame(t, u)
-		u.clickable("client:cursor:launch").Click()
-		nativeTestFrame(t, u)
-		if r.launchRequests.Load() != 0 || r.count() != 0 {
-			t.Fatal("Cursor launch started before its tunnel was running")
-		}
-	}
-	u.state["cursor"] = cursorSession{Status: "running", URL: "https://synthetic.invalid/v1"}
-	nativeTestFrame(t, u)
-	u.clickable("client:cursor:launch").Click()
-	nativeTestFrame(t, u)
-	nativeTestWait(t, u, func() bool { return u.clientState().Launching == "" })
-	if r.launchRequests.Load() != 1 || r.prepares.Load() != 0 {
-		t.Fatal("running Cursor UI did not use launch directly")
-	}
-	// The backend independently rejects this UI-only tunnel fixture. No public
-	// tunnel is ever created by a native Launch action or this test.
-	if r.count() != 0 {
-		t.Fatal("UI state bypassed backend tunnel validation")
-	}
-}
-
 func TestNativeLaunchPointerProjectControls(t *testing.T) {
 	for _, size := range []image.Point{{1180, 820}, {720, 700}} {
 		for _, lang := range []string{"en", "es"} {

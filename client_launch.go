@@ -38,7 +38,7 @@ type clientLaunchAvailability struct {
 	Reason    string `json:"reason"`
 }
 
-var launchClients = []string{"codex", "claude-desktop", "codex-cli", "claude", "opencode", "omp", "open-design", "zed", "cursor", "xcode-chat", "xcode-codex", "xcode-claude"}
+var launchClients = []string{"codex", "claude-desktop", "codex-cli", "claude", "opencode", "omp", "open-design", "zed", "xcode-chat", "xcode-codex", "xcode-claude"}
 
 func clientLaunchUsesProject(client string) bool {
 	return client != "codex" && client != "claude-desktop" && client != "open-design"
@@ -62,8 +62,6 @@ func launchClientIdentity(id string) (string, string) {
 		return "Open Design", "desktop"
 	case "zed":
 		return "Zed", "desktop"
-	case "cursor":
-		return "Cursor", "desktop"
 	case "xcode-chat", "xcode-codex", "xcode-claude":
 		return "Xcode", "desktop"
 	}
@@ -181,9 +179,6 @@ func (a *app) clientsLaunch(w http.ResponseWriter, r *http.Request) {
 	}
 	if input.Client == "zed" {
 		message = "Zed opened. Local credentials and models are ready; existing projects stay open."
-	}
-	if input.Client == "cursor" {
-		message = "Cursor opened. Connect its provider to the existing tunnel if needed."
 	}
 	if input.Client == "open-design" {
 		message = "Open Design opened with its Kilo CLI profile. Use Local CLI mode in Open Design."

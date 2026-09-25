@@ -30,7 +30,7 @@ test('launch requires a supported installed engine, a selected model and complet
  for (const engine of openDesignEngines) assert.equal(openDesignCanLaunch(state, engine, engines, library), true);
  for (const missing of [{hasKey:false}, {orgId:''}, {orgId:'   '}, {auth:{status:'pending'}}, {auth:{status:'starting'}}]) assert.equal(openDesignCanLaunch({...state, ...missing}, 'codex-cli', engines, library), false);
  assert.equal(openDesignCanLaunch(state, 'codex-cli', {'codex-cli':{available:false}}, library), false);
- assert.equal(openDesignCanLaunch(state, 'cursor', engines, library), false);
+ assert.equal(openDesignCanLaunch(state, 'unsupported', engines, library), false);
  assert.equal(openDesignCanLaunch(state, 'codex-cli', engines, openDesignLibrary()), false);
  assert.equal(openDesignCanLaunch(undefined, 'codex-cli', engines, library), false);
  assert.equal(openDesignCanLaunch({...state, running:false}, 'codex-cli', engines, library), true);

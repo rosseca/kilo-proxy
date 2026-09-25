@@ -268,11 +268,6 @@ func TestE2EServer(t *testing.T) {
 				}
 			}
 		}
-		if r.URL.Path == "/api/state" && control["cursorRunning"] == true {
-			a.mu.Lock()
-			a.cursor = &cursorSession{Status: "running", URL: "https://synthetic.example/v1", Key: "synthetic-cursor-local-key", Models: []string{"vendor/one"}}
-			a.mu.Unlock()
-		}
 		if readLaunchControl()["openDesignIdle"] == true {
 			a.mu.Lock()
 			a.openDesignLaunchUntil = time.Time{}

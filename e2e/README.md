@@ -24,7 +24,7 @@ Coverage includes:
 - Dynamic lab filtering combined with search, selected-only views and sorting; lab choices survive empty results and tab changes. Manual models contribute labs, `~anthropic` shares the Anthropic filter, and exact saved IDs remain unchanged.
 - Actual JSON/SSE traffic through the proxy, conversation spend, cache percentages, activity bodies, redacted credentials, capture pause/clear, and accounting retention.
 - Missing admin credentials and cross-origin mutation rejection.
-- Launch buttons prepare current selections, reuse unchanged profiles, and save edits before opening. Every client uses a recording launcher in the Go backend; no installed editor or terminal is opened. Cases cover custom Codex paths independent of command exports, failed preparations, failed launches, retries, changes during pending saves, and Cursor requiring an existing tunnel.
+- Launch buttons prepare current selections, reuse unchanged profiles, and save edits before opening. Every client uses a recording launcher in the Go backend; no installed editor or terminal is opened. Cases cover custom Codex paths independent of command exports, failed preparations, failed launches, retries, and changes during pending saves.
 
 The tests do not prove that every upstream model supports every client protocol, and do not launch the external editors. Browser E2E validates the UI/backend integration; native smoke checks validate each packaged OS application.
 

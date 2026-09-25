@@ -1,12 +1,45 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
 	"testing"
 )
+
+func TestAgentPreferencesLoadRetiredIntegrationWithoutLosingOtherProjects(t *testing.T) {
+	dir := t.TempDir()
+	project, oldProject := filepath.Join(dir, "active-project"), filepath.Join(dir, "old-project")
+	previous := agentPreferences{
+		Projects:     map[string]string{"cursor": oldProject, "claude": project, "opencode": project},
+		Recent:       []string{project, oldProject},
+		CodexAppPath: filepath.Join(dir, "Codex.app"),
+	}
+	data, err := json.Marshal(previous)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "agent-preferences.json"), data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := readAgentPreferences(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	delete(previous.Projects, "cursor")
+	if !reflect.DeepEqual(loaded, previous) {
+		t.Fatalf("retired integration discarded other preferences: %+v", loaded)
+	}
+	if err := writeAgentPreferences(dir, loaded); err != nil {
+		t.Fatal(err)
+	}
+	reloaded, err := readAgentPreferences(dir)
+	if err != nil || !reflect.DeepEqual(reloaded, loaded) {
+		t.Fatalf("migrated preferences did not survive restart: %+v %v", reloaded, err)
+	}
+}
 
 func TestAgentPreferencesRememberPerAgentAndRecentProjects(t *testing.T) {
 	dir := t.TempDir()

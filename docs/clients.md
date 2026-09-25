@@ -8,7 +8,7 @@ The local key grants access to your organization’s credits while the proxy is 
 
 Choose models once in **Models → Add models** and set their names, default, order and supported reasoning preferences. The library survives restarts; see [shared models and storage](shared-models.md). Return to **Agents** and click **Open Codex** or another agent's Open button. Choose your project inside Codex Desktop; terminal agents and editors use the folder selected on their card. The action saves pending library edits, prepares that agent's generated profile when necessary, starts the saved proxy and opens the installed client on this computer. It does not install applications.
 
-Codex Desktop opens the GUI with an isolated profile. **Codex CLI**, **Claude Code**, **OpenCode** and **Oh My Pi** open interactive terminals: Terminal on macOS, a console on Windows and an installed desktop terminal on Linux. **Zed** and **Cursor** open their editors. **Set up Xcode** and **Other clients** lead to provider-specific guidance. Existing editor windows may be focused by the editor itself.
+Codex Desktop opens the GUI with an isolated profile. **Codex CLI**, **Claude Code**, **OpenCode** and **Oh My Pi** open interactive terminals: Terminal on macOS, a console on Windows and an installed desktop terminal on Linux. **Zed** opens its editor. **Set up Xcode** and **Other clients** lead to provider-specific guidance. Existing editor windows may be focused by the editor itself.
 
 **Claude Desktop** appears directly below Codex. It uses the app's third-party gateway settings, preserving your library and other agents' choices. Its integration settings offer an experimental opt-in for other providers through local routing aliases; native Claude models need no alias. Quit an existing Claude Desktop instance before opening the prepared configuration. This integration does not provide a second independent Desktop instance or a project-folder launch argument. See [Claude Desktop setup, model compatibility and restoration](claude-desktop.md).
 
@@ -157,14 +157,6 @@ See [Claude Code compatibility verification](claude-code-compatibility.md).
 
 **Agents → Set up Xcode** has three integration variants using the shared library: **Chat**, **Codex** and **Claude**. Chat saves a dedicated model list and copies the provider connection details; its URL ends in `/xcode`, without `/v1`. The agent variants prepare Apple's dedicated profile folders on macOS with backups. Claude options use Xcode's advertised agent version, not the terminal installation. **Launch** prepares changes and opens Xcode without forcing a restart or closing projects. Complete the chosen variant's one-time setup inside Xcode. See [Xcode setup and compatibility](xcode.md).
 
-## Cursor
-
-The helper manages a dedicated ngrok HTTPS tunnel, since Cursor's servers cannot reach localhost. Install ngrok 3 and configure its account once, start the local proxy, choose shared models, and use **Agents → Cursor → Set up tunnel → Connect HTTPS tunnel**. Copy the public URL and dedicated Cursor key into **Settings → Models → OpenAI API Key / Override OpenAI Base URL**. **Open Cursor** opens Cursor once this tunnel is running; it never starts a public tunnel automatically. Add the exact custom IDs and select one in chat.
-
-**Test public connection** checks authentication and model-list reachability without inference charges. Disconnecting revokes the key. Only selected models and Chat Completions are exposed; the control panel remains local. Prompts pass through Cursor, ngrok, and Kilo. Cursor's BYOK limitations still apply, including Tab/Composer and model-dependent reasoning or Agent support.
-
-See the [complete Cursor guide](cursor.md) for setup, account requirements, troubleshooting, and tested coverage.
-
 ## Sources
 
 - [Kilo authentication](https://kilo.ai/docs/gateway/authentication), [API reference](https://kilo.ai/docs/gateway/api-reference), and [model metadata](https://kilo.ai/docs/gateway/models-and-providers).
@@ -172,6 +164,5 @@ See the [complete Cursor guide](cursor.md) for setup, account requirements, trou
 - [OpenCode models](https://opencode.ai/docs/models/) and [custom providers](https://opencode.ai/docs/providers/#custom-provider).
 - [Claude Code gateways](https://code.claude.com/docs/en/llm-gateway-connect) and [model configuration](https://code.claude.com/docs/en/model-config).
 - [Zed API providers](https://zed.dev/docs/ai/use-api-access#openai-compatible).
-- [Cursor API keys](https://prod.cursor.com/help/models-and-usage/api-keys), [localhost limitation](https://forum.cursor.com/t/how-can-i-use-a-local-llm-on-my-desktop-ai-computer/152419), and [custom IDs](https://forum.cursor.com/t/add-custom-model-fail-no-models-available/163488).
 
 Compatibility was investigated on September 7, 2026. Vendor behavior can change; the version-specific verification record is in [Codex compatibility notes](codex-desktop-compatibility.md).

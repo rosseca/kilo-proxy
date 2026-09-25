@@ -24,12 +24,12 @@ func browserHelperResults(t *testing.T, input any) map[string][]json.RawMessage 
 		t.Fatal(err)
 	}
 	script := `import {codexCatalog} from './ui/codex-catalog.mjs';
-import {launchCommand,cursorGuide} from './ui/client-config.mjs';
+import {launchCommand} from './ui/client-config.mjs';
 import {claudeLaunch} from './ui/claude-helper.mjs';
 import {editorLaunch} from './ui/editor-helper.mjs';
 import {xcodeSelectionPayload,xcodeChatGuide} from './ui/xcode-helper.mjs';
 let data='';for await(const part of process.stdin)data+=part;const input=JSON.parse(data);
-const out={catalogs:input.catalogs.map(c=>c.xcode?xcodeSelectionPayload('codex',c.models,c.initial).catalog:codexCatalog(c.models,c.initial)),commands:input.commands.map(c=>c.kind==='claude'?claudeLaunch(c.shell,c.language):c.kind==='opencode'?editorLaunch(c.appPath,c.model,c.shell):launchCommand(c)),guides:input.guides.map(c=>c.kind==='xcode'?xcodeChatGuide(c.baseURL,c.key,c.language):cursorGuide(c.models,c.language))};process.stdout.write(JSON.stringify(out));`
+const out={catalogs:input.catalogs.map(c=>c.xcode?xcodeSelectionPayload('codex',c.models,c.initial).catalog:codexCatalog(c.models,c.initial)),commands:input.commands.map(c=>c.kind==='claude'?claudeLaunch(c.shell,c.language):c.kind==='opencode'?editorLaunch(c.appPath,c.model,c.shell):launchCommand(c)),guides:input.guides.map(c=>xcodeChatGuide(c.baseURL,c.key,c.language))};process.stdout.write(JSON.stringify(out));`
 	cmd := exec.Command(node, "--input-type=module", "-e", script)
 	cmd.Stdin = bytes.NewReader(body)
 	output, err := cmd.CombinedOutput()
@@ -146,10 +146,6 @@ func TestNativeHelpersMatchBrowserCatalogsAndCommands(t *testing.T) {
 	for _, language := range []string{"en", "es"} {
 		guides = append(guides, map[string]any{"kind": "xcode", "baseURL": "http://127.0.0.1:8877/v1/", "key": "synthetic-key", "language": language})
 		nativeGuides = append(nativeGuides, xcodeChatGuide("http://127.0.0.1:8877/v1/", "synthetic-key", language))
-		for _, models := range [][]string{{"vendor/one", "vendor/two", "vendor/one", "bad id"}, {}} {
-			guides = append(guides, map[string]any{"kind": "cursor", "models": models, "language": language})
-			nativeGuides = append(nativeGuides, cursorSetupGuide(nil, models, language, false))
-		}
 	}
 	results := browserHelperResults(t, map[string]any{"catalogs": browserCatalogs, "commands": commands, "guides": guides})
 	for i, c := range cases {
@@ -216,21 +212,6 @@ func TestNativeHelperValidationAndReasoningOwnership(t *testing.T) {
 		if _, err := codexLaunchCommand(true, "powershell", "windows", path, "test-key", "en", true); err != nil {
 			t.Fatal(err)
 		}
-	}
-}
-
-func TestNativeCursorGuideRequiresRunningTunnelAndExplicitKeyReveal(t *testing.T) {
-	session := &cursorSession{Status: "running", URL: "https://synthetic.ngrok.example/v1", Key: "private-cursor-key", Models: []string{"vendor/one"}}
-	masked := cursorSetupGuide(session, nil, "en", false)
-	if strings.Contains(masked, session.Key) || !strings.Contains(masked, session.URL) || !strings.Contains(masked, "vendor/one") {
-		t.Fatal("incorrect running tunnel guide")
-	}
-	if revealed := cursorSetupGuide(session, nil, "es", true); !strings.Contains(revealed, session.Key) || !strings.Contains(revealed, "Activa") {
-		t.Fatal("explicit reveal/language not applied")
-	}
-	session.Status = "stopped"
-	if stopped := cursorSetupGuide(session, nil, "en", true); strings.Contains(stopped, session.Key) || strings.Contains(stopped, session.URL) {
-		t.Fatal("stopped tunnel credentials offered for reuse")
 	}
 }
 

@@ -42,7 +42,7 @@ Open or prepare an agent again after editing presets, and restart an already run
 - **Oh My Pi, OpenCode and Zed:** per-model context and output limits. The client decides how to compact. OpenCode always receives its context limit even when output is unspecified.
 - **Claude Code:** one session-wide compaction window, using the smallest selected context budget and capped at 1M. Claude may further cap it to its recognized model capacity. Its supported explicit range starts at 100K; preparing Claude with a smaller selected window reports an error instead of silently increasing it. Output also uses the smallest selected allowance. This does not provide distinct compaction windows on each `/model` switch.
 - **Open Design:** inherits the behavior of its selected CLI engine.
-- **Cursor and Xcode Chat:** their integrations do not expose an equivalent managed context budget. Xcode's Codex and Claude engines use the corresponding adapter, subject to bundled-version support.
+- **Xcode Chat:** its integration does not expose an equivalent managed context budget. Xcode's Codex and Claude engines use the corresponding adapter, subject to bundled-version support.
 
 Context tokens and HTTP payload size are different limits. These presets do not remove Kilo Gateway's request-body size limit; image upload and compression settings still apply.
 
@@ -56,11 +56,10 @@ Context tokens and HTTP payload size are different limits. These presets do not 
 | Oh My Pi | Names, default model, supported reasoning, per-model context and output limits, and the optional Kilo images MCP. |
 | OpenCode and Zed | Model IDs, names, default and token limits. Reasoning remains automatic; the library's Codex effort preferences are not exported as equivalent native controls. The client controls its final model-picker ordering. |
 | Open Design | Private Codex CLI, Claude Code or OpenCode profiles receive the same supported shared settings as those engines. Open Design selects **CLI default** for the shared default; its own picker may not list every shared model. Quit its Kilo instance before applying model, engine or connection changes. See [setup](open-design.md). |
-| Cursor | The exact model list is published when you explicitly connect its HTTPS tunnel. Disconnect and reconnect to publish library changes. Names and reasoning controls remain subject to Cursor's own behavior. |
 | Xcode | Chat, Codex and Claude derive their selections from the library, with protocol and installed-version restrictions. Xcode controls its active picker. Older bundled Claude versions can require reducing the selection to their supported alias limit. |
 | Other clients | Connection guidance includes the library's default model ID. Configure the client according to its supported protocol. |
 
-Profiles keep their own readiness state, paths, credentials and integration details. A model must support the protocol used by the chosen agent: Responses for Codex, Anthropic Messages for Claude, and Chat Completions for OpenCode/Zed/Cursor/Xcode Chat. Open Design uses the protocol of its selected Local CLI engine. Kilo Proxy does not run inference to test each model when preparing a profile. The opened application can perform its own connection check; Claude Desktop probes the configured gateway on startup.
+Profiles keep their own readiness state, paths, credentials and integration details. A model must support the protocol used by the chosen agent: Responses for Codex, Anthropic Messages for Claude, and Chat Completions for OpenCode/Zed/Xcode Chat. Open Design uses the protocol of its selected Local CLI engine. Kilo Proxy does not run inference to test each model when preparing a profile. The opened application can perform its own connection check; Claude Desktop probes the configured gateway on startup.
 
 ## Saved files
 

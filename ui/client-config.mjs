@@ -1,8 +1,7 @@
 import {contextLimits,resolveContextPolicy} from './context-policy.mjs';
 import {claudeLaunch} from './claude-helper.mjs';
 import {validModelID} from './model-helper.mjs';
-export function clientConfig({client, baseURL, zedBaseURL, key, model, contextWindow=272000, language='es', catalogPath='', models=[], selectedModels=[], aliases={}, queueMode='queue'}) {
- if (client === 'cursor') return cursorGuide(models.length ? models : model ? [model] : [],language);
+export function clientConfig({client, baseURL, zedBaseURL, key, model, contextWindow=272000, language='es', catalogPath='', selectedModels=[], aliases={}, queueMode='queue'}) {
  if (client === 'codex' || client === 'codex-cli') return `# ~/.codex-kilo-${client === 'codex' ? 'desktop' : 'cli'}/config.toml · ${language === 'en' ? 'save in this isolated profile' : 'guardar en este perfil independiente'}\nmodel = ${JSON.stringify(model)}${catalogPath ? '\nmodel_catalog_json = ' + JSON.stringify(catalogPath) : ''}\nmodel_provider = "kilo-local"\ncli_auth_credentials_store = "file"${client === 'codex' ? `\n\n[desktop]\nfollowUpQueueMode = ${JSON.stringify(queueMode === 'steer' ? 'steer' : 'queue')}` : ''}\n\n[model_providers.kilo-local]\nname = "Kilo Proxy"\nbase_url = ${JSON.stringify(baseURL)}\n# ${language === 'en' ? 'Keep this variable name unchanged. The launch command supplies the local key.' : 'Conserva este nombre de variable. El comando de arranque carga la clave local.'}\nenv_key = "KILO_LOCAL_API_KEY"\nenv_key_instructions = ${JSON.stringify(language === 'en' ? 'Close the Kilo instance and launch it with the command from the Kilo Proxy Codex helper.' : 'Cierra la instancia Kilo y ábrela con el comando del helper de Codex en Kilo Proxy.')}\nwire_api = "responses"\nrequires_openai_auth = false\nsupports_websockets = false`;
  const selected = [...new Map(selectedModels.filter(m => m && validModelID(m.id)).map(m => [m.id,m])).values()];
  if (!selected.length && validModelID(model)) selected.push({id:model,name:model});
@@ -82,44 +81,4 @@ ${catalogCheck ? `  if (!(Test-Path (Join-Path $kiloHome 'models.json'))) { thro
     KILO_LOCAL_API_KEY=${shQuote(key)} \\
     ${shQuote(appPath)} "--user-data-dir=$kilo_ui"
 )`;
-}
-
-export function cursorGuide(models, language='es') {
- const ids=[...new Set(models)].filter(id=>typeof id==='string' && id.length>0 && id.length<=256 && !/[\s\u0000-\u001f\u007f]/u.test(id));
- const en=language==='en';
- return (en ? `Cursor · setup guide (external HTTPS endpoint required)
-
-Kilo Proxy is loopback-only. Cursor's servers cannot reach it.
-Do not paste its localhost URL or local key into Cursor.
-
-Connect the ngrok tunnel in the Cursor helper to obtain the public URL and Cursor key. Then:
-1. Cursor Settings > Models: enable OpenAI API Key.
-2. Override OpenAI Base URL: use that gateway's public HTTPS API URL.
-3. API key: use the credential issued for that gateway.
-4. Add Custom Model / Add model: add each exact ID below and enable it.
-5. Choose a model in Cursor's picker and verify a request.
-
-Do not remove the provider prefix or use a display name instead of the ID.
-Adding an ID does not prove protocol or organization compatibility.
-Cursor Tab keeps using Cursor's own models.
-
-Model IDs (add one at a time):
-` : `Cursor · guía de configuración (requiere HTTPS externo)
-
-Kilo Proxy solo escucha en loopback. Los servidores de Cursor no pueden acceder.
-No pegues su URL localhost ni su clave local en Cursor.
-
-Conecta el túnel ngrok del helper de Cursor para obtener la URL pública y la clave de Cursor. Después:
-1. Cursor Settings > Models: activa OpenAI API Key.
-2. Override OpenAI Base URL: usa la URL HTTPS pública de la API de ese gateway.
-3. API key: usa la credencial emitida para ese gateway.
-4. Add Custom Model / Add model: añade y activa cada ID exacto de abajo.
-5. Elige un modelo en el selector de Cursor y verifica una petición.
-
-No quites el prefijo del proveedor ni sustituyas el ID por el nombre visible.
-Añadir un ID no verifica el protocolo ni los permisos de la organización.
-Cursor Tab sigue usando los modelos propios de Cursor.
-
-IDs de modelos (añadir uno a uno):
-`) + (ids.join('\n') || (en ? '(Select and add models in the helper.)' : '(Selecciona y añade modelos en el helper.)'));
 }

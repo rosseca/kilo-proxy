@@ -102,10 +102,6 @@ func (a *app) adminHandler() http.Handler {
 			a.editorProfile(w, r)
 			return
 		}
-		if r.URL.Path == "/api/cursor" && (r.Method == "GET" || r.Method == "POST") {
-			a.cursorAPI(w, r)
-			return
-		}
 		if (r.Method == "GET" && r.URL.Path == "/api/xcode/info") || ((r.Method == "GET" || r.Method == "POST") && (r.URL.Path == "/api/xcode/chat" || r.URL.Path == "/api/xcode/codex" || r.URL.Path == "/api/xcode/claude")) {
 			a.xcodeAPI(w, r)
 			return
@@ -206,7 +202,7 @@ func (a *app) state(w http.ResponseWriter) {
 		"imageUploadWarning":              a.imageUploadWarning,
 		"imageGeneration":                 a.config.ImageGeneration,
 		"trayDisplay":                     normalizeTrayDisplay(a.config.TrayDisplay),
-		"cursor":                          a.cursor, "language": a.config.Language, "catalogRevision": a.catalogRevision,
+		"language":                        a.config.Language, "catalogRevision": a.catalogRevision,
 		"auth": a.login, "organizations": a.organizations, "accountEmail": a.accountEmail, "keySaved": a.keySaved,
 		"version": version, "desktop": a.desktop != nil, "port": a.config.Port, "orgId": a.config.OrgID,
 		"localKey": a.config.LocalKey, "hasKey": a.apiKey != "", "remember": a.config.Remember,

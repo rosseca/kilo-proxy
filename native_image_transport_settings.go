@@ -40,7 +40,7 @@ func (u *nativeUI) imageTransportPanel() layout.Widget {
 	case "cloudflare":
 		children = append(children,
 			u.subheading(u.tr("Cloudflare quick tunnel", "Túnel rápido de Cloudflare")),
-			u.note(u.tr("Requires cloudflared installed on this computer and available on PATH. No Cloudflare account, S3 bucket, or ngrok setup is needed. The tunnel starts when a large request needs it.", "Requiere cloudflared instalado en este equipo y disponible en PATH. No necesita cuenta de Cloudflare, un bucket S3 ni configurar ngrok. El túnel se inicia cuando lo necesita una petición grande.")),
+			u.note(u.tr("Requires cloudflared installed on this computer and available on PATH. No Cloudflare account or S3 bucket is needed. The tunnel starts when a large request needs it.", "Requiere cloudflared instalado en este equipo y disponible en PATH. No necesita cuenta de Cloudflare ni un bucket S3. El túnel se inicia cuando lo necesita una petición grande.")),
 			u.note(u.tr("Serves original image bytes from this computer through public, unguessable links. Links are removed after the request finishes or is cancelled. Keep Kilo Proxy running while images are in use.", "Sirve las imágenes originales desde este equipo mediante enlaces públicos difíciles de adivinar. Los enlaces se retiran al terminar o cancelar la petición. Mantén Kilo Proxy abierto mientras se usan las imágenes.")),
 		)
 	case "tailscale":

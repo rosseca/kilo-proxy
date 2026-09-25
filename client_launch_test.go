@@ -250,17 +250,47 @@ func TestClientLaunchFailureMessageMatchesKindAndLanguage(t *testing.T) {
 		})
 	}
 }
-func TestClientLaunchCursorDoesNotStartTunnel(t *testing.T) {
+func TestRemovedClientHasNoLaunchStateOrAPI(t *testing.T) {
 	a := launchTestApp(t)
+	a.config.Language = "en"
+	a.apiKey = ""
+	a.launcher.resolve = func(id, _ string) (string, error) {
+		if id == "cursor" {
+			t.Fatal("removed client reached discovery")
+		}
+		return "", errors.New("not installed")
+	}
+	a.launcher.start = func(clientLaunchPlan) error {
+		t.Fatal("removed client reached process launch")
+		return nil
+	}
 	w := adminRequest(a, "clients/launch", `{"client":"cursor"}`)
-	if w.Code != 409 || a.cursor != nil || a.proxyListener != nil {
-		t.Fatal("launch unexpectedly started Cursor ingress")
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "Unknown launch client.") || a.proxyListener != nil {
+		t.Fatal("removed client was accepted or started the proxy", w.Code, w.Body.String())
 	}
-	a.cursor = &cursorSession{Status: "running", URL: "https://synthetic.invalid/v1"}
-	if _, e := a.planClientLaunch(clientLaunchRequest{Client: "cursor"}, a.launchRuntime()); e != nil {
-		t.Fatal(e)
+	if path, err := resolveLaunchClient("cursor", ""); path != "" || err == nil {
+		t.Fatal("removed client can still be discovered")
 	}
-	a.cursor = nil
+	for _, endpoint := range []string{"state", "clients/launch"} {
+		response := adminRequest(a, endpoint, "")
+		var state map[string]json.RawMessage
+		if response.Code != http.StatusOK || json.Unmarshal(response.Body.Bytes(), &state) != nil {
+			t.Fatal("invalid state or discovery response", response.Code)
+		}
+		if _, exists := state["cursor"]; exists || strings.Contains(response.Body.String(), `"cursor"`) {
+			t.Fatal("removed client remains in state or discovery", endpoint)
+		}
+	}
+	for _, body := range []string{"", `{"action":"start","models":["vendor/model"]}`, `{"action":"check"}`, `{"action":"stop"}`} {
+		response := adminRequest(a, "cursor", body)
+		want := http.StatusNotFound
+		if body == "" {
+			want = http.StatusMethodNotAllowed
+		}
+		if response.Code != want {
+			t.Fatal("removed route is still handled", response.Code, response.Body.String())
+		}
+	}
 }
 
 func TestClientLaunchRejectsSharedCodexWindowProfile(t *testing.T) {

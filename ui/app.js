@@ -46,11 +46,9 @@ const clientModels = {};
 const codexClients = Object.fromEntries(['codex','codex-cli'].map(id=>[id,{models:new Map(),initial:'',setup:null,preparing:false,imageGeneration:null,imageGenerationBaseline:null,queueMode:'queue'}]));
 const isCodexClient = () => ['codex','codex-cli'].includes(client);
 const codexSelection = () => codexClients[client] || codexClients.codex;
-const cursorModels = new Map();
 const multiClients = Object.fromEntries(['opencode','claude'].map(id=>[id,{models:new Map(),initial:'',aliases:{},signature:''}]));
 let claudeInstalled=claudeCapabilities(), claudeChecked=false, claudeSetup=null, claudeRendering='',claudePreparing=false,claudeDetecting=false;
 let launchInfo=null,launchDetecting=false,launchDetected=false,launchBusy=false,launchMessage='',launchError=false,launchDirectoryEdited=false;
-let cursorSignature = '';
 let desktopSignature = '';
 function codexSetupSignature(selection=codexSelection()) { return JSON.stringify([state?.baseURL,contextPreview(()=>codexCatalog([...selection.models.values()],selection.initial)),selection.imageGeneration,selection===codexClients.codex?selection.queueMode:'']); }
 function renderCodexSetup() {
@@ -118,7 +116,6 @@ $('codex-queue-mode').addEventListener('change',()=>{codexSelection().queueMode=
 function effectiveModel() { if(multiClients[client]?.models.size)return multiClients[client].initial; return isCodexClient() ? codexSelection().initial : $('model').value.trim(); }
 let catalog = [], catalogRevision, catalogLoading = false, catalogError = '', catalogFetchedAt = '', catalogRequest = 0;
 const descriptions = {
-  cursor: ['Cursor: varios modelos, con un requisito de red.', 'Selecciona modelos y conecta el túnel HTTPS desde el helper de Cursor.', 'Guía de conexión de Cursor'],
   generic: ['Dos valores. Ninguna cabecera extra.', 'En tu herramienta, elige un proveedor compatible con OpenAI. Pega la URL y la clave local. El modelo mantiene su ID de Kilo.', 'Conexión compatible con OpenAI'],
   zed: ['Tu agente de Zed, con saldo de empresa.', 'En Agent Settings → LLM Providers, añade un proveedor compatible con OpenAI. Combina este bloque con tus ajustes y guarda la clave local en la interfaz del proveedor.', 'settings.json · combinar con tus ajustes'],
   'open-design': ['Open Design', '', ''],
@@ -158,7 +155,6 @@ async function copy(text) {
 }
 function snippet(reveal = false) {
   if (client === 'claude') {try{return JSON.stringify(claudeSettings(currentClaudeSelection(),currentClaudeCaps(),state?.baseURL || '',reveal ? state?.localKey || '' : 'kl_local_••••••••••••••••'),null,2);}catch(error){return error.message;}}
-  if (client === 'cursor') return cursorConnectionGuide(reveal);
   if (!state || !validModelID(effectiveModel())) return t('Selecciona un modelo para generar la configuración.');
   const model = effectiveModel();
   const key = reveal ? state.localKey : 'kl_local_••••••••••••••••';
@@ -180,7 +176,6 @@ function clientLaunchSelection(){
  if(client==='open-design')return openDesignHelper.launchState();
  if(['opencode','zed','omp','claude-desktop'].includes(client))return editorHelper.launchState();
  if(client==='xcode')return xcodeHelper.launchState();
- if(client==='cursor')return {id:client,count:cursorModels.size,ready:true,fingerprint:JSON.stringify(state?.cursor),working:busy};
  return null;
 }
 function renderClientLaunch(){
@@ -190,7 +185,7 @@ function renderClientLaunch(){
  if(!launchDetected&&!launchDetecting)void detectLaunchClients();
  const installed=launchInfo?.clients?.[selection.id],custom=selection.id==='codex'&&$('client-launch-app').value.trim();
  const available=!!installed?.available||!!custom,terminal=installed?.kind==='terminal'||['codex-cli','claude','opencode','omp'].includes(selection.id);
- const name=installed?.name||({'codex':'Codex Desktop','codex-cli':'Codex CLI',claude:'Claude Code','claude-desktop':'Claude Desktop',opencode:'OpenCode',omp:'Oh My Pi','open-design':'Open Design',zed:'Zed',cursor:'Cursor'}[selection.id]||'Xcode');
+ const name=installed?.name||({'codex':'Codex Desktop','codex-cli':'Codex CLI',claude:'Claude Code','claude-desktop':'Claude Desktop',opencode:'OpenCode',omp:'Oh My Pi','open-design':'Open Design',zed:'Zed'}[selection.id]||'Xcode');
  $('client-launch-title').textContent=L('Open on this computer','Abrir en este ordenador');
  $('client-launch-refresh').textContent=launchDetecting?L('Checking…','Comprobando…'):L('Check installed apps','Comprobar aplicaciones');
  $('client-launch-refresh').disabled=launchDetecting||launchBusy;
@@ -201,11 +196,10 @@ function renderClientLaunch(){
  $('client-launch-custom-label').textContent=L('Custom Codex application','Aplicación de Codex personalizada');
  $('client-launch-app-label').textContent=L('Application path on this computer','Ruta de la aplicación en este ordenador');
  $('client-launch-app').placeholder=launchInfo?.clients?.codex?.path||L('Absolute application path','Ruta absoluta de la aplicación');
- const runningTunnel=selection.id!=='cursor'||state?.cursor?.status==='running';
  $('client-launch').textContent=launchBusy?L('Launching…','Abriendo…'):L('Launch ',terminal?'Iniciar ':'Abrir ')+name;
- $('client-launch').disabled=launchBusy||launchDetecting||selection.working||selection.valid===false||!state||!selection.count||!available||!runningTunnel;
- $('client-launch-help').textContent=selection.id==='claude-desktop'?L('Prepares Kilo with the selected models and starts the proxy before opening Claude Desktop. Close Claude first to apply configuration changes.','Prepara Kilo con los modelos seleccionados y arranca el proxy antes de abrir Claude Desktop. Cierra Claude primero para aplicar los cambios de configuración.'):selection.id==='open-design'?L('Prepares the selected CLI with your Kilo models, starts the proxy and opens Open Design in its separate Kilo profile.','Prepara el CLI elegido con tus modelos de Kilo, arranca el proxy y abre Open Design en su perfil de Kilo independiente.'):L('Opens with the current models and Kilo configuration. Changes are saved first. Command export settings below apply only to copied commands.','Abre con los modelos y la configuración de Kilo actuales. Los cambios se guardan antes. Los ajustes de exportación inferiores solo afectan a los comandos copiados.')+(selection.id==='cursor'?L(' Connect the HTTPS tunnel first and keep the one-time provider setup in Cursor.',' Conecta primero el túnel HTTPS y mantén la configuración inicial del proveedor en Cursor.'):selection.id==='zed'?L(' Paste the local key into Zed once using the instructions below.',' Pega la clave local en Zed una vez siguiendo las instrucciones inferiores.'):selection.id==='xcode-chat'?L(' Add the chat provider in Xcode once using the connection details below.',' Añade el proveedor de chat en Xcode una vez con la conexión indicada abajo.'):'');
- const reason=selection.reason||(!runningTunnel?L('Connect the Cursor HTTPS tunnel before opening.','Conecta el túnel HTTPS de Cursor antes de abrir.'):!available&&!launchDetecting?(installed?.reason||L('Application not detected. Install it, then check again.','Aplicación no detectada. Instálala y vuelve a comprobar.')):!selection.count?L('Select at least one model.','Selecciona al menos un modelo.'):'');
+ $('client-launch').disabled=launchBusy||launchDetecting||selection.working||selection.valid===false||!state||!selection.count||!available;
+ $('client-launch-help').textContent=selection.id==='claude-desktop'?L('Prepares Kilo with the selected models and starts the proxy before opening Claude Desktop. Close Claude first to apply configuration changes.','Prepara Kilo con los modelos seleccionados y arranca el proxy antes de abrir Claude Desktop. Cierra Claude primero para aplicar los cambios de configuración.'):selection.id==='open-design'?L('Prepares the selected CLI with your Kilo models, starts the proxy and opens Open Design in its separate Kilo profile.','Prepara el CLI elegido con tus modelos de Kilo, arranca el proxy y abre Open Design en su perfil de Kilo independiente.'):L('Opens with the current models and Kilo configuration. Changes are saved first. Command export settings below apply only to copied commands.','Abre con los modelos y la configuración de Kilo actuales. Los cambios se guardan antes. Los ajustes de exportación inferiores solo afectan a los comandos copiados.')+(selection.id==='zed'?L(' Paste the local key into Zed once using the instructions below.',' Pega la clave local en Zed una vez siguiendo las instrucciones inferiores.'):selection.id==='xcode-chat'?L(' Add the chat provider in Xcode once using the connection details below.',' Añade el proveedor de chat en Xcode una vez con la conexión indicada abajo.'):'');
+ const reason=selection.reason||(!available&&!launchDetecting?(installed?.reason||L('Application not detected. Install it, then check again.','Aplicación no detectada. Instálala y vuelve a comprobar.')):!selection.count?L('Select at least one model.','Selecciona al menos un modelo.'):'');
  $('client-launch-status').textContent=launchMessage||reason;
  $('client-launch-status').classList.toggle('error',launchError);
 }
@@ -252,7 +246,6 @@ function renderSnippet() {
   $('codex-copy-first').textContent=t('Selecciona modelos y abre el cliente con el botón superior. La carpeta, config.toml y models.json se crean o actualizan automáticamente.');
   $('copy-launch').textContent = t('Copiar arranque (opcional) ↗');
   renderDesktopModels();
-  renderCursorModels();
   renderMultiClients();
   const info = descriptions[client].map(value => t(value));
   if(isCodex||client==='claude')info[1]=t('Selecciona modelos y abre el cliente desde el botón superior. Se prepara su perfil aislado con la configuración actual. Los comandos y archivos de abajo son exportaciones opcionales.');
@@ -266,8 +259,8 @@ function renderSnippet() {
   const revealLaunch = isCodex && $('reveal-launch-key').checked && state;
   $('launch-preview-note').textContent = t(revealLaunch ? 'Comando completo: puedes seleccionar y copiar este texto. Contiene tu clave local.' : 'Vista previa: la clave está oculta. Usa «Copiar arranque» para copiar el comando completo con la clave real, o muéstrala aquí antes de seleccionar el texto.');
   $('launch-code').textContent = launch(revealLaunch ? state.localKey : 'kl_local_••••••••••••••••');
-  $('copy-config').disabled = client !== 'cursor' && !validModelID(effectiveModel());
-  $('copy-config').textContent = t(client === 'cursor' ? 'Copiar guía ↗' : client==='claude' ? 'Copiar JSON (opcional) ↗' : isCodex ? 'Copiar TOML (opcional) ↗' : 'Copiar configuración ↗');
+  $('copy-config').disabled = !validModelID(effectiveModel());
+  $('copy-config').textContent = t(client==='claude' ? 'Copiar JSON (opcional) ↗' : isCodex ? 'Copiar TOML (opcional) ↗' : 'Copiar configuración ↗');
   $('copy-launch').disabled = $('copy-config').disabled || (client === 'codex' && !$('desktop-app-path').value.trim());
   if (client === 'codex') $('protocol-note').textContent = t('El perfil de Kilo tiene su propio config.toml y sus propios datos de interfaz. No copies auth.json ni cookies del perfil principal. El mecanismo de aislamiento se ha verificado en el código de la app instalada; puede variar entre versiones. Usa un modelo compatible con Responses.');
   $('client-heading').textContent = info[0]; $('client-description').textContent = info[1]; $('snippet-name').textContent = info[2];
@@ -300,7 +293,7 @@ function renderImageTransport(s) {
     cloudflare:{
       title:L('Cloudflare quick tunnel','Túnel rápido de Cloudflare'),
       description:L('Serves original image bytes from this computer through public, unguessable links. Links are removed after the request finishes or is cancelled. Keep Kilo Proxy running while images are in use.','Sirve las imágenes originales desde este equipo mediante enlaces públicos difíciles de adivinar. Los enlaces se retiran al terminar o cancelar la petición. Mantén Kilo Proxy abierto mientras se usan las imágenes.'),
-      requirements:L('Requires cloudflared installed on this computer and available on PATH. No Cloudflare account, S3 bucket, or ngrok setup is needed. The tunnel starts when a large request needs it.','Requiere cloudflared instalado en este equipo y disponible en PATH. No necesita cuenta de Cloudflare, un bucket S3 ni configurar ngrok. El túnel se inicia cuando lo necesita una petición grande.')
+      requirements:L('Requires cloudflared installed on this computer and available on PATH. No Cloudflare account or S3 bucket is needed. The tunnel starts when a large request needs it.','Requiere cloudflared instalado en este equipo y disponible en PATH. No necesita cuenta de Cloudflare ni un bucket S3. El túnel se inicia cuando lo necesita una petición grande.')
     },
     tailscale:{
       title:'Tailscale Funnel',
@@ -536,26 +529,6 @@ for(const alias of ['sonnet','opus','haiku'])$('claude-alias-'+alias).addEventLi
   multiClients.claude.aliases[alias]=$('claude-alias-'+alias).value;renderSnippet();
 });
 
-function renderCursorModels() {
-  renderCursorConnection();
-  $('cursor-guide').hidden = client !== 'cursor';
-  const id=$('model').value.trim();
-  $('add-cursor-model').disabled = !validModelID(id) || cursorModels.has(id) || cursorModels.size>=50 || ['starting','running'].includes(state?.cursor?.status);
-  $('copy-cursor-models').disabled = !cursorModels.size;
-  const signature=JSON.stringify({models:[...cursorModels],language,locked:['starting','running'].includes(state?.cursor?.status)});
-  if(signature===cursorSignature)return;
-  cursorSignature=signature;$('cursor-selected-models').replaceChildren();
-  for (const [id,name] of cursorModels) {
-    const row=document.createElement('li'),label=document.createElement('span'),remove=document.createElement('button');
-    label.textContent=id;remove.type='button';remove.className='text-button';remove.textContent=t('Quitar');remove.setAttribute('aria-label',t('Quitar de Cursor: {model}',{model:id}));
-    remove.disabled=['starting','running'].includes(state?.cursor?.status);remove.addEventListener('click',()=>{cursorModels.delete(id);renderSnippet();});row.append(label,remove);$('cursor-selected-models').append(row);
-  }
-}
-$('add-cursor-model').addEventListener('click',()=>{
-  const id=$('model').value.trim();if(!validModelID(id)||cursorModels.size>=50||['starting','running'].includes(state?.cursor?.status))return;
-  cursorModels.set(id,id);renderSnippet();
-});
-$('copy-cursor-models').addEventListener('click',()=>cursorModels.size && copy([...cursorModels.keys()].join('\n')));
 function renderDesktopModels() {
   renderCodexSetup();
   renderCodexImages();
@@ -690,7 +663,7 @@ function applyModelContext() {
 }
 function renderModels() {
   configureModelSort($('model-sort'),language);
-  const manualModels=isCodexClient() ? [...codexSelection().models.values()] : client==='claude' ? [...multiClients.claude.models.values()] : client==='cursor' ? [...cursorModels.keys()].map(id=>({id})) : validModelID($('model').value.trim()) ? [{id:$('model').value.trim()}] : [];
+  const manualModels=isCodexClient() ? [...codexSelection().models.values()] : client==='claude' ? [...multiClients.claude.models.values()] : validModelID($('model').value.trim()) ? [{id:$('model').value.trim()}] : [];
   configureModelLab($('model-lab'),[...catalog,...manualModels],language);
   const availableCount=new Set([...catalog,...manualModels].map(model=>model.id)).size;
   const matches = sortModels(['codex','codex-cli','claude'].includes(client) ? codexVisibleModels() : filterModels(filterModelLab(catalog,$('model-lab').value), $('model-search').value, $('coding-models').checked),$('model-sort').value);
@@ -721,7 +694,7 @@ function renderModels() {
   if (!matches.length && !catalogLoading) { const empty=document.createElement('p');empty.textContent=t('Sin resultados. Cambia la búsqueda o desactiva el filtro.');picker.append(empty); }
   if(restoreFocus){const control=[...picker.querySelectorAll('[data-focus]')].find(el=>el.dataset.focus===focusKey);control?.focus({preventScroll:true});if(caret && control?.classList.contains('codex-name-input'))control.setSelectionRange(...caret);}
   picker.scrollTop = scroll;
-  $('model-hint').textContent = client === 'cursor' ? (language==='en'?'Add models to the Cursor list, then connect below.':'Añade modelos a la lista de Cursor y conecta abajo.') : ['codex','codex-cli'].includes(client)
+  $('model-hint').textContent = ['codex','codex-cli'].includes(client)
     ? t('Codex requiere Responses. Busca OpenAI como punto de partida; el catálogo no certifica esa compatibilidad.')
     : client === 'claude' ? t('Claude Code requiere Messages. Busca Anthropic como punto de partida; el catálogo no certifica esa compatibilidad.')
     : t('Selecciona un modelo y el helper completará su ID y la ventana de contexto de Zed.');
@@ -945,49 +918,6 @@ $('load-claude-profile').addEventListener('click',async()=>{
 });
 
 applyLanguage(language);
-
-function cursorConnectionGuide(reveal=false) {
- const session=state?.cursor;
- if(session?.status!=='running')return clientConfig({client:'cursor',language,models:[...cursorModels.keys()]});
- return `Cursor → Settings → Models
-
-Override OpenAI Base URL: ${session.baseURL}
-OpenAI API Key: ${reveal ? session.key : '••••••••••••••••'}
-
-Add Custom Model:
-${session.models.join('\n')}
-
-${language==='en' ? 'Enable the OpenAI key and URL override. Add each model ID, then select it in chat. Disable the override to return to Cursor built-in models. Tab and Composer are not provided by Kilo.' : 'Activa la clave OpenAI y la URL alternativa. Añade cada ID y selecciónalo en el chat. Desactiva la URL alternativa para volver a los modelos propios de Cursor. Kilo no proporciona Tab ni Composer.'}`;
-}
-function renderCursorConnection() {
- const en=language==='en',s=state?.cursor,active=['starting','running'].includes(s?.status);
- if(active){cursorModels.clear();for(const id of s.models)cursorModels.set(id,id)}
- const texts={
- 'cursor-heading':en?'Cursor · HTTPS connection':'Cursor · conexión HTTPS',
- 'cursor-intro':en?'Select models below, then connect. The app starts a dedicated ngrok tunnel for Cursor’s servers.':'Selecciona modelos y conecta. La app inicia un túnel ngrok propio para los servidores de Cursor.',
- 'cursor-setup-title':en?'First time? Set up ngrok once':'¿Primera vez? Configura ngrok una vez',
- 'cursor-setup-help':en?'Install ngrok 3 for your OS, create an account, and run the command below with your ngrok authtoken. This is a separate credential from Kilo. Restart Kilo Proxy after installation.':'Instala ngrok 3 para tu sistema, crea una cuenta y ejecuta el comando con tu authtoken de ngrok. Es una credencial distinta a la de Kilo. Reinicia Kilo Proxy después de instalarlo.',
- 'cursor-privacy':en?'Connecting publishes an authenticated inference endpoint. Prompts and responses travel through Cursor, ngrok and Kilo. Local ngrok inspection is disabled; cloud logging follows your ngrok account settings. The admin panel stays private.':'Conectar publica un endpoint de IA autenticado. Los mensajes y respuestas pasan por Cursor, ngrok y Kilo. La inspección local de ngrok está desactivada; los registros en la nube dependen de tu cuenta ngrok. El panel de administración sigue siendo privado.',
- 'cursor-connect':en?'Connect Cursor':'Conectar Cursor','cursor-disconnect':en?'Disconnect / revoke key':'Desconectar / revocar clave',
- 'cursor-check':en?'Test public connection (no model charge)':'Probar conexión pública (sin gasto de modelo)',
- 'cursor-copy-url':en?'Copy URL':'Copiar URL','cursor-copy-key':en?'Copy Cursor key':'Copiar clave de Cursor',
- 'cursor-steps':en?'Paste these values into Cursor → Settings → Models. Enable the OpenAI key and base URL override. Add the model IDs below, then select one in chat. Turn the override off to use Cursor built-in models.':'Pega estos valores en Cursor → Settings → Models. Activa la clave OpenAI y la URL alternativa. Añade los IDs y selecciona uno en el chat. Desactiva la URL alternativa para usar los modelos propios de Cursor.'};
- for(const [id,text] of Object.entries(texts))$(id).textContent=text;
- $('cursor-connect').disabled=active||!state?.running||!cursorModels.size||busy;
- $('cursor-disconnect').disabled=!s||busy;
- $('cursor-check').disabled=s?.status!=='running'||busy;
- $('cursor-status').textContent=s?.error || (s?.status==='running'?(en?'HTTPS tunnel connected. Paste the values below into Cursor.':'Túnel HTTPS conectado. Pega estos valores en Cursor.'):s?.status==='starting'?(en?'Connecting ngrok…':'Conectando ngrok…'):(en?'Disconnected. Start the proxy and select at least one model.':'Desconectado. Inicia el proxy y selecciona al menos un modelo.'));
- $('cursor-connection').hidden=s?.status!=='running';$('cursor-url').value=s?.baseURL||'';$('cursor-key').value=s?.key||'';
-}
-for(const action of ['connect','disconnect'])$('cursor-'+action).addEventListener('click',async()=>{
- busy=true;renderCursorConnection();
- try {await api('cursor',{action:action==='connect'?'start':'stop',models:[...cursorModels.keys()]});render(await api('state'));}
- catch(error){notify(error.message,true)}finally{busy=false;renderSnippet()}
-});
-$('cursor-copy-url').addEventListener('click',()=>copy(state?.cursor?.baseURL||''));
-$('cursor-copy-key').addEventListener('click',()=>copy(state?.cursor?.key||''));
-
-$('cursor-check').addEventListener('click',async()=>{busy=true;renderCursorConnection();try{await api('cursor',{action:'check'});notify(()=>language==='en'?'Public HTTPS and authentication verified. Now test a chat in Cursor.':'HTTPS público y autenticación verificados. Prueba ahora un chat en Cursor.')}catch(error){notify(error.message,true)}finally{busy=false;renderCursorConnection()}});
 
 $('account-usage').addEventListener('click', event => {
   if (event.target.closest('#refresh-billing')) action(() => api('billing/refresh', {}));

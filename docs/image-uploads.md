@@ -50,7 +50,7 @@ If text or other attachments keep the body above the budget, the request fails b
 
 ## Cloudflare quick tunnel
 
-Install `cloudflared`, then select **Cloudflare quick tunnel**. Kilo Proxy starts its own foreground process and a separate loopback image server. The tunnel publishes only registered images at unguessable URLs; it does not expose the administration panel, inference endpoints, or arbitrary local files. It does not reuse the optional Cursor/ngrok tunnel.
+Install `cloudflared`, then select **Cloudflare quick tunnel**. Kilo Proxy starts its own foreground process and a separate loopback image server. The tunnel publishes only registered images at unguessable URLs; it does not expose the administration panel, inference endpoints, or arbitrary local files.
 
 Cloudflare quick tunnels use a temporary `trycloudflare.com` hostname without an account or custom domain. Cloudflare describes them as a development and testing service without an uptime guarantee. See its [Quick Tunnels documentation](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/).
 

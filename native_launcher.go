@@ -124,8 +124,6 @@ func (u *nativeUI) clientLauncherPanel(key string, s *nativeClientSelection, can
 		widgets = append(widgets, u.hint(u.tr("Save your Kilo connection before opening this app.", "Guarda tu conexión de Kilo antes de abrir esta aplicación.")))
 	case connectionWorking:
 		widgets = append(widgets, u.hint(u.tr("Wait for the Kilo connection update to finish.", "Espera a que termine la actualización de la conexión de Kilo.")))
-	case key == "cursor" && !canPrepare:
-		widgets = append(widgets, u.hint(u.tr("Connect the HTTPS tunnel before opening Cursor.", "Conecta el túnel HTTPS antes de abrir Cursor.")))
 	case working:
 		widgets = append(widgets, u.hint(u.tr("Wait for the current profile operation to finish.", "Espera a que termine la operación actual del perfil.")))
 	}
@@ -225,15 +223,7 @@ func (u *nativeUI) launchClientFrom(key, directoryField string) {
 	}
 	s := u.sharedClientSelection(key)
 	u.syncClientSelection(key, s)
-	if key == "cursor" {
-		var session cursorSession
-		data, _ := json.Marshal(u.state["cursor"])
-		_ = json.Unmarshal(data, &session)
-		if session.Status != "running" {
-			u.setNotice(nativeToneWarning, u.tr("Connect the Cursor HTTPS tunnel first.", "Conecta primero el túnel HTTPS de Cursor."))
-			return
-		}
-	} else if _, err := nativeClientPayload(key, s); err != nil || len(s.Models) == 0 {
+	if _, err := nativeClientPayload(key, s); err != nil || len(s.Models) == 0 {
 		u.setNotice(nativeToneWarning, u.tr("Choose valid models before launching.", "Elige modelos válidos antes de abrir."))
 		if err != nil {
 			u.noticeError(err)
@@ -314,9 +304,5 @@ func (u *nativeUI) launchClientFrom(key, directoryField string) {
 	}
 	// A managed profile can be edited externally between launches. Reapply the
 	// shared library each time; the backend preserves unrelated preferences.
-	if key == "cursor" {
-		launch(nil)
-	} else {
-		u.prepareClientAfter(key, launch)
-	}
+	u.prepareClientAfter(key, launch)
 }

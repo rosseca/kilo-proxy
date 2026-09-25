@@ -461,7 +461,7 @@ func (u *nativeUI) clientsPanel() layout.Widget {
 			}
 		})
 	}
-	clientNames := map[string]string{"codex": "Codex Desktop", "codex-cli": "Codex CLI", "claude": "Claude Code", "claude-desktop": "Claude Desktop", "opencode": "OpenCode", "omp": "Oh My Pi", "zed": "Zed", "open-design": "Open Design", "cursor": "Cursor", "xcode": "Xcode", "generic": u.tr("Other agents", "Otros agentes")}
+	clientNames := map[string]string{"codex": "Codex Desktop", "codex-cli": "Codex CLI", "claude": "Claude Code", "claude-desktop": "Claude Desktop", "opencode": "OpenCode", "omp": "Oh My Pi", "zed": "Zed", "open-design": "Open Design", "xcode": "Xcode", "generic": u.tr("Other agents", "Otros agentes")}
 	widgets := []layout.Widget{
 		u.pills(u.iconButton("agents.back", u.tr("All agents", "Todos los agentes"), nativeButtonGhost, nativeIconBack, func() { u.page = "agents" })),
 		u.heading(clientNames[u.client]),
@@ -559,9 +559,6 @@ func (u *nativeUI) clientsPanel() layout.Widget {
 		)
 	}
 	widgets = append(widgets, u.section(u.tr("Models", "Modelos"), u.tr("One shared library for this agent.", "Una biblioteca compartida para este agente."), modelWidgets...))
-	if key == "cursor" {
-		return u.column(append(widgets, u.cursorClientPanel(s))...)
-	}
 	if key == "open-design" {
 		return u.column(append(widgets, u.openDesignClientPanel(s))...)
 	}
@@ -1437,82 +1434,4 @@ func (u *nativeUI) clientExport(key string, s *nativeClientSelection, reveal boo
 	}
 	data, err := json.MarshalIndent(claudeManagedSettings(payload.(claudeSelection), u.clientCaps(key), port, local), "", "  ")
 	return string(data), err
-}
-
-func (u *nativeUI) cursorClientPanel(s *nativeClientSelection) layout.Widget {
-	var session *cursorSession
-	if value := u.state["cursor"]; value != nil {
-		data, _ := json.Marshal(value)
-		_ = json.Unmarshal(data, &session)
-	}
-	running, _ := u.state["running"].(bool)
-	connected := session != nil && (session.Status == "running" || session.Status == "starting")
-	invoke := func(action string) {
-		u.call("POST", "/api/cursor", map[string]any{"action": action, "models": s.ids()}, func(data json.RawMessage) {
-			var result struct {
-				Session *cursorSession `json:"session"`
-			}
-			if action != "check" && json.Unmarshal(data, &result) == nil {
-				u.state["cursor"] = result.Session
-			}
-			if action == "check" {
-				u.setNotice(nativeToneSuccess, u.tr("Public HTTPS and authentication verified. Test a chat in Cursor.", "HTTPS público y autenticación verificados. Prueba un chat en Cursor."))
-			}
-		})
-	}
-	tunnelTone, tunnelStatus := nativeToneWarning, u.tr("Tunnel disconnected", "Túnel desconectado")
-	if session != nil {
-		switch session.Status {
-		case "running":
-			tunnelTone, tunnelStatus = nativeToneSuccess, u.tr("Tunnel connected", "Túnel conectado")
-		case "starting", "stopping":
-			tunnelTone, tunnelStatus = nativeToneInfo, u.tr("Tunnel changing state", "Cambiando estado del túnel")
-		case "failed", "error":
-			tunnelTone, tunnelStatus = nativeToneError, u.tr("Tunnel error", "Error del túnel")
-		}
-	}
-	launchWidgets := []layout.Widget{
-		u.clientLauncherPanel("cursor", s, session != nil && session.Status == "running"),
-		u.pills(u.statusBadge(tunnelTone, tunnelStatus)),
-		u.pills(
-			u.disabled(running && !connected && len(s.Models) > 0, u.button("cursor-connect", u.tr("Connect HTTPS tunnel", "Conectar túnel HTTPS"), func() { invoke("start") })),
-			u.disabled(session != nil, u.button("cursor-disconnect", u.tr("Disconnect", "Desconectar"), func() { invoke("stop") })),
-			u.disabled(session != nil && session.Status == "running", u.button("cursor-check", u.tr("Test public connection", "Probar conexión pública"), func() { invoke("check") })),
-		),
-		u.pills(
-			u.button("cursor-ngrok-download", u.tr("Install ngrok", "Instalar ngrok"), func() { u.open("https://ngrok.com/download") }),
-			u.button("cursor-ngrok-account", u.tr("Get ngrok authtoken", "Obtener authtoken de ngrok"), func() { u.open("https://dashboard.ngrok.com/get-started/your-authtoken") }),
-		),
-		u.code("cursor-ngrok-command", "ngrok config add-authtoken YOUR_NGROK_AUTHTOKEN"),
-		u.pills(u.iconButton("cursor-copy-ngrok-command", u.tr("Copy ngrok command", "Copiar comando de ngrok"), nativeButtonSecondary, nativeIconCopy, func() { u.copy("ngrok config add-authtoken YOUR_NGROK_AUTHTOKEN") })),
-	}
-	if !running {
-		launchWidgets = append(launchWidgets, u.hint(u.tr("Start the proxy before connecting the Cursor tunnel.", "Inicia el proxy antes de conectar el túnel de Cursor.")))
-	} else if len(s.Models) == 0 {
-		launchWidgets = append(launchWidgets, u.hint(u.tr("Choose at least one shared model before connecting.", "Elige al menos un modelo compartido antes de conectar.")))
-	}
-	if session != nil && session.Error != "" {
-		launchWidgets = append(launchWidgets, u.message(nativeToneError, nativeMessage(session.Error, u.language)))
-	}
-	if session != nil && session.Status == "running" {
-		launchWidgets = append(launchWidgets, u.pills(
-			u.iconButton("cursor-copy-url", u.tr("Copy Cursor URL", "Copiar URL de Cursor"), nativeButtonSecondary, nativeIconCopy, func() { u.copy(session.URL) }),
-			u.iconButton("cursor-copy-key", u.tr("Copy Cursor key", "Copiar clave de Cursor"), nativeButtonSecondary, nativeIconCopy, func() { u.copy(session.Key) }),
-			u.iconButton("cursor-copy-guide", u.tr("Copy complete connection", "Copiar conexión completa"), nativeButtonSecondary, nativeIconCopy, func() { u.copy(cursorSetupGuide(session, s.ids(), u.language, true)) }),
-		))
-	}
-	launch := u.section(u.tr("Launch", "Arranque"), u.tr("Cursor requests come from its servers; connect an HTTPS tunnel to reach this proxy.", "Las peticiones de Cursor llegan desde sus servidores; conecta un túnel HTTPS para acceder a este proxy."), launchWidgets...)
-	advancedWidgets := []layout.Widget{u.disclosure("cursor:about", u.tr("How this works", "Cómo funciona"))}
-	if u.expanded["cursor:about"] {
-		advancedWidgets = append(advancedWidgets,
-			u.note(u.tr("The public tunnel carries inference traffic through ngrok. Only the inference endpoint is exposed; the control panel stays local, and disconnect revokes this Cursor key.", "El túnel público lleva el tráfico de inferencia mediante ngrok. Solo se expone el endpoint de inferencia; el panel de control sigue en local y desconectar revoca esta clave de Cursor.")),
-			u.note(u.tr("Disable the OpenAI URL/key override to return to Cursor's built-in providers. Kilo does not supply Tab or Composer, and not every model supports Cursor BYOK.", "Desactiva la URL/clave OpenAI alternativa para volver a los proveedores integrados de Cursor. Kilo no ofrece Tab ni Composer, y no todos los modelos admiten BYOK de Cursor.")),
-		)
-	}
-	advancedWidgets = append(advancedWidgets,
-		u.disabled(len(s.Models) > 0, u.iconButton("cursor-copy-models", u.tr("Copy model IDs", "Copiar IDs de modelos"), nativeButtonSecondary, nativeIconCopy, func() { u.copy(strings.Join(s.ids(), "\n")) })),
-		u.code("cursor-guide", cursorSetupGuide(session, s.ids(), u.language, false)),
-	)
-	advanced := u.section(u.tr("Advanced", "Avanzado"), u.tr("Optional connection details and model IDs.", "Datos de conexión e IDs de modelo opcionales."), advancedWidgets...)
-	return u.column(launch, advanced)
 }
