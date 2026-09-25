@@ -3,10 +3,12 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"encoding/xml"
 	"errors"
 	"io"
+	"math/big"
 	"net/http"
 	"os"
 	"os/exec"
@@ -24,6 +26,7 @@ import (
 // Claude Desktop 2.9939.2 stores local third-party deployments in configLibrary.
 // This UUID belongs only to Kilo; other library entries and settings are retained.
 const claudeDesktopProfileID = "58dca950-b244-4d6c-88d9-1c42625f9769"
+const claudeDesktopAliasPrefix = "claude-kilo-v1-"
 
 // Match Desktop's config-library ID guard, including existing non-RFC IDs.
 // Only hexadecimal characters and hyphens are accepted, so these cannot escape
@@ -32,20 +35,38 @@ var claudeDesktopUUID = regexp.MustCompile(`^[a-f0-9-]{36}$`)
 var claudeDesktopModelID = regexp.MustCompile(`^(?:anthropic/)?claude-[A-Za-z0-9][A-Za-z0-9._:-]*$`)
 var claudeDesktopOtherModel = regexp.MustCompile(`(?i)ark-code|astron|command-r|deepseek|doubao|gemini|gemma|glm|gpt|grok|hermes|hy3|kimi|lfm|\bling\b|llama|longcat|mimo|minimax|mistral|mixtral|moonshot|nemotron|openai|phi-|qianfan|qwen|tc-code|\bunic\b|yi-|stepfun|step-3|seed-|bytedance|hunyuan|granite|amazon\.nova|nova-|devstral|ministral|ernie|codex|arcee|trinity|abab|phi\d|\bk2\.|\bm2\.|jamba|arctic|solar|mercury|zamba|kat-coder|\bds-|dpsk`)
 
-// Do not disguise models from other providers as Claude models. Desktop also
-// validates model identity when sending a message, not just in its model picker.
+// This predicate identifies native Claude routes. Experimental aliases are
+// generated only when preparing Desktop's profile, never stored as real IDs.
 func claudeDesktopModelSupported(id string) bool {
-	return catalogID.MatchString(id) && claudeDesktopModelID.MatchString(id) && !claudeDesktopOtherModel.MatchString(id)
+	return catalogID.MatchString(id) && claudeDesktopModelID.MatchString(id) && !claudeDesktopOtherModel.MatchString(id) && !claudeDesktopReservedAlias(id)
 }
 
 func validateClaudeDesktopSelection(s editorSelection) error {
+	return validateClaudeDesktopSelectionMode(s, false)
+}
+
+func claudeDesktopAlias(id string) string {
+	hash := sha256.Sum256([]byte(id))
+	// Decimal retains all 256 bits without letter sequences such as "abab",
+	// which Desktop's provider-name denylist rejects even inside a hex digest.
+	return claudeDesktopAliasPrefix + new(big.Int).SetBytes(hash[:]).String()
+}
+
+func claudeDesktopReservedAlias(id string) bool {
+	return strings.HasPrefix(strings.TrimPrefix(id, "anthropic/"), claudeDesktopAliasPrefix)
+}
+
+func validateClaudeDesktopSelectionMode(s editorSelection, experimental bool) error {
 	if len(s.Models) < 1 || len(s.Models) > 50 {
-		return errors.New("Choose 1–50 Claude models.")
+		return errors.New("Choose 1–50 models.")
 	}
 	seen := map[string]bool{}
 	for _, m := range s.Models {
-		if !claudeDesktopModelSupported(m.ID) || seen[m.ID] || len([]rune(m.Name)) > 80 || strings.IndexFunc(m.Name, func(r rune) bool { return r < 32 || r == 127 }) >= 0 || m.Context != 0 || m.Output != 0 {
-			return errors.New("Choose real Claude model IDs with valid names; Desktop context/output overrides are not supported.")
+		if !catalogID.MatchString(m.ID) || claudeDesktopReservedAlias(m.ID) || seen[m.ID] || len([]rune(m.Name)) > 80 || strings.IndexFunc(m.Name, func(r rune) bool { return r < 32 || r == 127 }) >= 0 || m.Context != 0 || m.Output != 0 {
+			return errors.New("Choose real model IDs with valid names; Desktop context/output overrides are not supported.")
+		}
+		if !experimental && !claudeDesktopModelSupported(m.ID) {
+			return errors.New("Experimental Claude Desktop models are disabled. Enable them or prepare a profile containing only Claude models.")
 		}
 		seen[m.ID] = true
 	}
@@ -169,14 +190,19 @@ func prepareClaudeDesktopFile(path string, data []byte) (profileFile, error) {
 	return f, nil
 }
 
-func claudeDesktopOwnedConfig(s editorSelection, port int, key string) map[string]any {
+func claudeDesktopOwnedConfig(s editorSelection, port int, key string, experimental ...bool) map[string]any {
 	models := make([]map[string]string, 0, len(s.Models))
+	useAliases := len(experimental) > 0 && experimental[0]
 	add := func(m editorModel) {
 		name := m.Name
 		if name == "" {
 			name = m.ID
 		}
-		models = append(models, map[string]string{"name": m.ID, "labelOverride": name})
+		id := m.ID
+		if useAliases && !claudeDesktopModelSupported(id) {
+			id = claudeDesktopAlias(id)
+		}
+		models = append(models, map[string]string{"name": id, "labelOverride": name})
 	}
 	for _, m := range s.Models {
 		if m.ID == s.Initial {
@@ -409,6 +435,12 @@ func (a *app) claudeDesktopManagedConfig(paths claudeDesktopProfilePaths) error 
 }
 
 func (a *app) readClaudeDesktopSelection(paths claudeDesktopProfilePaths) (editorSelection, error) {
+	return a.readClaudeDesktopSelectionMode(paths, a.config.ClaudeDesktopExperimentalModels)
+}
+
+// Reading with experimental=true during preparation validates the saved real
+// IDs even after the option is disabled, so a native-only profile can replace it.
+func (a *app) readClaudeDesktopSelectionMode(paths claudeDesktopProfilePaths, experimental bool) (editorSelection, error) {
 	var s editorSelection
 	if !safeLaunchDir(a.dir, a.dir) {
 		return s, errors.New("Unsafe Kilo profile directory.")
@@ -422,8 +454,11 @@ func (a *app) readClaudeDesktopSelection(paths claudeDesktopProfilePaths) (edito
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
-	if decoder.Decode(&s) != nil || validateClaudeDesktopSelection(s) != nil {
+	if decoder.Decode(&s) != nil {
 		return s, errors.New("Invalid saved Claude Desktop model selection.")
+	}
+	if err := validateClaudeDesktopSelectionMode(s, experimental); err != nil {
+		return s, err
 	}
 	return s, nil
 }
@@ -449,7 +484,7 @@ func (a *app) verifyClaudeDesktopProfile() error {
 	if err != nil || !exists {
 		return errors.New("Prepare the Claude Desktop profile first; its configuration is missing or invalid.")
 	}
-	for key, value := range claudeDesktopOwnedConfig(s, a.config.Port, a.config.LocalKey) {
+	for key, value := range claudeDesktopOwnedConfig(s, a.config.Port, a.config.LocalKey, a.config.ClaudeDesktopExperimentalModels) {
 		want, _ := json.Marshal(value)
 		if !launchEqualJSON(config[key], want) {
 			return errors.New("Claude Desktop gateway settings changed; prepare the profile again.")
@@ -472,7 +507,7 @@ func (a *app) verifyClaudeDesktopProfile() error {
 // Caller holds a.mu. All contents and backup destinations are validated before
 // writing; saveEditorFiles backs up and rolls back this multi-file change.
 func (a *app) saveClaudeDesktopProfile(s editorSelection, paths claudeDesktopProfilePaths) (bool, error) {
-	if err := validateClaudeDesktopSelection(s); err != nil {
+	if err := validateClaudeDesktopSelectionMode(s, a.config.ClaudeDesktopExperimentalModels); err != nil {
 		return false, err
 	}
 	if err := a.claudeDesktopManagedConfig(paths); err != nil {
@@ -505,7 +540,7 @@ func (a *app) saveClaudeDesktopProfile(s editorSelection, paths claudeDesktopPro
 	delete(config, "inferenceCustomHeaders")
 	delete(config, "bootstrapUrl")
 	delete(config, "bootstrapEnabled")
-	for key, value := range claudeDesktopOwnedConfig(s, a.config.Port, a.config.LocalKey) {
+	for key, value := range claudeDesktopOwnedConfig(s, a.config.Port, a.config.LocalKey, a.config.ClaudeDesktopExperimentalModels) {
 		claudeDesktopSet(config, key, value)
 	}
 	claudeDesktopSet(mode, "deploymentMode", "3p")
@@ -528,7 +563,7 @@ func (a *app) saveClaudeDesktopProfile(s editorSelection, paths claudeDesktopPro
 	selection, _ := json.MarshalIndent(s, "", "  ")
 	selection = append(selection, '\n')
 	if old, err := readCatalogFile(paths.SelectionPath); err == nil {
-		if _, err = a.readClaudeDesktopSelection(paths); err != nil {
+		if _, err = a.readClaudeDesktopSelectionMode(paths, true); err != nil {
 			return false, errors.New("Invalid saved Claude Desktop selection; nothing saved.")
 		}
 		if launchEqualJSON(old, selection) {
@@ -578,7 +613,7 @@ func (a *app) claudeDesktopProfile(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, 400, "Invalid Claude Desktop setup JSON.")
 			return
 		}
-		if err = validateClaudeDesktopSelection(s); err != nil {
+		if err = validateClaudeDesktopSelectionMode(s, a.config.ClaudeDesktopExperimentalModels); err != nil {
 			jsonError(w, 400, err.Error())
 			return
 		}
@@ -588,5 +623,5 @@ func (a *app) claudeDesktopProfile(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	jsonResponse(w, 200, map[string]any{"ok": true, "changed": changed, "selection": s, "configPath": paths.ConfigPath, "profileDir": paths.ProfileDir})
+	jsonResponse(w, 200, map[string]any{"ok": true, "changed": changed, "selection": s, "configPath": paths.ConfigPath, "profileDir": paths.ProfileDir, "experimentalModels": a.config.ClaudeDesktopExperimentalModels})
 }

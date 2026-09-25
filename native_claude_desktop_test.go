@@ -5,6 +5,9 @@ package main
 import (
 	"encoding/json"
 	"image"
+	"os"
+	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -52,6 +55,123 @@ func TestNativeClaudeDesktopRejectsLibraryWithoutClaudeModels(t *testing.T) {
 	}
 	if _, err := nativeClientPayload("claude-desktop", s); err == nil {
 		t.Fatal("Desktop accepted an empty compatible selection")
+	}
+}
+
+func TestNativeClaudeDesktopExperimentalOptionPreservesSharedLibrary(t *testing.T) {
+	for _, lang := range []string{"en", "es"} {
+		t.Run(lang, func(t *testing.T) {
+			u, recorder := nativeLaunchTestUI(t, "claude-desktop", false, false)
+			u.language = lang
+			u.owner.mu.Lock()
+			u.owner.config.Language = lang
+			u.owner.mu.Unlock()
+			u.agentSetup("claude-desktop")
+			source, _ := json.Marshal(u.library.selection)
+			initial := u.library.selection.Initial
+			before := u.sharedClientSelection("claude-desktop")
+			base, key, _ := u.clientBase()
+			fingerprint := nativeSelectionFingerprint("claude-desktop", before, base, key, claudeCapabilities{})
+			if before.DesktopExperimentalModels || len(before.Models) != 1 {
+				t.Fatal("experimental models should default to off")
+			}
+			h := &nativePointerHarness{t: t, u: u, size: image.Pt(1180, 1500), now: time.Now()}
+			label := u.tr("Experimental: use models from other providers", "Experimental: usar modelos de otros proveedores")
+			h.frame()
+			h.reveal(label, semantic.CheckBox)
+			h.click(label, semantic.CheckBox)
+			nativeTestWait(t, u, func() bool { return !u.busy["POST/api/claude-desktop/options"] })
+			u.owner.mu.Lock()
+			enabled, requests := u.owner.config.ClaudeDesktopExperimentalModels, u.owner.requests
+			u.owner.mu.Unlock()
+			if !enabled || !u.claudeDesktopExperimentalModels() {
+				t.Fatalf("experimental option was not saved: %s", u.notice)
+			}
+			s := u.sharedClientSelection("claude-desktop")
+			payload, err := nativeClientPayload("claude-desktop", s)
+			if err != nil {
+				t.Fatal(err)
+			}
+			selection := payload.(editorSelection)
+			if len(selection.Models) != len(u.library.selection.Models) || selection.Initial != initial || selection.Models[0].ID != initial || selection.Models[0].Context != 0 || selection.Models[0].Output != 0 {
+				t.Fatalf("experimental selection lost real IDs, shared default or app-managed limits: %#v", selection)
+			}
+			if fingerprint == nativeSelectionFingerprint("claude-desktop", s, base, key, claudeCapabilities{}) {
+				t.Fatal("option did not invalidate prepared selection")
+			}
+			if !strings.Contains(u.claudeDesktopModelSummary(s), u.tr("Experimental models", "Modelos experimentales")) {
+				t.Fatal("agent card did not identify experimental models")
+			}
+			envelope, _ := json.Marshal(map[string]any{"selection": selection, "experimentalModels": true})
+			imported, err := decodeNativeClientSelection("claude-desktop", envelope, u.models)
+			if err != nil || imported == nil || !imported.DesktopExperimentalModels || imported.Initial != initial {
+				t.Fatalf("experimental import lost real IDs or mode: %#v %v", imported, err)
+			}
+			h.frame()
+			nativeGridCapture(t, h, "native-claude-desktop-experimental-settings-"+lang)
+			u.page = "agents"
+			h.frame()
+			nativeGridCapture(t, h, "native-claude-desktop-experimental-agents-"+lang)
+			u.agentSetup("claude-desktop")
+			h.frame()
+			h.reveal(label, semantic.CheckBox)
+			h.click(label, semantic.CheckBox)
+			nativeTestWait(t, u, func() bool { return !u.busy["POST/api/claude-desktop/options"] })
+			s = u.sharedClientSelection("claude-desktop")
+			if s.DesktopExperimentalModels || len(s.Models) != 1 || s.Initial == initial {
+				t.Fatalf("disabling did not restore Claude filtering: %#v", s)
+			}
+			after, _ := json.Marshal(u.library.selection)
+			if !reflect.DeepEqual(source, after) {
+				t.Fatal("toggle changed shared library")
+			}
+			if requests != 0 || recorder.count() != 0 || recorder.prepares.Load() != 0 {
+				t.Fatal("option toggle made inference or launch/preparation requests")
+			}
+			data, err := os.ReadFile(filepath.Join(u.owner.dir, "settings.json"))
+			var config settings
+			if err != nil || json.Unmarshal(data, &config) != nil || config.ClaudeDesktopExperimentalModels {
+				t.Fatalf("option did not persist disabled: %s %v", data, err)
+			}
+		})
+	}
+}
+
+func TestNativeClaudeDesktopExperimentalModeFingerprintAndReservedIDs(t *testing.T) {
+	u := nativeTestUI(t)
+	nativeSeedSharedForTest(t, u, nativeClientModelsForTest()[1])
+	s := u.sharedClientSelection("claude-desktop")
+	before := nativeSelectionFingerprint("claude-desktop", s, "base", "key", claudeCapabilities{})
+	u.state["claudeDesktopExperimentalModels"] = true
+	s = u.sharedClientSelection("claude-desktop")
+	if before == nativeSelectionFingerprint("claude-desktop", s, "base", "key", claudeCapabilities{}) {
+		t.Fatal("Claude-only profile readiness ignored changed experimental mode")
+	}
+	for _, id := range []string{"claude-kilo-v1-0123", "anthropic/claude-kilo-v1-0123", "bad id", strings.Repeat("x", 201)} {
+		if nativeClaudeDesktopModelAllowed(id, true) {
+			t.Fatalf("reserved or invalid ID allowed: %s", id)
+		}
+	}
+}
+
+func TestNativeClaudeDesktopExperimentalSaveFailureRestoresMode(t *testing.T) {
+	u, recorder := nativeLaunchTestUI(t, "claude-desktop", false, false)
+	// A directory at the settings-file path makes this fixture's save fail.
+	path := filepath.Join(u.owner.dir, "settings.json")
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	u.setClaudeDesktopExperimentalModels(true)
+	// A state refresh during saving can display the pending option. A failed
+	// write must restore the last persisted value rather than keeping this draft.
+	u.state["claudeDesktopExperimentalModels"] = true
+	nativeTestWait(t, u, func() bool { return !u.busy["POST/api/claude-desktop/options"] })
+	s := u.sharedClientSelection("claude-desktop")
+	if s.DesktopExperimentalModels || len(s.Models) != 1 || len(u.library.selection.Models) != 2 || recorder.count() != 0 || recorder.prepares.Load() != 0 || !strings.Contains(u.notice, "Cannot safely write Kilo settings") {
+		t.Fatalf("failed option save changed effective mode or launched: selection=%#v notice=%s", s, u.notice)
 	}
 }
 

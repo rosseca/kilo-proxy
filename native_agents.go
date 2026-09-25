@@ -178,7 +178,7 @@ func (u *nativeUI) agentCompatibility(key string) string {
 	case "claude":
 		return u.tr("Uses Anthropic Messages. Applies only reasoning levels supported by each model and installed Claude Code version. Gateway support is also required.", "Usa Anthropic Messages. Aplica solo niveles de razonamiento compatibles con cada modelo y la versión de Claude Code. También requiere compatibilidad del gateway.")
 	case "claude-desktop":
-		return u.tr("Uses the Kilo third-party configuration for Chat, Cowork and Code. Close Claude before opening to apply changes. This app currently rejects non-Claude models; use another agent for those models.", "Usa la configuración de terceros Kilo para Chat, Cowork y Code. Cierra Claude antes de abrir para aplicar cambios. Esta app actualmente rechaza los modelos no Claude; usa otro agente para esos modelos.")
+		return u.tr("Uses the Kilo third-party configuration for Chat, Cowork and Code. Close Claude before opening to apply changes. Other providers require the experimental option in these settings.", "Usa la configuración de terceros Kilo para Chat, Cowork y Code. Cierra Claude antes de abrir para aplicar cambios. Los demás proveedores requieren la opción experimental de estos ajustes.")
 	case "opencode":
 		return u.tr("Uses Chat Completions with shared names and default model; reasoning stays automatic. Opens a terminal in your project. Local OpenCode settings can override this profile.", "Usa Chat Completions con nombres y modelo inicial compartidos; el razonamiento sigue automático. Abre una terminal en tu proyecto. Los ajustes de OpenCode pueden prevalecer.")
 	case "omp":
@@ -287,7 +287,7 @@ func (u *nativeUI) agentPurpose(key string) string {
 	case "claude":
 		return u.tr("Claude Code with compatible models.", "Claude Code con modelos compatibles.")
 	case "claude-desktop":
-		return u.tr("Chat, Cowork and Code with Claude models from Kilo.", "Chat, Cowork y Code con modelos Claude de Kilo.")
+		return u.tr("Chat, Cowork and Code with your Kilo models.", "Chat, Cowork y Code con tus modelos de Kilo.")
 	case "opencode":
 		return u.tr("OpenCode in your project terminal.", "OpenCode en tu terminal de proyecto.")
 	case "omp":
@@ -377,6 +377,9 @@ func (u *nativeUI) agentCard(key string) layout.Widget {
 	libraryStatus, libraryReady := u.libraryStatus()
 	connectionReady := u.agentConnectionReady() && !u.connectionWorking() && !u.setupConnectionNeeded()
 	canOpen := available && libraryReady && connectionReady && len(s.Models) > 0 && validation == nil && c.Launching == "" && !u.busy["POST"+nativeClientEndpoint(key)]
+	if key == "claude-desktop" {
+		canOpen = canOpen && !u.busy["POST/api/claude-desktop/options"]
+	}
 	if key == "codex" || key == "codex-cli" {
 		canOpen = canOpen && nativeClientImagesReady(s, u.models)
 	}
@@ -414,14 +417,14 @@ func (u *nativeUI) agentCard(key string) layout.Widget {
 			disabledReason = u.tr("Install the selected CLI engine before opening Open Design.", "Instala el motor CLI seleccionado antes de abrir Open Design.")
 		}
 	case len(s.Models) == 0 && key == "claude-desktop":
-		disabledReason = u.tr("Add a Claude model to your shared library before opening Claude Desktop.", "Añade un modelo Claude a tu biblioteca compartida antes de abrir Claude Desktop.")
+		disabledReason = u.claudeDesktopModelSummary(s)
 	case len(s.Models) == 0 && key != "cursor":
 		disabledReason = u.tr("Add at least one shared model before opening this agent.", "Añade al menos un modelo compartido antes de abrir este agente.")
 	case validation != nil:
 		disabledReason = nativeMessage(validation.Error(), u.language)
 	case (key == "codex" || key == "codex-cli") && !nativeClientImagesReady(s, u.models):
 		disabledReason = u.tr("Review image generation settings in Models before opening Codex.", "Revisa la generación de imágenes en Modelos antes de abrir Codex.")
-	case c.Launching != "" || u.busy["POST"+nativeClientEndpoint(key)]:
+	case c.Launching != "" || u.busy["POST"+nativeClientEndpoint(key)] || key == "claude-desktop" && u.busy["POST/api/claude-desktop/options"]:
 		disabledReason = u.tr("Wait for the current agent operation to finish.", "Espera a que termine la operación actual del agente.")
 	}
 	label := u.tr("Open ", "Abrir ") + name

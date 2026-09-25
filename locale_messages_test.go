@@ -21,6 +21,8 @@ func TestNativeMessagesTranslateBackendWithoutChangingDetails(t *testing.T) {
 		{"El puerto debe estar entre 1024 y 65535.", "es", "El puerto debe estar entre 1024 y 65535."},
 		{"Enter your personal Kilo API key.", "es", "Introduce tu API key personal de Kilo."},
 		{"Choose 1–50 Claude models.", "es", "Elige entre 1 y 50 modelos Claude."},
+		{"Experimental Claude Desktop models are disabled. Enable them or prepare a profile containing only Claude models.", "es", "Los modelos experimentales de Claude Desktop están desactivados. Actívalos o prepara un perfil que solo contenga modelos Claude."},
+		{"Could not save Claude Desktop options. Check the settings directory permissions.", "es", "No se pudieron guardar las opciones de Claude Desktop. Revisa los permisos de la carpeta de ajustes."},
 		{"Invalid Claude Desktop setup JSON.", "es", "El JSON de configuración de Claude Desktop no es válido."},
 		{"Claude Desktop third-party mode is not active; prepare the profile again.", "es", "El modo de terceros de Claude Desktop no está activo; vuelve a preparar el perfil."},
 	} {

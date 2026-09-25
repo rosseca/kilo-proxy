@@ -16,36 +16,39 @@ import (
 )
 
 type nativeClients struct {
-	Grids                   map[string]*nativeModelGridState
-	Selections              map[string]*nativeClientSelection
-	Claude                  claudeCapabilities
-	ClaudeChecked           bool
-	ClaudeDetectStarted     bool
-	Xcode                   xcodeInstallation
-	XcodeChecked            bool
-	XcodeDetectStarted      bool
-	LaunchInfo              nativeLaunchInfo
-	LaunchChecked           bool
-	LaunchDetectStarted     bool
-	LaunchError             string
-	Launching               string
-	Variant                 string
-	OpenDesign              nativeOpenDesignInfo
-	OpenDesignChecked       bool
-	OpenDesignDetectStarted bool
+	Grids                       map[string]*nativeModelGridState
+	Selections                  map[string]*nativeClientSelection
+	Claude                      claudeCapabilities
+	ClaudeChecked               bool
+	ClaudeDetectStarted         bool
+	Xcode                       xcodeInstallation
+	XcodeChecked                bool
+	XcodeDetectStarted          bool
+	LaunchInfo                  nativeLaunchInfo
+	LaunchChecked               bool
+	LaunchDetectStarted         bool
+	LaunchError                 string
+	Launching                   string
+	Variant                     string
+	OpenDesign                  nativeOpenDesignInfo
+	OpenDesignChecked           bool
+	OpenDesignDetectStarted     bool
+	DesktopExperimentalRevision uint64
+	DesktopExperimentalTarget   *bool
 }
 
 // A selection belongs to one editor/variant. Labels never replace gateway IDs.
 type nativeClientSelection struct {
-	ImageGeneration         *imageGenerationSettings `json:"imageGeneration,omitempty"`
-	imageGenerationBaseline *imageGenerationSettings
-	QueueMode               string `json:"followUpQueueMode,omitempty"`
-	Models                  []nativeModelChoice
-	Initial                 string
-	Aliases                 map[string]string
-	Mode                    string
-	Saved                   string
-	Path                    string
+	DesktopExperimentalModels bool                     `json:"-"`
+	ImageGeneration           *imageGenerationSettings `json:"imageGeneration,omitempty"`
+	imageGenerationBaseline   *imageGenerationSettings
+	QueueMode                 string `json:"followUpQueueMode,omitempty"`
+	Models                    []nativeModelChoice
+	Initial                   string
+	Aliases                   map[string]string
+	Mode                      string
+	Saved                     string
+	Path                      string
 }
 
 func (c *nativeClients) selection(key string) *nativeClientSelection {
@@ -185,7 +188,7 @@ func nativeClientPayload(key string, s *nativeClientSelection) (any, error) {
 			}
 			selection.Models = append(selection.Models, editorModel{ID: m.Model.ID, Name: name})
 		}
-		return selection, validateClaudeDesktopSelection(selection)
+		return selection, validateClaudeDesktopSelectionMode(selection, s.DesktopExperimentalModels)
 	}
 	if key == "opencode" || key == "zed" {
 		selection := editorSelection{Initial: s.Initial}
@@ -244,7 +247,11 @@ func nativeSelectionFingerprint(key string, s *nativeClientSelection, base, keyV
 	if err != nil {
 		return "invalid:" + err.Error()
 	}
-	data, _ := json.Marshal([]any{key, base, keyValue, payload, caps})
+	values := []any{key, base, keyValue, payload, caps}
+	if key == "claude-desktop" {
+		values = append(values, s.DesktopExperimentalModels)
+	}
+	data, _ := json.Marshal(values)
 	return string(data)
 }
 
@@ -583,6 +590,19 @@ func (u *nativeUI) clientsPanel() layout.Widget {
 }
 
 func (u *nativeUI) claudeDesktopModelSummary(s *nativeClientSelection) string {
+	if s.DesktopExperimentalModels {
+		name := s.Initial
+		if initial := s.choice(s.Initial); initial != nil {
+			name = nativeCodexDisplayName(*initial)
+		}
+		if name == "" {
+			return u.tr("Experimental models · Add a model to your shared library.", "Modelos experimentales · Añade un modelo a tu biblioteca compartida.")
+		}
+		if len(s.Models) == 1 {
+			return fmt.Sprintf(u.tr("Experimental models · 1 selected · Starts with %s", "Modelos experimentales · 1 seleccionado · Empieza con %s"), name)
+		}
+		return fmt.Sprintf(u.tr("Experimental models · %d selected · Starts with %s", "Modelos experimentales · %d seleccionados · Empieza con %s"), len(s.Models), name)
+	}
 	if len(s.Models) == 0 {
 		return u.tr("Add a Claude model to your shared library.", "Añade un modelo Claude a tu biblioteca compartida.")
 	}
@@ -599,14 +619,21 @@ func (u *nativeUI) claudeDesktopModelSummary(s *nativeClientSelection) string {
 func (u *nativeUI) claudeDesktopSelectionNote(s *nativeClientSelection) string {
 	source := u.library.selection
 	omitted := len(source.Models) - len(s.Models)
-	text := u.tr("Claude Desktop currently accepts Claude models only.", "Claude Desktop actualmente solo acepta modelos Claude.")
+	text := u.tr("Claude models are used by default. Enable experimental models in Options to use other providers.", "Por defecto se usan modelos Claude. Activa los modelos experimentales en Opciones para usar otros proveedores.")
+	if s.DesktopExperimentalModels {
+		text = u.tr("Experimental support for other providers is enabled. Model and tool compatibility, context and reasoning support may be limited. Preparing a configuration does not verify inference.", "El soporte experimental para otros proveedores está activado. La compatibilidad de modelos y herramientas, el contexto y el razonamiento pueden ser limitados. Preparar una configuración no verifica la inferencia.")
+	}
 	if omitted == 1 {
 		text += " " + u.tr("1 shared model omitted; it remains available to other agents.", "1 modelo compartido omitido; sigue disponible para otros agentes.")
 	} else if omitted > 1 {
 		text += " " + fmt.Sprintf(u.tr("%d shared models omitted; they remain available to other agents.", "%d modelos compartidos omitidos; siguen disponibles para otros agentes."), omitted)
 	}
 	if s.Initial != "" && s.Initial != source.Initial {
-		text += " " + u.tr("The first Claude model is used because your shared default is unsupported.", "Se usa el primer modelo Claude porque el predeterminado compartido no es compatible.")
+		if s.DesktopExperimentalModels {
+			text += " " + u.tr("The first compatible model is used because your shared default is unsupported.", "Se usa el primer modelo compatible porque el predeterminado compartido no es compatible.")
+		} else {
+			text += " " + u.tr("The first Claude model is used because your shared default is unsupported.", "Se usa el primer modelo Claude porque el predeterminado compartido no es compatible.")
+		}
 	}
 	return text
 }
@@ -615,7 +642,7 @@ func (u *nativeUI) claudeDesktopClientPanel(s *nativeClientSelection) layout.Wid
 	const key = "claude-desktop"
 	base, local, _ := u.clientBase()
 	_, validation := nativeClientPayload(key, s)
-	working := u.busy["POST"+nativeClientEndpoint(key)] || u.busy["GET"+nativeClientEndpoint(key)] || u.clientState().Launching != ""
+	working := u.busy["POST"+nativeClientEndpoint(key)] || u.busy["GET"+nativeClientEndpoint(key)] || u.busy["POST/api/claude-desktop/options"] || u.clientState().Launching != ""
 	canPrepare := len(s.Models) > 0 && validation == nil && !working
 	ready := s.Saved != "" && s.Saved == nativeSelectionFingerprint(key, s, base, local, u.clientCaps(key))
 	tone, status := nativeToneNeutral, u.tr("Kilo configuration not prepared", "Configuración Kilo sin preparar")
@@ -634,11 +661,15 @@ func (u *nativeUI) claudeDesktopClientPanel(s *nativeClientSelection) layout.Wid
 		widgets = append(widgets, u.note(s.Path))
 	}
 	if len(s.Models) == 0 {
-		widgets = append(widgets, u.hint(u.tr("Add at least one Claude model to your shared library to prepare Kilo.", "Añade al menos un modelo Claude a tu biblioteca compartida para preparar Kilo.")))
+		widgets = append(widgets, u.hint(u.claudeDesktopModelSummary(s)))
 	} else if validation != nil {
 		widgets = append(widgets, u.message(nativeToneError, nativeMessage(validation.Error(), u.language)))
 	}
+	u.setChecked("client:claude-desktop:experimental", u.claudeDesktopExperimentalModels())
 	return u.column(
+		u.section(u.tr("Experimental models", "Modelos experimentales"), u.tr("Off by default. Changes affect only Claude Desktop; your shared library is preserved.", "Desactivado por defecto. Los cambios solo afectan a Claude Desktop; se conserva tu biblioteca compartida."),
+			u.disabled(!working, u.check("client:claude-desktop:experimental", u.tr("Experimental: use models from other providers", "Experimental: usar modelos de otros proveedores"), u.setClaudeDesktopExperimentalModels)),
+		),
 		u.section(u.tr("Launch", "Arranque"), u.tr("Prepares the named Kilo third-party configuration with your shared models, names and default.", "Prepara la configuración de terceros Kilo con tus modelos compartidos, nombres y modelo inicial."), widgets...),
 		u.section(u.tr("Compatibility", "Compatibilidad"), u.agentCompatibility(key),
 			u.note(u.tr("Context and output limits are managed by Claude Desktop and the model. Shared context presets are not applied.", "Claude Desktop y el modelo gestionan los límites de contexto y salida. Los preajustes de contexto compartidos no se aplican.")),
@@ -646,6 +677,45 @@ func (u *nativeUI) claudeDesktopClientPanel(s *nativeClientSelection) layout.Wid
 			u.pills(u.iconButton("client:claude-desktop:install", u.tr("Get Claude Desktop", "Obtener Claude Desktop"), nativeButtonGhost, nativeIconOpenInNew, func() { u.open("https://claude.ai/download") })),
 		),
 	)
+}
+
+func (u *nativeUI) claudeDesktopExperimentalModels() bool {
+	if target := u.clientState().DesktopExperimentalTarget; target != nil {
+		return *target
+	}
+	return nativeBool(u.state, "claudeDesktopExperimentalModels")
+}
+
+func nativeClaudeDesktopModelAllowed(id string, experimental bool) bool {
+	return catalogID.MatchString(id) && !claudeDesktopReservedAlias(id) && (experimental || claudeDesktopModelSupported(id))
+}
+
+func (u *nativeUI) setClaudeDesktopExperimentalModels(enabled bool) {
+	c := u.clientState()
+	if u.busy["POST/api/claude-desktop/options"] || c.Launching != "" {
+		return
+	}
+	previous := u.claudeDesktopExperimentalModels()
+	c.DesktopExperimentalRevision++
+	c.DesktopExperimentalTarget = &enabled
+	u.clientRequest("POST", "/api/claude-desktop/options", map[string]bool{"experimentalModels": enabled}, func(data json.RawMessage, err error) {
+		var response struct {
+			ExperimentalModels bool `json:"experimentalModels"`
+		}
+		if err == nil {
+			err = json.Unmarshal(data, &response)
+		}
+		c.DesktopExperimentalTarget = nil
+		if err != nil {
+			u.state["claudeDesktopExperimentalModels"] = previous
+			u.sharedClientSelection("claude-desktop")
+			u.noticeError(err)
+			return
+		}
+		u.state["claudeDesktopExperimentalModels"] = response.ExperimentalModels
+		u.sharedClientSelection("claude-desktop")
+		u.refreshState()
+	})
 }
 
 func (u *nativeUI) clientPicker(key string, s *nativeClientSelection) layout.Widget {
@@ -1077,6 +1147,10 @@ func (u *nativeUI) prepareClient(key string) {
 }
 
 func (u *nativeUI) prepareClientAfter(key string, done func(error)) {
+	if key == "claude-desktop" && u.busy["POST/api/claude-desktop/options"] {
+		done(errors.New(u.tr("Wait for the current agent operation to finish.", "Espera a que termine la operación actual del agente.")))
+		return
+	}
 	s := u.sharedClientSelection(key)
 	u.syncClientSelection(key, s)
 	payload, err := nativeClientPayload(key, s)
@@ -1232,15 +1306,19 @@ func decodeNativeClientSelection(key string, data []byte, catalog []modelInfo) (
 	}
 	if key == "opencode" || key == "zed" || key == "claude-desktop" {
 		var source struct {
-			Selection  editorSelection `json:"selection"`
-			ConfigPath string          `json:"configPath"`
+			Selection          editorSelection `json:"selection"`
+			ConfigPath         string          `json:"configPath"`
+			ExperimentalModels bool            `json:"experimentalModels"`
 		}
 		if err := json.Unmarshal(data, &source); err != nil {
 			return nil, err
 		}
 		validate := validateEditorSelection
 		if key == "claude-desktop" {
-			validate = validateClaudeDesktopSelection
+			s.DesktopExperimentalModels = source.ExperimentalModels
+			validate = func(selection editorSelection) error {
+				return validateClaudeDesktopSelectionMode(selection, source.ExperimentalModels)
+			}
 		}
 		if err := validate(source.Selection); err != nil {
 			return nil, err

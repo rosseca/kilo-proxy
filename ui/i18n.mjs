@@ -1,4 +1,11 @@
 export const translations = {
+"Elige entre 1 y 50 modelos.":"Choose 1–50 models.",
+"Elige IDs reales de modelos con nombres válidos; Desktop no admite límites de contexto o salida personalizados.":"Choose real model IDs with valid names; Desktop context/output overrides are not supported.",
+"Los modelos experimentales de Claude Desktop están desactivados. Actívalos o prepara un perfil que solo contenga modelos Claude.":"Experimental Claude Desktop models are disabled. Enable them or prepare a profile containing only Claude models.",
+"Indica experimentalModels como un booleano JSON.":"Provide experimentalModels as a JSON boolean.",
+"No se pudo acceder con seguridad a la carpeta de ajustes de Kilo.":"Cannot safely access the Kilo settings directory.",
+"No se pudieron guardar con seguridad los ajustes de Kilo.":"Cannot safely write Kilo settings.",
+"No se pudieron guardar las opciones de Claude Desktop. Revisa los permisos de la carpeta de ajustes.":"Could not save Claude Desktop options. Check the settings directory permissions.",
 "Claude Desktop abierto con su configuración de gateway de Kilo.":"Claude Desktop opened with its Kilo gateway configuration.",
 "Instala Claude Desktop y actualiza las aplicaciones instaladas. Claude Code CLI es una aplicación distinta.":"Install Claude Desktop, then refresh installed apps. Claude Code CLI is a separate application.",
 "No se pudieron comprobar las aplicaciones de escritorio abiertas.":"Cannot inspect running desktop applications.",

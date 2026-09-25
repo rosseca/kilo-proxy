@@ -18,6 +18,7 @@ func TestClaudeDesktopModelFilterMatchesBrowser(t *testing.T) {
 		"openai/gpt-5", "vendor/claude-sonnet-4.6", "anthropic/claude-", "claude-",
 		"claude-/other", "claude-a/other", "claude-~model", "claude-a+variant",
 		"claude-ä", "claude-a\n", "claude-a\x00", "CLAUDE-sonnet-4.6", "", "anthropic/Claude-sonnet-4.6",
+		"claude-kilo-v1-deadbeef", "anthropic/claude-kilo-v1-deadbeef", "openai/claude-kilo-v1-model", "~provider/a+variant",
 	}
 	for _, fragment := range []string{"gpt-5", "GPT-5", "gemini", "GLM", "Kimi", "openai", "phi4", "k2.5", "m2.5", "ling", "unic", "ds-coder", "qwen", "sonnet", "opus", "haiku"} {
 		ids = append(ids, "claude-"+fragment, "anthropic/claude-a_"+fragment, "claude-a-"+fragment+"-b")
@@ -44,6 +45,21 @@ func TestClaudeDesktopModelFilterMatchesBrowser(t *testing.T) {
 	for i, id := range ids {
 		if got := claudeDesktopModelSupported(id); got != supported[i] {
 			t.Fatalf("filter differs for %q: Go=%v, browser=%v", id, got, supported[i])
+		}
+	}
+	cmd = exec.Command(node, "--input-type=module", "-e", `import {claudeDesktopModelAllowed} from './ui/claude-desktop-helper.mjs';let raw='';for await(const part of process.stdin)raw+=part;process.stdout.write(JSON.stringify(JSON.parse(raw).map(id=>claudeDesktopModelAllowed(id,true))));`)
+	cmd.Stdin = bytes.NewReader(data)
+	output, err = cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("experimental browser filter failed: %v %s", err, output)
+	}
+	if err := json.Unmarshal(output, &supported); err != nil || len(supported) != len(ids) {
+		t.Fatalf("invalid experimental browser results: %v", err)
+	}
+	for i, id := range ids {
+		selection := editorSelection{Models: []editorModel{{ID: id, Name: "Model"}}, Initial: id}
+		if got := validateClaudeDesktopSelectionMode(selection, true) == nil; got != supported[i] {
+			t.Fatalf("experimental filter differs for %q: Go=%v, browser=%v", id, got, supported[i])
 		}
 	}
 }

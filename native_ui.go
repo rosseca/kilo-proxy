@@ -545,8 +545,15 @@ func (u *nativeUI) call(method, path string, payload any, done func(json.RawMess
 }
 func (u *nativeUI) refreshState() {
 	revision, saving := u.languageRevision, u.languageTarget != ""
+	c := u.clientState()
+	desktopRevision, desktopSaving := c.DesktopExperimentalRevision, c.DesktopExperimentalTarget != nil
 	u.call("GET", "/api/state", nil, func(raw json.RawMessage) {
+		desktopExperimental := u.claudeDesktopExperimentalModels()
 		u.acceptState(raw)
+		// Ignore a Desktop option snapshot captured before or during its save.
+		if desktopSaving || desktopRevision != c.DesktopExperimentalRevision || c.DesktopExperimentalTarget != nil {
+			u.state["claudeDesktopExperimentalModels"] = desktopExperimental
+		}
 		// A response captured before a choice or during its save can contain
 		// the previous language, even when it arrives after the save succeeds.
 		if !saving && revision == u.languageRevision && u.languageTarget == "" {

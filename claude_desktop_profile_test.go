@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -272,5 +274,121 @@ func TestClaudeDesktopProfileRepairPermissions(t *testing.T) {
 		if err != nil || info.Mode().Perm() != 0600 {
 			t.Fatalf("unsafe file: %s", path)
 		}
+	}
+}
+
+func desktopProfileTestMixedSelection() editorSelection {
+	return editorSelection{Models: []editorModel{
+		{ID: "anthropic/claude-haiku-4.5", Name: "Haiku"},
+		{ID: "openai/gpt-4.1-nano", Name: "GPT-4.1 Nano"},
+		{ID: "z-ai/glm-5.3-flash"},
+	}, Initial: "openai/gpt-4.1-nano"}
+}
+
+func TestClaudeDesktopExperimentalAliases(t *testing.T) {
+	id := "openai/gpt-4.1-nano"
+	want := "claude-kilo-v1-56000253345871890788775171972345815131729034098819977729670265502282893184032"
+	if got := claudeDesktopAlias(id); got != want {
+		t.Fatalf("wrong stable full-SHA alias: %s", got)
+	}
+	// This real-ID fixture's hexadecimal digest contains Desktop's blocked
+	// "abab" fragment. Decimal aliases must remain clear of that denylist.
+	fixture := "vendor/model-1782"
+	hash := sha256.Sum256([]byte(fixture))
+	if !strings.Contains(hex.EncodeToString(hash[:]), "abab") {
+		t.Fatal("denylist regression fixture changed")
+	}
+	for _, real := range []string{id, fixture, "z-ai/glm-5.3-flash", "openai/gpt-5.4"} {
+		alias := claudeDesktopAlias(real)
+		digest := strings.TrimPrefix(alias, claudeDesktopAliasPrefix)
+		if len(digest) == 0 || len(digest) > 78 || strings.IndexFunc(digest, func(r rune) bool { return r < '0' || r > '9' }) >= 0 || len(alias) > 200 || !catalogID.MatchString(alias) || claudeDesktopOtherModel.MatchString(alias) {
+			t.Fatalf("Desktop rejects generated alias: %s", alias)
+		}
+	}
+	if claudeDesktopAlias(id) == claudeDesktopAlias("other/gpt-4.1-nano") {
+		t.Fatal("provider identity lost in alias")
+	}
+	s := desktopProfileTestMixedSelection()
+	if validateClaudeDesktopSelection(s) == nil || validateClaudeDesktopSelectionMode(s, false) == nil || validateClaudeDesktopSelectionMode(s, true) != nil {
+		t.Fatal("experimental opt-in was not enforced")
+	}
+	for _, alias := range []string{want, "anthropic/" + want} {
+		if claudeDesktopModelSupported(alias) {
+			t.Fatal("synthetic alias recognized as native Claude")
+		}
+		bad := editorSelection{Models: []editorModel{{ID: alias}}, Initial: alias}
+		if validateClaudeDesktopSelectionMode(bad, true) == nil {
+			t.Fatal("synthetic alias accepted as a stored real ID")
+		}
+	}
+	for _, mutate := range []func(*editorSelection){
+		func(s *editorSelection) { s.Models[1].ID = "bad model id" },
+		func(s *editorSelection) { s.Models[1].Name = "bad\nname" },
+		func(s *editorSelection) { s.Models[1].Context = 200000 },
+		func(s *editorSelection) { s.Models[1].Output = 4096 },
+	} {
+		bad := desktopProfileTestMixedSelection()
+		mutate(&bad)
+		if validateClaudeDesktopSelectionMode(bad, true) == nil {
+			t.Fatal("experimental mode bypassed basic selection validation")
+		}
+	}
+	config := claudeDesktopOwnedConfig(s, 8877, "test-only-key", true)
+	models := config["inferenceModels"].([]map[string]string)
+	if len(models) != 3 || models[0]["name"] != want || models[0]["labelOverride"] != "GPT-4.1 Nano" || models[1]["name"] != s.Models[0].ID || models[2]["name"] != claudeDesktopAlias(s.Models[2].ID) || models[2]["labelOverride"] != s.Models[2].ID {
+		t.Fatalf("wrong model identities, labels, or order: %+v", models)
+	}
+	for _, model := range models {
+		if len(model) != 2 {
+			t.Fatalf("invented model capability: %+v", model)
+		}
+	}
+	legacy := claudeDesktopOwnedConfig(desktopProfileTestSelection(), 8877, "test-only-key")
+	nativeExperimental := claudeDesktopOwnedConfig(desktopProfileTestSelection(), 8877, "test-only-key", true)
+	a, _ := json.Marshal(legacy)
+	b, _ := json.Marshal(nativeExperimental)
+	if !bytes.Equal(a, b) {
+		t.Fatal("experimental mode changed native Claude configuration")
+	}
+}
+
+func TestClaudeDesktopExperimentalProfileKeepsRealSelection(t *testing.T) {
+	a, p := desktopProfileTestApp(t)
+	s := desktopProfileTestMixedSelection()
+	if _, err := a.saveClaudeDesktopProfile(s, p); err == nil {
+		t.Fatal("mixed profile prepared without opting in")
+	}
+	a.config.ClaudeDesktopExperimentalModels = true
+	if _, err := a.saveClaudeDesktopProfile(s, p); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(p.SelectionPath)
+	if err != nil || bytes.Contains(data, []byte(claudeDesktopAliasPrefix)) || !bytes.Contains(data, []byte(s.Initial)) {
+		t.Fatalf("real selection was replaced by aliases: %s %v", data, err)
+	}
+	loaded, err := a.readClaudeDesktopSelection(p)
+	if err != nil || loaded.Initial != s.Initial || len(loaded.Models) != len(s.Models) {
+		t.Fatalf("cannot read real selection: %+v %v", loaded, err)
+	}
+	if err := a.verifyClaudeDesktopProfile(); err != nil {
+		t.Fatal(err)
+	}
+	w := desktopProfileTestRequest(a, http.MethodGet, nil)
+	if w.Code != 200 || strings.Contains(w.Body.String(), claudeDesktopAliasPrefix) || !strings.Contains(w.Body.String(), s.Initial) {
+		t.Fatalf("profile API did not preserve real IDs: %d %s", w.Code, w.Body.String())
+	}
+	a.config.ClaudeDesktopExperimentalModels = false
+	if err := a.verifyClaudeDesktopProfile(); err == nil || !strings.Contains(err.Error(), "Experimental") {
+		t.Fatalf("disabled mode accepted saved mixed profile: %v", err)
+	}
+	if _, err := a.saveClaudeDesktopProfile(desktopProfileTestSelection(), p); err != nil {
+		t.Fatalf("cannot recover native profile after disabling: %v", err)
+	}
+	if err := a.verifyClaudeDesktopProfile(); err != nil {
+		t.Fatal(err)
+	}
+	backup, err := os.ReadFile(p.SelectionPath + ".bak")
+	if err != nil || !bytes.Equal(backup, data) {
+		t.Fatal("mixed selection was not backed up during native recovery")
 	}
 }

@@ -198,12 +198,15 @@ func (u *nativeUI) sharedClientSelection(key string) *nativeClientSelection {
 	source := u.library.selection
 	u.syncClientSelection(sharedModelKey, source)
 	s := u.clientState().selection(key)
+	if key == "claude-desktop" {
+		s.DesktopExperimentalModels = u.claudeDesktopExperimentalModels()
+	}
 	if key == "open-design" {
 		s.Mode = u.openDesignEngine()
 	}
 	models := make([]nativeModelChoice, 0, len(source.Models))
 	for _, value := range source.Models {
-		if key == "claude-desktop" && !claudeDesktopModelSupported(value.Model.ID) {
+		if key == "claude-desktop" && !nativeClaudeDesktopModelAllowed(value.Model.ID, s.DesktopExperimentalModels) {
 			continue
 		}
 		m := value
@@ -221,7 +224,7 @@ func (u *nativeUI) sharedClientSelection(key string) *nativeClientSelection {
 		models = append(models, m)
 	}
 	initial := source.Initial
-	if key == "claude-desktop" && !claudeDesktopModelSupported(initial) {
+	if key == "claude-desktop" && !nativeClaudeDesktopModelAllowed(initial, s.DesktopExperimentalModels) {
 		initial = ""
 		if len(models) > 0 {
 			initial = models[0].Model.ID

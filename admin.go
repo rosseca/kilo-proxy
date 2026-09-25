@@ -114,6 +114,10 @@ func (a *app) adminHandler() http.Handler {
 			a.claudeDesktopProfile(w, r)
 			return
 		}
+		if (r.Method == "GET" || r.Method == "POST") && r.URL.Path == "/api/claude-desktop/options" {
+			a.claudeDesktopOptions(w, r)
+			return
+		}
 		if (r.Method == "GET" && r.URL.Path == "/api/claude/info") || ((r.Method == "GET" || r.Method == "POST") && r.URL.Path == "/api/claude/profile") {
 			a.claudeProfile(w, r)
 			return
@@ -197,11 +201,12 @@ func (a *app) state(w http.ResponseWriter) {
 		uptime = int64(time.Since(a.started).Seconds())
 	}
 	jsonResponse(w, 200, map[string]any{
-		"imageTransport":     a.config.ImageTransport,
-		"imageUploadWarning": a.imageUploadWarning,
-		"imageGeneration":    a.config.ImageGeneration,
-		"trayDisplay":        normalizeTrayDisplay(a.config.TrayDisplay),
-		"cursor":             a.cursor, "language": a.config.Language, "catalogRevision": a.catalogRevision,
+		"claudeDesktopExperimentalModels": a.config.ClaudeDesktopExperimentalModels,
+		"imageTransport":                  a.config.ImageTransport,
+		"imageUploadWarning":              a.imageUploadWarning,
+		"imageGeneration":                 a.config.ImageGeneration,
+		"trayDisplay":                     normalizeTrayDisplay(a.config.TrayDisplay),
+		"cursor":                          a.cursor, "language": a.config.Language, "catalogRevision": a.catalogRevision,
 		"auth": a.login, "organizations": a.organizations, "accountEmail": a.accountEmail, "keySaved": a.keySaved,
 		"version": version, "desktop": a.desktop != nil, "port": a.config.Port, "orgId": a.config.OrgID,
 		"localKey": a.config.LocalKey, "hasKey": a.apiKey != "", "remember": a.config.Remember,

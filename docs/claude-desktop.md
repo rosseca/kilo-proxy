@@ -18,9 +18,23 @@ If you configure Desktop manually, its official editor is under **Developer → 
 
 Desktop receives compatible Claude IDs and names from the shared library. The shared default is used if compatible; otherwise the first compatible Claude model becomes Desktop's default, with an explanation in the helper. Other models are omitted only from this agent's generated selection. The original library and its default are unchanged. An empty compatible selection stops preparation with guidance to add a Claude model.
 
-Desktop validates the model family before sending inference. It rejects GPT, GLM and other non-Claude routes. Renaming a model does not change that validation. Kilo Proxy does not disguise those models as Claude or patch the vendor application.
+Desktop validates the model family before sending inference. It rejects the real IDs of GPT, GLM and other non-Claude routes. By default, the helper includes only native Claude models. The optional experimental mode below uses local routing aliases to allow other providers without modifying the vendor application.
 
 The inspected Desktop configuration supports a model name, a display label and certain Claude-specific capabilities; it has no general per-model context-window or output-token field. The helper therefore does not export the library's numeric token limits or invent supported reasoning levels. Desktop controls its own context and reasoning behavior.
+
+### Experimental models from other providers
+
+In **Claude Desktop → Options → Integration settings**, enable **Experimental: use models from other providers**. The choice is saved in Kilo Proxy settings and applies to the next preparation/open. The native helper now includes all real model IDs from the shared library, keeping its names, order and default. The browser helper has the same opt-in for its own selection.
+
+Claude's configuration receives a stable internal alias for each non-Claude model and a display label showing the real model name. Kilo Proxy translates only the request's `model` to its actual Kilo ID and restores the internal alias in the client-facing JSON response or streamed `message_start`. Native Claude IDs keep their normal route. Prompts, tools, tool results, thinking blocks, caching controls and provider usage metadata are not renamed or stripped.
+
+Aliases contain a SHA-256 digest encoded as decimal digits. This avoids incidental matches against Desktop's model-name denylist. Each alias always identifies the same real model; deleting a model from the saved selection makes that alias unavailable instead of routing an existing conversation to a different provider. Do not enter aliases manually in the shared library.
+
+Activity and costs use the upstream provider's real model ID. Debug capture, when explicitly enabled, shows the original alias request and the translated upstream request separately. Turning experimental mode off immediately prevents new alias requests; existing native Claude requests are unaffected. Prepare the profile again to remove experimental entries from Desktop's picker.
+
+This is compatibility mode, not vendor support for those models. Each Kilo route must support Anthropic Messages, streaming and the tools used by the task. A successful text response does not prove support for Cowork, server-side tools, images, all reasoning options or long contexts. The helper does not advertise Claude-specific capabilities or apply numeric context presets to aliased models. Unknown aliases may have no effort selector; gateway acceptance of a reasoning field does not guarantee that a provider honors it.
+
+Desktop still supplies its own Claude identity instructions. An aliased model may therefore describe itself as Claude or quote its internal alias when asked what it is. The proxy preserves those prompts; use Kilo Proxy's upstream model and usage records to verify the actual route.
 
 ## Profile storage and restoration
 
@@ -34,9 +48,15 @@ To return to another provider, use Desktop's third-party configuration selector 
 
 The implementation was checked against the official macOS application **2.9939.2** and Anthropic's gateway/configuration documentation. Windows discovery and configuration paths have automated coverage; a real Windows Desktop session has not been tested. Linux does not have an official Claude Desktop distribution.
 
-Local acceptance testing on macOS verified the actual application: the credential probe passed, the picker displayed two configured Claude names, Chat returned a requested marker, and Code read a file in a disposable workspace with its Read tool and returned its exact contents. These checks used a separate proxy port and left the existing Kilo Proxy process running. Cowork VM workflows and the image MCP were not exercised by this acceptance test.
+Local acceptance testing on macOS verified the actual application: the credential probe passed, the picker displayed native Claude names, Chat returned a requested marker, and Code read a file in a disposable workspace with its Read tool and returned its exact contents. The picker also displayed the shared GPT, GLM, MiniMax and DeepSeek names after experimental mode was enabled.
 
-Live calls through Kilo Proxy's existing `/v1/messages` route succeeded for Claude Haiku 4.5, GPT-4.1 Nano and GLM 5.3 Flash: JSON text, streamed text, streamed tool arguments and non-Claude tool-result continuations. This proves gateway protocol compatibility, not Desktop support for those non-Claude models.
+With the experimental aliases, **GPT-6 Luna and GLM 5.3 Flash** both completed a real Code session using Read, then answered a follow-up from the full conversation history. GPT-6 Luna also returned the requested marker in Chat. After correcting the gateway's explicit `Content-Encoding: identity` response header, all 14 requests in this acceptance run returned HTTP 200 with complete usage and provider costs attributed to the real model. Desktop's own statistics may still abbreviate an internal alias even though its model picker shows the configured display name.
+
+These checks used a separate proxy port and left the existing Kilo Proxy process running. Other entries appearing in the picker are not proof that every model supports every Desktop feature. Cowork VM workflows and the image MCP were not exercised by this acceptance test.
+
+Additional live API calls through Kilo Proxy's `/v1/messages` route succeeded for Claude Haiku 4.5, GPT-4.1 Nano and GLM 5.3 Flash: JSON text, streamed text, streamed tool arguments and non-Claude tool-result continuations. GPT-4.1 Nano was checked through the API only; the Desktop acceptance tests above used GPT-6 Luna and GLM 5.3 Flash.
+
+The alias route also passed two live API checks per model for **GPT-6 Astra, GPT-6 Sol, GLM 5.3, MiniMax M3 and DeepSeek 4.1 Flash**: a forced synthetic tool call, followed by a successful continuation with the complete assistant content and tool result. All ten calls returned HTTP 200 and preserved the expected client alias. These are API checks, not additional Desktop UI or Cowork acceptance tests.
 
 GLM returned `end_turn` alongside complete tool calls. The proxy corrects that terminal reason to `tool_use` only after validating complete tool arguments and a complete response. Text, tool deltas, usage, cache fields and request bodies are preserved; incomplete or failed streams are not reclassified as successful tool calls.
 

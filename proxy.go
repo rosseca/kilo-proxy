@@ -30,77 +30,77 @@ type event struct {
 }
 
 type app struct {
-	imageURLBackends        imageURLBackendManager
-	imageURLLeaseFactory    func(context.Context, string, string) (imageURLLease, error)
-	attachmentClientFactory func(string, string) *imageAttachmentClient
-	imageUploadsActive      int
-	imageUploadsDone        chan struct{}
-	imageUploadWarning      string
-	usageHistory            *usageHistoryStore
-	billing                 billingCache
-	billingAutoRefresh      bool
-	modelLibrary            *modelLibraryStore
-	imageGenerationURL      string
-	imageGenerationMu       sync.Mutex
-	imageGenerationActive   int
-	launcher                *clientLaunchRuntime
+	imageURLBackends          imageURLBackendManager
+	imageURLLeaseFactory      func(context.Context, string, string) (imageURLLease, error)
+	attachmentClientFactory   func(string, string) *imageAttachmentClient
+	imageUploadsActive        int
+	imageUploadsDone          chan struct{}
+	imageUploadWarning        string
+	usageHistory              *usageHistoryStore
+	billing                   billingCache
+	billingAutoRefresh        bool
+	modelLibrary              *modelLibraryStore
+	imageGenerationURL        string
+	imageGenerationMu         sync.Mutex
+	imageGenerationActive     int
+	launcher                  *clientLaunchRuntime
 	claudeDesktopCheckRunning func(string) (bool, error)
-	openDesignCheckRunning  func(string) (bool, error)
-	openDesignLaunchUntil   time.Time
-	terminalCommandsBinary  string
-	terminalCommandsShell   string
-	launchMu                sync.Mutex
-	desktop                 desktopBridge
-	desktopProbes           chan desktopProbe
-	editorTestRoot          string
-	editorMu                sync.Mutex
-	zedCredentialStore      func(context.Context, string, string, string) error
-	cursor                  *cursorSession
-	usageTotal              usageSummary
-	usageSessions           map[string]*usageSummary
-	captureEnabled          bool
-	activeTraces            int
-	activeCaptures          map[*traceCapture]struct{}
-	nextEventID             uint64
-	activityEpoch           uint64
-	traces                  map[string]*requestTrace
-	codexProfileDir         string
-	codexCLIProfileDir      string
-	xcodeTestRoot           string
-	claudeProfileDir        string
-	ompProfileDir           string
-	catalogRevision         uint64
-	modelStatsURL           string
-	modelStatsCache         modelStatsCache
-	recommendedModelsURL    string
-	recommendedModelsCache  recommendedModelsCache
-	accountURL              string
-	authPollInterval        time.Duration
-	login                   *loginSession
-	organizations           []organization
-	accountEmail            string
-	keySaved                bool
-	connectionNeedsSave     bool // Device login and auto-selected teams still need an explicit config save.
-	mu                      sync.Mutex
-	dir                     string
-	config                  settings
-	apiKey                  string
-	vault                   credentialVault
-	vaultWarning            string
-	adminToken              string
-	adminHost               string
-	upstream                *url.URL
-	transport               http.RoundTripper
-	proxyServer             *http.Server
-	proxyListener           net.Listener
-	listenProxy             func(string, string) (net.Listener, error)
-	started                 time.Time
-	requests                int
-	failures                int
-	active                  int
-	events                  []event
-	quit                    chan struct{}
-	quitOnce                sync.Once
+	openDesignCheckRunning    func(string) (bool, error)
+	openDesignLaunchUntil     time.Time
+	terminalCommandsBinary    string
+	terminalCommandsShell     string
+	launchMu                  sync.Mutex
+	desktop                   desktopBridge
+	desktopProbes             chan desktopProbe
+	editorTestRoot            string
+	editorMu                  sync.Mutex
+	zedCredentialStore        func(context.Context, string, string, string) error
+	cursor                    *cursorSession
+	usageTotal                usageSummary
+	usageSessions             map[string]*usageSummary
+	captureEnabled            bool
+	activeTraces              int
+	activeCaptures            map[*traceCapture]struct{}
+	nextEventID               uint64
+	activityEpoch             uint64
+	traces                    map[string]*requestTrace
+	codexProfileDir           string
+	codexCLIProfileDir        string
+	xcodeTestRoot             string
+	claudeProfileDir          string
+	ompProfileDir             string
+	catalogRevision           uint64
+	modelStatsURL             string
+	modelStatsCache           modelStatsCache
+	recommendedModelsURL      string
+	recommendedModelsCache    recommendedModelsCache
+	accountURL                string
+	authPollInterval          time.Duration
+	login                     *loginSession
+	organizations             []organization
+	accountEmail              string
+	keySaved                  bool
+	connectionNeedsSave       bool // Device login and auto-selected teams still need an explicit config save.
+	mu                        sync.Mutex
+	dir                       string
+	config                    settings
+	apiKey                    string
+	vault                     credentialVault
+	vaultWarning              string
+	adminToken                string
+	adminHost                 string
+	upstream                  *url.URL
+	transport                 http.RoundTripper
+	proxyServer               *http.Server
+	proxyListener             net.Listener
+	listenProxy               func(string, string) (net.Listener, error)
+	started                   time.Time
+	requests                  int
+	failures                  int
+	active                    int
+	events                    []event
+	quit                      chan struct{}
+	quitOnce                  sync.Once
 }
 
 func newApp(dir string, vault credentialVault) (*app, error) {
@@ -171,8 +171,16 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 			p.Out.Header.Set("User-Agent", "Kilo-Local/"+version)
 		},
 		ModifyResponse: func(r *http.Response) error {
+			// Kilo may explicitly mark an uncompressed SSE response as identity.
+			// Treat it as unencoded so Messages compatibility adapters can run.
+			if strings.EqualFold(strings.TrimSpace(r.Header.Get("Content-Encoding")), "identity") {
+				r.Header.Del("Content-Encoding")
+			}
 			normalizeUpstreamPayloadError(r)
 			normalizeMessagesToolStop(r)
+			if err := adaptClaudeDesktopAliasResponse(r); err != nil {
+				return err
+			}
 			if bridge, ok := r.Request.Context().Value(schemaBridgeContextKey{}).(*schemaBridge); ok {
 				if err := bridge.adaptResponse(r); err != nil {
 					return err
@@ -290,6 +298,17 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 			return
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, 32<<20)
+		var aliasErr error
+		r, aliasErr = a.prepareClaudeDesktopAlias(r)
+		if aliasErr != nil {
+			var oversized *http.MaxBytesError
+			if errors.As(aliasErr, &oversized) {
+				jsonError(w, http.StatusRequestEntityTooLarge, "La petición supera 32 MiB.")
+			} else {
+				jsonError(w, http.StatusBadRequest, aliasErr.Error())
+			}
+			return
+		}
 		if err := prepareResponsesInput(r); err != nil {
 			var oversized *http.MaxBytesError
 			if errors.As(err, &oversized) {

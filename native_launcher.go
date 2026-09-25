@@ -190,7 +190,7 @@ func (u *nativeUI) launchClientFrom(key, directoryField string) {
 	}
 	a := u.agentsState()
 	c := u.clientState()
-	if c.Launching != "" {
+	if c.Launching != "" || key == "claude-desktop" && u.busy["POST/api/claude-desktop/options"] {
 		return
 	}
 	u.persistLibraryEdits()
