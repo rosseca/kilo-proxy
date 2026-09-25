@@ -10,12 +10,121 @@ async function choose(page,id){
  const client=id.startsWith('xcode-')?'xcode':id;
  await page.locator('#tab-'+client).click();
  if(client==='xcode')await page.locator('[data-xcode-variant="'+id.slice(6)+'"]').click();
- if(['opencode','zed'].includes(client))await page.locator('[data-editor-id="'+modelID+'"]').check();
+ if(['opencode','zed','omp'].includes(client))await page.locator('[data-editor-id="'+modelID+'"]').check();
  else if(client==='xcode')await page.locator('[data-xcode-focus="choose:'+modelID+'"]').check();
  else await selected(page).check();
- return ['opencode','zed'].includes(client)?page.locator('[data-editor-name="'+modelID+'"]'):client==='xcode'?page.locator('[data-xcode-focus="name:'+modelID+'"]'):page.locator('[data-focus="'+(client==='claude'?'claude-name':'name')+':'+modelID+'"]');
+ return ['opencode','zed','omp'].includes(client)?page.locator('[data-editor-name="'+modelID+'"]'):client==='xcode'?page.locator('[data-xcode-focus="name:'+modelID+'"]'):page.locator('[data-focus="'+(client==='claude'?'claude-name':'name')+':'+modelID+'"]');
 }
 const endpoint=id=>['codex','codex-cli'].includes(id)?id+'/catalog':id==='claude'?'claude/profile':['opencode','zed'].includes(id)?'editors/'+id+'/profile':'xcode/'+id.slice(6);
+
+const cliInstallationURLs={
+ 'codex-cli':'https://developers.openai.com/codex/cli/',
+ claude:'https://code.claude.com/docs/en/setup#install-claude-code',
+ opencode:'https://opencode.ai/docs/#install',
+ omp:'https://github.com/can1357/oh-my-pi#install',
+};
+
+for(const [id,url] of Object.entries(cliInstallationURLs)){
+ test(`launcher links to official ${id} installation and checks again without launching`,async({page,gateway},testInfo)=>{
+  await control(gateway,{unavailable:id,...(id==='claude'?{claudeVersion:''}:{})});
+  let capabilityChecks=0;
+  page.on('request',request=>{if(new URL(request.url()).pathname==='/api/claude/info')capabilityChecks++;});
+  await startProxy(page,gateway);
+  await choose(page,id);
+  const status=page.locator('#client-installation-status'),link=page.locator('#client-installation-link');
+  await expect(status).toHaveText('CLI not found');
+  await expect(link).toBeVisible();
+  await expect(link).toHaveText('Installation guide ↗');
+  await expect(link).toHaveAttribute('href',url);
+  await expect(link).toHaveAttribute('target','_blank');
+  await expect(link).toHaveAttribute('rel','noopener noreferrer');
+  await expect(page.locator('#client-launch')).toBeDisabled();
+  await expect(page.locator('#client-launch-status')).toContainText('Synthetic application unavailable');
+  if(id==='claude'){
+   await expect(page.locator('#claude-version-status')).toHaveText('Claude Code was not detected. Basic compatibility is used.');
+   await page.locator('#model-picker input[name="model-choice"][value="anthropic/claude-sonnet-4.6"]').check();
+   await expect(page.locator('[data-focus="claude-effort:anthropic/claude-sonnet-4.6"]')).toBeDisabled();
+   expect(capabilityChecks).toBe(1);
+  }
+  const writes=[];
+  page.on('request',request=>{if(request.method()==='POST')writes.push(new URL(request.url()).pathname);});
+  await page.locator('#client-launch-refresh').click();
+  await expect(status).toHaveText('CLI not found');
+  await expect(page.locator('#client-launch-refresh')).toBeEnabled();
+  expect(await records(gateway)).toEqual([]);
+  if(id==='claude'){
+   expect(capabilityChecks).toBe(2);
+   await page.locator('#language').selectOption('es');
+   await expect(status).toHaveText('CLI no encontrado');
+   await expect(link).toHaveText('Guía de instalación ↗');
+   await expect(page.locator('#client-launch-refresh')).toHaveText('Volver a comprobar');
+   await page.setViewportSize({width:390,height:844});
+   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
+   await page.locator('#client-launch-bar').screenshot({path:testInfo.outputPath('cli-installation-es-mobile.png')});
+   await page.locator('#language').selectOption('en');
+   writes.length=0; // Language changes persist the UI preference, not CLI setup.
+  }
+  await control(gateway,id==='claude'?{claudeVersion:'2.1.251'}:{});
+  await page.locator('#client-launch-refresh').click();
+  await expect(status).toHaveText('Installed');
+  await expect(link).toBeHidden();
+  await expect(link).not.toHaveAttribute('href');
+  await expect(page.locator('#client-launch')).toBeEnabled();
+  if(id==='claude'){
+   await expect(page.locator('#claude-version-status')).toHaveText('Claude Code 2.1.251 · compatible with Kilo configuration');
+   await expect(page.locator('#claude-capabilities-note')).toContainText('per-model reasoning preferences');
+   await expect(page.locator('[data-focus="claude-effort:anthropic/claude-sonnet-4.6"]')).toBeEnabled();
+   await expect(page.locator('#snippet-code')).toContainText('"modelPicker"');
+   expect(capabilityChecks).toBe(3);
+  }
+  expect(writes).toEqual([]);
+  expect(await records(gateway)).toEqual([]);
+ });
+}
+
+test('Claude installation checks reuse an in-flight capability check',async({page,gateway})=>{
+ await control(gateway,{claudeVersion:'2.1.251'});
+ await startProxy(page,gateway);
+ let release,checks=0;
+ const gate=new Promise(resolve=>{release=resolve;});
+ await page.route('**/api/claude/info',async route=>{checks++;await gate;await route.continue();});
+ try{
+  await page.locator('#tab-claude').click();
+  await expect.poll(()=>checks).toBe(1);
+  await page.locator('#tab-codex').click();
+  await page.locator('#tab-claude').click();
+  await page.locator('#tab-claude').click();
+  await expect(page.locator('#client-launch-refresh')).toHaveText('Checking…');
+  await expect(page.locator('#client-launch-refresh')).toBeDisabled();
+  await expect(page.locator('#detect-claude')).toBeDisabled();
+  expect(checks).toBe(1);
+  release();
+  await expect(page.locator('#claude-version-status')).toHaveText('Claude Code 2.1.251 · compatible with Kilo configuration');
+  await expect(page.locator('#client-launch-refresh')).toHaveText('Check again');
+  await expect(page.locator('#client-launch-refresh')).toBeEnabled();
+  expect(checks).toBe(1);
+ }finally{release();}
+});
+
+test('installed CLIs with a missing terminal stay installed without installation guidance',async({page,gateway},testInfo)=>{
+ await control(gateway,{terminalMissing:true});
+ await startProxy(page,gateway);
+ for(const id of Object.keys(cliInstallationURLs)){
+  await choose(page,id);
+  await expect(page.locator('#client-installation-status')).toHaveText('Installed');
+  await expect(page.locator('#client-installation-link')).toBeHidden();
+  await expect(page.locator('#client-launch')).toBeDisabled();
+  await expect(page.locator('#client-launch-status')).toHaveText('Synthetic terminal unavailable.');
+ }
+ await page.locator('#client-launch-bar').screenshot({path:testInfo.outputPath('cli-terminal-missing.png')});
+ expect(await records(gateway)).toEqual([]);
+ await control(gateway,{});
+ await page.locator('#client-launch-refresh').click();
+ await expect(page.locator('#client-installation-status')).toHaveText('Installed');
+ await expect(page.locator('#client-launch')).toBeEnabled();
+ await expect(page.locator('#client-launch-status')).toBeEmpty();
+ expect(await records(gateway)).toEqual([]);
+});
 
 for(const id of ['codex','codex-cli','claude','opencode','zed','xcode-chat','xcode-codex','xcode-claude']) {
  test(`launcher prepares, opens and reuses the current ${id} profile`,async({page,gateway,request},testInfo)=>{

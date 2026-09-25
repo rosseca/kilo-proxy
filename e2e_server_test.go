@@ -94,7 +94,12 @@ func TestE2EServer(t *testing.T) {
 			}
 			return "/synthetic/" + client, nil
 		},
-		terminal: func() (bool, string) { return true, "" },
+		terminal: func() (bool, string) {
+			if readLaunchControl()["terminalMissing"] == true {
+				return false, "Synthetic terminal unavailable."
+			}
+			return true, ""
+		},
 		start: func(plan clientLaunchPlan) error {
 			if readLaunchControl()["fail"] == true {
 				return errors.New("synthetic launch failure")
@@ -246,6 +251,19 @@ func TestE2EServer(t *testing.T) {
 	admin := a.adminHandler()
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		control := readLaunchControl()
+		if r.Method == http.MethodGet && r.URL.Path == "/api/claude/info" {
+			if version, controlled := control["claudeVersion"].(string); controlled {
+				// Keep the real admin authentication/origin checks while avoiding
+				// execution of the host's Claude CLI in version transition tests.
+				if !localHostMatches(r, a.adminHost) || !secureEqual(r.Header.Get("Authorization"), "Bearer "+a.adminToken) {
+					admin.ServeHTTP(w, r)
+					return
+				}
+				w.Header().Set("Cache-Control", "no-store")
+				jsonResponse(w, http.StatusOK, claudeCaps(version))
+				return
+			}
+		}
 		if r.URL.Path == "/api/state" && control["holdState"] == true {
 			_ = os.WriteFile(stateWaiting, []byte("waiting"), 0600)
 			for readLaunchControl()["holdState"] == true {

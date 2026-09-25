@@ -185,12 +185,24 @@ function renderClientLaunch(){
  $('client-launch-bar').hidden=!selection;
  if(!selection)return;
  if(!launchDetected&&!launchDetecting)void detectLaunchClients();
- const installed=launchInfo?.clients?.[selection.id],custom=selection.id==='codex'&&$('client-launch-app').value.trim();
- const available=!!installed?.available||!!custom,terminal=installed?.kind==='terminal'||['codex-cli','claude','opencode','omp'].includes(selection.id);
- const name=installed?.name||({'codex':'Codex Desktop','codex-cli':'Codex CLI',claude:'Claude Code','claude-desktop':'Claude Desktop',opencode:'OpenCode',omp:'Oh My Pi','open-design':'Open Design',zed:'Zed'}[selection.id]||'Xcode');
+ const detected=launchInfo?.clients?.[selection.id],custom=selection.id==='codex'&&$('client-launch-app').value.trim();
+ const cli=['codex-cli','claude','opencode','omp'].includes(selection.id),available=!!detected?.available||!!custom,terminal=detected?.kind==='terminal'||cli;
+ const name=detected?.name||({'codex':'Codex Desktop','codex-cli':'Codex CLI',claude:'Claude Code','claude-desktop':'Claude Desktop',opencode:'OpenCode',omp:'Oh My Pi','open-design':'Open Design',zed:'Zed'}[selection.id]||'Xcode');
  $('client-launch-title').textContent=L('Open on this computer','Abrir en este ordenador');
- $('client-launch-refresh').textContent=launchDetecting?L('Checking…','Comprobando…'):L('Check installed apps','Comprobar aplicaciones');
- $('client-launch-refresh').disabled=launchDetecting||launchBusy;
+ const checking=launchDetecting||client==='claude'&&claudeDetecting;
+ $('client-launch-refresh').textContent=checking?L('Checking…','Comprobando…'):L('Check again','Volver a comprobar');
+ $('client-launch-refresh').disabled=checking||launchBusy;
+ $('client-installation').hidden=!cli;
+ const installed=detected?.installed,installStatus=$('client-installation-status'),installLink=$('client-installation-link');
+ installStatus.textContent=launchDetecting?L('Checking installation…','Comprobando instalación…'):installed===true?L('Installed','Instalado'):installed===false?L('CLI not found','CLI no encontrado'):L('Installation status unavailable','Estado de instalación no disponible');
+ installStatus.dataset.state=launchDetecting?'checking':installed===true?'installed':installed===false?'missing':'unknown';
+ let installURL='';
+ try{const url=new URL(detected?.installURL);if(url.protocol==='https:'&&!url.username&&!url.password)installURL=url.href;}catch{}
+ installLink.hidden=!cli||launchDetecting||installed!==false||!installURL;
+ if(!installLink.hidden)installLink.href=installURL;else installLink.removeAttribute('href');
+ installLink.textContent=L('Installation guide ↗','Guía de instalación ↗');
+ installLink.setAttribute('aria-label',L(name+' installation guide', 'Guía de instalación de '+name));
+ installLink.title=L('Open official installation instructions','Abrir las instrucciones oficiales de instalación');
  $('client-launch-directory-label').textContent=L('Project folder (optional)','Carpeta del proyecto (opcional)');
  $('client-launch-directory-field').hidden=['codex','open-design','claude-desktop'].includes(selection.id);
  $('client-launch-directory').placeholder=launchInfo?.directory||'';
@@ -201,7 +213,7 @@ function renderClientLaunch(){
  $('client-launch').textContent=launchBusy?L('Launching…','Abriendo…'):L('Launch ',terminal?'Iniciar ':'Abrir ')+name;
  $('client-launch').disabled=launchBusy||launchDetecting||selection.working||selection.valid===false||!state||!selection.count||!available;
  $('client-launch-help').textContent=selection.id==='claude-desktop'?L('Prepares Kilo with the selected models and starts the proxy before opening Claude Desktop. Close Claude first to apply configuration changes.','Prepara Kilo con los modelos seleccionados y arranca el proxy antes de abrir Claude Desktop. Cierra Claude primero para aplicar los cambios de configuración.'):selection.id==='open-design'?L('Prepares the selected CLI with your Kilo models, starts the proxy and opens Open Design in its separate Kilo profile.','Prepara el CLI elegido con tus modelos de Kilo, arranca el proxy y abre Open Design en su perfil de Kilo independiente.'):L('Opens with the current models and Kilo configuration. Changes are saved first. Command export settings below apply only to copied commands.','Abre con los modelos y la configuración de Kilo actuales. Los cambios se guardan antes. Los ajustes de exportación inferiores solo afectan a los comandos copiados.')+(selection.id==='zed'?L(' Paste the local key into Zed once using the instructions below.',' Pega la clave local en Zed una vez siguiendo las instrucciones inferiores.'):selection.id==='xcode-chat'?L(' Add the chat provider in Xcode once using the connection details below.',' Añade el proveedor de chat en Xcode una vez con la conexión indicada abajo.'):'');
- const reason=selection.reason||(!available&&!launchDetecting?(installed?.reason||L('Application not detected. Install it, then check again.','Aplicación no detectada. Instálala y vuelve a comprobar.')):!selection.count?L('Select at least one model.','Selecciona al menos un modelo.'):'');
+ const reason=selection.reason||(!available&&!launchDetecting?(detected?.reason||(installed===true?L('The application is installed but cannot be launched on this computer.','La aplicación está instalada pero no se puede abrir en este ordenador.'):L('Application not detected. Install it, then check again.','Aplicación no detectada. Instálala y vuelve a comprobar.'))):!selection.count?L('Select at least one model.','Selecciona al menos un modelo.'):'');
  $('client-launch-status').textContent=launchMessage||reason;
  $('client-launch-status').classList.toggle('error',launchError);
 }
@@ -228,7 +240,7 @@ async function openClient(){
  finally{launchBusy=false;renderClientLaunch();}
 }
 $('client-launch').addEventListener('click',openClient);
-$('client-launch-refresh').addEventListener('click',()=>{launchMessage='';launchError=false;void detectLaunchClients();if(client==='open-design')void openDesignHelper.reload();});
+$('client-launch-refresh').addEventListener('click',()=>{launchMessage='';launchError=false;void detectLaunchClients();if(client==='claude')void detectClaude();if(client==='open-design')void openDesignHelper.reload();});
 $('client-launch-directory').addEventListener('input',()=>{launchDirectoryEdited=true;launchMessage='';launchError=false;renderClientLaunch();});
 $('client-launch-app').addEventListener('input',()=>{launchMessage='';launchError=false;renderClientLaunch();});
 function renderSnippet() {
@@ -918,6 +930,7 @@ function claudeRowControls(model){
  return controls;
 }
 async function detectClaude(){
+ if(claudeDetecting)return;
  claudeDetecting=true;$('detect-claude').disabled=true;renderClientLaunch();
  try{claudeInstalled=await api('claude/info');claudeChecked=true;renderSnippet();}catch(error){notify(error.message,true);}finally{claudeDetecting=false;$('detect-claude').disabled=false;renderClientLaunch();}
 }

@@ -189,10 +189,11 @@ func (a *app) openDesignEngineInfo(rt clientLaunchRuntime) map[string]clientLaun
 	for _, engine := range openDesignEngines {
 		name, _ := launchClientIdentity(engine)
 		path, err := resolveOpenDesignCLI(engine, rt)
+		installed := err == nil
 		if err == nil && engine == "opencode" && rt.platform == "windows" {
 			err = validateOpenDesignShimBinary(path, "windows", false)
 		}
-		info := clientLaunchAvailability{Name: name, Kind: "cli", Path: path, Available: err == nil}
+		info := clientLaunchAvailability{Name: name, Kind: "cli", Path: path, Installed: installed, Available: err == nil, InstallURL: launchClientInstallURL(engine)}
 		if err != nil {
 			info.Reason = a.clientLaunchMessage(err.Error())
 		}

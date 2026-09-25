@@ -15,12 +15,19 @@ import (
 const nativeLaunchEndpoint = "/api/clients/launch"
 
 type nativeLaunchClient struct {
-	Available bool   `json:"available"`
-	Name      string `json:"name"`
-	Kind      string `json:"kind"`
-	Path      string `json:"path"`
-	Reason    string `json:"reason"`
+	Available  bool   `json:"available"`
+	Installed  bool   `json:"installed"`
+	InstallURL string `json:"installURL,omitempty"`
+	Name       string `json:"name"`
+	Kind       string `json:"kind"`
+	Path       string `json:"path"`
+	Reason     string `json:"reason"`
 }
+
+func nativeLaunchClientInstalled(info nativeLaunchClient) bool {
+	return info.Installed || info.Available || info.Path != ""
+}
+
 type nativeLaunchInfo struct {
 	Platform  string                        `json:"platform"`
 	Directory string                        `json:"directory"`
@@ -103,7 +110,7 @@ func (u *nativeUI) clientLauncherPanel(key string, s *nativeClientSelection, can
 	)
 	installTone, installStatus := nativeToneInfo, u.tr("Checking installation…", "Comprobando instalación…")
 	if c.LaunchChecked {
-		if launchable {
+		if launchable || terminalClientSupported(key) && nativeLaunchClientInstalled(info) {
 			installTone, installStatus = nativeToneSuccess, u.tr("Installed", "Instalado")
 		} else {
 			installTone, installStatus = nativeToneNeutral, u.tr("Not found", "No encontrado")

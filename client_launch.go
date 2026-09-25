@@ -31,11 +31,13 @@ type clientLaunchRuntime struct {
 	start          func(clientLaunchPlan) error
 }
 type clientLaunchAvailability struct {
-	Available bool   `json:"available"`
-	Name      string `json:"name"`
-	Kind      string `json:"kind"`
-	Path      string `json:"path"`
-	Reason    string `json:"reason"`
+	Installed  bool   `json:"installed"`
+	Available  bool   `json:"available"`
+	Name       string `json:"name"`
+	Kind       string `json:"kind"`
+	Path       string `json:"path"`
+	Reason     string `json:"reason"`
+	InstallURL string `json:"installURL,omitempty"`
 }
 
 var launchClients = []string{"codex", "claude-desktop", "codex-cli", "claude", "opencode", "omp", "open-design", "zed", "xcode-chat", "xcode-codex", "xcode-claude"}
@@ -113,13 +115,14 @@ func (a *app) clientsLaunch(w http.ResponseWriter, r *http.Request) {
 		terminal, reason := rt.terminal()
 		for _, id := range launchClients {
 			name, kind := launchClientIdentity(id)
-			info := clientLaunchAvailability{Name: name, Kind: kind}
+			info := clientLaunchAvailability{Name: name, Kind: kind, InstallURL: launchClientInstallURL(id)}
 			if reason := launchClientPlatformReason(id, rt.platform); reason != "" {
 				info.Reason = reason
 			} else if path, err := rt.resolve(id, ""); err != nil {
 				info.Reason = err.Error()
 			} else {
 				info.Path = path
+				info.Installed = true
 				info.Available = true
 				if id == "open-design" {
 					if err := openDesignCompatibility(path, rt.platform); err != nil {

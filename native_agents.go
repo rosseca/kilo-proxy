@@ -325,18 +325,14 @@ func (u *nativeUI) agentOptions(key string) layout.Widget {
 	if terminalClientSupported(key) {
 		widgets = append(widgets, u.button("agent:"+key+":terminal-commands", u.tr("Terminal commands in Settings", "Comandos de terminal en Ajustes"), func() { u.page = "settings" }))
 	}
-	widgets = append(widgets, u.pills(u.button("agent:"+key+":setup", u.tr("Integration settings", "Ajustes de integración"), func() { u.agentSetup(key) }), u.button("agent:"+key+":detect", u.tr("Refresh detection", "Actualizar detección"), func() {
-		u.detectLaunchers()
-		if key == "claude" && !u.busy["GET/api/claude/info"] {
-			c.ClaudeDetectStarted = false
-			u.detectAgentCapabilities()
-		}
-	})))
+	widgets = append(widgets, u.pills(u.button("agent:"+key+":setup", u.tr("Integration settings", "Ajustes de integración"), func() { u.agentSetup(key) }), u.button("agent:"+key+":detect", u.tr("Refresh detection", "Actualizar detección"), func() { u.refreshAgentInstallation(key) })))
 	if !u.nativeLaunchAvailable(key) {
 		if reason := nativeMessage(c.LaunchInfo.Clients[key].Reason, u.language); reason != "" {
 			widgets = append(widgets, u.note(reason))
 		}
-		url := map[string]string{"codex": "https://openai.com/codex/", "codex-cli": "https://developers.openai.com/codex/cli/", "claude": "https://code.claude.com/docs/en/overview", "opencode": "https://opencode.ai/", "omp": "https://omp.sh/", "zed": "https://zed.dev/download"}[key]
+		// CLI installation guidance is already visible in the card, and a
+		// missing terminal must never suggest reinstalling an existing CLI.
+		url := map[string]string{"codex": "https://openai.com/codex/", "zed": "https://zed.dev/download"}[key]
 		if url != "" {
 			widgets = append(widgets, u.button("agent:"+key+":install", u.tr("Installation instructions", "Instrucciones de instalación"), func() { u.open(url) }))
 		}
@@ -351,6 +347,9 @@ func (u *nativeUI) agentCard(key string) layout.Widget {
 		name = "Codex"
 	}
 	available := u.nativeLaunchAvailable(key)
+	cli := terminalClientSupported(key)
+	installed := nativeLaunchClientInstalled(c.LaunchInfo.Clients[key])
+	missingCLI := cli && c.LaunchChecked && !installed
 	status, statusTone := u.tr("Checking installation…", "Comprobando instalación…"), nativeToneInfo
 	if c.LaunchChecked {
 		if available {
@@ -365,6 +364,13 @@ func (u *nativeUI) agentCard(key string) layout.Widget {
 		} else {
 			status, statusTone = u.tr("Not found", "No encontrado"), nativeToneNeutral
 		}
+		if cli {
+			if installed {
+				status, statusTone = u.tr("CLI installed", "CLI instalado"), nativeToneSuccess
+			} else {
+				status, statusTone = u.tr("CLI not found", "CLI no encontrado"), nativeToneNeutral
+			}
+		}
 	}
 	s := u.sharedClientSelection(key)
 	_, validation := nativeClientPayload(key, s)
@@ -377,7 +383,7 @@ func (u *nativeUI) agentCard(key string) layout.Widget {
 	if key == "codex" || key == "codex-cli" {
 		canOpen = canOpen && nativeClientImagesReady(s, u.models)
 	}
-	if key == "claude" && !c.ClaudeChecked {
+	if key == "claude" && (!c.ClaudeChecked || u.busy["GET/api/claude/info"]) {
 		canOpen = false
 	}
 	if key == "open-design" {
@@ -387,6 +393,8 @@ func (u *nativeUI) agentCard(key string) layout.Widget {
 	switch {
 	case !c.LaunchChecked:
 		disabledReason = u.tr("Wait for installation detection to finish.", "Espera a que termine la detección de la instalación.")
+	case missingCLI:
+		disabledReason = u.tr("Install the CLI, then check again to open it with your Kilo models.", "Instala el CLI y vuelve a comprobarlo para abrirlo con tus modelos de Kilo.")
 	case !available:
 		disabledReason = nativeMessage(c.LaunchInfo.Clients[key].Reason, u.language)
 		if disabledReason == "" {
@@ -396,7 +404,7 @@ func (u *nativeUI) agentCard(key string) layout.Widget {
 		disabledReason = u.tr("Finish setting up and saving your Kilo connection first.", "Termina de configurar y guardar tu conexión de Kilo.")
 	case !libraryReady:
 		disabledReason = libraryStatus
-	case key == "claude" && !c.ClaudeChecked:
+	case key == "claude" && (!c.ClaudeChecked || u.busy["GET/api/claude/info"]):
 		disabledReason = u.tr("Wait for Claude Code version detection to finish.", "Espera a que termine la detección de la versión de Claude Code.")
 	case key == "open-design" && !c.OpenDesignChecked:
 		disabledReason = u.tr("Wait for CLI engine detection to finish.", "Espera a que termine la detección del motor CLI.")
@@ -426,8 +434,14 @@ func (u *nativeUI) agentCard(key string) layout.Widget {
 	optionsID := "agent:" + key + ":options"
 	controls := []layout.Widget{
 		u.disabled(canOpen, u.primaryButton("agent:"+key+":launch", label, func() { u.launchAgent(key) })),
-		u.buttonWidget(optionsID, u.tr("Options", "Opciones"), nativeButtonGhost, nativeIconChevronRight, true, false, func() { u.expanded[optionsID] = !u.expanded[optionsID] }),
 	}
+	if missingCLI {
+		controls = []layout.Widget{u.iconButton("agent:"+key+":install", u.tr("Installation guide", "Guía de instalación"), nativeButtonPrimary, nativeIconOpenInNew, func() { u.open(launchClientInstallURL(key)) })}
+	}
+	if cli && c.LaunchChecked && !available {
+		controls = append(controls, u.disabled(!u.busy["GET"+nativeLaunchEndpoint], u.iconButton("agent:"+key+":detect-visible", u.tr("Check again", "Comprobar de nuevo"), nativeButtonGhost, nativeIconRefresh, func() { u.refreshAgentInstallation(key) })))
+	}
+	controls = append(controls, u.buttonWidget(optionsID, u.tr("Options", "Opciones"), nativeButtonGhost, nativeIconChevronRight, true, false, func() { u.expanded[optionsID] = !u.expanded[optionsID] }))
 	if key == "codex" && !available && c.LaunchChecked {
 		controls = append(controls, u.disabled(a.FolderBusy == "", u.button("agent:codex:locate", u.tr("Locate Codex", "Localizar Codex"), u.locateCodexApplication)))
 	}
@@ -438,7 +452,7 @@ func (u *nativeUI) agentCard(key string) layout.Widget {
 	if key == "open-design" {
 		engineName, _ := launchClientIdentity(u.openDesignEngine())
 		widgets = append(widgets, u.actionRow(u.column(u.note(u.tr("Engine", "Motor")), u.label(engineName)), u.ghostButton("agent:open-design:setup", u.tr("Engine settings", "Ajustes del motor"), func() { u.agentSetup(key) })))
-	} else if clientLaunchUsesProject(key) {
+	} else if clientLaunchUsesProject(key) && !missingCLI {
 		widgets = append(widgets, u.agentProjectPicker(key))
 	}
 	if key == "claude-desktop" {
