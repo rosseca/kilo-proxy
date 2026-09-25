@@ -39,7 +39,7 @@ $models = kilo-opencode models kilo-local | Write-Output
 kilo-opencode models kilo-local | Set-Content models.txt
 ```
 
-Explicit pipes use PowerShell's text-stream conversion. They are suitable for textual CLI output, not byte-for-byte binary transport. Native `.exe` clients preserve literal arguments; `.cmd`/`.bat` clients reject embedded double quotes and newlines. Use the agent's native executable for those arguments. Keep Kilo Proxy open and install the underlying CLI separately.
+Explicit pipes use PowerShell's text-stream conversion. Input text is encoded as UTF-8 without adding a byte order mark, preserving Unicode prompts in PowerShell 5.1 and 7 without changing the caller's `$OutputEncoding` preference. These pipes are suitable for textual CLI output, not byte-for-byte binary transport. Native `.exe` clients preserve literal arguments; `.cmd`/`.bat` clients reject embedded double quotes and newlines. Use the agent's native executable for those arguments. Keep Kilo Proxy open and install the underlying CLI separately.
 
 ## Use your current terminal
 

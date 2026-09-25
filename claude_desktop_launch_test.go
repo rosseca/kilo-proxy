@@ -20,12 +20,22 @@ func prepareDesktopLaunchTest(t *testing.T, a *app) {
 
 func TestClaudeDesktopLaunchUsesAppliedProfileWithoutCLIEnvironment(t *testing.T) {
 	a := launchTestApp(t)
+	application := filepath.Join(a.launcher.home, "Applications", "Claude.app")
+	wantExecutable := "/usr/bin/open"
+	wantArgs := []string{"-a", application}
+	if os.PathSeparator == '\\' {
+		// Process plans must use absolute paths for the host OS. A simulated
+		// macOS /usr/bin/open is correctly rejected by the Windows validator.
+		a.launcher.platform = "windows"
+		application = filepath.Join(a.launcher.home, "Applications", "Claude.exe")
+		wantExecutable, wantArgs = application, nil
+	}
 	a.claudeDesktopCheckRunning = func(string) (bool, error) { return false, nil }
 	a.launcher.resolve = func(client, _ string) (string, error) {
 		if client != "claude-desktop" {
 			t.Fatal(client)
 		}
-		return "/Applications/Claude.app", nil
+		return application, nil
 	}
 	request := clientLaunchRequest{Client: "claude-desktop", Directory: "/not-a-supported-workspace"}
 	if _, err := a.planClientLaunch(request, a.launchRuntime()); err == nil {
@@ -36,7 +46,7 @@ func TestClaudeDesktopLaunchUsesAppliedProfileWithoutCLIEnvironment(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan.Directory != a.launcher.home || plan.Executable != "/usr/bin/open" || !reflect.DeepEqual(plan.Args, []string{"-a", "/Applications/Claude.app"}) {
+	if plan.Directory != a.launcher.home || plan.Executable != wantExecutable || !reflect.DeepEqual(plan.Args, wantArgs) {
 		t.Fatal("unexpected Desktop dispatch", plan)
 	}
 	if err := validateClientProcessPlan(plan); err != nil {
@@ -88,6 +98,9 @@ func TestClaudeDesktopWindowsDiscoveryDoesNotResolveClaudeCLI(t *testing.T) {
 }
 
 func TestClaudeDesktopRunningMatchesOtherMacInstallations(t *testing.T) {
+	// Keep the macOS process suffix while giving the fixture an absolute path
+	// on the host OS, including a drive or UNC volume on Windows.
+	volume := filepath.ToSlash(filepath.VolumeName(t.TempDir()))
 	for _, tc := range []struct {
 		path string
 		want bool
@@ -99,7 +112,25 @@ func TestClaudeDesktopRunningMatchesOtherMacInstallations(t *testing.T) {
 		{"/Applications/Claude.app/Contents/Frameworks/Claude Helper.app/Contents/MacOS/Claude Helper", false},
 		{"/Applications/NotClaude.app/Contents/MacOS/Claude", false},
 	} {
-		if got := claudeDesktopProcessMatches(tc.path, "/Applications/Claude.app", "darwin"); got != tc.want {
+		if got := claudeDesktopProcessMatches(volume+tc.path, volume+"/Applications/Claude.app", "darwin"); got != tc.want {
+			t.Errorf("%s: got %v want %v", tc.path, got, tc.want)
+		}
+	}
+}
+
+func TestClaudeDesktopRunningMatchesWindowsApplication(t *testing.T) {
+	application := filepath.Join(t.TempDir(), "AnthropicClaude", "Claude.exe")
+	for _, tc := range []struct {
+		path string
+		want bool
+	}{
+		{application, true},
+		{strings.ToUpper(application), true},
+		{filepath.Join(filepath.Dir(application), "Claude Helper.exe"), false},
+		{filepath.Join(filepath.Dir(application), "bin", "claude.exe"), false},
+		{"claude.exe", false},
+	} {
+		if got := claudeDesktopProcessMatches(tc.path, application, "windows"); got != tc.want {
 			t.Errorf("%s: got %v want %v", tc.path, got, tc.want)
 		}
 	}

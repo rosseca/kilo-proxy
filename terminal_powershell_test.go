@@ -317,22 +317,33 @@ func main(){
 			for _, arg := range args {
 				literalArgs = append(literalArgs, "("+terminalPowerShellLiteral(arg)+")")
 			}
-			for _, mode := range []string{"console", "input-pipeline", "output-pipeline"} {
+			for _, mode := range []string{"console", "input-pipeline", "input-pipeline-ascii", "input-pipeline-literal-bom", "output-pipeline"} {
 				t.Run(filepath.Base(shell)+"/"+name+"/"+mode, func(t *testing.T) {
 					// A literal typed array also preserves zero arguments and one empty
 					// argument on Windows PowerShell 5.1, unlike ConvertFrom-Json output.
 					script := "[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)\n. (" + terminalPowerShellLiteral(functions) + ")\n[string[]]$manualArgs = @(" + strings.Join(literalArgs, ", ") + ")\n"
+					// Reproduce a caller's BOM-emitting UTF-8 encoding even in PS7,
+					// and PS5.1's ASCII preference without depending on host defaults.
+					script += "$OutputEncoding = [Text.Encoding]::UTF8\n"
+					if mode == "input-pipeline-ascii" {
+						script += "$OutputEncoding = [Text.Encoding]::ASCII\n"
+					}
+					script += "$manualOutputEncoding = $OutputEncoding\n"
+					pipelineInput := "pipeline input café 日本語 😀"
+					if mode == "input-pipeline-literal-bom" {
+						pipelineInput = "\ufeff" + pipelineInput
+					}
 					if mode != "console" {
 						script += "$manualCaptured = "
 					}
-					if mode == "input-pipeline" {
-						script += "'pipeline input' | "
+					if strings.HasPrefix(mode, "input-pipeline") {
+						script += "(" + terminalPowerShellLiteral(pipelineInput) + ") | "
 					}
 					script += name + " @manualArgs"
 					if mode == "output-pipeline" {
 						script += " | Microsoft.PowerShell.Utility\\Write-Output"
 					}
-					script += "\n"
+					script += "\nif (-not [Object]::ReferenceEquals($OutputEncoding, $manualOutputEncoding)) { throw 'caller output encoding changed' }\n"
 					if mode != "console" {
 						script += "if ($null -eq $manualCaptured) { throw 'pipeline output was consumed' }\n[Console]::Out.WriteLine($manualCaptured)\n"
 					}
@@ -360,13 +371,13 @@ func main(){
 						t.Fatal("fixed flags/config path changed", got.Raw)
 					}
 					wantInput := "stdin preserved\n"
-					if mode == "input-pipeline" {
-						wantInput = "pipeline input\n"
+					if strings.HasPrefix(mode, "input-pipeline") {
+						wantInput = pipelineInput + "\n"
 					}
 					canonical, _ := filepath.EvalSymlinks(home)
 					gotCwd, _ := filepath.EvalSymlinks(got.Cwd)
 					if gotCwd != canonical || strings.ReplaceAll(got.Input, "\r\n", "\n") != wantInput {
-						t.Fatal("cwd/stdin changed", got.Cwd, got.Input)
+						t.Fatalf("cwd/stdin changed: cwd=%q stdin=%q want stdin=%q", got.Cwd, got.Input, wantInput)
 					}
 				})
 			}

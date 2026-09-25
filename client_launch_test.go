@@ -24,7 +24,7 @@ func launchTestApp(t *testing.T) *app {
 	a.claudeProfileDir = filepath.Join(home, "claude")
 	a.ompProfileDir = filepath.Join(home, "omp")
 	a.xcodeTestRoot = filepath.Join(home, "xcode")
-	a.launcher = &clientLaunchRuntime{home: home, platform: "macos", resolve: func(string, string) (string, error) { return "/synthetic/client", nil }, terminal: func() (bool, string) { return true, "" }, start: func(clientLaunchPlan) error { return nil }}
+	a.launcher = &clientLaunchRuntime{home: home, platform: "macos", resolve: func(string, string) (string, error) { return filepath.Join(home, "synthetic", "client"), nil }, terminal: func() (bool, string) { return true, "" }, start: func(clientLaunchPlan) error { return nil }}
 	return a
 }
 func TestClientLaunchAuthenticationAndStrictInput(t *testing.T) {

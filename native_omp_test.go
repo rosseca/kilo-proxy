@@ -5,10 +5,15 @@ package main
 import (
 	"encoding/json"
 	"image"
+	"net/http"
+	"net/http/httptest"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -92,15 +97,41 @@ func TestNativeOMPAgentCardOpensPreparedSharedProfile(t *testing.T) {
 	for _, lang := range []string{"en", "es"} {
 		t.Run(lang, func(t *testing.T) {
 			u, recorder := nativeLaunchTestUI(t, "omp", false, false)
-			u.page, u.language = "agents", lang
+			entered, releaseDetection := nativeHoldOMPAgentDetection(t, u)
+			u.setLanguage(lang)
+			nativeTestWait(t, u, func() bool { return u.languageTarget == "" && !u.busy["POST/api/language"] })
+			u.page = "agents"
 			h := &nativePointerHarness{t: t, u: u, size: image.Pt(1180, 1200), now: time.Now()}
 			h.frame()
-			h.reveal(u.tr("Open Oh My Pi", "Abrir Oh My Pi"), semantic.Button)
+			select {
+			case <-entered:
+			case <-time.After(3 * time.Second):
+				t.Fatal("Agents did not request the delayed engine detection")
+			}
+			label := u.tr("Open Oh My Pi", "Abrir Oh My Pi")
+			h.reveal(label, semantic.Button)
+			beforeDetection := h.target(label, semantic.Button).Desc.Bounds
+			// Reproduce the CI ordering: engine detection finishes after the
+			// initial scroll. Removing its hint can shrink a bottom-anchored
+			// list and move OMP between pointer Move and Press. Drain all Agents
+			// detections and lay out their result before locating the click.
+			releaseDetection()
+			nativeTestWait(t, u, func() bool {
+				c := u.clientState()
+				return c.LaunchChecked && c.ClaudeChecked && c.OpenDesignChecked &&
+					!u.busy["GET"+nativeLaunchEndpoint] && !u.busy["GET/api/claude/info"] && !u.busy["GET"+openDesignProfileEndpoint]
+			})
+			h.frame()
+			afterDetection := h.target(label, semantic.Button).Desc.Bounds
+			t.Logf("OMP button after delayed detection: %v -> %v", beforeDetection, afterDetection)
+			h.reveal(label, semantic.Button)
 			nativeGridCapture(t, h, "native-omp-agents-"+lang)
-			h.click(u.tr("Open Oh My Pi", "Abrir Oh My Pi"), semantic.Button)
-			nativeTestWait(t, u, func() bool { return u.clientState().Launching == "" })
+			h.click(label, semantic.Button)
+			nativeTestWait(t, u, func() bool {
+				return u.clientState().Launching == "" && (recorder.prepares.Load() > 0 || u.notice != "")
+			})
 			if recorder.count() != 1 || recorder.prepares.Load() != 1 {
-				t.Fatalf("Oh My Pi card did not prepare and launch: %s", u.notice)
+				t.Fatalf("Oh My Pi card did not prepare and launch: prepares=%d launches=%d notice=%q", recorder.prepares.Load(), recorder.count(), u.notice)
 			}
 			prepared := u.clientState().selection("omp")
 			profileDir := filepath.Join(u.owner.editorTestRoot, ".omp-kilo")
@@ -127,6 +158,30 @@ func TestNativeOMPAgentCardOpensPreparedSharedProfile(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Hold only the unrelated engine detection. Profile preparation and launch
+// still use the original authenticated fixture and its real API counters.
+func nativeHoldOMPAgentDetection(t *testing.T, u *nativeUI) (<-chan struct{}, func()) {
+	t.Helper()
+	upstream, err := url.Parse("http://" + u.owner.adminHost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxy := httputil.NewSingleHostReverseProxy(upstream)
+	entered, release := make(chan struct{}), make(chan struct{})
+	var enteredOnce, releaseOnce sync.Once
+	unblock := func() { releaseOnce.Do(func() { close(release) }) }
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == openDesignProfileEndpoint {
+			enteredOnce.Do(func() { close(entered) })
+			<-release
+		}
+		proxy.ServeHTTP(w, r)
+	}))
+	u.owner.adminHost = strings.TrimPrefix(server.URL, "http://")
+	t.Cleanup(func() { unblock(); server.Close() })
+	return entered, unblock
 }
 
 func TestNativeOMPFailedPreparationNeverLaunches(t *testing.T) {
