@@ -1,7 +1,11 @@
 import {test,expect,startProxy,state} from './fixture.mjs';
 import {writeFile} from 'node:fs/promises';
 
-test('oversized image history explains upstream 413 and preserves the original rejection in Activity',async({page,gateway,request})=>{
+test('with image handling off, oversized image history explains upstream 413 and preserves the original rejection in Activity',async({page,gateway,request})=>{
+  // Exercise the gateway's body-limit rejection without local image validation,
+  // compression or uploads intercepting this deliberately opaque size fixture.
+  await page.locator('#image-transport-mode').selectOption('off');
+  await expect.poll(async()=>(await state(request,gateway)).imageTransport.mode).toBe('off');
   await startProxy(page,gateway);
   await page.locator('#capture-activity').check();
   await expect.poll(async()=>(await state(request,gateway)).captureEnabled).toBe(true);
@@ -14,7 +18,7 @@ test('oversized image history explains upstream 413 and preserves the original r
       {type:'input_image',image_url:'data:image/png;base64,'+'A'.repeat(4_600_000)},
     ]}]},
   });
-  expect(response.status()).toBe(413);
+  expect(response.status(),await response.text()).toBe(413);
   const failure=await response.json();
   expect(failure.error.code).toBe('upstream_payload_too_large');
   expect(failure.error.message).toContain('4.5 MB');

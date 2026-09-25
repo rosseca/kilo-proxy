@@ -51,7 +51,8 @@ for (const engine of ['codex-cli', 'claude', 'opencode']) test(`Open Design prep
  expect(mutations.map(value => value.endpoint)).toEqual(['/api/open-design/profile', '/api/clients/launch']);
  expect(mutations[0].body).toMatchObject({engine, library:{schemaVersion:1, defaultModel:second}});
  expect(mutations[0].body.library.models[0]).toEqual(shared.models[0]);
- expect(mutations[1].body).toEqual({client:'open-design', engine, directory:''});
+ // Desktop launchers restore their own workspace and omit the folder field.
+ expect(mutations[1].body).toEqual({client:'open-design', engine});
  expect((await records(gateway))[0]).toMatchObject({client:'open-design', kind:'desktop'});
  expect((await readAPI(request, gateway, 'model-library')).library).toEqual(shared);
  const profile = await readAPI(request, gateway, 'open-design/profile');
