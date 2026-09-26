@@ -4,10 +4,19 @@ package main
 
 import (
 	"fmt"
+	"image"
+	"image/color"
 	"slices"
 	"strconv"
 
+	gioevent "gioui.org/io/event"
+	"gioui.org/io/key"
+	"gioui.org/io/pointer"
 	"gioui.org/layout"
+	"gioui.org/op"
+	"gioui.org/op/clip"
+	"gioui.org/op/paint"
+	"gioui.org/unit"
 )
 
 // Keep the user's requested policy separate from published catalog capacity.
@@ -179,10 +188,185 @@ func (u *nativeUI) sharedContextDraftError(raw string) string {
 	return ""
 }
 
+func (u *nativeUI) unknownContextMaximumIDs() []string {
+	var ids []string
+	for _, choice := range u.library.selection.Models {
+		if choice.Model.ContextWindow < 1024 || choice.Model.ContextWindow > 100000000 {
+			ids = append(ids, choice.Model.ID)
+		}
+	}
+	return ids
+}
+
+func (u *nativeUI) contextMaximumBlockerReason(id string) string {
+	for _, model := range u.models {
+		if model.ID == id {
+			if model.ContextWindow > 100000000 {
+				return u.tr("Published limit exceeds the supported range", "El límite publicado supera el rango admitido")
+			}
+			return u.tr("No maximum published in the catalog", "Sin máximo publicado en el catálogo")
+		}
+	}
+	return u.tr("Not in the current catalog", "No aparece en el catálogo actual")
+}
+
+func (u *nativeUI) requestContextRemoval(ids []string) {
+	u.contextRemovalIDs = slices.Clone(ids)
+	u.expanded["models.sort"], u.expanded["models.lab"] = false, false
+}
+
+func (u *nativeUI) confirmContextRemoval() {
+	if u.library == nil {
+		return
+	}
+	if len(u.models) == 0 {
+		u.contextRemovalIDs = nil
+		u.setNotice(nativeToneWarning, u.tr("Catalog unavailable. Refresh it before removing models from this list.", "Catálogo no disponible. Actualízalo antes de quitar modelos de esta lista."))
+		return
+	}
+	// A refresh can resolve the missing maximum while the dialog is open.
+	// Only remove choices that still block Maximum at the moment of confirmation.
+	unknown := u.unknownContextMaximumIDs()
+	removed := 0
+	for _, id := range u.contextRemovalIDs {
+		if slices.Contains(unknown, id) {
+			u.library.selection.remove(id)
+			removed++
+		}
+	}
+	u.contextRemovalIDs = nil
+	if removed > 0 {
+		u.expanded["models.context.removed"] = true
+	} else {
+		u.setNotice(nativeToneInfo, u.tr("No models were removed. Review the refreshed catalog.", "No se ha quitado ningún modelo. Revisa el catálogo actualizado."))
+	}
+}
+
+func nativeContextRule(gtx layout.Context) layout.Dimensions {
+	size := image.Pt(gtx.Constraints.Max.X, gtx.Dp(1))
+	paint.FillShape(gtx.Ops, nativeInk, clip.Rect{Max: size}.Op())
+	return layout.Dimensions{Size: size}
+}
+
+func (u *nativeUI) contextMaximumBlockersPanel(ids []string) layout.Widget {
+	if len(u.models) == 0 {
+		return u.column(
+			nativeContextRule,
+			u.subheading(u.tr("Catalog unavailable", "Catálogo no disponible")),
+			u.note(u.tr("Maximum needs catalog limits. Refresh before deciding which saved models to remove.", "Máximo necesita los límites del catálogo. Actualízalo antes de decidir qué modelos guardados quitar.")),
+			u.disabled(!u.busy["POST/api/models"], u.button("models.context.refresh", u.tr("Refresh catalog", "Actualizar catálogo"), u.refreshModels)),
+		)
+	}
+	count := len(ids)
+	label := fmt.Sprintf(u.tr("%d models without a known maximum", "%d modelos sin máximo conocido"), count)
+	if count == 1 {
+		label = u.tr("1 model without a known maximum", "1 modelo sin máximo conocido")
+	}
+	children := []layout.Widget{
+		nativeContextRule,
+		u.subheading(label),
+		u.note(u.tr("These models prevent Maximum from applying to the whole library. Refresh the catalog or remove them from your saved selection.", "Estos modelos impiden aplicar Máximo a toda la biblioteca. Actualiza el catálogo o quítalos de tu selección guardada.")),
+	}
+	rows := make([]layout.Widget, 0, len(ids)*2)
+	for _, id := range ids {
+		id := id
+		rows = append(rows, u.actionRow(
+			u.column(u.subheading(id), u.note(u.contextMaximumBlockerReason(id))),
+			u.button("models.context.remove."+id, u.tr("Remove", "Quitar"), func() { u.requestContextRemoval([]string{id}) }),
+		), nativeContextRule)
+	}
+	if len(ids) > 5 {
+		children = append(children, u.scroll("models.context.blockers", unit.Dp(300), rows...))
+	} else {
+		children = append(children, rows...)
+	}
+	removeLabel := fmt.Sprintf(u.tr("Remove %d models from my library", "Quitar los %d de mi biblioteca"), count)
+	if count == 1 {
+		removeLabel = u.tr("Remove the model from my library", "Quitar el modelo de mi biblioteca")
+	}
+	children = append(children,
+		u.pills(
+			u.disabled(!u.busy["POST/api/models"], u.button("models.context.refresh", u.tr("Refresh catalog", "Actualizar catálogo"), u.refreshModels)),
+			u.primaryButton("models.context.remove-all", removeLabel, func() { u.requestContextRemoval(ids) }),
+		),
+		u.note(u.tr("Removing a model changes only your saved selection, not your Kilo account or the catalog.", "Quitar un modelo solo cambia tu selección guardada, no tu cuenta de Kilo ni el catálogo.")),
+	)
+	return u.column(children...)
+}
+
+func (u *nativeUI) contextRemovalDialog() layout.Widget {
+	ids := slices.Clone(u.contextRemovalIDs)
+	count := len(ids)
+	label := fmt.Sprintf(u.tr("Remove %d models from your library?", "¿Quitar %d modelos de tu biblioteca?"), count)
+	intro := u.tr("These models will leave your shared selection:", "Estos modelos dejarán de estar en tu selección compartida:")
+	if count == 1 {
+		label = u.tr("Remove this model from your library?", "¿Quitar este modelo de tu biblioteca?")
+		intro = u.tr("This model will leave your shared selection:", "Este modelo dejará de estar en tu selección compartida:")
+	}
+	items := make([]layout.Widget, 0, count)
+	for _, id := range ids {
+		items = append(items, u.note("•  "+id))
+	}
+	return u.card(
+		u.heading(label),
+		u.note(intro),
+		u.scroll("models.context.remove.list", unit.Dp(180), items...),
+		u.note(u.tr("Your Kilo account does not change. Already-open agents keep their current configuration until reopened.", "Tu cuenta de Kilo no cambia. Los agentes abiertos conservan su configuración hasta que los vuelvas a abrir.")),
+		u.actionRow(layout.Spacer{}.Layout,
+			u.button("models.context.remove.cancel", u.tr("Cancel", "Cancelar"), func() { u.contextRemovalIDs = nil }),
+			u.primaryButton("models.context.remove.confirm", u.tr("Remove from my library", "Quitar de mi biblioteca"), u.confirmContextRemoval),
+		),
+	)
+}
+
+// Render the confirmation above the page so a destructive choice is never
+// committed from the diagnostic row itself. The backdrop blocks page clicks.
+func (u *nativeUI) layoutContextRemovalDialog(gtx layout.Context) {
+	if u.page != "models" {
+		u.contextRemovalIDs = nil
+		return
+	}
+	if len(u.contextRemovalIDs) == 0 {
+		return
+	}
+	for {
+		e, ok := gtx.Event(pointer.Filter{Target: &u.contextRemovalTag, Kinds: pointer.Press}, key.Filter{Name: key.NameEscape})
+		if !ok {
+			break
+		}
+		switch event := e.(type) {
+		case pointer.Event:
+			u.contextRemovalIDs = nil
+		case key.Event:
+			if event.State == key.Press {
+				u.contextRemovalIDs = nil
+			}
+		}
+	}
+	if len(u.contextRemovalIDs) == 0 {
+		return
+	}
+	recording := op.Record(gtx.Ops)
+	area := clip.Rect{Max: gtx.Constraints.Max}.Push(gtx.Ops)
+	paint.FillShape(gtx.Ops, color.NRGBA{A: 125}, clip.Rect{Max: gtx.Constraints.Max}.Op())
+	gioevent.Op(gtx.Ops, &u.contextRemovalTag)
+	area.Pop()
+	viewport := gtx.Constraints.Max
+	width := max(0, min(viewport.X-gtx.Dp(32), gtx.Dp(620)))
+	layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		gtx.Constraints.Min.X, gtx.Constraints.Max.X = width, width
+		gtx.Constraints.Min.Y = 0
+		gtx.Constraints.Max.Y = max(0, viewport.Y-gtx.Dp(32))
+		return u.contextRemovalDialog()(gtx)
+	})
+	op.Defer(gtx.Ops, recording.Stop())
+}
+
 func (u *nativeUI) sharedContextPanel() layout.Widget {
 	choices := u.library.selection.Models
 	common := ""
-	maximumAvailable := len(choices) > 0
+	unknownMaximum := u.unknownContextMaximumIDs()
+	maximumAvailable := len(choices) > 0 && len(unknownMaximum) == 0
 	maximumTokens := 0
 	maximumVaries := false
 	draftTokens := 0
@@ -195,7 +379,6 @@ func (u *nativeUI) sharedContextPanel() layout.Widget {
 		if nativeLibraryItem(choice).ContextPreset != common {
 			common = ""
 		}
-		maximumAvailable = maximumAvailable && choice.Model.ContextWindow >= 1024 && choice.Model.ContextWindow <= 100000000
 		if choice.Model.ContextWindow != maximumTokens {
 			maximumVaries = true
 		}
@@ -220,7 +403,17 @@ func (u *nativeUI) sharedContextPanel() layout.Widget {
 				tokens = draftTokens
 			}
 		}
-		presetChoices = append(presetChoices, nativeChoice{Value: preset, Label: u.contextPresetLabel(preset), Caption: u.contextPresetCaption(preset, tokens)})
+		caption := u.contextPresetCaption(preset, tokens)
+		if preset == contextPresetMaximum && len(unknownMaximum) > 0 {
+			if len(u.models) == 0 {
+				caption = u.tr("Catalog unavailable", "Catálogo no disponible")
+			} else if len(unknownMaximum) == 1 {
+				caption = u.tr("Unavailable with 1 model", "No disponible con 1 modelo")
+			} else {
+				caption = fmt.Sprintf(u.tr("Unavailable with %d models", "No disponible con %d modelos"), len(unknownMaximum))
+			}
+		}
+		presetChoices = append(presetChoices, nativeChoice{Value: preset, Label: u.contextPresetLabel(preset), Caption: caption, Disabled: preset == contextPresetMaximum && !maximumAvailable})
 	}
 	widgets := []layout.Widget{
 		u.optionCards("models.context.", presetChoices, common, len(choices) > 0, func(preset string) {
@@ -241,8 +434,18 @@ func (u *nativeUI) sharedContextPanel() layout.Widget {
 			u.applySharedContext(preset, 0)
 		}),
 	}
-	if !maximumAvailable {
-		widgets = append(widgets, u.hint(u.tr("Maximum needs a published limit for every model. Refresh the catalog, or set known models individually.", "Máximo necesita un límite publicado para cada modelo. Actualiza el catálogo o cambia los modelos conocidos individualmente.")))
+	if len(unknownMaximum) > 0 {
+		widgets = append(widgets, u.contextMaximumBlockersPanel(unknownMaximum))
+	} else if u.expanded["models.context.removed"] && len(choices) > 0 {
+		widgets = append(widgets,
+			u.message(nativeToneSuccess, u.tr("All saved models have a known maximum. You can now choose Maximum.", "Todos los modelos guardados tienen un máximo conocido. Ya puedes elegir Máximo.")),
+			u.pills(u.button("models.context.add-replacements", u.tr("Add replacement models", "Añadir modelos sustitutos"), func() {
+				u.expanded["library.catalog"] = true
+				if len(u.models) == 0 {
+					u.refreshModels()
+				}
+			})),
+		)
 	}
 	widgets = append(widgets, u.disclosure("models.context.edit", u.tr("Edit limits", "Editar límites")))
 	if u.expanded["models.context.edit"] {

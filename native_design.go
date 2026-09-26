@@ -417,6 +417,7 @@ func (u *nativeUI) Layout(gtx layout.Context) layout.Dimensions {
 	}))
 	dims := layout.Flex{Axis: layout.Horizontal}.Layout(gtx, children...)
 	u.layoutActiveModelMenu(gtx)
+	u.layoutContextRemovalDialog(gtx)
 	return dims
 }
 
@@ -492,7 +493,10 @@ const (
 	nativeButtonDanger
 )
 
-type nativeChoice struct{ Value, Label, Caption string }
+type nativeChoice struct {
+	Value, Label, Caption string
+	Disabled              bool
+}
 
 const (
 	nativeLine      unit.Dp = 2
@@ -533,7 +537,7 @@ func (u *nativeUI) optionCards(idPrefix string, choices []nativeChoice, selected
 			children := make([]layout.FlexChild, 0, 2*(end-start)-1)
 			for index := start; index < end; index++ {
 				choice := choices[index]
-				children = append(children, layout.Flexed(1, u.optionCard(idPrefix+choice.Value, choice, choice.Value == selected, enabled, choose)))
+				children = append(children, layout.Flexed(1, u.optionCard(idPrefix+choice.Value, choice, choice.Value == selected, enabled && !choice.Disabled, choose)))
 				if index+1 < end {
 					children = append(children, layout.Rigid(layout.Spacer{Width: 8}.Layout))
 				}

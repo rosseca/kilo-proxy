@@ -4,6 +4,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"image"
 	"reflect"
 	"strings"
@@ -140,6 +141,196 @@ func TestNativeContextMaximumUnknownNeverPartiallyApplies(t *testing.T) {
 	unknown := u.library.selection.choice("private/unknown")
 	if unknown.Model.ContextWindow != 0 || !strings.Contains(u.contextChoiceSummary(*unknown), "unknown") {
 		t.Fatal("unknown model advertised fabricated maximum")
+	}
+}
+
+func TestNativeContextBlockersRequireConfirmationAndAutosave(t *testing.T) {
+	u := nativeTestUI(t)
+	u.page, u.language = "models", "es"
+	known := nativeContextModels()[0]
+	unpublished := modelInfo{ID: "provider/unpublished", Name: "Unpublished"}
+	absent := modelInfo{ID: "provider/absent", Name: "Absent"}
+	u.models = []modelInfo{known, unpublished}
+	s := nativeSeedSharedForTest(t, u, known, unpublished, absent)
+	nativeTestFrame(t, u)
+	if got := u.unknownContextMaximumIDs(); !reflect.DeepEqual(got, []string{unpublished.ID, absent.ID}) {
+		t.Fatalf("blockers = %v", got)
+	}
+	if got := u.contextMaximumBlockerReason(unpublished.ID); got != "Sin máximo publicado en el catálogo" {
+		t.Fatalf("known catalog entry misdiagnosed: %s", got)
+	}
+	if got := u.contextMaximumBlockerReason(absent.ID); got != "No aparece en el catálogo actual" {
+		t.Fatalf("missing catalog entry misdiagnosed: %s", got)
+	}
+	before := u.modelLibraryValue()
+	u.clickable("models.context.remove." + unpublished.ID).Click()
+	nativeTestFrame(t, u)
+	if !reflect.DeepEqual(before, u.modelLibraryValue()) || !reflect.DeepEqual(u.contextRemovalIDs, []string{unpublished.ID}) {
+		t.Fatal("opening individual removal changed the library before confirmation")
+	}
+	u.clickable("models.context.remove.cancel").Click()
+	nativeTestFrame(t, u)
+	u.flushModelLibrary()
+	if !reflect.DeepEqual(before, u.owner.modelLibrary.snapshot().Library) || len(u.contextRemovalIDs) > 0 {
+		t.Fatal("cancelling removed a saved model")
+	}
+	u.clickable("models.context.remove-all").Click()
+	nativeTestFrame(t, u)
+	if !reflect.DeepEqual(before, u.modelLibraryValue()) || len(u.contextRemovalIDs) != 2 {
+		t.Fatal("bulk removal changed the library before confirmation")
+	}
+	u.clickable("models.context.remove.confirm").Click()
+	nativeTestFrame(t, u)
+	u.flushModelLibrary()
+	saved := u.owner.modelLibrary.snapshot().Library
+	if len(saved.Models) != 1 || saved.Models[0].ID != known.ID || saved.DefaultModel != known.ID || len(u.unknownContextMaximumIDs()) != 0 || len(u.contextRemovalIDs) != 0 {
+		t.Fatalf("confirm did not remove just the blockers: %#v", saved)
+	}
+	if s.Initial != known.ID || !u.expanded["models.context.removed"] {
+		t.Fatal("remaining default or completion state was lost")
+	}
+	u.clickable("models.context.maximum").Click()
+	nativeTestFrame(t, u)
+	u.flushModelLibrary()
+	if got := nativeSavedLibraryItem(t, u.owner.modelLibrary.snapshot().Library, known.ID).ContextPreset; got != contextPresetMaximum {
+		t.Fatalf("Maximum stayed blocked after removing both unknown models: %s", got)
+	}
+}
+
+func TestNativeContextRemovalOfDefaultAndCatalogRefresh(t *testing.T) {
+	u := nativeTestUI(t)
+	u.page = "models"
+	known := nativeContextModels()[0]
+	absent := modelInfo{ID: "provider/absent", Name: "Absent"}
+	u.models = []modelInfo{known}
+	s := nativeSeedSharedForTest(t, u, known, absent)
+	s.Initial = absent.ID
+	nativeTestFrame(t, u)
+	u.requestContextRemoval([]string{absent.ID})
+	// A new catalog response can resolve the problem before the user confirms.
+	u.models = append(u.models, modelInfo{ID: absent.ID, Name: "Found", ContextWindow: 180000, MaxOutputTokens: 8192})
+	u.syncClientSelection(sharedModelKey, s)
+	u.confirmContextRemoval()
+	if s.choice(absent.ID) == nil || s.Initial != absent.ID || len(u.contextRemovalIDs) != 0 {
+		t.Fatal("stale confirmation removed a model whose maximum is now known")
+	}
+	// A separate unknown default (with no earlier cached metadata) falls back.
+	v := nativeTestUI(t)
+	v.page = "models"
+	v.models = []modelInfo{known}
+	selection := nativeSeedSharedForTest(t, v, known, absent)
+	selection.Initial = absent.ID
+	v.requestContextRemoval([]string{absent.ID})
+	v.confirmContextRemoval()
+	nativeTestFrame(t, v)
+	v.flushModelLibrary()
+	saved := v.owner.modelLibrary.snapshot().Library
+	if len(saved.Models) != 1 || saved.DefaultModel != known.ID {
+		t.Fatalf("removing the unknown default left an invalid library: %#v", saved)
+	}
+}
+
+func TestNativeContextFiftyModelsCanRemoveThenChooseReplacements(t *testing.T) {
+	u := nativeTestUI(t)
+	u.page = "models"
+	models := make([]modelInfo, 0, 50)
+	for i := 0; i < 48; i++ {
+		model := modelInfo{ID: fmt.Sprintf("provider/known-%02d", i), ContextWindow: 200000, MaxOutputTokens: 8192}
+		u.models = append(u.models, model)
+		models = append(models, model)
+	}
+	models = append(models, modelInfo{ID: "provider/old-one"}, modelInfo{ID: "provider/old-two"})
+	s := nativeSeedSharedForTest(t, u, models...)
+	if len(s.Models) != 50 || len(u.unknownContextMaximumIDs()) != 2 {
+		t.Fatal("test library did not reproduce the 50-model limit and two blockers")
+	}
+	u.requestContextRemoval(u.unknownContextMaximumIDs())
+	u.confirmContextRemoval()
+	nativeTestFrame(t, u)
+	u.flushModelLibrary()
+	if got := len(u.owner.modelLibrary.snapshot().Library.Models); got != 48 {
+		t.Fatalf("bulk confirmation retained %d models, want 48", got)
+	}
+	// A user can then choose replacements through the existing catalog picker;
+	// removal never silently picks these models for them.
+	for i := 0; i < 2; i++ {
+		model := modelInfo{ID: fmt.Sprintf("provider/replacement-%d", i), ContextWindow: 128000, MaxOutputTokens: 8192}
+		u.models = append(u.models, model)
+		if err := s.add(model, 50); err != nil {
+			t.Fatal(err)
+		}
+		u.seedClientChoice(sharedModelKey, *s.choice(model.ID))
+	}
+	nativeTestFrame(t, u)
+	u.flushModelLibrary()
+	if len(u.owner.modelLibrary.snapshot().Library.Models) != 50 || !u.applySharedContext(contextPresetMaximum, 0) {
+		t.Fatal("known replacement models could not fill the library and use Maximum")
+	}
+}
+
+func TestNativeContextCatalogUnavailableDoesNotOfferMassRemoval(t *testing.T) {
+	u := nativeTestUI(t)
+	u.page = "models"
+	u.models = nil
+	model := modelInfo{ID: "provider/offline", Name: "Offline"}
+	nativeSeedSharedForTest(t, u, model)
+	h := &nativePointerHarness{t: t, u: u, size: image.Pt(1180, 900), now: time.Now()}
+	h.frame()
+	if !strings.Contains(u.contextMaximumBlockerReason(model.ID), "Not in the current catalog") {
+		t.Fatal("unknown model lost its catalog status")
+	}
+	foundRefresh, foundRemove := false, false
+	for _, node := range h.nodes() {
+		if node.Desc.Label == "Refresh catalog" {
+			foundRefresh = true
+		}
+		if node.Desc.Label == "Remove the model from my library" || node.Desc.Label == "Remove" {
+			foundRemove = true
+		}
+	}
+	if !foundRefresh || foundRemove {
+		t.Fatal("offline library suggested deleting models before refreshing the catalog")
+	}
+}
+
+func TestNativeContextBlockerDialogPointerConfirmation(t *testing.T) {
+	for _, size := range []image.Point{{1180, 900}, {720, 700}} {
+		for _, lang := range []string{"en", "es"} {
+			t.Run(fmtSize(size)+"-"+lang, func(t *testing.T) {
+				u := nativeTestUI(t)
+				u.page, u.language = "models", lang
+				known := nativeContextModels()[0]
+				unknown := modelInfo{ID: "provider/unknown", Name: "Unknown"}
+				u.models = []modelInfo{known}
+				nativeSeedSharedForTest(t, u, known, unknown)
+				h := &nativePointerHarness{t: t, u: u, size: size, now: time.Now()}
+				h.frame()
+				label := u.tr("Remove the model from my library", "Quitar el modelo de mi biblioteca")
+				h.reveal(label, semantic.Button)
+				nativeGridCapture(t, h, "native-context-blockers-"+fmtSize(size)+"-"+lang)
+				h.click(label, semantic.Button)
+				if u.library.selection.choice(unknown.ID) == nil || len(u.contextRemovalIDs) != 1 {
+					t.Fatal("pointer opened no dialog or removed a model before confirmation")
+				}
+				nativeGridCapture(t, h, "native-context-confirmation-"+fmtSize(size)+"-"+lang)
+				// An outside click dismisses the dialog instead of reaching the page.
+				h.click(u.tr("Low", "Bajo"), semantic.Button)
+				if len(u.contextRemovalIDs) != 0 || u.library.selection.choice(known.ID).ContextPreset != contextPresetRecommended {
+					t.Fatal("backdrop click changed the library instead of dismissing the dialog")
+				}
+				h.click(label, semantic.Button)
+				h.click(u.tr("Remove from my library", "Quitar de mi biblioteca"), semantic.Button)
+				u.flushModelLibrary()
+				if u.library.selection.choice(unknown.ID) != nil || len(u.owner.modelLibrary.snapshot().Library.Models) != 1 {
+					t.Fatal("pointer confirmation did not persist the removal")
+				}
+				h.reveal(u.tr("Add replacement models", "Añadir modelos sustitutos"), semantic.Button)
+				h.click(u.tr("Add replacement models", "Añadir modelos sustitutos"), semantic.Button)
+				if !u.expanded["library.catalog"] {
+					t.Fatal("replacement action did not open the existing catalog picker")
+				}
+			})
+		}
 	}
 }
 
