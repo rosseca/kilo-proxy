@@ -1148,6 +1148,10 @@ func (u *nativeUI) prepareClientAfter(key string, done func(error)) {
 		done(errors.New(u.tr("Wait for the current agent operation to finish.", "Espera a que termine la operación actual del agente.")))
 		return
 	}
+	if err := u.packReadinessError(key); err != nil {
+		done(err)
+		return
+	}
 	s := u.sharedClientSelection(key)
 	u.syncClientSelection(key, s)
 	payload, err := nativeClientPayload(key, s)

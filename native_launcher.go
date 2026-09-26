@@ -198,6 +198,10 @@ func (u *nativeUI) launchClientFrom(key, directoryField string) {
 	if c.Launching != "" || key == "claude-desktop" && u.busy["POST/api/claude-desktop/options"] {
 		return
 	}
+	if err := u.packReadinessError(key); err != nil {
+		u.noticeError(err)
+		return
+	}
 	u.persistLibraryEdits()
 	if status, ready := u.libraryStatus(); !ready {
 		w := u.library.writer

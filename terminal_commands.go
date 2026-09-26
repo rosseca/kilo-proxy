@@ -107,9 +107,15 @@ func (a *app) terminalPrepareAPI(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, 409, "Connect your Kilo account and organization in Kilo Proxy first.")
 		return
 	}
+	library, err := a.terminalModelLibrary(input.Client, state.Library)
+	if err != nil {
+		a.mu.Unlock()
+		jsonError(w, 409, err.Error())
+		return
+	}
 	name, _ := launchClientIdentity(input.Client)
 	plan := clientLaunchPlan{Client: input.Client, Name: name, Kind: "terminal", Directory: directory, Env: map[string]string{}}
-	err = a.prepareTerminalProfile(input.Client, rt.home, state.Library, claudeCaps(input.ClaudeVersion))
+	err = a.prepareTerminalProfile(input.Client, rt.home, library, claudeCaps(input.ClaudeVersion))
 	if err == nil {
 		err = a.launchProfile(&plan, rt.home)
 		if input.Client == "opencode" {

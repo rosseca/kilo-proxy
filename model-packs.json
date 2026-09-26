@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "packs": [
+    {
+      "id": "qa-bug-hunter",
+      "name": {"en": "QA · Bug Hunter", "es": "QA · Cazabugs"},
+      "description": {"en": "Test cases, regressions, and independent review. Candidates—not a QA benchmark ranking.", "es": "Casos de prueba, regresiones y revisión independiente. Candidatos, no un ranking de QA."},
+      "defaultModel": "deepseek/deepseek-v4.1-flash",
+      "models": [
+        {"id": "deepseek/deepseek-v4.1-flash", "role": {"en": "Test cases and regressions", "es": "Casos y regresiones"}},
+        {"id": "openai/gpt-5.6-sol", "role": {"en": "Complex reproduction and fixes", "es": "Reproducción y arreglos complejos"}},
+        {"id": "anthropic/claude-opus-5.5", "role": {"en": "High-stakes review · premium", "es": "Revisión crítica · premium"}}
+      ],
+      "optional": [{"id": "google/gemini-3.8-flash", "role": {"en": "Visual QA candidate", "es": "Candidato para QA visual"}}]
+    },
+    {
+      "id": "full-stack-dev",
+      "name": {"en": "Full Stack Dev", "es": "Desarrollo full stack"},
+      "description": {"en": "Daily coding, economical iteration, and a second-provider review.", "es": "Programación diaria, iteración económica y revisión de otro proveedor."},
+      "defaultModel": "openai/gpt-6-sol",
+      "models": [
+        {"id": "openai/gpt-6-sol", "role": {"en": "Daily driver", "es": "Modelo principal"}},
+        {"id": "deepseek/deepseek-v4.1-flash", "role": {"en": "Fast iteration", "es": "Iteración rápida"}},
+        {"id": "anthropic/claude-sonnet-5", "role": {"en": "Independent review", "es": "Revisión independiente"}}
+      ],
+      "optional": [{"id": "openai/gpt-6-astra", "role": {"en": "Premium escalation", "es": "Escalación premium"}}]
+    },
+    {
+      "id": "design-studio",
+      "name": {"en": "Design Studio", "es": "Estudio de diseño"},
+      "description": {"en": "Opus-led direction with affordable screenshot iteration and multimodal references. Validate against real screens.", "es": "Dirección con Opus, iteración económica desde capturas y referencias multimodales. Validar con pantallas reales."},
+      "defaultModel": "anthropic/claude-opus-5.5",
+      "models": [
+        {"id": "anthropic/claude-opus-5.5", "role": {"en": "Direction and polish · premium", "es": "Dirección y pulido · premium"}},
+        {"id": "z-ai/glm-5.3-flash", "role": {"en": "Screenshot-driven iteration", "es": "Iteración desde capturas"}},
+        {"id": "google/gemini-3.8-flash", "role": {"en": "Multimodal references", "es": "Referencias multimodales"}}
+      ],
+      "optional": [{"id": "anthropic/claude-sonnet-5", "role": {"en": "Lower-cost alternative", "es": "Alternativa de menor coste"}}]
+    },
+    {
+      "id": "docs-multilingual",
+      "name": {"en": "Docs · Multilingual", "es": "Docs · Multilingüe"},
+      "description": {"en": "Chinese-provider candidates for source-grounded technical documentation. Editorial ES/EN/ZH evaluation is still required.", "es": "Candidatos de proveedores chinos para documentación técnica basada en fuentes. Falta evaluación editorial ES/EN/ZH."},
+      "defaultModel": "z-ai/glm-5.3",
+      "models": [
+        {"id": "z-ai/glm-5.3", "role": {"en": "Long text sources", "es": "Fuentes largas de texto"}},
+        {"id": "qwen/qwen3.8-max-0902", "role": {"en": "Bilingual editing candidate", "es": "Candidato de edición bilingüe"}},
+        {"id": "deepseek/deepseek-v4.1-flash", "role": {"en": "Economical drafts", "es": "Borradores económicos"}}
+      ],
+      "optional": [{"id": "moonshotai/kimi-k3", "role": {"en": "Long-source synthesis", "es": "Síntesis de fuentes extensas"}}]
+    },
+    {
+      "id": "marketing-growth",
+      "name": {"en": "Marketing · Growth", "es": "Marketing · Growth"},
+      "description": {"en": "Experimental copy, rapid variants, and visual references. Requires human brand review.", "es": "Textos experimentales, variantes rápidas y referencias visuales. Requiere revisión humana de marca."},
+      "defaultModel": "anthropic/claude-sonnet-5",
+      "models": [
+        {"id": "anthropic/claude-sonnet-5", "role": {"en": "Main draft candidate", "es": "Candidato para borrador principal"}},
+        {"id": "openai/gpt-6-luna", "role": {"en": "Economical variants", "es": "Variantes económicas"}},
+        {"id": "google/gemini-3.8-flash", "role": {"en": "Visual references", "es": "Referencias visuales"}}
+      ],
+      "optional": [{"id": "qwen/qwen3.8-max-0902", "role": {"en": "Localization candidate", "es": "Candidato de localización"}}]
+    }
+  ]
+}
