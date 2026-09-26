@@ -291,6 +291,13 @@ func TestNativePackUiPointerNavigationAndOwnCopy(t *testing.T) {
 	for _, size := range []image.Point{{1180, 900}, {720, 700}} {
 		t.Run(fmtSize(size), func(t *testing.T) {
 			u := nativeTestUI(t)
+			// The native fixture starts in English. Keep its saved preference in
+			// sync with the Spanish UI, so the periodic state refresh cannot
+			// restore English during slower Windows/ARM pointer interactions.
+			u.owner.mu.Lock()
+			u.owner.config.Language = "es"
+			u.owner.mu.Unlock()
+			u.languageRevision++
 			u.page, u.language = "models", "es"
 			u.models = nativePackModelsForTest()
 			nativeSeedSharedForTest(t, u, u.models[0], u.models[1])
@@ -308,6 +315,9 @@ func TestNativePackUiPointerNavigationAndOwnCopy(t *testing.T) {
 			h.click("Crear mi versión editable", semantic.Button)
 			if u.packsState().tab != "mine" || len(u.packsState().file.Personal) != 1 {
 				t.Fatal("pointer could not create a personal copy")
+			}
+			if u.language != "es" {
+				t.Fatalf("saved test language changed during pack navigation: %s", u.language)
 			}
 			nativeGridCapture(t, h, "native-packs-own-start-"+fmtSize(size))
 			h.reveal("Añadir modelo del catálogo", semantic.Button)

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -84,8 +85,14 @@ func TestPersonalPackStorePreservesBackupAndRejectsConflicts(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(dir, "model-packs.json")
-	if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0600 {
+	info, err := os.Stat(path)
+	if err != nil || !info.Mode().IsRegular() {
 		t.Fatalf("saved pack permissions: %#v, %v", info, err)
+	}
+	// On Windows Go reports permission bits derived from file attributes, not
+	// the inherited ACL. CreateTemp uses the private test/config directory ACL.
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0600 {
+		t.Fatalf("saved pack permissions: %v", info.Mode().Perm())
 	}
 	other := newModelPacksStore(dir)
 	if len(other.value.Personal) != 1 || other.value.Assignments["codex"] != "mine-example" {
