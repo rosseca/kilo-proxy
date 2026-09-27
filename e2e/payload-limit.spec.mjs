@@ -22,6 +22,8 @@ test('with image handling off, oversized image history explains upstream 413 and
   const failure=await response.json();
   expect(failure.error.code).toBe('upstream_payload_too_large');
   expect(failure.error.message).toContain('4.5 MB');
+  expect(failure.error.message).toContain('not a model context-window limit');
+  expect(failure.error.message).toContain('Settings > Large images > Compress locally');
   expect(failure.error.message).toMatch(/compact/i);
   expect(failure.error.message).toMatch(/new conversation/i);
   await expect(page.locator('#event-rows button')).toHaveCount(1);
