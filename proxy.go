@@ -159,6 +159,13 @@ func validRoute(method, path string) bool {
 
 type schemaBridgeContextKey struct{}
 
+// responseAdaptationError identifies failures after Kilo returned response headers.
+// Do not expose the wrapped error to API clients: it may contain private data.
+type responseAdaptationError struct{ cause error }
+
+func (e responseAdaptationError) Error() string { return "response adaptation: " + e.cause.Error() }
+func (e responseAdaptationError) Unwrap() error { return e.cause }
+
 func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 	proxy := &httputil.ReverseProxy{
 		Transport:     traceTransport{a.transport},
@@ -189,11 +196,11 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 			normalizeUpstreamPayloadError(r)
 			normalizeMessagesToolStop(r)
 			if err := adaptClaudeDesktopAliasResponse(r); err != nil {
-				return err
+				return responseAdaptationError{err}
 			}
 			if bridge, ok := r.Request.Context().Value(schemaBridgeContextKey{}).(*schemaBridge); ok {
 				if err := bridge.adaptResponse(r); err != nil {
-					return err
+					return responseAdaptationError{err}
 				}
 			}
 			r.Header.Del("Set-Cookie")
@@ -208,7 +215,14 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 			if capture, _ := r.Context().Value(traceContextKey{}).(*traceCapture); capture != nil {
 				capture.setError(err.Error())
 			}
-			jsonError(w, http.StatusBadGateway, "No se pudo conectar con Kilo. Comprueba la red e inténtalo de nuevo.")
+			code := "upstream_transport_error"
+			message := "Kilo Proxy no pudo completar la solicitud HTTP hacia Kilo. Comprueba la conexión y el estado del gateway; si se repite, activa la captura en Activity antes de reproducirlo."
+			var adaptation responseAdaptationError
+			if errors.As(err, &adaptation) {
+				code = "response_adaptation_error"
+				message = "Kilo Proxy recibió una respuesta de Kilo, pero no pudo adaptarla. Actualiza Kilo Proxy; si se repite, activa la captura en Activity antes de reproducirlo y comunica la traza."
+			}
+			jsonResponse(w, http.StatusBadGateway, map[string]any{"error": map[string]string{"type": "kilo_local_error", "code": code, "message": message}})
 		},
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
