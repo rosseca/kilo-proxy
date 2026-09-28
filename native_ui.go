@@ -48,6 +48,8 @@ type nativeUI struct {
 	modelMenuViewport   image.Point
 	modelMenuAnchors    map[string]image.Point
 	activeModelMenu     *nativeModelMenuState
+	contextRemovalIDs   []string
+	contextRemovalTag   int
 
 	imageDependencyDismissed bool
 	imageSettingsFocus       bool
