@@ -36,10 +36,12 @@ for(const language of ['en','es'])test(`ChatGPT device login coexists with Kilo 
  await expect(page.locator('#subscription-usage')).not.toContainText('$');
  await expect(page.locator('#provider-select')).toHaveCount(0);
  await page.locator('#chatgpt-account').screenshot({path:testInfo.outputPath('chatgpt-account-wide.png')});
- await page.locator('#subscription-usage').screenshot({path:testInfo.outputPath('chatgpt-quota-wide.png')});
+ // State polling recreates the subscription section. Capture its stable parent
+ // so the screenshot also shows the separation between Kilo credit and quota.
+ await page.locator('#account-usage').screenshot({path:testInfo.outputPath('chatgpt-quota-wide.png')});
  await page.setViewportSize({width:780,height:700});
  await page.locator('#chatgpt-account').screenshot({path:testInfo.outputPath('chatgpt-account-narrow.png')});
- await page.locator('#subscription-usage').screenshot({path:testInfo.outputPath('chatgpt-quota-narrow.png')});
+ await page.locator('#account-usage').screenshot({path:testInfo.outputPath('chatgpt-quota-narrow.png')});
  await page.locator('#refresh-chatgpt').click();await expect(page.locator('#subscription-usage')).toContainText(language==='en'?'35% used':'35% usado');
  await page.locator('#chatgpt-logout').click();await expect(page.locator('#chatgpt-login')).toBeVisible();
  await expect(page.locator('#org-id')).toHaveValue('e2e-team');await expect(page.locator('#account-balance')).toBeVisible();await expect(page.locator('#subscription-usage')).toHaveCount(0);

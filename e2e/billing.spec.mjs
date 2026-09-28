@@ -27,7 +27,7 @@ test('billing distinguishes shared credit, own Kilo charges and persistent local
   await testInfo.attach('account-usage.png',{body:await page.locator('#account-usage').screenshot(),contentType:'image/png'});
   await page.locator('#language').selectOption('es');
   await expect(page.locator('#account-usage-title')).toHaveText('Cuenta de Kilo');
-  await expect(page.locator('#account-tray-display option:checked')).toHaveText('Saldo de la cuenta');
+  await expect(page.locator('#account-tray-display option:checked')).toHaveText('Saldo de la cuenta de Kilo');
 });
 
 test('failed refresh hides stale money and missing balance never becomes zero', async ({page,request,gateway}) => {

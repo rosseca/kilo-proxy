@@ -90,7 +90,7 @@ test('Open Design gates missing credentials and engines, and prepares a changed 
  await page.locator('#tab-open-design').click();
  await choose(page, first).check();
  await expect(page.locator('#client-launch')).toBeDisabled();
- await expect(page.locator('#client-launch-status')).toContainText('Connect your Kilo account and team first');
+ await expect(page.locator('#client-launch-status')).toHaveText('Connect your selected provider first.');
  await startProxy(page, gateway);
  await page.locator('#start-stop').click();
  await expect(page.locator('#status-label')).toHaveText('Proxy stopped');
