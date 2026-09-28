@@ -57,13 +57,13 @@ func normalizeUpstreamPayloadError(response *http.Response) {
 		return
 	}
 	_ = original.Close()
-	message := "Kilo's upstream gateway rejected this request because it exceeds its 4.5 MB request-body limit."
+	message := "Kilo Gateway returned HTTP 413 (FUNCTION_PAYLOAD_TOO_LARGE): the outbound request body exceeds its 4.5 MB transport limit. This is not a model context-window limit."
 	problem := map[string]any{"code": "upstream_payload_too_large", "type": "invalid_request_error"}
 	if response.Request != nil && response.Request.ContentLength > 0 {
 		problem["request_bytes"] = response.Request.ContentLength
 		message += fmt.Sprintf(" Outbound request size: %d bytes.", response.Request.ContentLength)
 	}
-	message += " Large images or base64 data retained in conversation history can cause this. Compact the conversation if your client supports it, or start a new conversation and reduce attachments. Retrying the identical request will not help."
+	message += " Previous images or base64 tool results retained in conversation history can cause this. For image-heavy requests, try Kilo Proxy Settings > Large images > Compress locally; this only changes outbound copies and may not be enough. Compact the conversation if your client supports it, or start a new conversation and reduce attachments. Retrying the identical request will not help."
 	problem["message"] = message
 	data, _ := json.Marshal(map[string]any{"error": problem})
 	response.Body = io.NopCloser(bytes.NewReader(data))
