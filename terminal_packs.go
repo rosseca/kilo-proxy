@@ -18,7 +18,7 @@ func (a *app) terminalModelLibrary(client string, shared modelLibrary) (modelLib
 	if id == "" {
 		return shared, nil
 	}
-	catalog := readNativeCatalogCache(a.dir, a.config.OrgID)
+	catalog := readNativeCatalogCache(a.dir, a.catalogScopeLocked())
 	library, err := modelPackLibrary(packs.value, id, catalog)
 	if err != nil {
 		return modelLibrary{}, err

@@ -97,7 +97,7 @@ func (a *app) terminalPrepareAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	state := a.modelLibrary.snapshot()
-	if state.RecoveryRequired || state.Warning != "" || len(state.Library.Models) == 0 {
+	if state.RecoveryRequired || state.Warning != "" {
 		jsonError(w, 409, "Open Models in Kilo Proxy and save a valid shared model selection first.")
 		return
 	}
@@ -111,6 +111,11 @@ func (a *app) terminalPrepareAPI(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		a.mu.Unlock()
 		jsonError(w, 409, err.Error())
+		return
+	}
+	if len(library.Models) == 0 {
+		a.mu.Unlock()
+		jsonError(w, 409, "Open Models in Kilo Proxy and save a model selection or assign a model pack first.")
 		return
 	}
 	name, _ := launchClientIdentity(input.Client)

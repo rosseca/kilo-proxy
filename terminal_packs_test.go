@@ -2,11 +2,13 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestTerminalModelLibraryUsesAssignedPackAndSharedFallback(t *testing.T) {
@@ -120,5 +122,124 @@ func TestTerminalPrepareHTTPUsesAssignedPackAndSwitchesBack(t *testing.T) {
 	}
 	if got := a.modelLibrary.snapshot().Library.DefaultModel; got != "vendor/two" {
 		t.Fatalf("pack switch changed saved shared default: %s", got)
+	}
+}
+
+func TestTerminalPacksWithChatGPTAndEmptySharedLibrary(t *testing.T) {
+	for _, both := range []bool{false, true} {
+		for _, client := range []string{"codex-cli", "claude", "omp", "opencode"} {
+			t.Run(fmt.Sprintf("both=%t/%s", both, client), func(t *testing.T) {
+				a := terminalTestApp(t)
+				state := a.modelLibrary.snapshot()
+				if _, err := a.modelLibrary.save(emptyModelLibrary(), state.Revision, false); err != nil {
+					t.Fatal(err)
+				}
+				if !both {
+					a.apiKey, a.config.OrgID = "", ""
+				}
+				a.chatgpt.creds = chatGPTCredentials{Access: "synthetic-pack-access", Refresh: "synthetic-pack-refresh", Account: "synthetic-pack-account", Expires: time.Now().Add(time.Hour).Unix()}
+				a.chatgpt.state = chatGPTState{Status: "idle"}
+				pack := modelLibrary{SchemaVersion: 1, DefaultModel: "chatgpt/gpt-test", Models: []modelLibraryItem{{ID: "chatgpt/gpt-test", DisplayName: "Subscription GPT", ContextPreset: contextPresetMaximum}}}
+				models := []modelInfo{{ID: "chatgpt/gpt-test", Name: "Subscription GPT", ContextWindow: 128000, MaxOutputTokens: 8192, InputModalities: []string{"text", "image"}}}
+				if both {
+					pack.Models = append(pack.Models, modelLibraryItem{ID: "openai/gpt-test", DisplayName: "Kilo GPT", ContextPreset: contextPresetMaximum})
+					models = append(models, modelInfo{ID: "openai/gpt-test", Name: "Kilo GPT", ContextWindow: 256000, MaxOutputTokens: 16384})
+				}
+				file := emptyModelPacksFile()
+				file.Personal = []personalModelPack{{ID: "mine-subscription", Name: "Subscription pack", Library: pack}}
+				file.Assignments[client] = "mine-subscription"
+				if err := newModelPacksStore(a.dir).save(file, false); err != nil {
+					t.Fatal(err)
+				}
+				writeCatalog := func(scope string) {
+					t.Helper()
+					data, err := json.Marshal(nativeCachedCatalog{SchemaVersion: 1, OrgID: scope, Models: models})
+					if err != nil {
+						t.Fatal(err)
+					}
+					if err := atomicCatalogFile(filepath.Join(a.dir, "model-catalog.json"), data); err != nil {
+						t.Fatal(err)
+					}
+				}
+				request, _ := json.Marshal(terminalPrepareRequest{Client: client, Directory: a.launcher.home, ClaudeVersion: "2.1.263"})
+				writeCatalog(a.config.OrgID)
+				if w := adminRequest(a, "terminal/prepare", string(request)); w.Code != 409 || !strings.Contains(w.Body.String(), "Refresh Models") {
+					t.Fatalf("wrong account catalog accepted: %d %s", w.Code, w.Body.String())
+				}
+				if a.proxyListener != nil {
+					t.Fatal("rejected catalog started proxy")
+				}
+				writeCatalog(a.catalogScopeLocked())
+				w := adminRequest(a, "terminal/prepare", string(request))
+				if w.Code != 200 {
+					t.Fatalf("valid pack with empty shared library rejected: %d %s", w.Code, w.Body.String())
+				}
+				for _, secret := range []string{a.chatgpt.creds.Access, a.chatgpt.creds.Refresh, a.chatgpt.creds.Account} {
+					if strings.Contains(w.Body.String(), secret) {
+						t.Fatal("terminal plan exposed subscription credentials")
+					}
+				}
+				var path string
+				switch client {
+				case "codex-cli":
+					path = filepath.Join(a.codexCLIProfileDir, "models.json")
+				case "claude":
+					path = filepath.Join(a.claudeProfileDir, "kilo-models.json")
+				case "omp":
+					path = filepath.Join(a.ompProfileDir, "kilo-models.json")
+				case "opencode":
+					_, _, path, _ = a.editorPaths("opencode")
+				}
+				data, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var saved struct {
+					Initial string `json:"initial"`
+					Models  []struct {
+						ID      string `json:"id"`
+						Slug    string `json:"slug"`
+						Context int    `json:"contextWindow"`
+						Window  int    `json:"context_window"`
+					} `json:"models"`
+				}
+				if err := json.Unmarshal(data, &saved); err != nil {
+					t.Fatal(err)
+				}
+				if len(saved.Models) != len(pack.Models) {
+					t.Fatalf("profile ignored assigned pack: %s", data)
+				}
+				if client == "codex-cli" {
+					first, err := validateCatalog(data)
+					if err != nil || first != pack.DefaultModel || saved.Models[0].Window != 128000 {
+						t.Fatalf("Codex lost scope metadata/default: %s %v", data, err)
+					}
+				} else if saved.Initial != pack.DefaultModel {
+					t.Fatalf("profile lost pack default: %s", data)
+				}
+				for i, model := range saved.Models {
+					id := model.ID
+					if client == "codex-cli" {
+						id = model.Slug
+					}
+					if id != pack.Models[i].ID {
+						t.Fatalf("profile collapsed model connections: %s", data)
+					}
+					if (client == "omp" || client == "opencode") && model.Context != models[i].ContextWindow {
+						t.Fatalf("profile lost scoped maximum: %s", data)
+					}
+				}
+				if got := a.modelLibrary.snapshot().Library; len(got.Models) != 0 || got.DefaultModel != "" {
+					t.Fatal("pack rewrote shared library")
+				}
+				delete(file.Assignments, client)
+				if err := newModelPacksStore(a.dir).save(file, false); err != nil {
+					t.Fatal(err)
+				}
+				if w := adminRequest(a, "terminal/prepare", string(request)); w.Code != 409 {
+					t.Fatalf("empty effective library accepted: %d", w.Code)
+				}
+			})
+		}
 	}
 }
