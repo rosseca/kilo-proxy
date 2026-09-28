@@ -34,6 +34,7 @@ type nativeUI struct {
 	catalogGeneration   uint64
 	catalogCached       bool
 	library             *nativeLibrary
+	packs               *nativePackUI
 	agents              *nativeAgents
 	terminalCommands    *nativeTerminalCommands
 	setupStep           int

@@ -197,6 +197,9 @@ func (u *nativeUI) sharedClientSelection(key string) *nativeClientSelection {
 	u.initModelLibrary()
 	source := u.library.selection
 	u.syncClientSelection(sharedModelKey, source)
+	if assigned := u.packSelectionForAgent(key); assigned != nil {
+		source = assigned
+	}
 	s := u.clientState().selection(key)
 	if key == "claude-desktop" {
 		s.DesktopExperimentalModels = u.claudeDesktopExperimentalModels()
@@ -270,6 +273,24 @@ func (u *nativeUI) sharedModelSummary() string {
 }
 
 func (u *nativeUI) modelsPanel() layout.Widget {
+	u.initModelLibrary()
+	if u.page == "models" {
+		packs := u.packsState()
+		tabs := u.tabs("models.tab.", []nativeChoice{
+			{Value: "library", Label: u.tr("Library", "Biblioteca")},
+			{Value: "packs", Label: u.tr("Packs", "Packs")},
+			{Value: "mine", Label: u.tr("My packs", "Mis packs")},
+		}, packs.tab, func(value string) { packs.tab = value })
+		if packs.tab != "library" {
+			return u.column(tabs, u.packsPanel())
+		}
+		// The existing library remains the default view; packs never rewrite it.
+		return u.column(tabs, u.libraryModelsPanel())
+	}
+	return u.libraryModelsPanel()
+}
+
+func (u *nativeUI) libraryModelsPanel() layout.Widget {
 	u.initModelLibrary()
 	s := u.library.selection
 	u.syncClientSelection(sharedModelKey, s)

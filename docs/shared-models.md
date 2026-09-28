@@ -1,6 +1,6 @@
 # Shared model library
 
-The native app has one **Models** library for all agents. Add models once, set short names and reasoning preferences, and return to **Agents** to open an installed client. The library is saved automatically and restored when Kilo Proxy restarts. Generated agent profiles are updated when you next open or prepare that agent; an already running agent does not receive live configuration updates.
+The native app has a shared **Models** library that every agent uses by default. Add models once, set short names and reasoning preferences, and return to **Agents** to open an installed client. The library is saved automatically and restored when Kilo Proxy restarts. Optionally assign an independent model pack to a supported agent; the shared library remains untouched. Generated agent profiles are updated when you next open or prepare that agent; an already running agent does not receive live configuration updates.
 
 ## Choose and edit models
 
@@ -10,6 +10,18 @@ The native app has one **Models** library for all agents. Add models once, set s
 4. Open **Agents** and choose **Open Codex**, **Open Claude Code**, or another installed agent. Integration details and manual preparation are under that agent's **Options → Integration settings**.
 
 Catalog sorting controls the discovery view. Library order is a separate saved preference. Changing either does not silently change your default model. The gateway ID stays exact: a short name is a display label, not a model substitution. Missing catalog entries retain their saved IDs and preferences; catalog availability does not prove protocol support or access to inference.
+
+## Model packs and personal copies
+
+Open **Models → Packs** to browse five built-in *candidate* selections: QA · Bug Hunter, Full Stack Dev, Design Studio, Docs · Multilingual, and Marketing · Growth. Each lists three core models with different roles and an optional model. The optional model is **not** included automatically. These are task-oriented starting points, not quality rankings: Terminal-Bench measures terminal coding rather than QA, design, writing, or documentation quality. Model names, prices, capacities, and availability come from your team's current or cached catalog; unavailable models are identified instead of substituted silently. Built-in pack definitions are bundled with the app; updating those definitions requires a new release.
+
+The [candidate evidence and task-specific evaluation plan](model-packs.md) documents why these IDs were included and what remains unverified.
+
+Choose an agent in the pack details and click **Use this pack for this agent**. Supported assignments are Codex Desktop, Codex CLI, Claude Code, Claude Desktop, OpenCode, Oh My Pi, and Zed. **Use shared library** switches that agent back. The existing shared library, its default model, and other agents' assignments stay unchanged. The corresponding `kilo-codex`, `kilo-claude`, `kilo-opencode`, and `kilo-omp` terminal commands read the same saved pack assignment on their next run. Xcode and Open Design continue to use the shared library. Claude Desktop filters to compatible Claude models unless its separate experimental other-provider option is enabled; assigning a pack with no compatible models is rejected.
+
+Under **Models → My packs**, create one from scratch or choose **Make my editable version** on a built-in pack. Your copy is independent: rename it, add any model currently in your team's catalog using search, remove or reorder models, set the default, and edit each model's role label. You can assign a personal pack to an agent and switch between packs without reinstalling Kilo Proxy; already-open agents need reopening to load their new profile. Deleting a personal pack requires confirmation and returns agents using it to the shared library. No personal pack is silently overwritten by a later built-in update. Catalog presence and declared tools do not prove that a model supports every agent's inference protocol; the agent's preparation or real request must still be checked before relying on it.
+
+Personal packs and assignments live in a separate private `model-packs.json` in the same application configuration directory as `models.json`; `.bak` preserves the preceding saved version. The pack file contains model IDs, user labels, presets, and assignments, but no credentials, gateway prices, prompts, or request history. An unreadable file does not reset the shared library or silently replace saved packs; the last valid backup can be reviewed and recovered in the native interface. When a model assigned to an agent disappears from the selected organization's catalog, preparation and launch stop with a refresh/edit notice rather than silently using another model.
 
 ## Recommended models
 
