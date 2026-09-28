@@ -142,6 +142,9 @@ func (u *nativeUI) agentSetup(key string) {
 }
 
 func (u *nativeUI) agentConnectionReady() bool {
+	if u.chatGPTReady() {
+		return true
+	}
 	u.owner.mu.Lock()
 	defer u.owner.mu.Unlock()
 	return strings.TrimSpace(u.owner.apiKey) != "" && strings.TrimSpace(u.owner.config.OrgID) != ""
@@ -188,7 +191,8 @@ func (u *nativeUI) agentCompatibility(key string) string {
 }
 
 func (u *nativeUI) agentModelSummary() layout.Widget {
-	s := u.sharedClientSelection("codex")
+	u.initModelLibrary()
+	s := u.library.selection
 	text := u.tr("Add models to your shared library to get started.", "Añade modelos a tu biblioteca compartida para empezar.")
 	if len(s.Models) > 0 {
 		name := s.Initial
@@ -210,7 +214,7 @@ func (u *nativeUI) agentModelSummary() layout.Widget {
 		widgets = append(widgets, u.note(status))
 	}
 	if u.setupNeeded() {
-		setupCard := u.card(u.actionRow(u.column(u.heading(u.tr("Finish setting up your workspace", "Termina de configurar tu espacio")), u.note(u.tr("Connect Kilo and choose at least one model. We'll guide you through it.", "Conecta Kilo y elige al menos un modelo. Te guiamos paso a paso."))), u.primaryButton("primary.agents.setup", u.tr("Continue setup", "Continuar configuración"), u.beginSetup)))
+		setupCard := u.card(u.actionRow(u.column(u.heading(u.tr("Finish setting up your workspace", "Termina de configurar tu espacio")), u.note(u.tr("Connect Kilo or ChatGPT and choose at least one model. We'll guide you through it.", "Conecta Kilo o ChatGPT y elige al menos un modelo. Te guiamos paso a paso."))), u.primaryButton("primary.agents.setup", u.tr("Continue setup", "Continuar configuración"), u.beginSetup)))
 		widgets = append(widgets, setupCard)
 	}
 	return u.column(widgets...)
@@ -373,15 +377,17 @@ func (u *nativeUI) agentCard(key string) layout.Widget {
 		}
 	}
 	s := u.sharedClientSelection(key)
+	packName := u.assignedPackName(key)
+	packIssue := u.packReadinessError(key)
 	_, validation := nativeClientPayload(key, s)
 	libraryStatus, libraryReady := u.libraryStatus()
 	connectionReady := u.agentConnectionReady() && !u.connectionWorking() && !u.setupConnectionNeeded()
-	canOpen := available && libraryReady && connectionReady && len(s.Models) > 0 && validation == nil && c.Launching == "" && !u.busy["POST"+nativeClientEndpoint(key)]
+	canOpen := available && libraryReady && connectionReady && len(s.Models) > 0 && validation == nil && packIssue == nil && c.Launching == "" && !u.busy["POST"+nativeClientEndpoint(key)]
 	if key == "claude-desktop" {
 		canOpen = canOpen && !u.busy["POST/api/claude-desktop/options"]
 	}
 	if key == "codex" || key == "codex-cli" {
-		canOpen = canOpen && nativeClientImagesReady(s, u.models)
+		canOpen = canOpen && nativeClientImagesReady(s, u.models, u.state)
 	}
 	if key == "claude" && (!c.ClaudeChecked || u.busy["GET/api/claude/info"]) {
 		canOpen = false
@@ -401,9 +407,11 @@ func (u *nativeUI) agentCard(key string) layout.Widget {
 			disabledReason = u.tr("Install this app, then refresh installed apps.", "Instala esta aplicación y actualiza las aplicaciones instaladas.")
 		}
 	case !connectionReady:
-		disabledReason = u.tr("Finish setting up and saving your Kilo connection first.", "Termina de configurar y guardar tu conexión de Kilo.")
+		disabledReason = u.tr("Finish setting up a connection first.", "Termina de configurar una conexión.")
 	case !libraryReady:
 		disabledReason = libraryStatus
+	case packIssue != nil:
+		disabledReason = packIssue.Error()
 	case key == "claude" && (!c.ClaudeChecked || u.busy["GET/api/claude/info"]):
 		disabledReason = u.tr("Wait for Claude Code version detection to finish.", "Espera a que termine la detección de la versión de Claude Code.")
 	case key == "open-design" && !c.OpenDesignChecked:
@@ -419,7 +427,7 @@ func (u *nativeUI) agentCard(key string) layout.Widget {
 		disabledReason = u.tr("Add at least one shared model before opening this agent.", "Añade al menos un modelo compartido antes de abrir este agente.")
 	case validation != nil:
 		disabledReason = nativeMessage(validation.Error(), u.language)
-	case (key == "codex" || key == "codex-cli") && !nativeClientImagesReady(s, u.models):
+	case (key == "codex" || key == "codex-cli") && !nativeClientImagesReady(s, u.models, u.state):
 		disabledReason = u.tr("Review image generation settings in Models before opening Codex.", "Revisa la generación de imágenes en Modelos antes de abrir Codex.")
 	case c.Launching != "" || u.busy["POST"+nativeClientEndpoint(key)] || key == "claude-desktop" && u.busy["POST/api/claude-desktop/options"]:
 		disabledReason = u.tr("Wait for the current agent operation to finish.", "Espera a que termine la operación actual del agente.")
@@ -442,12 +450,22 @@ func (u *nativeUI) agentCard(key string) layout.Widget {
 		controls = append(controls, u.disabled(!u.busy["GET"+nativeLaunchEndpoint], u.iconButton("agent:"+key+":detect-visible", u.tr("Check again", "Comprobar de nuevo"), nativeButtonGhost, nativeIconRefresh, func() { u.refreshAgentInstallation(key) })))
 	}
 	controls = append(controls, u.buttonWidget(optionsID, u.tr("Options", "Opciones"), nativeButtonGhost, nativeIconChevronRight, true, false, func() { u.expanded[optionsID] = !u.expanded[optionsID] }))
+	if _, supported := packAgentNames[key]; supported {
+		controls = append(controls, u.button("agent:"+key+":pack", u.tr("Choose model pack", "Elegir pack de modelos"), func() {
+			u.page = "models"
+			u.packsState().tab = "packs"
+			u.setValue("packs.agent", key)
+		}))
+	}
 	if key == "codex" && !available && c.LaunchChecked {
 		controls = append(controls, u.disabled(a.FolderBusy == "", u.button("agent:codex:locate", u.tr("Locate Codex", "Localizar Codex"), u.locateCodexApplication)))
 	}
 	widgets := []layout.Widget{
 		u.actionRow(u.topRow(u.agentMonogram(key), u.column(u.subheading(name), u.note(u.agentPurpose(key)))), u.statusBadge(statusTone, status)),
 		layout.Spacer{Height: 4}.Layout,
+	}
+	if packName != "" {
+		widgets = append(widgets, u.note(fmt.Sprintf(u.tr("Model pack: %s · applied on next open", "Pack de modelos: %s · se aplicará al volver a abrir"), packName)))
 	}
 	if key == "open-design" {
 		engineName, _ := launchClientIdentity(u.openDesignEngine())

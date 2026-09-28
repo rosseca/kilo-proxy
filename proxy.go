@@ -30,6 +30,12 @@ type event struct {
 }
 
 type app struct {
+	catalogWarnings           []string
+	chatGPTLastIdentity       string
+	chatgpt                   *chatGPTConnection
+	chatGPTResponsesURL       string // Test override; never accepted from clients or settings.
+	chatGPTQuotaDue           time.Time
+	providerChanging          bool
 	updates                   *releaseUpdateChecker
 	imageURLBackends          imageURLBackendManager
 	imageDependencyLookup     func(string) string
@@ -113,11 +119,12 @@ func newApp(dir string, vault credentialVault) (*app, error) {
 	cfg.Language = initialLanguage(cfg.Language)
 	u, _ := url.Parse(gatewayURL)
 	tr := http.DefaultTransport.(*http.Transport).Clone()
-	// Credentials only travel directly to Kilo; ignore ambient HTTP(S)_PROXY settings.
+	// Credentials travel directly to their service; ignore ambient HTTP(S)_PROXY settings.
 	tr.Proxy = nil
 	tr.ResponseHeaderTimeout = 120 * time.Second
 	a := &app{dir: dir, config: cfg, vault: vault, adminToken: randomKey(""), upstream: u, transport: tr, quit: make(chan struct{})}
 	a.updates = newReleaseUpdateChecker(version)
+	a.chatgpt = newChatGPTConnection(vault, cfg.VaultID, tr, dir)
 	a.modelLibrary = newModelLibraryStore(dir)
 	a.usageHistory = newUsageHistoryStore(dir)
 	a.zedCredentialStore = storeZedCredential
@@ -152,6 +159,13 @@ func validRoute(method, path string) bool {
 
 type schemaBridgeContextKey struct{}
 
+// responseAdaptationError identifies failures after Kilo returned response headers.
+// Do not expose the wrapped error to API clients: it may contain private data.
+type responseAdaptationError struct{ cause error }
+
+func (e responseAdaptationError) Error() string { return "response adaptation: " + e.cause.Error() }
+func (e responseAdaptationError) Unwrap() error { return e.cause }
+
 func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 	proxy := &httputil.ReverseProxy{
 		Transport:     traceTransport{a.transport},
@@ -182,11 +196,11 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 			normalizeUpstreamPayloadError(r)
 			normalizeMessagesToolStop(r)
 			if err := adaptClaudeDesktopAliasResponse(r); err != nil {
-				return err
+				return responseAdaptationError{err}
 			}
 			if bridge, ok := r.Request.Context().Value(schemaBridgeContextKey{}).(*schemaBridge); ok {
 				if err := bridge.adaptResponse(r); err != nil {
-					return err
+					return responseAdaptationError{err}
 				}
 			}
 			r.Header.Del("Set-Cookie")
@@ -201,7 +215,14 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 			if capture, _ := r.Context().Value(traceContextKey{}).(*traceCapture); capture != nil {
 				capture.setError(err.Error())
 			}
-			jsonError(w, http.StatusBadGateway, "No se pudo conectar con Kilo. Comprueba la red e inténtalo de nuevo.")
+			code := "upstream_transport_error"
+			message := "Kilo Proxy no pudo completar la solicitud HTTP hacia Kilo. Comprueba la conexión y el estado del gateway; si se repite, activa la captura en Activity antes de reproducirlo."
+			var adaptation responseAdaptationError
+			if errors.As(err, &adaptation) {
+				code = "response_adaptation_error"
+				message = "Kilo Proxy recibió una respuesta de Kilo, pero no pudo adaptarla. Actualiza Kilo Proxy; si se repite, activa la captura en Activity antes de reproducirlo y comunica la traza."
+			}
+			jsonResponse(w, http.StatusBadGateway, map[string]any{"error": map[string]string{"type": "kilo_local_error", "code": code, "message": message}})
 		},
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -321,6 +342,38 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 			jsonError(recorder, http.StatusBadRequest, "Could not adapt Codex cross-task input: "+err.Error())
 			return
 		}
+		if r.Method == http.MethodGet {
+			if a.chatgpt.snapshot().Connected {
+				a.serveModelList(recorder, r)
+			} else {
+				proxy.ServeHTTP(recorder, r)
+			}
+			return
+		}
+		model, routeErr := requestModel(r)
+		if routeErr != nil {
+			status := http.StatusBadRequest
+			var oversized *http.MaxBytesError
+			if errors.As(routeErr, &oversized) {
+				status = http.StatusRequestEntityTooLarge
+			}
+			jsonError(recorder, status, routeErr.Error())
+			return
+		}
+		if strings.HasPrefix(model, "chatgpt/") {
+			usage = newUsageObserver(r, "chatgpt:"+a.chatgpt.identity())
+			usage.historyAccount = usageAccountID(a.chatgpt.identity(), "chatgpt")
+			usage.org = "chatgpt"
+			usage.usage.Billing = "subscription"
+			usage.messages = false
+			r = r.WithContext(context.WithValue(r.Context(), usageContextKey{}, usage))
+			a.serveChatGPT(recorder, r)
+			return
+		}
+		if key == "" || orgID == "" {
+			jsonError(recorder, 401, "This model requires a Kilo connection. Connect Kilo or choose a ChatGPT subscription model.")
+			return
+		}
 		bridge, err := prepareSchemaBridge(r)
 		if err != nil {
 			var oversized *http.MaxBytesError
@@ -408,10 +461,13 @@ func (a *app) startLocked() error {
 	if a.proxyServer != nil {
 		return nil
 	}
-	if a.authPending() {
+	if a.providerChanging {
+		return errors.New("provider authentication is changing")
+	}
+	if a.authPending() && !a.chatGPTReadyLocked() {
 		return errors.New("login pending")
 	}
-	if a.apiKey == "" || a.config.OrgID == "" {
+	if !a.connectionReadyLocked() {
 		return errMissingCredentials
 	}
 	host := net.JoinHostPort("127.0.0.1", strconv.Itoa(a.config.Port))

@@ -1,3 +1,4 @@
+import {chatGPTConnected,chatGPTReady,connectionReady,validChatGPTVerificationURL,renderChatGPT,renderSubscriptionUsage} from './chatgpt-helper.mjs';
 import {contextControls,contextModel,syncContextModels,contextError,contextPreview} from './context-policy.mjs';
 import {renderAccountUsage} from './account-usage.mjs';
 import {renderUpdates} from './update-helper.mjs';
@@ -11,7 +12,7 @@ import {reportedCost, reportedSpend, inferenceCostNote, costSourceLabel, cacheSt
 import {formatTraceJSON} from './activity-helper.mjs';
 import {codexCatalog,codexDisplayName,reasoningFor,reasoningLevels} from './codex-catalog.mjs';
 import {filterModels, formatPrice, modelPriceDetails, validModelID, sortModels, configureModelSort, setModelSort, mergeModelSelection, filterModelLab, configureModelLab, setModelLab} from './model-helper.mjs';
-import {imageGenerationModels,imageGenerationSelection,imageGenerationValid,codexImageMCPConfig} from './model-helper.mjs';
+import {imageGenerationModels,imageGenerationSelection,imageGenerationValid,imageGenerationProvider,imageGenerationConnectionReady,codexImageMCPConfig} from './model-helper.mjs';
 import {clientConfig, launchCommand} from './client-config.mjs';
 import {chooseLanguage, translate, bindDocument} from './i18n.mjs';
 const $ = (id) => document.getElementById(id);
@@ -45,6 +46,8 @@ let state, client = 'generic', busy = false, stopped = false, initialized = fals
 let imageDependencyPrompt={};
 let updateCheckPending = false, updateRequestError = false;
 let updateCheckRevision = 0;
+let chatGPTRevision = 0, chatGPTPending = false, chatGPTLoginRequested = false;
+let imageSettingsSaving = false;
 let updateFailedCheck = '';
 try { const saved=JSON.parse(sessionStorage.getItem('kilo-cloudflare-prompt')||'{}');if(saved&&typeof saved==='object')imageDependencyPrompt={dismissed:saved.dismissed===true,mode:saved.mode,running:saved.running===true}; } catch {}
 let lastAuthStatus, teamSignature = '';
@@ -59,7 +62,7 @@ let desktopSignature = '';
 function codexSetupSignature(selection=codexSelection()) { return JSON.stringify([state?.baseURL,contextPreview(()=>codexCatalog([...selection.models.values()],selection.initial)),selection.imageGeneration,selection===codexClients.codex?selection.queueMode:'']); }
 function renderCodexSetup() {
   const cli=client==='codex-cli', setup=codexSelection().setup;
-  $('save-codex-catalog').disabled=codexSelection().preparing||!!contextError(codexSelection().models)||!imageGenerationValid(codexSelection().imageGeneration,catalog);
+  $('save-codex-catalog').disabled=codexSelection().preparing||!!contextError(codexSelection().models)||!imageGenerationValid(codexSelection().imageGeneration,catalog,state);
   $('save-codex-catalog').textContent=t(codexSelection().preparing ? 'Preparando perfil…' : cli ? '1. Preparar Codex CLI' : '1. Preparar Codex GUI');
   const ready=setup?.signature===codexSetupSignature();
   $('codex-setup-status').textContent=contextError(codexSelection().models)|| (ready ? t('Perfil listo en {path}. Ábrelo con el botón superior. El comando de arranque es opcional.',{path:setup.path}) : t(setup ? 'Hay cambios sin guardar. Se guardarán antes de abrir.' : 'Selecciona modelos y abre el cliente. Su perfil se prepara automáticamente.'));
@@ -69,14 +72,20 @@ function renderCodexSetup() {
 function renderCodexImages() {
   const L=(en,es)=>language==='en'?en:es,selection=codexSelection(),images=selection.imageGeneration;
   const models=imageGenerationModels(catalog),enabled=images?.enabled===true,chosen=images?.model||'';
+  const provider=imageGenerationProvider(images),subscription=provider==='chatgpt',connected=imageGenerationConnectionReady(images,state);
   $('codex-image-generation').hidden=!isCodexClient();
   $('codex-image-eyebrow').textContent=L('OPTIONAL TOOL','HERRAMIENTA OPCIONAL');
   $('codex-image-title').textContent=L('Image generation','Generación de imágenes');
   $('codex-image-enable-label').textContent=L('Enable','Activar');
   $('codex-image-enabled').setAttribute('aria-label',L('Enable image generation','Activar generación de imágenes'));
   $('codex-image-enabled').checked=enabled;$('codex-image-enabled').disabled=images===null;
-  $('codex-image-intro').textContent=L('Give Codex an image tool with its own model. Your coding models stay independent.','Añade una herramienta de imágenes a Codex con su propio modelo. Los modelos de programación son independientes.');
+  $('codex-image-intro').textContent=L('Choose which account generates images. Your coding models stay independent.','Elige qué cuenta genera las imágenes. Los modelos de programación son independientes.');
   $('codex-image-options').hidden=!enabled;
+  $('codex-image-provider-label').textContent=L('Image provider','Proveedor de imágenes');
+  $('codex-image-provider').querySelector('option[value="kilo"]').textContent=L('Kilo · account credits','Kilo · crédito de la cuenta');
+  $('codex-image-provider').querySelector('option[value="chatgpt"]').textContent=L('ChatGPT subscription · Experimental','Suscripción de ChatGPT · Experimental');
+  $('codex-image-provider').value=provider;
+  $('codex-image-kilo-options').hidden=subscription;
   $('codex-image-model-label').textContent=L('Image model','Modelo de imágenes');
   const picker=$('codex-image-model'),signature=JSON.stringify([language,chosen,models.map(model=>[model.id,model.name])]);
   if(picker.dataset.imageOptions!==signature){
@@ -90,10 +99,12 @@ function renderCodexImages() {
   picker.disabled=!enabled;
   $('codex-image-refresh').textContent=catalogLoading?L('Refreshing…','Actualizando…'):L('Refresh image models','Actualizar modelos de imágenes');
   $('codex-image-refresh').disabled=catalogLoading;
-  $('codex-image-status').textContent=!enabled?L('Optional. Enable it when you want Codex to create images.','Opcional. Actívala cuando quieras que Codex cree imágenes.'):!chosen?L('Choose an image model before preparing or launching Codex.','Elige un modelo de imágenes antes de preparar o abrir Codex.'):!models.some(model=>model.id===chosen)?L('The saved image model is unavailable in the current catalog. Refresh, choose another model, or disable this tool.','El modelo guardado no está disponible en el catálogo actual. Actualiza, elige otro modelo o desactiva la herramienta.'):chosen;
-  $('codex-image-status').classList.toggle('image-generation-warning',enabled&&!models.some(model=>model.id===chosen));
-  $('codex-image-billing').textContent=L("Uses your configured Kilo organization. Provider or gateway charges depend on its billing setup. Editing currently supports images created with this tool.",'Usa tu organización de Kilo configurada. Los cargos del proveedor o gateway dependen de su facturación. La edición admite por ahora imágenes creadas con esta herramienta.');
-  $('codex-image-save-help').textContent=L('Saved with Prepare or Launch. This setting is shared by Codex GUI and CLI. Restart Codex after preparing to load the tool.','Se guarda al Preparar o Abrir. El ajuste se comparte entre Codex GUI y CLI. Reinicia Codex después de preparar para cargar la herramienta.');
+  $('codex-image-status').textContent=!enabled?L('Optional. Enable it when you want Codex to create images.','Opcional. Actívala cuando quieras que Codex cree imágenes.'):subscription&&!connected?L('Sign in with ChatGPT in Connection before generating images.','Inicia sesión con ChatGPT en Conexión antes de generar imágenes.'):subscription?L("Uses ChatGPT's built-in image tool. No separate image model or OpenAI API key is needed.",'Usa la herramienta de imágenes de ChatGPT. No necesitas otro modelo de imágenes ni una API key de OpenAI.'):!chosen?L('Choose an image model before preparing or launching Codex.','Elige un modelo de imágenes antes de preparar o abrir Codex.'):!models.some(model=>model.id===chosen)?L('The saved image model is unavailable in the current catalog. Refresh, choose another model, or disable this tool.','El modelo guardado no está disponible en el catálogo actual. Actualiza, elige otro modelo o desactiva la herramienta.'):chosen;
+  $('codex-image-status').classList.toggle('image-generation-warning',enabled&&!imageGenerationValid(images,catalog,state));
+  $('codex-image-billing').textContent=subscription?L('Uses ChatGPT subscription quota. Availability depends on your account. Requests never fall back to Kilo credits. Originals are saved locally; editing supports images created with this tool.','Usa la cuota de tu suscripción de ChatGPT. La disponibilidad depende de tu cuenta. Las peticiones nunca recurren al crédito de Kilo. Los originales se guardan en local; la edición admite imágenes creadas con esta herramienta.'):L("Uses your configured Kilo organization. Provider or gateway charges depend on its billing setup. Editing currently supports images created with this tool.",'Usa tu organización de Kilo configurada. Los cargos del proveedor o gateway dependen de su facturación. La edición admite por ahora imágenes creadas con esta herramienta.');
+  $('codex-image-save-help').textContent=L('Shared by agents using the image MCP. Save these settings, then reopen your agent to refresh its tools. No Codex profile is required to save.','Compartido por los agentes que usan el MCP de imágenes. Guarda los ajustes y vuelve a abrir el agente para actualizar sus herramientas. No necesitas un perfil de Codex para guardarlos.');
+  $('codex-image-save').textContent=imageSettingsSaving?L('Saving…','Guardando…'):L('Save image settings','Guardar ajustes de imágenes');
+  $('codex-image-save').disabled=images===null||imageSettingsSaving||!imageGenerationValid(images);
 }
 function renderCodexQueueMode() {
   const L=(en,es)=>language==='en'?en:es,desktop=client==='codex',selection=codexSelection();
@@ -116,6 +127,21 @@ $('codex-image-enabled').addEventListener('change',()=>{
 });
 $('codex-image-model').addEventListener('change',()=>{
   const selection=codexSelection();selection.imageGeneration={...(selection.imageGeneration||{enabled:false}),model:$('codex-image-model').value};renderSnippet();
+});
+$('codex-image-provider').addEventListener('change',()=>{
+  const selection=codexSelection();selection.imageGeneration={...(selection.imageGeneration||{enabled:false,model:''}),provider:$('codex-image-provider').value};renderSnippet();
+});
+$('codex-image-save').addEventListener('click',async()=>{
+  const selection=codexSelection(),sent=imageGenerationSelection(selection.imageGeneration);
+  if(!sent||imageSettingsSaving)return;
+  imageSettingsSaving=true;renderCodexImages();
+  try{
+    const response=await api('image-generation',sent),saved=imageGenerationSelection(response.imageGeneration);
+    if(!saved)throw new Error(language==='en'?'Invalid image settings response.':'Respuesta de ajustes de imágenes no válida.');
+    if(JSON.stringify(selection.imageGeneration)===JSON.stringify(sent))selection.imageGeneration={...saved};
+    acceptCodexImageSettings(saved);state.imageGeneration={...saved};
+    notify(()=>language==='en'?'Image settings saved. Reopen your agent to refresh its image tool.':'Ajustes de imágenes guardados. Vuelve a abrir el agente para actualizar su herramienta de imágenes.');
+  }catch(error){notify(error.message,true);}finally{imageSettingsSaving=false;renderSnippet();}
 });
 $('codex-image-refresh').addEventListener('click',()=>{void loadModels();});
 $('codex-queue-mode').addEventListener('change',()=>{codexSelection().queueMode=$('codex-queue-mode').value==='steer'?'steer':'queue';renderSnippet();});
@@ -176,7 +202,7 @@ const xcodeHelper=createXcodeHelper({api,notify,refreshCatalog:loadModels,onChan
 function clientLaunchSelection(){
  if(isCodexClient()){
   const selection=codexSelection(),fingerprint=codexSetupSignature(selection);
-  return {id:client,count:selection.models.size,ready:selection.setup?.signature===fingerprint,fingerprint,working:selection.preparing,valid:!contextError(selection.models)&&imageGenerationValid(selection.imageGeneration,catalog),reason:contextError(selection.models),prepare:prepareCodex};
+  return {id:client,count:selection.models.size,ready:selection.setup?.signature===fingerprint,fingerprint,working:selection.preparing,valid:!contextError(selection.models)&&imageGenerationValid(selection.imageGeneration,catalog,state),reason:contextError(selection.models),prepare:prepareCodex};
  }
  if(client==='claude')return {id:client,count:multiClients.claude.models.size,valid:!contextError(multiClients.claude.models),reason:contextError(multiClients.claude.models),ready:claudeSetup?.signature===claudeSetupSignature(),fingerprint:claudeSetupSignature(),working:claudePreparing||claudeDetecting,prepare:prepareClaude};
  if(client==='open-design')return openDesignHelper.launchState();
@@ -215,7 +241,7 @@ function renderClientLaunch(){
  $('client-launch-app-label').textContent=L('Application path on this computer','Ruta de la aplicación en este ordenador');
  $('client-launch-app').placeholder=launchInfo?.clients?.codex?.path||L('Absolute application path','Ruta absoluta de la aplicación');
  $('client-launch').textContent=launchBusy?L('Launching…','Abriendo…'):L('Launch ',terminal?'Iniciar ':'Abrir ')+name;
- $('client-launch').disabled=launchBusy||launchDetecting||selection.working||selection.valid===false||!state||!selection.count||!available;
+ $('client-launch').disabled=launchBusy||launchDetecting||selection.working||selection.valid===false||!state||(!connectionReady(state))||!selection.count||!available;
  $('client-launch-help').textContent=selection.id==='claude-desktop'?L('Prepares Kilo with the selected models and starts the proxy before opening Claude Desktop. Close Claude first to apply configuration changes.','Prepara Kilo con los modelos seleccionados y arranca el proxy antes de abrir Claude Desktop. Cierra Claude primero para aplicar los cambios de configuración.'):selection.id==='open-design'?L('Prepares the selected CLI with your Kilo models, starts the proxy and opens Open Design in its separate Kilo profile.','Prepara el CLI elegido con tus modelos de Kilo, arranca el proxy y abre Open Design en su perfil de Kilo independiente.'):L('Opens with the current models and Kilo configuration. Changes are saved first. Command export settings below apply only to copied commands.','Abre con los modelos y la configuración de Kilo actuales. Los cambios se guardan antes. Los ajustes de exportación inferiores solo afectan a los comandos copiados.')+(selection.id==='zed'?L(' Paste the local key into Zed once using the instructions below.',' Pega la clave local en Zed una vez siguiendo las instrucciones inferiores.'):selection.id==='xcode-chat'?L(' Add the chat provider in Xcode once using the connection details below.',' Añade el proveedor de chat en Xcode una vez con la conexión indicada abajo.'):'');
  const reason=selection.reason||(!available&&!launchDetecting?(detected?.reason||(installed===true?L('The application is installed but cannot be launched on this computer.','La aplicación está instalada pero no se puede abrir en este ordenador.'):L('Application not detected. Install it, then check again.','Aplicación no detectada. Instálala y vuelve a comprobar.'))):!selection.count?L('Select at least one model.','Selecciona al menos un modelo.'):'');
  $('client-launch-status').textContent=launchMessage||reason;
@@ -368,6 +394,8 @@ function renderImageTransport(s) {
 }
 function render(s) {
   state = s;
+  if(chatGPTLoginRequested&&s.chatgpt?.status==='pending'&&validChatGPTVerificationURL(s.chatgpt.verificationUrl)){chatGPTLoginRequested=false;void openExternal(s.chatgpt.verificationUrl).catch(error=>notify(error.message,true));}
+  if(s.chatgpt?.status==='error'||s.chatgpt?.connected)chatGPTLoginRequested=false;
   for(const selection of Object.values(codexClients))if(selection.imageGeneration===null){selection.imageGeneration=imageGenerationSelection(s.imageGeneration);selection.imageGenerationBaseline=imageGenerationSelection(s.imageGeneration);}
   configureDesktop(api, !!s.desktop);
   if (!initialized) {
@@ -381,8 +409,8 @@ function render(s) {
   $('toggle-key').textContent = t($('api-key').type === 'password' ? 'Ver' : 'Ocultar');
   $('toggle-key').setAttribute('aria-label', t($('api-key').type === 'password' ? 'Mostrar API key' : 'Ocultar API key'));
   $('version').textContent = 'v' + s.version;
-  const pending = ['starting','pending'].includes(s.auth?.status);
-  $('load-models').disabled = catalogLoading || pending;
+  const subscription=chatGPTConnected(s),pending = ['starting','pending'].includes(s.auth?.status);
+  $('load-models').disabled = catalogLoading || pending&&!chatGPTReady(s);
   $('credentials-fields').disabled = s.running || busy || pending;
   $('sso-login').disabled = s.running || busy || pending;
   $('load-teams').disabled = s.running || busy || pending || !s.hasKey;
@@ -410,8 +438,10 @@ function render(s) {
   $('start-label').textContent = s.running ? t('Detener proxy') : t('Guardar y arrancar');
   $('start-icon').textContent = s.running ? '■' : '▶';
   $('start-stop').classList.toggle('stop', s.running);
-  $('start-stop').disabled = busy || pending; $('check').disabled = busy || pending; $('forget').disabled = busy || s.running;
+  $('start-stop').disabled = busy || pending&&!chatGPTReady(s); $('check').disabled = busy || pending&&!chatGPTReady(s); $('forget').disabled = busy || s.running;
   $('forget').hidden = !s.hasKey;
+  $('org-id').required=!chatGPTReady(s);
+  if(chatGPTReady(s)&&!s.hasKey&&!s.running)$('start-label').textContent=language==='en'?'Start proxy':'Arrancar proxy';
   $('base-url').textContent = s.baseURL;
   $('endpoint-status').classList.toggle('live', s.running);
   $('endpoint-status').replaceChildren();
@@ -425,14 +455,20 @@ function render(s) {
   $('empty-activity-title').textContent=s.captureEnabled?t('Esperando tu primera petición capturada…'):t('Captura desactivada');
   $('empty-activity-help').textContent=s.captureEnabled?t('Verás el endpoint, las cabeceras y los cuerpos capturados para depurar.'):t('Activa la captura cuando necesites inspeccionar peticiones para depurar.');
   renderUsage(s.usage);
-  renderAccountUsage($('account-usage'), s, language, busy);
+  renderAccountUsage($('account-usage'),s,language,busy);
+  if(subscription){const quota=document.createElement('section');quota.id='subscription-usage';renderSubscriptionUsage(quota,s,language,busy);$('account-usage').append(quota);}
+  renderChatGPT(document,s,language,busy);
+  $('diagram-routing').textContent=subscription?(language==='en'?'Local authentication':'Autenticación local'):t('Añade la organización');
+  $('diagram-provider').textContent=subscription?(s.kiloReady?'Kilo + ChatGPT':'ChatGPT'):'Kilo Gateway';
+  $('diagram-billing').textContent=subscription?(language==='en'?'Credit / subscription quota':'Crédito / cuota de suscripción'):t('Saldo de empresa');
+  $('check').textContent=t('Comprobar gateway');
   if(activeTrace && !(s.events || []).some(event=>event.id===activeTrace.id)){activeTrace=null;traceRequest++;}
   renderTrace();
   $('empty-activity').hidden = !!s.events?.length; $('activity-table').hidden = !s.events?.length;
   $('event-rows').replaceChildren();
   for (const e of s.events || []) {
     const row = document.createElement('tr');
-    const values = [new Date(e.at).toLocaleTimeString(language, {hour: '2-digit', minute: '2-digit', second: '2-digit'}), e.method + ' ' + e.path, e.status, e.usage?.model || '—', reportedCost(e.usage?.costUSD) ?? t('Coste desconocido'), e.duration < 1000 ? e.duration + ' ms' : (e.duration / 1000).toFixed(1) + ' s'];
+    const values = [new Date(e.at).toLocaleTimeString(language, {hour: '2-digit', minute: '2-digit', second: '2-digit'}), e.method + ' ' + e.path, e.status, e.usage?.model || '—', e.usage?.billing==='subscription'?(language==='en'?'Subscription usage':'Uso de suscripción'):reportedCost(e.usage?.costUSD) ?? t('Coste desconocido'), e.duration < 1000 ? e.duration + ' ms' : (e.duration / 1000).toFixed(1) + ' s'];
     values.forEach((value, i) => {
       const cell = document.createElement('td');
       if (i === 2) { const badge = document.createElement('span'); badge.className = 'status-code' + (e.status >= 400 ? ' error' : ''); badge.textContent = value; cell.append(badge); }
@@ -448,9 +484,11 @@ function render(s) {
     else details.textContent=t('Sin captura');
     row.append(details);$('event-rows').append(row);
   }
-  if (catalogRevision !== s.catalogRevision && !pending) {
+  if (catalogRevision !== s.catalogRevision && (!pending||chatGPTReady(s))) {
     catalogRevision = s.catalogRevision; catalog = []; syncSelectedContext(); catalogFetchedAt = ''; void loadModels();
   }
+  $('catalog-warnings').hidden=!s.catalogWarnings?.length;
+  $('catalog-warnings').textContent=s.catalogWarnings?.length?(language==='en'?'Some models are unavailable. ':'Algunos modelos no están disponibles. ')+s.catalogWarnings.join(' '):'';
   renderSnippet();
 }
 
@@ -463,6 +501,12 @@ function renderUsage(usage) {
  $('spend-total').textContent=spend.amount;
  $('spend-coverage').textContent=spend.coverage;
  $('spend-semantics').textContent=inferenceCostNote(language);
+ if(total.subscriptionRequests>0&&total.requests===total.subscriptionRequests){
+  $('spend-title').textContent=language==='en'?'Subscription usage':'Uso de suscripción';
+  $('spend-total').textContent=String(total.subscriptionRequests||0);
+  $('spend-coverage').textContent=language==='en'?'Requests using ChatGPT quota':'Peticiones que usan la cuota de ChatGPT';
+  $('spend-semantics').textContent=language==='en'?'Subscription quota is shown separately. Tokens are usage counts, not Kilo charges.':'La cuota de suscripción se muestra por separado. Los tokens son datos de uso, no cargos de Kilo.';
+ }
  $('spend-tokens').textContent=t('{input} entrada total · {output} salida',{input:total.withPrompt>0 ? cacheNumber(total.prompt) : t('Coste desconocido'),output:total.withTokens>0 ? cacheNumber(total.output) : t('Coste desconocido')});
  const cache=cacheStats(total);
  $('cache-read-total').textContent=cacheNumber(cache.read);
@@ -680,7 +724,7 @@ $('suggest-codex-reasoning').addEventListener('click',()=>{for(const model of co
 async function prepareCodex(){
   const target=client, selection=codexSelection();
   if(!selection.models.size)return;
-  if(!imageGenerationValid(selection.imageGeneration,catalog))throw new Error(language==='en'?'Choose an available image model before preparing Codex.':'Elige un modelo de imágenes disponible antes de preparar Codex.');
+  if(!imageGenerationValid(selection.imageGeneration,catalog,state))throw new Error(language==='en'?'Review the image provider, connection and model before preparing Codex.':'Revisa el proveedor, la conexión y el modelo de imágenes antes de preparar Codex.');
   if(selection.preparing)throw new Error(language==='en'?'This profile is already being prepared.':'Este perfil ya se está preparando.');
   selection.preparing=true;renderCodexSetup();renderClientLaunch();
   const signature=codexSetupSignature(selection);
@@ -793,7 +837,8 @@ $('model-picker').addEventListener('change', event => {
 });
 async function refresh() {
   if (stopped) return;
-  const revision = updateCheckRevision, next = await api('state');
+  const revision = updateCheckRevision, authRevision=chatGPTRevision, changing=chatGPTPending, next = await api('state');
+  if(changing||chatGPTPending||authRevision!==chatGPTRevision)return;
   // A state poll already in flight must not undo a newer manual check.
   if (revision !== updateCheckRevision && state) next.update = state.update;
   render(next);
@@ -807,11 +852,21 @@ async function action(fn) {
   finally { busy = false; if (state) render(state); }
 }
 async function save() {
+  if(chatGPTReady(state)&&!$('api-key').value.trim()&&$('org-id').value.trim()===(state.orgId||'').trim()&&Number($('port').value)===state.port)return;
   if (!$('connection-form').reportValidity()) throw new Error(t('Completa los campos de conexión.'));
   await api('config', {apiKey: $('api-key').value, orgId: $('org-id').value, port: Number($('port').value), remember: $('remember').checked});
   $('api-key').value = '';
   $('api-key').type = 'password'; $('toggle-key').textContent = t('Ver'); $('toggle-key').setAttribute('aria-pressed', 'false');
 }
+async function updateChatGPT(name){
+ chatGPTPending=true;chatGPTRevision++;
+ if(name==='login')chatGPTLoginRequested=true;
+ if(name==='cancel'||name==='logout')chatGPTLoginRequested=false;
+ try{render(await api('chatgpt/'+name,{}));}
+ catch(error){if(name==='login')chatGPTLoginRequested=false;throw error;}
+ finally{chatGPTPending=false;chatGPTRevision++;}
+}
+for(const name of ['login','cancel','logout'])$('chatgpt-'+name).addEventListener('click',()=>action(()=>updateChatGPT(name)));
 $('connection-form').addEventListener('submit', e => {
   e.preventDefault(); action(async () => {
     if (state.running) { await api('stop', {}); toast('Proxy detenido'); }
@@ -970,6 +1025,7 @@ $('load-claude-profile').addEventListener('click',async()=>{
 applyLanguage(language);
 
 $('account-usage').addEventListener('click', event => {
+  if (event.target.closest('#refresh-chatgpt')) action(()=>updateChatGPT('refresh'));
   if (event.target.closest('#refresh-billing')) action(() => api('billing/refresh', {}));
 });
 $('account-usage').addEventListener('change', event => {

@@ -68,7 +68,7 @@ kilo-omp
 
 Keep Kilo Proxy open while working; its window can be closed to the system tray or menu bar. If the saved proxy connection is stopped, the command starts it before launching the agent. If the app has been quit, reopen it and run the command again.
 
-Each invocation prepares the latest **saved** shared models, names, default and supported reasoning preferences. Finish any pending model save in the app before launching. Changes made after an agent starts apply on its next launch.
+Each invocation prepares that agent's latest **saved** model pack if one is assigned under **Models → Packs**, or the shared models, names, default and supported reasoning preferences otherwise. Finish any pending save in the app before launching. Changes made after an agent starts apply on its next launch.
 
 The commands forward the arguments you supply to the underlying CLI. For example, select a previous conversation in the Kilo profile:
 
@@ -95,7 +95,7 @@ No additional terminal window opens. The CLI uses the current working directory 
 
 `kilo-codex` prepares `~/.codex-kilo-cli`; `kilo-claude` prepares `~/.claude-kilo`; `kilo-omp` prepares `~/.omp-kilo`. These are the same isolated profiles used by their **Open** buttons in Agents. Their saved sessions belong to those profiles. Normal `codex`, `claude` and `omp` keep their existing configuration and authentication. See [Oh My Pi setup](oh-my-pi.md) for its model picker, reasoning and image MCP support.
 
-`kilo-opencode` refreshes `~/.opencode-kilo/opencode.json`, the configuration used by **Open OpenCode**, with the shared models, display names, default and context limits. It also updates the managed `kilo_images` MCP entry from the image-generation setting while preserving unrelated settings and MCP servers. The command sets `OPENCODE_CONFIG` for its child process and clears inherited `OPENCODE_CONFIG_CONTENT`. It does not edit your ordinary OpenCode configuration or authentication; global/project settings still merge, and OpenCode's usual session storage is shared. Those settings can affect the effective configuration. See [OpenCode setup](opencode-and-zed.md).
+`kilo-opencode` refreshes `~/.opencode-kilo/opencode.json`, the configuration used by **Open OpenCode**, with its assigned pack or shared models, display names, default and context limits. It also updates the managed `kilo_images` MCP entry from the image-generation setting while preserving unrelated settings and MCP servers. The command sets `OPENCODE_CONFIG` for its child process and clears inherited `OPENCODE_CONFIG_CONTENT`. It does not edit your ordinary OpenCode configuration or authentication; global/project settings still merge, and OpenCode's usual session storage is shared. Those settings can affect the effective configuration. See [OpenCode setup](opencode-and-zed.md).
 
 The installed commands and manual functions contain no API keys. They contact the running local Kilo Proxy app, which prepares the profile and supplies the local connection credential to the child process. Your personal Kilo key is not placed in the shell command or shell startup files. Profile compatibility and model protocol requirements are described in [client setup](clients.md).
 

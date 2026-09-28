@@ -2,9 +2,10 @@
 """Validate Codex V1 collaboration's exact argument repair against local SSE.
 
 Usage: python3 scripts/check-codex-collab.py /absolute/path/to/codex
-The synthetic gateway sends message + [] first, then message alone in a fresh
-profile. This checks the installed Codex runtime, not the Kilo HTTP bridge:
-Go collab_input tests separately verify that bridge performs this exact repair.
+The synthetic gateway checks both conflicts (message + [] and items + ""),
+then the corresponding single-input calls in fresh profiles. This checks the
+installed Codex runtime, not the Kilo HTTP bridge: Go collab_input tests
+separately verify that bridge performs these exact repairs.
 No existing profile, existing agent or paid API is used.
 """
 import json
@@ -21,7 +22,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def run_case(binary, empty_items):
+def run_case(binary, input_kind, include_empty_other):
     records, outputs, failures = [], [], []
     lock = threading.Lock()
 
@@ -51,14 +52,18 @@ def run_case(binary, empty_items):
                         )
                         for tool in body.get('tools', [])
                     ), 'Installed Codex did not expose multi_agent_v1.spawn_agent'
-                    args = {
-                        'message': (
-                            'Reply with a short synthetic acknowledgement. '
-                            'No tools or external requests are needed.'
-                        )
-                    }
-                    if empty_items:
-                        args['items'] = []
+                    task = (
+                        'Reply with a short synthetic acknowledgement. '
+                        'No tools or external requests are needed.'
+                    )
+                    if input_kind == 'message':
+                        args = {'message': task}
+                        if include_empty_other:
+                            args['items'] = []
+                    else:
+                        args = {'items': [{'type': 'text', 'text': task}]}
+                        if include_empty_other:
+                            args['message'] = ''
                     item = {
                         'id': 'fc_fixture',
                         'type': 'function_call',
@@ -234,7 +239,7 @@ enabled = false
             )
             assert outputs, 'Codex did not return a collaboration tool result'
             joined = json.dumps(outputs)
-            if empty_items:
+            if include_empty_other:
                 assert 'Provide either message or items, but not both' in joined, outputs
             else:
                 agent_id = json.loads(outputs[0])['agent_id']
@@ -267,11 +272,12 @@ def main():
         raise SystemExit(
             'Usage: python3 scripts/check-codex-collab.py /absolute/path/to/codex'
         )
-    run_case(sys.argv[1], True)
-    run_case(sys.argv[1], False)
+    for input_kind in ('message', 'items'):
+        run_case(sys.argv[1], input_kind, True)
+        run_case(sys.argv[1], input_kind, False)
     print(
-        'PASS: installed Codex rejects message + empty items and creates a subagent '
-        'when the same empty items field is omitted. All gateway responses are '
+        'PASS: installed Codex rejects both empty-sibling conflicts and creates a '
+        'subagent when each empty field is omitted. All gateway responses are '
         'synthetic; no paid requests.'
     )
 

@@ -62,7 +62,8 @@ export function createEditorHelper({api,notify,copy,refreshCatalog,onChange=()=>
   $('claude-desktop-experimental-field').hidden=!desktop;
   $('claude-desktop-experimental-label').textContent=L('Experimental: use models from other providers','Experimental: usar modelos de otros proveedores');
   $('claude-desktop-experimental').checked=desktopPending??desktopExperimental;
-  $('claude-desktop-experimental').disabled=working||!desktopLibraryLoaded;
+  $('claude-desktop-experimental').disabled=working||!desktopLibraryLoaded||ctx.state?.chatgpt?.connected===true;
+  if(ctx.state?.chatgpt?.connected===true)$('claude-desktop-experimental-label').textContent=L('Experimental aliases required for ChatGPT (Kilo preference preserved)','Alias experimentales necesarios para ChatGPT (se conserva la preferencia de Kilo)');
   configureModelSort($('editor-sort'),ctx.language);
   $('editor-save').disabled=working||!s().models.size||!ctx.state||!!invalid;
   $('editor-load').disabled=working;$('editor-refresh').disabled=working;$('editor-add').disabled=working||desktop&&!claudeDesktopModelAllowed($('editor-id').value.trim(),desktopExperimental);
@@ -164,7 +165,7 @@ export function createEditorHelper({api,notify,copy,refreshCatalog,onChange=()=>
   }catch(error){notify(error.message,true)}finally{desktopLibraryLoaded=true;desktopLibraryLoading=false;working=false;render(ctx)}
  }
  $('claude-desktop-experimental').addEventListener('change',async()=>{
-  if(working)return;
+  if(working||ctx.state?.chatgpt?.connected===true)return;
   const experimentalModels=$('claude-desktop-experimental').checked;desktopOptionsRevision++;desktopPending=experimentalModels;working=true;render(ctx);
   try{
    const source=await api('model-library');

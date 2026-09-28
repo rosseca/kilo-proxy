@@ -97,19 +97,30 @@ func (a *app) terminalPrepareAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	state := a.modelLibrary.snapshot()
-	if state.RecoveryRequired || state.Warning != "" || len(state.Library.Models) == 0 {
+	if state.RecoveryRequired || state.Warning != "" {
 		jsonError(w, 409, "Open Models in Kilo Proxy and save a valid shared model selection first.")
 		return
 	}
 	a.mu.Lock()
-	if a.apiKey == "" || a.config.OrgID == "" {
+	if !a.connectionReadyLocked() {
 		a.mu.Unlock()
-		jsonError(w, 409, "Connect your Kilo account and organization in Kilo Proxy first.")
+		jsonError(w, 409, "Connect the selected provider in Kilo Proxy first.")
+		return
+	}
+	library, err := a.terminalModelLibrary(input.Client, state.Library)
+	if err != nil {
+		a.mu.Unlock()
+		jsonError(w, 409, err.Error())
+		return
+	}
+	if len(library.Models) == 0 {
+		a.mu.Unlock()
+		jsonError(w, 409, "Open Models in Kilo Proxy and save a model selection or assign a model pack first.")
 		return
 	}
 	name, _ := launchClientIdentity(input.Client)
 	plan := clientLaunchPlan{Client: input.Client, Name: name, Kind: "terminal", Directory: directory, Env: map[string]string{}}
-	err = a.prepareTerminalProfile(input.Client, rt.home, state.Library, claudeCaps(input.ClaudeVersion))
+	err = a.prepareTerminalProfile(input.Client, rt.home, library, claudeCaps(input.ClaudeVersion))
 	if err == nil {
 		err = a.launchProfile(&plan, rt.home)
 		if input.Client == "opencode" {
@@ -156,7 +167,7 @@ func (a *app) prepareTerminalProfile(client, home string, library modelLibrary, 
 		return a.prepareTerminalOpenCodeProfile(library)
 	}
 	if client == "omp" {
-		selection, err := ompSelectionFromChoices(terminalLibraryChoices(library, readNativeCatalogCache(a.dir, a.config.OrgID)), library.DefaultModel)
+		selection, err := ompSelectionFromChoices(terminalLibraryChoices(library, readNativeCatalogCache(a.dir, a.catalogScopeLocked())), library.DefaultModel)
 		if err != nil {
 			return err
 		}
@@ -168,7 +179,7 @@ func (a *app) prepareTerminalProfile(client, home string, library modelLibrary, 
 		if dir == "" {
 			dir = filepath.Join(home, ".codex-kilo-cli")
 		}
-		catalog, err := buildCodexCatalog(terminalLibraryChoices(library, readNativeCatalogCache(a.dir, a.config.OrgID)), library.DefaultModel, false)
+		catalog, err := buildCodexCatalog(terminalLibraryChoices(library, readNativeCatalogCache(a.dir, a.catalogScopeLocked())), library.DefaultModel, false)
 		if err != nil {
 			return err
 		}
@@ -184,7 +195,7 @@ func (a *app) prepareTerminalProfile(client, home string, library modelLibrary, 
 	}
 	selection := claudeSelection{Initial: library.DefaultModel, Mode: "installed", Aliases: map[string]string{}}
 	ids := map[string]bool{}
-	choices := terminalLibraryChoices(library, readNativeCatalogCache(a.dir, a.config.OrgID))
+	choices := terminalLibraryChoices(library, readNativeCatalogCache(a.dir, a.catalogScopeLocked()))
 	for i, model := range library.Models {
 		context, err := contextPolicyForChoice(choices[i])
 		if err != nil {

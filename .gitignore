@@ -19,6 +19,7 @@
 settings.json
 auth.json
 credentials.json
+chatgpt-credentials.enc
 terminal-runtime.json
 usage-history.json
 *.pem

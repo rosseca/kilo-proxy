@@ -79,6 +79,7 @@ func TestCodexImageProfilePreparePersistsSettings(t *testing.T) {
 	for _, endpoint := range []string{"codex/catalog", "codex-cli/catalog"} {
 		t.Run(endpoint, func(t *testing.T) {
 			a := testApp(t)
+			a.apiKey, a.config.OrgID = "synthetic-image-key", "synthetic-image-team"
 			dir := filepath.Join(t.TempDir(), "profile")
 			a.codexProfileDir, a.codexCLIProfileDir = dir, dir
 			body, _ := json.Marshal(map[string]any{"catalog": json.RawMessage(testCatalog), "imageGeneration": imageGenerationSettings{Enabled: true, Model: "image-lab/painter"}})
@@ -159,6 +160,7 @@ func TestCodexImageProfileUnsafeSettingsBackupPreservesProfile(t *testing.T) {
 
 func TestCodexImageLaunchVerifiesMCPConfig(t *testing.T) {
 	a := testApp(t)
+	a.apiKey, a.config.OrgID = "synthetic-image-key", "synthetic-image-team"
 	home := t.TempDir()
 	a.codexProfileDir = filepath.Join(home, ".codex-kilo-desktop")
 	images := imageGenerationSettings{Enabled: true, Model: "vendor/image"}

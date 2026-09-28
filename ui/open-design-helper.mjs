@@ -1,3 +1,4 @@
+import {connectionReady} from './chatgpt-helper.mjs';
 import {contextControls,contextModel,contextLibraryFields,syncContextModels,contextError} from './context-policy.mjs';
 import {validModelID, modelPriceDetails, filterModels, sortModels, configureModelSort, setModelSort, filterModelLab, configureModelLab, setModelLab} from './model-helper.mjs';
 
@@ -16,7 +17,7 @@ export function openDesignLibrary(models = [], initial = '') {
  return {schemaVersion:1, defaultModel:selected.has(initial) ? initial : selected.keys().next().value || '', models:[...selected.values()]};
 }
 export function openDesignCanLaunch(state, engine, engines, library) {
- return !!(openDesignEngines.includes(engine) && engines?.[engine]?.available && state?.hasKey && state?.orgId?.trim() && library.models.length && !['starting', 'pending'].includes(state?.auth?.status));
+ return !!(openDesignEngines.includes(engine) && engines?.[engine]?.available && connectionReady(state) && library.models.length);
 }
 
 export function createOpenDesignHelper({api, refreshCatalog, onChange = () => {}}) {
@@ -131,6 +132,6 @@ export function createOpenDesignHelper({api, refreshCatalog, onChange = () => {}
  });
  return {render, setCatalog:catalog=>syncContextModels(selected,catalog), reload:load, launchState:() => ({id:'open-design', engine, count:selected.size, ready:false, working:working || loading, prepare,
   valid:loaded && !contextError(selected) && openDesignCanLaunch(ctx.state, engine, profile?.engines, library()),
-  reason:!ctx.state?.hasKey || !ctx.state?.orgId?.trim() ? L('Connect your Kilo account and team first.', 'Conecta primero tu cuenta y equipo de Kilo.') : contextError(selected) || error || (!loading && !profile?.engines?.[engine]?.available ? profile?.engines?.[engine]?.reason || L('Install the selected CLI and check again.', 'Instala el CLI elegido y vuelve a comprobar.') : ''),
+  reason:!connectionReady(ctx.state) ? L('Connect your selected provider first.', 'Conecta primero el proveedor seleccionado.') : contextError(selected) || error || (!loading && !profile?.engines?.[engine]?.available ? profile?.engines?.[engine]?.reason || L('Install the selected CLI and check again.', 'Instala el CLI elegido y vuelve a comprobar.') : ''),
   fingerprint:fingerprint()})};
 }

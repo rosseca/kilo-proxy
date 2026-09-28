@@ -132,7 +132,7 @@ func (a *app) openDesignFingerprint(engine, binary string, library modelLibrary)
 			return ""
 		}
 	}
-	data, _ := json.Marshal([]any{engine, binary, library, a.config.Port, a.config.LocalKey, a.config.OrgID, a.config.ImageGeneration, source, openDesignProfileRevision})
+	data, _ := json.Marshal([]any{engine, binary, library, a.config.Port, a.config.LocalKey, a.config.OrgID, a.clientImageSettingsLocked(), a.catalogScopeLocked(), source, openDesignProfileRevision})
 	return openDesignHash(data)
 }
 
@@ -308,8 +308,8 @@ func (a *app) openDesignProfileAPI(w http.ResponseWriter, r *http.Request) {
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.apiKey == "" || a.config.OrgID == "" || a.authPending() || a.connectionNeedsSave {
-		jsonError(w, 409, "Save your Kilo account and team connection first.")
+	if !a.connectionReadyLocked() {
+		jsonError(w, 409, "Connect the selected provider first.")
 		return
 	}
 	paths := openDesignProfilePaths(a.dir)
@@ -373,7 +373,7 @@ func (a *app) prepareOpenDesignProfile(engine, binary string, library modelLibra
 	if _, err = prepareProfileFile(selectionPath, []byte("{}\n")); err != nil {
 		return err
 	}
-	if err = prepareOpenDesignEngineProfile(dir, engine, library, readNativeCatalogCache(a.dir, a.config.OrgID), caps, a.config.Port, a.config.LocalKey, a.config.ImageGeneration); err != nil {
+	if err = prepareOpenDesignEngineProfile(dir, engine, library, readNativeCatalogCache(a.dir, a.catalogScopeLocked()), caps, a.config.Port, a.config.LocalKey, a.clientImageSettingsLocked()); err != nil {
 		return err
 	}
 	if engine == "opencode" {

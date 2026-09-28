@@ -299,7 +299,7 @@ func (a *app) ompProfileFiles(dir string, s ompSelection) ([]profileFile, error)
 		}
 		var data []byte
 		if item.name == "mcp.json" {
-			data, err = mergeOMPImages(old, a.config.ImageGeneration, base, a.config.LocalKey)
+			data, err = mergeOMPImages(old, a.clientImageSettingsLocked(), base, a.config.LocalKey)
 		} else {
 			data, err = mergeOMPYAML(old, item.data, item.name == "models.yml")
 		}

@@ -168,7 +168,7 @@ func TestNativeOnboardingManualPointerWalkthrough(t *testing.T) {
 	u := nativeFreshOnboarding(t)
 	h := &nativePointerHarness{t: t, u: u, size: image.Pt(1180, 820), now: time.Now()}
 	h.frame()
-	if !h.selected("Account & team", semantic.Button) {
+	if !h.selected("Accounts", semantic.Button) {
 		t.Fatal("account step is not marked as the current setup step")
 	}
 	modelsDisabled := false
@@ -195,7 +195,7 @@ func TestNativeOnboardingManualPointerWalkthrough(t *testing.T) {
 	if !h.selected("Models", semantic.Button) {
 		t.Fatal("models step is not marked as current after saving the connection")
 	}
-	h.click("Account & team", semantic.Button)
+	h.click("Accounts", semantic.Button)
 	if u.setupStep != setupConnect {
 		t.Fatal("reachable account step could not be reopened from the stepper")
 	}
@@ -448,9 +448,9 @@ func TestNativeOnboardingAgentsProxyPointerControls(t *testing.T) {
 				u.owner.apiKey = ""
 				u.owner.mu.Unlock()
 				h.frame()
-				h.click(u.tr("Connect Kilo", "Conectar Kilo"), semantic.Button)
+				h.click(u.tr("Connect an account", "Conectar una cuenta"), semantic.Button)
 				if u.page != "setup" || u.setupStep != setupConnect {
-					t.Fatal("Agents Connect Kilo did not open account setup")
+					t.Fatal("Agents Connect an account did not open account setup")
 				}
 			})
 		}

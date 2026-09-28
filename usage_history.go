@@ -91,7 +91,7 @@ func newUsageHistoryStore(dir string) *usageHistoryStore {
 }
 
 func historyCounters(s *usageSummary) []*int64 {
-	return []*int64{&s.Prompt, &s.WithPrompt, &s.WithCacheRead, &s.WithCacheWrite, &s.CacheRatioRequests, &s.CacheRatioInput, &s.CacheRatioRead, &s.Requests, &s.Priced, &s.WithTokens, &s.Incomplete, &s.Input, &s.Output, &s.Cached, &s.CacheWrite, &s.Reasoning}
+	return []*int64{&s.SubscriptionRequests, &s.Prompt, &s.WithPrompt, &s.WithCacheRead, &s.WithCacheWrite, &s.CacheRatioRequests, &s.CacheRatioInput, &s.CacheRatioRead, &s.Requests, &s.Priced, &s.WithTokens, &s.Incomplete, &s.Input, &s.Output, &s.Cached, &s.CacheWrite, &s.Reasoning}
 }
 func validUsageHistory(disk *usageHistoryDisk) bool {
 	if disk.SchemaVersion != 1 || disk.Scopes == nil || len(disk.Scopes) > historyScopeLimit {

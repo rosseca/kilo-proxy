@@ -109,7 +109,7 @@ func (u *nativeUI) openDesignClientPanel(s *nativeClientSelection) layout.Widget
 			disabledReason = u.tr("Install Open Design, then refresh detection.", "Instala Open Design y actualiza la detección.")
 		}
 	case !connectionReady:
-		disabledReason = u.tr("Save your Kilo connection first.", "Guarda primero tu conexión de Kilo.")
+		disabledReason = u.tr("Connect Kilo or ChatGPT first.", "Conecta primero Kilo o ChatGPT.")
 	case !libraryReady:
 		disabledReason = libraryStatus
 	case len(s.Models) == 0:
@@ -145,7 +145,7 @@ func (u *nativeUI) openDesignClientPanel(s *nativeClientSelection) layout.Widget
 		launchWidgets = append(launchWidgets, u.message(nativeToneError, c.LaunchError))
 	}
 	if !connectionReady {
-		launchWidgets = append(launchWidgets, u.pills(u.button("open-design:connect", u.tr("Connect Kilo", "Conectar Kilo"), u.beginSetup)))
+		launchWidgets = append(launchWidgets, u.pills(u.button("open-design:connect", u.tr("Connect an account", "Conectar una cuenta"), u.beginSetup)))
 	}
 	if c.LaunchChecked && !appAvailable {
 		launchWidgets = append(launchWidgets, u.pills(u.iconButton("open-design:install", u.tr("Get Open Design", "Obtener Open Design"), nativeButtonGhost, nativeIconOpenInNew, func() { u.open(u.openDesignInstallURL()) })))

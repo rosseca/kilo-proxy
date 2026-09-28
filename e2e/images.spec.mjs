@@ -127,3 +127,68 @@ test('image MCP generates and edits a synthetic PNG through the organization gat
   expect(JSON.parse(await readFile(gateway.imageRecords,'utf8'))).toHaveLength(2);
   await expect(page.locator('#spend-total')).toHaveText('$0.008400');
 });
+
+for(const client of ['codex','codex-cli'])test(`ChatGPT image provider persists independently from Kilo models in ${client}`,async({page,gateway,request},testInfo)=>{
+  await startProxy(page,gateway);
+  await chooseImages(page,gateway,client);
+  await page.locator('#codex-image-provider').selectOption('chatgpt');
+  await expect(page.locator('#codex-image-kilo-options')).toBeHidden();
+  await expect(page.locator('#codex-image-status')).toContainText('Sign in with ChatGPT');
+  await expect(page.locator('#save-codex-catalog')).toBeDisabled();
+  await expect(page.locator('#codex-image-billing')).toContainText('never fall back to Kilo credits');
+  await writeFile(gateway.launchControl,JSON.stringify({imageModels:true,chatgptConnected:true}));
+  await expect(page.locator('#codex-image-status')).toContainText('built-in image tool');
+  await expect(page.locator('#save-codex-catalog')).toBeEnabled();
+  await page.locator('#save-codex-catalog').click();
+  await expect(page.locator('#codex-setup-status')).toContainText('Profile ready');
+  expect((await state(request,gateway)).imageGeneration).toEqual({enabled:true,model:imageModel,provider:'chatgpt'});
+  expect((await readFile(path.join(gateway.profiles[client],'config.toml'),'utf8')).replaceAll('"','')).toMatch(imageTable);
+  await page.reload();
+  await page.locator('#tab-'+client).click();
+  await expect(page.locator('#codex-image-provider')).toHaveValue('chatgpt');
+  await expect(page.locator('#codex-image-enabled')).toBeChecked();
+  if(client==='codex'){
+    await page.locator('#codex-image-generation').screenshot({path:testInfo.outputPath('chatgpt-images-en.png')});
+    await page.locator('#language').selectOption('es');
+    await expect(page.locator('#codex-image-provider')).toHaveAccessibleName('Proveedor de imágenes');
+    await expect(page.locator('#codex-image-billing')).toContainText('cuota de tu suscripción');
+    await page.setViewportSize({width:390,height:844});
+    await page.locator('#codex-image-generation').screenshot({path:testInfo.outputPath('chatgpt-images-es-mobile.png')});
+    await page.setViewportSize({width:1440,height:1080});
+    await page.locator('#language').selectOption('en');
+  }
+  await page.locator('#codex-image-provider').selectOption('kilo');
+  await expect(page.locator('#codex-image-model')).toHaveValue(imageModel);
+  await page.locator('#codex-image-model').selectOption('');
+  await page.locator('#codex-image-provider').selectOption('chatgpt');
+  await expect(page.locator('#codex-image-save')).toBeEnabled();
+  await page.locator('#codex-image-save').click();
+  await expect(page.locator('#notice')).toContainText('Image settings saved');
+  expect((await state(request,gateway)).imageGeneration).toEqual({enabled:true,model:'',provider:'chatgpt'});
+  await writeFile(gateway.launchControl,JSON.stringify({chatgptConnected:false}));
+  await expect(page.locator('#codex-image-status')).toContainText('Sign in with ChatGPT');
+  await expect(page.locator('#codex-image-enabled')).toBeChecked();
+  await expect(page.locator('#save-codex-catalog')).toBeDisabled();
+  await page.locator('#codex-image-enabled').uncheck();
+  await expect(page.locator('#save-codex-catalog')).toBeEnabled();
+});
+
+
+test('image settings save without a Codex model selection or connected image account',async({page,gateway,request})=>{
+  await page.locator('#tab-codex').click();
+  await page.locator('#codex-image-enabled').check();
+  await page.locator('#codex-image-provider').selectOption('chatgpt');
+  await expect(page.locator('#codex-image-status')).toContainText('Sign in with ChatGPT');
+  await expect(page.locator('#codex-image-save')).toBeEnabled();
+  await page.locator('#codex-image-save').click();
+  await expect(page.locator('#notice')).toContainText('Image settings saved');
+  expect((await state(request,gateway)).imageGeneration).toEqual({enabled:true,model:'',provider:'chatgpt'});
+  for(const client of ['codex','codex-cli'])await expect(readFile(path.join(gateway.profiles[client],'config.toml'),'utf8')).rejects.toThrow();
+  await page.reload();
+  await page.locator('#tab-codex-cli').click();
+  await expect(page.locator('#codex-image-provider')).toHaveValue('chatgpt');
+  await expect(page.locator('#codex-image-enabled')).toBeChecked();
+  await page.locator('#codex-image-enabled').uncheck();
+  await page.locator('#codex-image-save').click();
+  await expect.poll(async()=>(await state(request,gateway)).imageGeneration.enabled).toBe(false);
+});

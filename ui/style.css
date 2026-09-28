@@ -110,6 +110,7 @@
 .image-generation-options>label{grid-column:1/-1;margin:0;font-size:11px;font-weight:500}
 .image-generation-options select{min-width:0;width:100%;height:40px;border:1px solid #cdd8bd;border-radius:6px;background:#fff;padding:8px;font:inherit;font-size:12px}
 .image-generation-options button{margin:0;white-space:normal}
+#codex-image-provider{grid-column:1/-1}
 .image-generation-warning{color:#896026}
 #usage-session-table td:nth-child(5){min-width:200px;max-width:260px;white-space:pre-line}
 .cost-source{display:block;margin-top:3px;font:10px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--muted);white-space:normal}
@@ -141,3 +142,12 @@
 .update-notice[hidden]{display:none}.update-notice a,.update-actions a{color:#345778;font-size:12px;font-weight:600}
 .update-actions{display:flex;align-items:center;flex-wrap:wrap;gap:16px}.update-actions .secondary-button{flex:0 1 auto}
 #app-updates p{font-size:12px;line-height:1.7}#app-updates .update-error{color:#9a4c2d}.sidebar-bottom #version{color:inherit;text-underline-offset:3px}
+
+#chatgpt-pending { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+#chatgpt-pending[hidden] { display: none; }
+#chatgpt-pending-label { flex-basis: 100%; }
+#chatgpt-code { font-family: monospace; font-size: 20px; letter-spacing: .08em; }
+
+#chatgpt-account { border-top: 1px solid var(--border); border-bottom: 0; margin: 22px 0 0; padding: 18px 0 0; }
+#chatgpt-title { margin: 0 0 10px; font-size: 16px; }
+#subscription-usage { border-top: 1px solid var(--border); margin-top: 28px; padding-top: 24px; }

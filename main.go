@@ -172,6 +172,9 @@ func main() {
 func (a *app) requestQuit() {
 	a.quitOnce.Do(func() {
 		close(a.quit)
+		if a.chatgpt != nil {
+			a.chatgpt.cancel()
+		}
 		if a.updates != nil {
 			a.updates.close()
 		}

@@ -166,8 +166,8 @@ func nativeClientPayload(key string, s *nativeClientSelection) (any, error) {
 		if key != "xcode-codex" && s.ImageGeneration != nil {
 			images := *s.ImageGeneration
 			payload["imageGeneration"] = images
-			if images.Enabled && !catalogID.MatchString(images.Model) && err == nil {
-				err = errors.New("Choose an image model before enabling image generation.")
+			if imageErr := validateImageGenerationSettings(images); imageErr != nil && err == nil {
+				err = imageErr
 			}
 		}
 		if key == "codex" {
@@ -663,10 +663,12 @@ func (u *nativeUI) claudeDesktopClientPanel(s *nativeClientSelection) layout.Wid
 		widgets = append(widgets, u.message(nativeToneError, nativeMessage(validation.Error(), u.language)))
 	}
 	u.setChecked("client:claude-desktop:experimental", u.claudeDesktopExperimentalModels())
-	return u.column(
-		u.section(u.tr("Experimental models", "Modelos experimentales"), u.tr("Off by default. Changes affect only Claude Desktop; your shared library is preserved.", "Desactivado por defecto. Los cambios solo afectan a Claude Desktop; se conserva tu biblioteca compartida."),
-			u.disabled(!working, u.check("client:claude-desktop:experimental", u.tr("Experimental: use models from other providers", "Experimental: usar modelos de otros proveedores"), u.setClaudeDesktopExperimentalModels)),
-		),
+	experimental := u.section(u.tr("Experimental models", "Modelos experimentales"), u.tr("Off by default. Changes affect only Claude Desktop; your shared library is preserved.", "Desactivado por defecto. Los cambios solo afectan a Claude Desktop; se conserva tu biblioteca compartida."),
+		u.disabled(!working, u.check("client:claude-desktop:experimental", u.tr("Experimental: use models from other providers", "Experimental: usar modelos de otros proveedores"), u.setClaudeDesktopExperimentalModels)))
+	if u.chatGPTConnected() {
+		experimental = u.section(u.tr("Experimental models", "Modelos experimentales"), u.tr("Experimental aliases are required for ChatGPT models. This does not change your saved Kilo preference.", "Los alias experimentales son necesarios para los modelos de ChatGPT. No cambia tu preferencia guardada de Kilo."))
+	}
+	return u.column(experimental,
 		u.section(u.tr("Launch", "Arranque"), u.tr("Prepares the named Kilo third-party configuration with your shared models, names and default.", "Prepara la configuración de terceros Kilo con tus modelos compartidos, nombres y modelo inicial."), widgets...),
 		u.section(u.tr("Compatibility", "Compatibilidad"), u.agentCompatibility(key),
 			u.note(u.tr("Context and output limits are managed by Claude Desktop and the model. Shared context presets are not applied.", "Claude Desktop y el modelo gestionan los límites de contexto y salida. Los preajustes de contexto compartidos no se aplican.")),
@@ -677,6 +679,9 @@ func (u *nativeUI) claudeDesktopClientPanel(s *nativeClientSelection) layout.Wid
 }
 
 func (u *nativeUI) claudeDesktopExperimentalModels() bool {
+	if u.chatGPTConnected() {
+		return true
+	}
 	if target := u.clientState().DesktopExperimentalTarget; target != nil {
 		return *target
 	}
@@ -688,6 +693,9 @@ func nativeClaudeDesktopModelAllowed(id string, experimental bool) bool {
 }
 
 func (u *nativeUI) setClaudeDesktopExperimentalModels(enabled bool) {
+	if u.chatGPTConnected() {
+		return
+	}
 	c := u.clientState()
 	if u.busy["POST/api/claude-desktop/options"] || c.Launching != "" {
 		return
@@ -984,7 +992,7 @@ func (u *nativeUI) clientActions(key string, s *nativeClientSelection, launchDes
 	_, validation := nativeClientPayload(key, s)
 	working := u.busy["POST"+nativeClientEndpoint(key)] || u.busy["GET"+nativeClientEndpoint(key)] || u.clientState().Launching != ""
 	canPrepare := len(s.Models) > 0 && validation == nil && !working
-	if (key == "codex" || key == "codex-cli") && !nativeClientImagesReady(s, u.models) {
+	if (key == "codex" || key == "codex-cli") && !nativeClientImagesReady(s, u.models, u.state) {
 		canPrepare = false
 	}
 	if strings.HasPrefix(key, "xcode-") && key != "xcode-chat" && !u.clientState().Xcode.Available {
@@ -1011,7 +1019,7 @@ func (u *nativeUI) clientActions(key string, s *nativeClientSelection, launchDes
 	if validation != nil && len(s.Models) > 0 {
 		launchWidgets = append(launchWidgets, u.message(nativeToneError, nativeMessage(validation.Error(), u.language)))
 	}
-	if (key == "codex" || key == "codex-cli") && !nativeClientImagesReady(s, u.models) {
+	if (key == "codex" || key == "codex-cli") && !nativeClientImagesReady(s, u.models, u.state) {
 		launchWidgets = append(launchWidgets, u.hint(u.tr("Review image generation settings in Models before opening Codex.", "Revisa la generación de imágenes en Modelos antes de abrir Codex.")))
 	}
 	if strings.HasPrefix(key, "xcode-") && key != "xcode-chat" && !u.clientState().Xcode.Available {
@@ -1146,6 +1154,10 @@ func (u *nativeUI) prepareClient(key string) {
 func (u *nativeUI) prepareClientAfter(key string, done func(error)) {
 	if key == "claude-desktop" && u.busy["POST/api/claude-desktop/options"] {
 		done(errors.New(u.tr("Wait for the current agent operation to finish.", "Espera a que termine la operación actual del agente.")))
+		return
+	}
+	if err := u.packReadinessError(key); err != nil {
+		done(err)
 		return
 	}
 	s := u.sharedClientSelection(key)

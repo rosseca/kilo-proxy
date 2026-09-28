@@ -63,7 +63,7 @@ func TestPayloadErrorProxyPreservesLargeRequestAndOriginalTrace(t *testing.T) {
 			if w.Code != 413 || json.Unmarshal(w.Body.Bytes(), &response) != nil || response.Error.Code != "upstream_payload_too_large" || response.Error.Type != "invalid_request_error" || response.Error.RequestBytes != int64(len(payload)) {
 				t.Fatalf("missing actionable413: %d %s", w.Code, w.Body.String())
 			}
-			for _, text := range []string{"4.5 MB", "base64", "Compact", "new conversation", "reduce attachments", "Retrying the identical request will not help", strconv.Itoa(len(payload))} {
+			for _, text := range []string{"Kilo Gateway returned HTTP 413", "FUNCTION_PAYLOAD_TOO_LARGE", "4.5 MB transport limit", "not a model context-window limit", "base64 tool results", "Settings > Large images > Compress locally", "only changes outbound copies", "may not be enough", "Compact", "new conversation", "reduce attachments", "Retrying the identical request will not help", strconv.Itoa(len(payload))} {
 				if !strings.Contains(response.Error.Message, text) {
 					t.Errorf("missing guidance %q: %s", text, response.Error.Message)
 				}

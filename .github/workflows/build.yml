@@ -47,9 +47,13 @@ jobs:
         shell: bash
 
   browser-e2e:
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, webkit]
     runs-on: ubuntu-24.04
-    # Hosted WebKit needs about 19 minutes for the full suite. Include setup
-    # and report uploads so successful tests do not hit the job deadline.
+    # Run each browser separately: hosted WebKit can take over 24 minutes.
+    # Preserve time for setup and reports without sharing Chromium's deadline.
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -61,13 +65,13 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps chromium webkit
-      - run: npm run test:e2e
+      - run: npx playwright install --with-deps ${{ matrix.browser }}
+      - run: npm run test:e2e -- --project=${{ matrix.browser }}
       # Keep retry traces even if the job ultimately succeeds.
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: browser-e2e-results
+          name: browser-e2e-results-${{ matrix.browser }}
           if-no-files-found: ignore
           retention-days: 7
           path: |
