@@ -166,8 +166,8 @@ func nativeClientPayload(key string, s *nativeClientSelection) (any, error) {
 		if key != "xcode-codex" && s.ImageGeneration != nil {
 			images := *s.ImageGeneration
 			payload["imageGeneration"] = images
-			if images.Enabled && !catalogID.MatchString(images.Model) && err == nil {
-				err = errors.New("Choose an image model before enabling image generation.")
+			if imageErr := validateImageGenerationSettings(images); imageErr != nil && err == nil {
+				err = imageErr
 			}
 		}
 		if key == "codex" {
@@ -992,7 +992,7 @@ func (u *nativeUI) clientActions(key string, s *nativeClientSelection, launchDes
 	_, validation := nativeClientPayload(key, s)
 	working := u.busy["POST"+nativeClientEndpoint(key)] || u.busy["GET"+nativeClientEndpoint(key)] || u.clientState().Launching != ""
 	canPrepare := len(s.Models) > 0 && validation == nil && !working
-	if (key == "codex" || key == "codex-cli") && !nativeClientImagesReady(s, u.models) {
+	if (key == "codex" || key == "codex-cli") && !nativeClientImagesReady(s, u.models, u.state) {
 		canPrepare = false
 	}
 	if strings.HasPrefix(key, "xcode-") && key != "xcode-chat" && !u.clientState().Xcode.Available {
@@ -1019,7 +1019,7 @@ func (u *nativeUI) clientActions(key string, s *nativeClientSelection, launchDes
 	if validation != nil && len(s.Models) > 0 {
 		launchWidgets = append(launchWidgets, u.message(nativeToneError, nativeMessage(validation.Error(), u.language)))
 	}
-	if (key == "codex" || key == "codex-cli") && !nativeClientImagesReady(s, u.models) {
+	if (key == "codex" || key == "codex-cli") && !nativeClientImagesReady(s, u.models, u.state) {
 		launchWidgets = append(launchWidgets, u.hint(u.tr("Review image generation settings in Models before opening Codex.", "Revisa la generación de imágenes en Modelos antes de abrir Codex.")))
 	}
 	if strings.HasPrefix(key, "xcode-") && key != "xcode-chat" && !u.clientState().Xcode.Available {

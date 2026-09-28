@@ -42,7 +42,7 @@ The upstream connection uses Responses with `store=false` and streaming. Kilo Pr
 - Supported reasoning effort comes from the account's model catalog and the client adapter. Models that require a code-only tool mode are excluded from the catalog.
 - This is not full API equivalence. For example, the Chat Completions/Messages adapters reject unsupported audio output, stop sequences, log probabilities and multiple response choices instead of silently emulating them.
 - Image inputs depend on the selected model. ChatGPT requests do not use Kilo Proxy's Kilo image-upload pipeline. The local 32 MiB request limit still applies.
-- The optional image-generation MCP tool remains a **Kilo** feature and uses Kilo credentials and credits. Connecting ChatGPT does not provide subscription image generation through that MCP tool.
+- The optional image-generation MCP has its own **Kilo / ChatGPT** provider selector. Choose **ChatGPT subscription · Experimental** in **Models → Image generation** to use the connected subscription's built-in image tool. Click **Save image settings**; no Codex profile, separate image-model ID or OpenAI API key is needed. Reopen your agent to apply it. The image connection is independent of the conversation model; it never falls back to Kilo credits. Generated originals stay local and editing accepts previously generated files. See [image setup and limits](codex-images.md).
 
 Errors or exhausted quota stay on the chosen connection. To change which account pays or supplies quota, explicitly select a model from the other connection.
 

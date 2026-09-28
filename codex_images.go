@@ -102,19 +102,6 @@ func (a *app) saveCodexProfileSettings(dir string, catalog []byte, draft *imageG
 	if draft != nil {
 		images = *draft
 	}
-	if a.chatgpt.snapshot().Connected && (a.apiKey == "" || a.config.OrgID == "") {
-		// Preserve Kilo's image settings, but omit its paid image MCP from
-		// subscription profiles. Image inputs still pass through Responses.
-		images = imageGenerationSettings{}
-		var transforms []func([]byte) ([]byte, error)
-		if queueMode != nil {
-			if !validCodexQueueMode(*queueMode) {
-				return false, false, errors.New("Queue mode must be queue or steer")
-			}
-			transforms = append(transforms, codexQueueModeTransform(*queueMode))
-		}
-		return saveCodexProfileOptions(dir, catalog, a.config.Port, "", &images, nil, transforms...)
-	}
 	if err := validateImageGenerationSettings(images); err != nil {
 		return false, false, err
 	}
@@ -146,7 +133,11 @@ func (a *app) saveCodexProfileSettings(dir string, catalog []byte, draft *imageG
 		}
 		transforms = append(transforms, codexQueueModeTransform(*queueMode))
 	}
-	configChanged, catalogChanged, err := saveCodexProfileOptions(dir, catalog, a.config.Port, "", &images, extra, transforms...)
+	// Persist the requested provider/model even when disconnected, but only
+	// expose its tool in the generated profile when that connection is ready.
+	// The existing transaction still rolls both files and settings back together.
+	effective := a.clientImageSettingsLocked(images)
+	configChanged, catalogChanged, err := saveCodexProfileOptions(dir, catalog, a.config.Port, "", &effective, extra, transforms...)
 	if err == nil {
 		a.config = cfg
 	}

@@ -384,7 +384,7 @@ func (u *nativeUI) agentCard(key string) layout.Widget {
 		canOpen = canOpen && !u.busy["POST/api/claude-desktop/options"]
 	}
 	if key == "codex" || key == "codex-cli" {
-		canOpen = canOpen && nativeClientImagesReady(s, u.models)
+		canOpen = canOpen && nativeClientImagesReady(s, u.models, u.state)
 	}
 	if key == "claude" && (!c.ClaudeChecked || u.busy["GET/api/claude/info"]) {
 		canOpen = false
@@ -422,7 +422,7 @@ func (u *nativeUI) agentCard(key string) layout.Widget {
 		disabledReason = u.tr("Add at least one shared model before opening this agent.", "Añade al menos un modelo compartido antes de abrir este agente.")
 	case validation != nil:
 		disabledReason = nativeMessage(validation.Error(), u.language)
-	case (key == "codex" || key == "codex-cli") && !nativeClientImagesReady(s, u.models):
+	case (key == "codex" || key == "codex-cli") && !nativeClientImagesReady(s, u.models, u.state):
 		disabledReason = u.tr("Review image generation settings in Models before opening Codex.", "Revisa la generación de imágenes en Modelos antes de abrir Codex.")
 	case c.Launching != "" || u.busy["POST"+nativeClientEndpoint(key)] || key == "claude-desktop" && u.busy["POST/api/claude-desktop/options"]:
 		disabledReason = u.tr("Wait for the current agent operation to finish.", "Espera a que termine la operación actual del agente.")

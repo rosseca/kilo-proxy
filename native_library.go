@@ -380,7 +380,7 @@ func (u *nativeUI) modelsPanel() layout.Widget {
 				u.expanded["models.import.toggle"] = false
 			}), u.button("models.import.cancel", u.tr("Cancel", "Cancelar"), func() { u.library.pendingImport = nil }))))
 		}
-		widgets = append(widgets, u.disclosure("models.images.toggle", u.tr("Image generation for Codex", "Generación de imágenes para Codex")))
+		widgets = append(widgets, u.disclosure("models.images.toggle", u.tr("Image generation", "Generación de imágenes")))
 		if u.expanded["models.images.toggle"] {
 			widgets = append(widgets, u.clientImagesPanel("codex", u.sharedClientSelection("codex")))
 		}

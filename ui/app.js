@@ -12,7 +12,7 @@ import {reportedCost, reportedSpend, inferenceCostNote, costSourceLabel, cacheSt
 import {formatTraceJSON} from './activity-helper.mjs';
 import {codexCatalog,codexDisplayName,reasoningFor,reasoningLevels} from './codex-catalog.mjs';
 import {filterModels, formatPrice, modelPriceDetails, validModelID, sortModels, configureModelSort, setModelSort, mergeModelSelection, filterModelLab, configureModelLab, setModelLab} from './model-helper.mjs';
-import {imageGenerationModels,imageGenerationSelection,imageGenerationValid,codexImageMCPConfig} from './model-helper.mjs';
+import {imageGenerationModels,imageGenerationSelection,imageGenerationValid,imageGenerationProvider,imageGenerationConnectionReady,codexImageMCPConfig} from './model-helper.mjs';
 import {clientConfig, launchCommand} from './client-config.mjs';
 import {chooseLanguage, translate, bindDocument} from './i18n.mjs';
 const $ = (id) => document.getElementById(id);
@@ -47,6 +47,7 @@ let imageDependencyPrompt={};
 let updateCheckPending = false, updateRequestError = false;
 let updateCheckRevision = 0;
 let chatGPTRevision = 0, chatGPTPending = false, chatGPTLoginRequested = false;
+let imageSettingsSaving = false;
 let updateFailedCheck = '';
 try { const saved=JSON.parse(sessionStorage.getItem('kilo-cloudflare-prompt')||'{}');if(saved&&typeof saved==='object')imageDependencyPrompt={dismissed:saved.dismissed===true,mode:saved.mode,running:saved.running===true}; } catch {}
 let lastAuthStatus, teamSignature = '';
@@ -61,7 +62,7 @@ let desktopSignature = '';
 function codexSetupSignature(selection=codexSelection()) { return JSON.stringify([state?.baseURL,contextPreview(()=>codexCatalog([...selection.models.values()],selection.initial)),selection.imageGeneration,selection===codexClients.codex?selection.queueMode:'']); }
 function renderCodexSetup() {
   const cli=client==='codex-cli', setup=codexSelection().setup;
-  $('save-codex-catalog').disabled=codexSelection().preparing||!!contextError(codexSelection().models)||!imageGenerationValid(codexSelection().imageGeneration,catalog);
+  $('save-codex-catalog').disabled=codexSelection().preparing||!!contextError(codexSelection().models)||!imageGenerationValid(codexSelection().imageGeneration,catalog,state);
   $('save-codex-catalog').textContent=t(codexSelection().preparing ? 'Preparando perfil…' : cli ? '1. Preparar Codex CLI' : '1. Preparar Codex GUI');
   const ready=setup?.signature===codexSetupSignature();
   $('codex-setup-status').textContent=contextError(codexSelection().models)|| (ready ? t('Perfil listo en {path}. Ábrelo con el botón superior. El comando de arranque es opcional.',{path:setup.path}) : t(setup ? 'Hay cambios sin guardar. Se guardarán antes de abrir.' : 'Selecciona modelos y abre el cliente. Su perfil se prepara automáticamente.'));
@@ -71,14 +72,20 @@ function renderCodexSetup() {
 function renderCodexImages() {
   const L=(en,es)=>language==='en'?en:es,selection=codexSelection(),images=selection.imageGeneration;
   const models=imageGenerationModels(catalog),enabled=images?.enabled===true,chosen=images?.model||'';
+  const provider=imageGenerationProvider(images),subscription=provider==='chatgpt',connected=imageGenerationConnectionReady(images,state);
   $('codex-image-generation').hidden=!isCodexClient();
   $('codex-image-eyebrow').textContent=L('OPTIONAL TOOL','HERRAMIENTA OPCIONAL');
   $('codex-image-title').textContent=L('Image generation','Generación de imágenes');
   $('codex-image-enable-label').textContent=L('Enable','Activar');
   $('codex-image-enabled').setAttribute('aria-label',L('Enable image generation','Activar generación de imágenes'));
   $('codex-image-enabled').checked=enabled;$('codex-image-enabled').disabled=images===null;
-  $('codex-image-intro').textContent=L('Give Codex an image tool with its own model. Your coding models stay independent.','Añade una herramienta de imágenes a Codex con su propio modelo. Los modelos de programación son independientes.');
+  $('codex-image-intro').textContent=L('Choose which account generates images. Your coding models stay independent.','Elige qué cuenta genera las imágenes. Los modelos de programación son independientes.');
   $('codex-image-options').hidden=!enabled;
+  $('codex-image-provider-label').textContent=L('Image provider','Proveedor de imágenes');
+  $('codex-image-provider').querySelector('option[value="kilo"]').textContent=L('Kilo · account credits','Kilo · crédito de la cuenta');
+  $('codex-image-provider').querySelector('option[value="chatgpt"]').textContent=L('ChatGPT subscription · Experimental','Suscripción de ChatGPT · Experimental');
+  $('codex-image-provider').value=provider;
+  $('codex-image-kilo-options').hidden=subscription;
   $('codex-image-model-label').textContent=L('Image model','Modelo de imágenes');
   const picker=$('codex-image-model'),signature=JSON.stringify([language,chosen,models.map(model=>[model.id,model.name])]);
   if(picker.dataset.imageOptions!==signature){
@@ -92,10 +99,12 @@ function renderCodexImages() {
   picker.disabled=!enabled;
   $('codex-image-refresh').textContent=catalogLoading?L('Refreshing…','Actualizando…'):L('Refresh image models','Actualizar modelos de imágenes');
   $('codex-image-refresh').disabled=catalogLoading;
-  $('codex-image-status').textContent=!enabled?L('Optional. Enable it when you want Codex to create images.','Opcional. Actívala cuando quieras que Codex cree imágenes.'):!chosen?L('Choose an image model before preparing or launching Codex.','Elige un modelo de imágenes antes de preparar o abrir Codex.'):!models.some(model=>model.id===chosen)?L('The saved image model is unavailable in the current catalog. Refresh, choose another model, or disable this tool.','El modelo guardado no está disponible en el catálogo actual. Actualiza, elige otro modelo o desactiva la herramienta.'):chosen;
-  $('codex-image-status').classList.toggle('image-generation-warning',enabled&&!models.some(model=>model.id===chosen));
-  $('codex-image-billing').textContent=L("Uses your configured Kilo organization. Provider or gateway charges depend on its billing setup. Editing currently supports images created with this tool.",'Usa tu organización de Kilo configurada. Los cargos del proveedor o gateway dependen de su facturación. La edición admite por ahora imágenes creadas con esta herramienta.');
-  $('codex-image-save-help').textContent=L('Saved with Prepare or Launch. This setting is shared by Codex GUI and CLI. Restart Codex after preparing to load the tool.','Se guarda al Preparar o Abrir. El ajuste se comparte entre Codex GUI y CLI. Reinicia Codex después de preparar para cargar la herramienta.');
+  $('codex-image-status').textContent=!enabled?L('Optional. Enable it when you want Codex to create images.','Opcional. Actívala cuando quieras que Codex cree imágenes.'):subscription&&!connected?L('Sign in with ChatGPT in Connection before generating images.','Inicia sesión con ChatGPT en Conexión antes de generar imágenes.'):subscription?L("Uses ChatGPT's built-in image tool. No separate image model or OpenAI API key is needed.",'Usa la herramienta de imágenes de ChatGPT. No necesitas otro modelo de imágenes ni una API key de OpenAI.'):!chosen?L('Choose an image model before preparing or launching Codex.','Elige un modelo de imágenes antes de preparar o abrir Codex.'):!models.some(model=>model.id===chosen)?L('The saved image model is unavailable in the current catalog. Refresh, choose another model, or disable this tool.','El modelo guardado no está disponible en el catálogo actual. Actualiza, elige otro modelo o desactiva la herramienta.'):chosen;
+  $('codex-image-status').classList.toggle('image-generation-warning',enabled&&!imageGenerationValid(images,catalog,state));
+  $('codex-image-billing').textContent=subscription?L('Uses ChatGPT subscription quota. Availability depends on your account. Requests never fall back to Kilo credits. Originals are saved locally; editing supports images created with this tool.','Usa la cuota de tu suscripción de ChatGPT. La disponibilidad depende de tu cuenta. Las peticiones nunca recurren al crédito de Kilo. Los originales se guardan en local; la edición admite imágenes creadas con esta herramienta.'):L("Uses your configured Kilo organization. Provider or gateway charges depend on its billing setup. Editing currently supports images created with this tool.",'Usa tu organización de Kilo configurada. Los cargos del proveedor o gateway dependen de su facturación. La edición admite por ahora imágenes creadas con esta herramienta.');
+  $('codex-image-save-help').textContent=L('Shared by agents using the image MCP. Save these settings, then reopen your agent to refresh its tools. No Codex profile is required to save.','Compartido por los agentes que usan el MCP de imágenes. Guarda los ajustes y vuelve a abrir el agente para actualizar sus herramientas. No necesitas un perfil de Codex para guardarlos.');
+  $('codex-image-save').textContent=imageSettingsSaving?L('Saving…','Guardando…'):L('Save image settings','Guardar ajustes de imágenes');
+  $('codex-image-save').disabled=images===null||imageSettingsSaving||!imageGenerationValid(images);
 }
 function renderCodexQueueMode() {
   const L=(en,es)=>language==='en'?en:es,desktop=client==='codex',selection=codexSelection();
@@ -118,6 +127,21 @@ $('codex-image-enabled').addEventListener('change',()=>{
 });
 $('codex-image-model').addEventListener('change',()=>{
   const selection=codexSelection();selection.imageGeneration={...(selection.imageGeneration||{enabled:false}),model:$('codex-image-model').value};renderSnippet();
+});
+$('codex-image-provider').addEventListener('change',()=>{
+  const selection=codexSelection();selection.imageGeneration={...(selection.imageGeneration||{enabled:false,model:''}),provider:$('codex-image-provider').value};renderSnippet();
+});
+$('codex-image-save').addEventListener('click',async()=>{
+  const selection=codexSelection(),sent=imageGenerationSelection(selection.imageGeneration);
+  if(!sent||imageSettingsSaving)return;
+  imageSettingsSaving=true;renderCodexImages();
+  try{
+    const response=await api('image-generation',sent),saved=imageGenerationSelection(response.imageGeneration);
+    if(!saved)throw new Error(language==='en'?'Invalid image settings response.':'Respuesta de ajustes de imágenes no válida.');
+    if(JSON.stringify(selection.imageGeneration)===JSON.stringify(sent))selection.imageGeneration={...saved};
+    acceptCodexImageSettings(saved);state.imageGeneration={...saved};
+    notify(()=>language==='en'?'Image settings saved. Reopen your agent to refresh its image tool.':'Ajustes de imágenes guardados. Vuelve a abrir el agente para actualizar su herramienta de imágenes.');
+  }catch(error){notify(error.message,true);}finally{imageSettingsSaving=false;renderSnippet();}
 });
 $('codex-image-refresh').addEventListener('click',()=>{void loadModels();});
 $('codex-queue-mode').addEventListener('change',()=>{codexSelection().queueMode=$('codex-queue-mode').value==='steer'?'steer':'queue';renderSnippet();});
@@ -178,7 +202,7 @@ const xcodeHelper=createXcodeHelper({api,notify,refreshCatalog:loadModels,onChan
 function clientLaunchSelection(){
  if(isCodexClient()){
   const selection=codexSelection(),fingerprint=codexSetupSignature(selection);
-  return {id:client,count:selection.models.size,ready:selection.setup?.signature===fingerprint,fingerprint,working:selection.preparing,valid:!contextError(selection.models)&&imageGenerationValid(selection.imageGeneration,catalog),reason:contextError(selection.models),prepare:prepareCodex};
+  return {id:client,count:selection.models.size,ready:selection.setup?.signature===fingerprint,fingerprint,working:selection.preparing,valid:!contextError(selection.models)&&imageGenerationValid(selection.imageGeneration,catalog,state),reason:contextError(selection.models),prepare:prepareCodex};
  }
  if(client==='claude')return {id:client,count:multiClients.claude.models.size,valid:!contextError(multiClients.claude.models),reason:contextError(multiClients.claude.models),ready:claudeSetup?.signature===claudeSetupSignature(),fingerprint:claudeSetupSignature(),working:claudePreparing||claudeDetecting,prepare:prepareClaude};
  if(client==='open-design')return openDesignHelper.launchState();
@@ -700,7 +724,7 @@ $('suggest-codex-reasoning').addEventListener('click',()=>{for(const model of co
 async function prepareCodex(){
   const target=client, selection=codexSelection();
   if(!selection.models.size)return;
-  if(!imageGenerationValid(selection.imageGeneration,catalog))throw new Error(language==='en'?'Choose an available image model before preparing Codex.':'Elige un modelo de imágenes disponible antes de preparar Codex.');
+  if(!imageGenerationValid(selection.imageGeneration,catalog,state))throw new Error(language==='en'?'Review the image provider, connection and model before preparing Codex.':'Revisa el proveedor, la conexión y el modelo de imágenes antes de preparar Codex.');
   if(selection.preparing)throw new Error(language==='en'?'This profile is already being prepared.':'Este perfil ya se está preparando.');
   selection.preparing=true;renderCodexSetup();renderClientLaunch();
   const signature=codexSetupSignature(selection);

@@ -116,11 +116,25 @@ func (a *app) catalogScopeLocked() string {
 func (a *app) claudeDesktopExperimentalLocked() bool {
 	return a.chatgpt.snapshot().Connected || a.config.ClaudeDesktopExperimentalModels
 }
-func (a *app) clientImageSettingsLocked() imageGenerationSettings {
-	if a.chatgpt.snapshot().Connected && (a.apiKey == "" || a.config.OrgID == "") {
-		return imageGenerationSettings{}
+func (a *app) clientImageSettingsLocked(draft ...imageGenerationSettings) imageGenerationSettings {
+	images := a.config.ImageGeneration
+	if len(draft) > 0 {
+		images = draft[0]
 	}
-	return a.config.ImageGeneration
+	// A profile exposes the tool only for its selected, ready connection. Keep
+	// the saved preference (and any caller's draft) intact so reconnecting can
+	// restore it; another connected provider is never an implicit fallback.
+	available := false
+	switch images.Provider {
+	case "", "kilo":
+		available = a.kiloReadyLocked()
+	case "chatgpt":
+		available = a.chatGPTReadyLocked()
+	}
+	if !available {
+		images.Enabled = false
+	}
+	return images
 }
 
 func (a *app) providerAPI(w http.ResponseWriter, r *http.Request) {

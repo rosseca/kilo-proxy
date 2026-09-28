@@ -223,10 +223,6 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 			return
 		}
 		if r.URL.Path == "/mcp/images" && r.URL.RawPath == "" && r.URL.RawQuery == "" {
-			if key == "" || orgID == "" {
-				jsonError(w, http.StatusNotImplemented, "The Kilo image-generation MCP requires the Kilo connection. ChatGPT subscription mode currently supports image inputs, not this MCP.")
-				return
-			}
 			a.imageMCPHandler(w, r, key, orgID, localKey)
 			return
 		}

@@ -159,6 +159,8 @@ func (a *app) adminHandler() http.Handler {
 			return
 		}
 		switch r.URL.Path {
+		case "/api/image-generation":
+			a.imageGenerationSettingsAPI(w, r)
 		case "/api/activity/config":
 			a.activityConfig(w, r)
 		case "/api/billing/refresh":
@@ -226,7 +228,7 @@ func (a *app) state(w http.ResponseWriter) {
 		"imageTransport":                  a.config.ImageTransport,
 		"imageTransportDependency":        imageDependency,
 		"imageUploadWarning":              a.imageUploadWarning,
-		"imageGeneration":                 a.clientImageSettingsLocked(),
+		"imageGeneration":                 a.config.ImageGeneration,
 		"trayDisplay":                     normalizeTrayDisplay(a.config.TrayDisplay),
 		"language":                        a.config.Language, "catalogRevision": a.catalogRevision,
 		"auth": a.login, "organizations": a.organizations, "accountEmail": a.accountEmail, "keySaved": a.keySaved,

@@ -51,7 +51,7 @@ func (a *app) codexCatalog(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, 409, "The saved catalog is invalid or exceeds 50 models.")
 			return
 		}
-		response := map[string]any{"catalog": json.RawMessage(data), "defaultModel": first, "imageGeneration": a.clientImageSettingsLocked()}
+		response := map[string]any{"catalog": json.RawMessage(data), "defaultModel": first, "imageGeneration": a.config.ImageGeneration}
 		if profileName == ".codex-kilo-desktop" {
 			response["followUpQueueMode"] = codexQueueModeFromConfig(dir)
 		}
@@ -86,7 +86,7 @@ func (a *app) codexCatalog(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, 409, err.Error())
 		return
 	}
-	jsonResponse(w, 200, map[string]any{"ok": true, "profileDir": dir, "configChanged": configChanged, "catalogChanged": catalogChanged, "imageGeneration": a.clientImageSettingsLocked()})
+	jsonResponse(w, 200, map[string]any{"ok": true, "profileDir": dir, "configChanged": configChanged, "catalogChanged": catalogChanged, "imageGeneration": a.config.ImageGeneration})
 }
 
 func readCatalogFile(path string) ([]byte, error) {

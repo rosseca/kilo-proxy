@@ -30,7 +30,7 @@ func chatGPTProfileLibrary() modelLibrary {
 func chatGPTProfileApp(t *testing.T) (*app, modelLibrary) {
 	t.Helper()
 	a := launchTestApp(t)
-	a.config.Port, a.config.LocalKey = 8877, "synthetic-profile-local-key"
+	a.config.Port, a.config.LocalKey = 8877, "synthetic-profile-local-key-for-generated-tests"
 	a.apiKey = "synthetic-profile-kilo-secret"
 	a.chatgpt.creds = chatGPTCredentials{Access: "synthetic-profile-chatgpt-access", Refresh: "synthetic-profile-chatgpt-refresh", Account: "synthetic-profile-account", Expires: time.Now().Add(time.Hour).Unix()}
 	a.chatgpt.state = chatGPTState{Status: "idle"}
@@ -371,7 +371,7 @@ func TestChatGPTOnlyOpenCodeProfileOmitsSavedKiloImageMCP(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, path, _, _ := a.editorPaths("opencode")
-	if bytes.Contains(chatGPTProfileRead(t, a, path), []byte("kilo-images")) {
+	if object(chatGPTProfileMap(t, a, path)["mcp"])["kilo_images"] != nil {
 		t.Fatal("ChatGPT-only OpenCode advertised Kilo image generation")
 	}
 }
