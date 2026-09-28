@@ -54,6 +54,8 @@ type nativeUI struct {
 	updateRevision           uint64
 	updateRequestFailed      bool
 	proxyRevision            uint64
+	chatGPTRevision          uint64
+	chatGPTLoginRequested    bool
 
 	owner                          *app
 	invalidate                     func()
@@ -88,7 +90,7 @@ func newNativeUI(owner *app, invalidate func()) *nativeUI {
 	u.language = owner.config.Language
 	u.setValue("connection.org", owner.config.OrgID)
 	u.setValue("connection.port", strconv.Itoa(owner.config.Port))
-	u.models = readNativeCatalogCache(owner.dir, owner.config.OrgID)
+	u.models = readNativeCatalogCache(owner.dir, owner.catalogScopeLocked())
 	u.catalogCached = len(u.models) > 0
 	u.setChecked("connection.remember", owner.config.Remember)
 	owner.mu.Unlock()
@@ -535,6 +537,10 @@ func (u *nativeUI) call(method, path string, payload any, done func(json.RawMess
 		return
 	}
 	u.busy[key] = true
+	changesChatGPT := method == "POST" && strings.HasPrefix(path, "/api/chatgpt/")
+	if changesChatGPT {
+		u.chatGPTRevision++
+	}
 	changesProxy := method == "POST" && (path == "/api/start" || path == "/api/stop")
 	if changesProxy {
 		u.proxyRevision++
@@ -543,10 +549,16 @@ func (u *nativeUI) call(method, path string, payload any, done func(json.RawMess
 		raw, err := nativeRequest(u.owner, method, path, payload)
 		u.enqueue(func() {
 			delete(u.busy, key)
+			if changesChatGPT {
+				u.chatGPTRevision++
+			}
 			if changesProxy {
 				u.proxyRevision++
 			}
 			if err != nil {
+				if method == "POST" && path == "/api/chatgpt/login" {
+					u.chatGPTLoginRequested = false
+				}
 				u.noticeError(err)
 				return
 			}
@@ -558,6 +570,7 @@ func (u *nativeUI) call(method, path string, payload any, done func(json.RawMess
 }
 func (u *nativeUI) refreshState() {
 	revision, saving := u.languageRevision, u.languageTarget != ""
+	chatGPTRevision, chatGPTSaving := u.chatGPTRevision, u.chatGPTRequestBusy()
 	proxyRevision, proxySaving := u.proxyRevision, u.busy["POST/api/start"] || u.busy["POST/api/stop"]
 	updateRevision, updateSaving := u.updateRevision, u.busy["POST/api/updates"]
 	c := u.clientState()
@@ -567,6 +580,9 @@ func (u *nativeUI) refreshState() {
 		// operation. Discard it before applying any state-derived effects;
 		// the next poll will fetch a coherent snapshot, including after errors.
 		if proxySaving || proxyRevision != u.proxyRevision || u.busy["POST/api/start"] || u.busy["POST/api/stop"] {
+			return
+		}
+		if chatGPTSaving || chatGPTRevision != u.chatGPTRevision || u.chatGPTRequestBusy() {
 			return
 		}
 		desktopExperimental := u.claudeDesktopExperimentalModels()
@@ -609,6 +625,16 @@ func (u *nativeUI) acceptState(raw json.RawMessage) {
 	u.acceptImageDependencyState(state)
 	u.state = state
 	u.authenticated = true
+	if u.chatGPTLoginRequested {
+		account := nativeMap(state["chatgpt"])
+		if nativeString(account, "status") == "pending" && nativeString(account, "verificationUrl") == nativeChatGPTVerificationURL {
+			u.chatGPTLoginRequested = false
+			u.openChatGPTAuthorization()
+		} else if nativeString(account, "status") == "error" || nativeBool(account, "connected") {
+			u.chatGPTLoginRequested = false
+		}
+	}
+
 	if !first && oldEpoch != nativeNumber(state, "activityEpoch") {
 		u.traceGeneration++
 		u.trace = nil
@@ -673,7 +699,7 @@ func (u *nativeUI) applyModels(raw json.RawMessage, requestedRevision float64, f
 		return false
 	}
 	u.owner.mu.Lock()
-	currentRevision, org := u.owner.catalogRevision, u.owner.config.OrgID
+	currentRevision, org := u.owner.catalogRevision, u.owner.catalogScopeLocked()
 	u.owner.mu.Unlock()
 	if response.Revision != float64(currentRevision) {
 		u.modelsPending = true
@@ -774,7 +800,7 @@ func (u *nativeUI) saveConnection(done func()) {
 		}
 	})
 }
-func (u *nativeUI) connectionPanel() layout.Widget {
+func (u *nativeUI) kiloConnectionPanel() layout.Widget {
 	auth := nativeMap(u.state["auth"])
 	pending := nativeString(auth, "status") == "pending" || nativeString(auth, "status") == "starting"
 	running := nativeBool(u.state, "running")

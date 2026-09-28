@@ -2,9 +2,11 @@
 
 Use your organization’s Kilo credits in your preferred editor. Kilo Proxy is a Go proxy with its own native desktop interface and a menu bar / system tray icon. It adds the organization header that many API clients cannot send themselves.
 
+You can also connect a **ChatGPT subscription experimentally**, alone or alongside Kilo. Both connections use the same model library and agents: models labelled ChatGPT use subscription quota, while Kilo models keep using Kilo credit. Requests never fall back automatically to a paid connection. See [ChatGPT setup, quota and compatibility limits](docs/chatgpt-subscription.md).
+
 Connect with your personal Kilo account, choose your organization, add models once, and open an installed agent from its card. The native interface uses Gio and operating-system graphics APIs. Windows runs from a standalone executable without a WebView2 installer or an additional UI runtime. Downloaded binaries require no Go, Node, Docker, or Electron. This is an independent companion, not an official Kilo product.
 
-[Download the latest release](https://github.com/rosseca/kilo-proxy/releases/latest) · [Native desktop guide](docs/desktop.md) · [Shared models](docs/shared-models.md) · [Client setup](docs/clients.md) · [Security and debugging](docs/security-and-debugging.md) · [Development and releases](docs/releases.md)
+[Download the latest release](https://github.com/rosseca/kilo-proxy/releases/latest) · [Native desktop guide](docs/desktop.md) · [Shared models](docs/shared-models.md) · [Client setup](docs/clients.md) · [ChatGPT subscription](docs/chatgpt-subscription.md) · [Security and debugging](docs/security-and-debugging.md) · [Development and releases](docs/releases.md)
 
 **Native desktop app:** releases from v0.21.0 use the native window and system tray. The browser interface remains available as an optional helper.
 
@@ -12,13 +14,13 @@ Connect with your personal Kilo account, choose your organization, add models on
 
 1. Download the archive for your operating system and architecture from **Releases**, then extract it.
 2. Open **Kilo Proxy.app** on macOS, **Kilo Proxy.exe** on Windows, or run `./kilo-proxy` on Linux.
-3. The first-run guide opens automatically. Click **Sign in with Kilo / SSO** and approve the device code on Kilo’s website using your usual login or SSO. Choose your team and click **Save & choose models**. **Use an API key or team ID instead** provides manual entry.
+3. The first-run guide opens automatically. For Kilo, click **Sign in with Kilo / SSO**, approve the device code, choose your team and click **Save & choose models**. **Use an API key or team ID instead** provides manual entry. Alternatively, choose **Sign in with ChatGPT**, complete its device authorization, then **Choose models**. You can connect both accounts.
 4. Choose at least one model, then **Continue**. Names, order, default and supported reasoning preferences save automatically to the shared library.
 5. Click **Start proxy and go to agents**, then **Open Codex** or another installed agent. Choose your project inside Codex Desktop; terminal agents and editors have their own folder picker. Supported profiles are prepared automatically from the shared library. Zed also receives its local credential automatically. Xcode retains its one-time provider setup under **Options**; choose Open Design's local CLI under **Engine settings** on its card.
 
 Configured installations open **Agents** directly. **Start proxy** sits beside the stopped status; opening an agent also starts the proxy before launching it. If startup fails, the agent stays closed and the error appears in Kilo Proxy. Incomplete setup can be resumed with **Continue setup**.
 
-The default API URL is `http://127.0.0.1:8877/v1`. The editor uses a randomly generated **local API key**, not your personal Kilo key. Enable **Remember** to save the upstream credential in the operating system’s credential store when saving the connection.
+The default API URL is `http://127.0.0.1:8877/v1`. The editor uses a randomly generated **local API key**, not your personal Kilo key or ChatGPT OAuth tokens. Enable **Remember** to save the Kilo credential in the operating system’s credential store. ChatGPT saves its own encrypted credential file with a separate encryption key in that store.
 
 **Check gateway** retrieves the model catalog without paid inference. Catalog access does not prove organization balance or permission to generate with a model. Verify those with a request from your editor and its attribution in Kilo.
 
@@ -64,6 +66,8 @@ Checks use GitHub's public release API without your Kilo credentials, organizati
 
 The model helpers support catalog search, manual IDs, context metadata, and input/output prices in USD per million tokens. Prices come from Kilo’s catalog, not your invoice. Explicitly free prices show zero; variable or missing prices remain unavailable. Refreshing models does not run inference. The native **Models** library is shared by all agents and saved across restarts in the application configuration directory, separately from generated profiles. It contains model preferences and no API keys. See [shared-model storage and compatibility](docs/shared-models.md). The optional browser helper retains its independent per-client selections.
 
+When ChatGPT is connected, its account catalog joins this library under `chatgpt/<slug>`, with a **ChatGPT** suffix on catalog names. Existing Kilo IDs, including `openai/<slug>`, keep their original routing. Subscription models have no per-token price; image-generation MCP remains a Kilo feature. This direct subscription backend is experimental and does not support every field of the public APIs. See [protocol and client limits](docs/chatgpt-subscription.md#protocol-and-client-limits).
+
 Choose **Recommended** (272K tokens), **Low** (128K tokens), **Maximum**, or **Custom** context in Models. Presets save automatically and apply on the next agent preparation or launch, bounded by the model's published capacity. Existing numeric limits remain Custom until you change them. [Context presets and agent compatibility](docs/shared-models.md#context-window-presets).
 
 Browse models in a responsive **card grid**, with names, IDs and input/output prices together. In **Models → Add models**, filter by **lab**, using publishers from your catalog and saved manual models, then sort by **Code Mode Rank**, **Coding Index**, **Speed**, **Price**, or **Name**. The default is Kilo's seven-day Code mode usage rank; price ordering uses input cost. Missing metrics appear last, and filtering and sorting preserve your selections and initial model. [Sources and sorting behavior](docs/clients.md#sort-the-model-catalog).
@@ -96,7 +100,9 @@ Request capture is **off by default**, including for existing installations upgr
 
 ## Track observed spend
 
-**Activity → Kilo account** shows the remaining shared team balance and your billed usage today, yesterday and over the last 30 days, fetched from Kilo. **Settings → Appearance → Account balance** can display the balance beside the K icon. A separate private `usage-history.json` automatically saves local daily aggregates across restarts, even with request capture disabled. Remote account charges and locally observed inference costs are labeled separately. See [balance, usage history, privacy and API limits](docs/billing.md).
+**Activity → Kilo account** shows the remaining shared team balance and your billed usage today, yesterday and over the last 30 days, fetched from Kilo. **Settings → Appearance → Kilo balance** can display the balance beside the K icon. A separate private `usage-history.json` automatically saves local daily aggregates across restarts, even with request capture disabled. Remote account charges and locally observed inference costs are labeled separately. See [balance, usage history, privacy and API limits](docs/billing.md).
+
+**Subscription usage** separately shows ChatGPT quota windows and reset times. **Settings → Appearance → ChatGPT quota** displays the remaining percentage of its primary window; unavailable or stale data shows `—`. Subscription requests keep their token counts and local history without being treated as monetary charges or missing Kilo prices. See [quota, tokens and money](docs/chatgpt-subscription.md#quota-tokens-and-money).
 
 **Activity** shows reported inference costs in USD, input/output/cache tokens, and a conversation breakdown. Reported provider costs, including BYOK requests, can differ from the organization's Kilo charge; each request identifies the selected cost source. It listens to responses passing through the proxy, including streaming, and keeps totals independently of the last 30 debug captures. Codex task IDs and Claude Code session IDs are used when present; requests without an identifier are marked unassigned.
 
@@ -142,6 +148,8 @@ See [the release guide](docs/releases.md) for the exact commands, prereleases, r
 Automated tests cover authentication replacement, host/origin restrictions, lifecycle and cancellation, login states, catalog normalization, schema adaptation, streaming, trace redaction, and client configuration helpers. They use simulated credentials and gateways. Native control tests cover shared-library restart/recovery/conflicts, cross-agent propagation, folder persistence, preparation-to-launch failure guards and wide/compact English/Spanish layouts. Tray tests cover saved display preferences and complete, partial or missing process-session costs. Executable smoke checks exercise the native app separately from browser-mode Playwright tests. Cross-compilation alone does not prove native credential-store or tray behavior, and tests do not perform paid model inference. Consult the checks for a specific commit or pull request for actual results.
 
 Codex catalog loading and reasoning/display-name metadata were checked against the installed app-server. Desktop isolation depends partly on version-specific application behavior: see [inspection notes](docs/codex-desktop-compatibility.md). Kilo must support the protocol and model you choose, and your organization must permit it.
+
+ChatGPT tests cover synthetic OAuth, encrypted storage, concurrent refresh, account isolation and protocol/tool conversion. Installed-client checks have also verified real subscription tool turns in Codex CLI, Claude Code, OpenCode and Oh My Pi using temporary profiles. Live checks require explicit opt-in and consume subscription quota; CI uses synthetic servers and sanitized client fixtures. See [the exact validation scope and live-test instructions](docs/chatgpt-subscription.md#validation-scope).
 
 Dependency versions are pinned in `go.mod` and `go.sum`. Licensing notices are in [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt); local Gio platform changes are documented alongside `third_party/gio`, and the Windows tray ABI correction alongside `third_party/fyne-systray`. The old `third_party/systray` source remains archived reference material.
 

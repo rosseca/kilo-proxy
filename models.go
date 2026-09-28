@@ -16,6 +16,7 @@ import (
 )
 
 type modelInfo struct {
+	Connection       string               `json:"connection,omitempty"`
 	CodeModeRank     *float64             `json:"codeModeRank"`
 	CodingIndex      *float64             `json:"codingIndex"`
 	Speed            *float64             `json:"speed"`
@@ -50,7 +51,7 @@ func catalogFailure(w http.ResponseWriter, err error) {
 	jsonError(w, 502, "Kilo no responde. Comprueba tu conexión.")
 }
 
-func (a *app) fetchModels(ctx context.Context, requireAccount bool) ([]modelInfo, uint64, error) {
+func (a *app) fetchKiloModels(ctx context.Context, requireAccount bool) ([]modelInfo, uint64, error) {
 	a.mu.Lock()
 	key, org, revision, base := a.apiKey, a.config.OrgID, a.catalogRevision, *a.upstream
 	pending := a.authPending()

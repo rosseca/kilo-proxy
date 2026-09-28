@@ -58,6 +58,10 @@ func (a *app) adminHandler() http.Handler {
 			jsonError(w, 403, "Origen no permitido.")
 			return
 		}
+		if r.URL.Path == "/chatgpt-helper.mjs" && r.Method == http.MethodGet {
+			files.ServeHTTP(w, r)
+			return
+		}
 		if !strings.HasPrefix(r.URL.Path, "/api/") {
 			if r.Method != "GET" || (r.URL.Path != "/" && r.URL.Path != "/app.js" && r.URL.Path != "/desktop-helper.mjs" && r.URL.Path != "/editor-helper.mjs" && r.URL.Path != "/omp-helper.mjs" && r.URL.Path != "/open-design-helper.mjs" && r.URL.Path != "/xcode-helper.mjs" && r.URL.Path != "/activity-helper.mjs" && r.URL.Path != "/usage-helper.mjs" && r.URL.Path != "/update-helper.mjs" && r.URL.Path != "/account-usage.mjs" && r.URL.Path != "/codex-catalog.mjs" && r.URL.Path != "/model-helper.mjs" && r.URL.Path != "/context-policy.mjs" && r.URL.Path != "/client-config.mjs" && r.URL.Path != "/claude-helper.mjs" && r.URL.Path != "/claude-desktop-helper.mjs" && r.URL.Path != "/i18n.mjs" && r.URL.Path != "/style.css" && r.URL.Path != "/icon.svg") {
 				http.NotFound(w, r)
@@ -68,6 +72,10 @@ func (a *app) adminHandler() http.Handler {
 		}
 		if !secureEqual(r.Header.Get("Authorization"), "Bearer "+a.adminToken) {
 			jsonError(w, 401, "Abre el panel desde la aplicación para recuperar el acceso.")
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/api/chatgpt/") {
+			a.providerAPI(w, r)
 			return
 		}
 		if r.URL.Path == "/api/updates" {
@@ -203,16 +211,22 @@ func (a *app) state(w http.ResponseWriter) {
 	// The preference may have changed during static executable discovery.
 	imageDependency.Required = normalizeImageTransportSettings(a.config.ImageTransport).Mode == "cloudflare"
 	a.ensureBillingRefreshLocked(false)
+	a.ensureChatGPTQuotaLocked()
+	if identity := a.chatgpt.identity(); identity != a.chatGPTLastIdentity {
+		a.chatGPTLastIdentity = identity
+		a.catalogRevision++
+	}
 	uptime := int64(0)
 	if a.proxyServer != nil {
 		uptime = int64(time.Since(a.started).Seconds())
 	}
 	jsonResponse(w, 200, map[string]any{
-		"claudeDesktopExperimentalModels": a.config.ClaudeDesktopExperimentalModels,
+		"connectionReady": a.connectionReadyLocked(), "kiloReady": a.kiloReadyLocked(), "chatgptReady": a.chatGPTReadyLocked(), "chatgpt": a.chatgpt.snapshot(),
+		"claudeDesktopExperimentalModels": a.claudeDesktopExperimentalLocked(),
 		"imageTransport":                  a.config.ImageTransport,
 		"imageTransportDependency":        imageDependency,
 		"imageUploadWarning":              a.imageUploadWarning,
-		"imageGeneration":                 a.config.ImageGeneration,
+		"imageGeneration":                 a.clientImageSettingsLocked(),
 		"trayDisplay":                     normalizeTrayDisplay(a.config.TrayDisplay),
 		"language":                        a.config.Language, "catalogRevision": a.catalogRevision,
 		"auth": a.login, "organizations": a.organizations, "accountEmail": a.accountEmail, "keySaved": a.keySaved,
@@ -222,10 +236,12 @@ func (a *app) state(w http.ResponseWriter) {
 		"running": a.proxyServer != nil, "baseURL": "http://127.0.0.1:" + strconv.Itoa(a.config.Port) + "/v1",
 		"zedBaseURL": zedBaseURL("http://127.0.0.1:"+strconv.Itoa(a.config.Port)+"/v1", a.config.LocalKey),
 		"requests":   a.requests, "failures": a.failures, "active": a.active, "uptime": uptime,
-		"usage":          a.usageSnapshot(),
-		"usageHistory":   a.usageHistorySnapshotLocked(),
-		"billing":        a.billingSnapshotLocked(),
-		"captureEnabled": a.captureEnabled, "activityEpoch": a.activityEpoch,
+		"usage":               a.usageSnapshot(),
+		"usageHistory":        a.usageHistorySnapshotLocked(),
+		"chatgptUsageHistory": a.usageHistory.snapshot(usageAccountID(a.chatgpt.identity(), "chatgpt"), time.Now()),
+		"catalogWarnings":     a.catalogWarnings,
+		"billing":             a.billingSnapshotLocked(),
+		"captureEnabled":      a.captureEnabled, "activityEpoch": a.activityEpoch,
 		"events": a.events, "warning": a.vaultWarning,
 	})
 }
@@ -270,7 +286,7 @@ func (a *app) saveConfig(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, 400, "El puerto debe estar entre 1024 y 65535.")
 		return
 	}
-	if input.OrgID == "" || len(input.OrgID) > 128 || strings.ContainsAny(input.OrgID, "\r\n\t /\\") {
+	if len(input.OrgID) > 128 || strings.ContainsAny(input.OrgID, "\r\n\t /\\") {
 		jsonError(w, 400, "Introduce el ID de organización, no su nombre ni la URL.")
 		return
 	}
@@ -282,6 +298,22 @@ func (a *app) saveConfig(w http.ResponseWriter, r *http.Request) {
 	defer a.mu.Unlock()
 	if a.proxyServer != nil || a.authPending() {
 		jsonError(w, 409, "Detén el proxy o cancela el login antes de cambiar la conexión.")
+		return
+	}
+	if input.OrgID == "" && input.APIKey == "" && a.chatGPTReadyLocked() {
+		// Subscription-only port edits must not clear a saved Kilo connection.
+		cfg := a.config
+		cfg.Port = input.Port
+		if err := writeSettings(a.dir, cfg); err != nil {
+			jsonError(w, 500, "Could not save the local port.")
+			return
+		}
+		a.config = cfg
+		jsonResponse(w, 200, map[string]bool{"ok": true})
+		return
+	}
+	if input.OrgID == "" {
+		jsonError(w, 400, "Introduce el ID de organización, no su nombre ni la URL.")
 		return
 	}
 	key := input.APIKey

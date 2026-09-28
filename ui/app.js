@@ -1,3 +1,4 @@
+import {chatGPTConnected,chatGPTReady,connectionReady,validChatGPTVerificationURL,renderChatGPT,renderSubscriptionUsage} from './chatgpt-helper.mjs';
 import {contextControls,contextModel,syncContextModels,contextError,contextPreview} from './context-policy.mjs';
 import {renderAccountUsage} from './account-usage.mjs';
 import {renderUpdates} from './update-helper.mjs';
@@ -45,6 +46,7 @@ let state, client = 'generic', busy = false, stopped = false, initialized = fals
 let imageDependencyPrompt={};
 let updateCheckPending = false, updateRequestError = false;
 let updateCheckRevision = 0;
+let chatGPTRevision = 0, chatGPTPending = false, chatGPTLoginRequested = false;
 let updateFailedCheck = '';
 try { const saved=JSON.parse(sessionStorage.getItem('kilo-cloudflare-prompt')||'{}');if(saved&&typeof saved==='object')imageDependencyPrompt={dismissed:saved.dismissed===true,mode:saved.mode,running:saved.running===true}; } catch {}
 let lastAuthStatus, teamSignature = '';
@@ -215,7 +217,7 @@ function renderClientLaunch(){
  $('client-launch-app-label').textContent=L('Application path on this computer','Ruta de la aplicación en este ordenador');
  $('client-launch-app').placeholder=launchInfo?.clients?.codex?.path||L('Absolute application path','Ruta absoluta de la aplicación');
  $('client-launch').textContent=launchBusy?L('Launching…','Abriendo…'):L('Launch ',terminal?'Iniciar ':'Abrir ')+name;
- $('client-launch').disabled=launchBusy||launchDetecting||selection.working||selection.valid===false||!state||!selection.count||!available;
+ $('client-launch').disabled=launchBusy||launchDetecting||selection.working||selection.valid===false||!state||(!connectionReady(state))||!selection.count||!available;
  $('client-launch-help').textContent=selection.id==='claude-desktop'?L('Prepares Kilo with the selected models and starts the proxy before opening Claude Desktop. Close Claude first to apply configuration changes.','Prepara Kilo con los modelos seleccionados y arranca el proxy antes de abrir Claude Desktop. Cierra Claude primero para aplicar los cambios de configuración.'):selection.id==='open-design'?L('Prepares the selected CLI with your Kilo models, starts the proxy and opens Open Design in its separate Kilo profile.','Prepara el CLI elegido con tus modelos de Kilo, arranca el proxy y abre Open Design en su perfil de Kilo independiente.'):L('Opens with the current models and Kilo configuration. Changes are saved first. Command export settings below apply only to copied commands.','Abre con los modelos y la configuración de Kilo actuales. Los cambios se guardan antes. Los ajustes de exportación inferiores solo afectan a los comandos copiados.')+(selection.id==='zed'?L(' Paste the local key into Zed once using the instructions below.',' Pega la clave local en Zed una vez siguiendo las instrucciones inferiores.'):selection.id==='xcode-chat'?L(' Add the chat provider in Xcode once using the connection details below.',' Añade el proveedor de chat en Xcode una vez con la conexión indicada abajo.'):'');
  const reason=selection.reason||(!available&&!launchDetecting?(detected?.reason||(installed===true?L('The application is installed but cannot be launched on this computer.','La aplicación está instalada pero no se puede abrir en este ordenador.'):L('Application not detected. Install it, then check again.','Aplicación no detectada. Instálala y vuelve a comprobar.'))):!selection.count?L('Select at least one model.','Selecciona al menos un modelo.'):'');
  $('client-launch-status').textContent=launchMessage||reason;
@@ -368,6 +370,8 @@ function renderImageTransport(s) {
 }
 function render(s) {
   state = s;
+  if(chatGPTLoginRequested&&s.chatgpt?.status==='pending'&&validChatGPTVerificationURL(s.chatgpt.verificationUrl)){chatGPTLoginRequested=false;void openExternal(s.chatgpt.verificationUrl).catch(error=>notify(error.message,true));}
+  if(s.chatgpt?.status==='error'||s.chatgpt?.connected)chatGPTLoginRequested=false;
   for(const selection of Object.values(codexClients))if(selection.imageGeneration===null){selection.imageGeneration=imageGenerationSelection(s.imageGeneration);selection.imageGenerationBaseline=imageGenerationSelection(s.imageGeneration);}
   configureDesktop(api, !!s.desktop);
   if (!initialized) {
@@ -381,8 +385,8 @@ function render(s) {
   $('toggle-key').textContent = t($('api-key').type === 'password' ? 'Ver' : 'Ocultar');
   $('toggle-key').setAttribute('aria-label', t($('api-key').type === 'password' ? 'Mostrar API key' : 'Ocultar API key'));
   $('version').textContent = 'v' + s.version;
-  const pending = ['starting','pending'].includes(s.auth?.status);
-  $('load-models').disabled = catalogLoading || pending;
+  const subscription=chatGPTConnected(s),pending = ['starting','pending'].includes(s.auth?.status);
+  $('load-models').disabled = catalogLoading || pending&&!chatGPTReady(s);
   $('credentials-fields').disabled = s.running || busy || pending;
   $('sso-login').disabled = s.running || busy || pending;
   $('load-teams').disabled = s.running || busy || pending || !s.hasKey;
@@ -410,8 +414,10 @@ function render(s) {
   $('start-label').textContent = s.running ? t('Detener proxy') : t('Guardar y arrancar');
   $('start-icon').textContent = s.running ? '■' : '▶';
   $('start-stop').classList.toggle('stop', s.running);
-  $('start-stop').disabled = busy || pending; $('check').disabled = busy || pending; $('forget').disabled = busy || s.running;
+  $('start-stop').disabled = busy || pending&&!chatGPTReady(s); $('check').disabled = busy || pending&&!chatGPTReady(s); $('forget').disabled = busy || s.running;
   $('forget').hidden = !s.hasKey;
+  $('org-id').required=!chatGPTReady(s);
+  if(chatGPTReady(s)&&!s.hasKey&&!s.running)$('start-label').textContent=language==='en'?'Start proxy':'Arrancar proxy';
   $('base-url').textContent = s.baseURL;
   $('endpoint-status').classList.toggle('live', s.running);
   $('endpoint-status').replaceChildren();
@@ -425,14 +431,20 @@ function render(s) {
   $('empty-activity-title').textContent=s.captureEnabled?t('Esperando tu primera petición capturada…'):t('Captura desactivada');
   $('empty-activity-help').textContent=s.captureEnabled?t('Verás el endpoint, las cabeceras y los cuerpos capturados para depurar.'):t('Activa la captura cuando necesites inspeccionar peticiones para depurar.');
   renderUsage(s.usage);
-  renderAccountUsage($('account-usage'), s, language, busy);
+  renderAccountUsage($('account-usage'),s,language,busy);
+  if(subscription){const quota=document.createElement('section');quota.id='subscription-usage';renderSubscriptionUsage(quota,s,language,busy);$('account-usage').append(quota);}
+  renderChatGPT(document,s,language,busy);
+  $('diagram-routing').textContent=subscription?(language==='en'?'Local authentication':'Autenticación local'):t('Añade la organización');
+  $('diagram-provider').textContent=subscription?(s.kiloReady?'Kilo + ChatGPT':'ChatGPT'):'Kilo Gateway';
+  $('diagram-billing').textContent=subscription?(language==='en'?'Credit / subscription quota':'Crédito / cuota de suscripción'):t('Saldo de empresa');
+  $('check').textContent=t('Comprobar gateway');
   if(activeTrace && !(s.events || []).some(event=>event.id===activeTrace.id)){activeTrace=null;traceRequest++;}
   renderTrace();
   $('empty-activity').hidden = !!s.events?.length; $('activity-table').hidden = !s.events?.length;
   $('event-rows').replaceChildren();
   for (const e of s.events || []) {
     const row = document.createElement('tr');
-    const values = [new Date(e.at).toLocaleTimeString(language, {hour: '2-digit', minute: '2-digit', second: '2-digit'}), e.method + ' ' + e.path, e.status, e.usage?.model || '—', reportedCost(e.usage?.costUSD) ?? t('Coste desconocido'), e.duration < 1000 ? e.duration + ' ms' : (e.duration / 1000).toFixed(1) + ' s'];
+    const values = [new Date(e.at).toLocaleTimeString(language, {hour: '2-digit', minute: '2-digit', second: '2-digit'}), e.method + ' ' + e.path, e.status, e.usage?.model || '—', e.usage?.billing==='subscription'?(language==='en'?'Subscription usage':'Uso de suscripción'):reportedCost(e.usage?.costUSD) ?? t('Coste desconocido'), e.duration < 1000 ? e.duration + ' ms' : (e.duration / 1000).toFixed(1) + ' s'];
     values.forEach((value, i) => {
       const cell = document.createElement('td');
       if (i === 2) { const badge = document.createElement('span'); badge.className = 'status-code' + (e.status >= 400 ? ' error' : ''); badge.textContent = value; cell.append(badge); }
@@ -448,9 +460,11 @@ function render(s) {
     else details.textContent=t('Sin captura');
     row.append(details);$('event-rows').append(row);
   }
-  if (catalogRevision !== s.catalogRevision && !pending) {
+  if (catalogRevision !== s.catalogRevision && (!pending||chatGPTReady(s))) {
     catalogRevision = s.catalogRevision; catalog = []; syncSelectedContext(); catalogFetchedAt = ''; void loadModels();
   }
+  $('catalog-warnings').hidden=!s.catalogWarnings?.length;
+  $('catalog-warnings').textContent=s.catalogWarnings?.length?(language==='en'?'Some models are unavailable. ':'Algunos modelos no están disponibles. ')+s.catalogWarnings.join(' '):'';
   renderSnippet();
 }
 
@@ -463,6 +477,12 @@ function renderUsage(usage) {
  $('spend-total').textContent=spend.amount;
  $('spend-coverage').textContent=spend.coverage;
  $('spend-semantics').textContent=inferenceCostNote(language);
+ if(total.subscriptionRequests>0&&total.requests===total.subscriptionRequests){
+  $('spend-title').textContent=language==='en'?'Subscription usage':'Uso de suscripción';
+  $('spend-total').textContent=String(total.subscriptionRequests||0);
+  $('spend-coverage').textContent=language==='en'?'Requests using ChatGPT quota':'Peticiones que usan la cuota de ChatGPT';
+  $('spend-semantics').textContent=language==='en'?'Subscription quota is shown separately. Tokens are usage counts, not Kilo charges.':'La cuota de suscripción se muestra por separado. Los tokens son datos de uso, no cargos de Kilo.';
+ }
  $('spend-tokens').textContent=t('{input} entrada total · {output} salida',{input:total.withPrompt>0 ? cacheNumber(total.prompt) : t('Coste desconocido'),output:total.withTokens>0 ? cacheNumber(total.output) : t('Coste desconocido')});
  const cache=cacheStats(total);
  $('cache-read-total').textContent=cacheNumber(cache.read);
@@ -793,7 +813,8 @@ $('model-picker').addEventListener('change', event => {
 });
 async function refresh() {
   if (stopped) return;
-  const revision = updateCheckRevision, next = await api('state');
+  const revision = updateCheckRevision, authRevision=chatGPTRevision, changing=chatGPTPending, next = await api('state');
+  if(changing||chatGPTPending||authRevision!==chatGPTRevision)return;
   // A state poll already in flight must not undo a newer manual check.
   if (revision !== updateCheckRevision && state) next.update = state.update;
   render(next);
@@ -807,11 +828,21 @@ async function action(fn) {
   finally { busy = false; if (state) render(state); }
 }
 async function save() {
+  if(chatGPTReady(state)&&!$('api-key').value.trim()&&$('org-id').value.trim()===(state.orgId||'').trim()&&Number($('port').value)===state.port)return;
   if (!$('connection-form').reportValidity()) throw new Error(t('Completa los campos de conexión.'));
   await api('config', {apiKey: $('api-key').value, orgId: $('org-id').value, port: Number($('port').value), remember: $('remember').checked});
   $('api-key').value = '';
   $('api-key').type = 'password'; $('toggle-key').textContent = t('Ver'); $('toggle-key').setAttribute('aria-pressed', 'false');
 }
+async function updateChatGPT(name){
+ chatGPTPending=true;chatGPTRevision++;
+ if(name==='login')chatGPTLoginRequested=true;
+ if(name==='cancel'||name==='logout')chatGPTLoginRequested=false;
+ try{render(await api('chatgpt/'+name,{}));}
+ catch(error){if(name==='login')chatGPTLoginRequested=false;throw error;}
+ finally{chatGPTPending=false;chatGPTRevision++;}
+}
+for(const name of ['login','cancel','logout'])$('chatgpt-'+name).addEventListener('click',()=>action(()=>updateChatGPT(name)));
 $('connection-form').addEventListener('submit', e => {
   e.preventDefault(); action(async () => {
     if (state.running) { await api('stop', {}); toast('Proxy detenido'); }
@@ -970,6 +1001,7 @@ $('load-claude-profile').addEventListener('click',async()=>{
 applyLanguage(language);
 
 $('account-usage').addEventListener('click', event => {
+  if (event.target.closest('#refresh-chatgpt')) action(()=>updateChatGPT('refresh'));
   if (event.target.closest('#refresh-billing')) action(() => api('billing/refresh', {}));
 });
 $('account-usage').addEventListener('change', event => {

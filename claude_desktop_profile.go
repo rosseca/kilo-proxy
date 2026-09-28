@@ -435,7 +435,7 @@ func (a *app) claudeDesktopManagedConfig(paths claudeDesktopProfilePaths) error 
 }
 
 func (a *app) readClaudeDesktopSelection(paths claudeDesktopProfilePaths) (editorSelection, error) {
-	return a.readClaudeDesktopSelectionMode(paths, a.config.ClaudeDesktopExperimentalModels)
+	return a.readClaudeDesktopSelectionMode(paths, a.claudeDesktopExperimentalLocked())
 }
 
 // Reading with experimental=true during preparation validates the saved real
@@ -484,7 +484,7 @@ func (a *app) verifyClaudeDesktopProfile() error {
 	if err != nil || !exists {
 		return errors.New("Prepare the Claude Desktop profile first; its configuration is missing or invalid.")
 	}
-	for key, value := range claudeDesktopOwnedConfig(s, a.config.Port, a.config.LocalKey, a.config.ClaudeDesktopExperimentalModels) {
+	for key, value := range claudeDesktopOwnedConfig(s, a.config.Port, a.config.LocalKey, a.claudeDesktopExperimentalLocked()) {
 		want, _ := json.Marshal(value)
 		if !launchEqualJSON(config[key], want) {
 			return errors.New("Claude Desktop gateway settings changed; prepare the profile again.")
@@ -507,7 +507,7 @@ func (a *app) verifyClaudeDesktopProfile() error {
 // Caller holds a.mu. All contents and backup destinations are validated before
 // writing; saveEditorFiles backs up and rolls back this multi-file change.
 func (a *app) saveClaudeDesktopProfile(s editorSelection, paths claudeDesktopProfilePaths) (bool, error) {
-	if err := validateClaudeDesktopSelectionMode(s, a.config.ClaudeDesktopExperimentalModels); err != nil {
+	if err := validateClaudeDesktopSelectionMode(s, a.claudeDesktopExperimentalLocked()); err != nil {
 		return false, err
 	}
 	if err := a.claudeDesktopManagedConfig(paths); err != nil {
@@ -540,7 +540,7 @@ func (a *app) saveClaudeDesktopProfile(s editorSelection, paths claudeDesktopPro
 	delete(config, "inferenceCustomHeaders")
 	delete(config, "bootstrapUrl")
 	delete(config, "bootstrapEnabled")
-	for key, value := range claudeDesktopOwnedConfig(s, a.config.Port, a.config.LocalKey, a.config.ClaudeDesktopExperimentalModels) {
+	for key, value := range claudeDesktopOwnedConfig(s, a.config.Port, a.config.LocalKey, a.claudeDesktopExperimentalLocked()) {
 		claudeDesktopSet(config, key, value)
 	}
 	claudeDesktopSet(mode, "deploymentMode", "3p")
@@ -613,7 +613,7 @@ func (a *app) claudeDesktopProfile(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, 400, "Invalid Claude Desktop setup JSON.")
 			return
 		}
-		if err = validateClaudeDesktopSelectionMode(s, a.config.ClaudeDesktopExperimentalModels); err != nil {
+		if err = validateClaudeDesktopSelectionMode(s, a.claudeDesktopExperimentalLocked()); err != nil {
 			jsonError(w, 400, err.Error())
 			return
 		}
@@ -623,5 +623,5 @@ func (a *app) claudeDesktopProfile(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	jsonResponse(w, 200, map[string]any{"ok": true, "changed": changed, "selection": s, "configPath": paths.ConfigPath, "profileDir": paths.ProfileDir, "experimentalModels": a.config.ClaudeDesktopExperimentalModels})
+	jsonResponse(w, 200, map[string]any{"ok": true, "changed": changed, "selection": s, "configPath": paths.ConfigPath, "profileDir": paths.ProfileDir, "experimentalModels": a.claudeDesktopExperimentalLocked()})
 }

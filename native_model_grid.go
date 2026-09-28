@@ -5,6 +5,7 @@ package main
 import (
 	"image"
 	"slices"
+	"strings"
 
 	"gioui.org/font"
 	"gioui.org/layout"
@@ -104,6 +105,9 @@ func (u *nativeUI) modelGridLayout(id string, ids []string, cards []layout.Widge
 }
 
 func (u *nativeUI) modelPriceCells(m modelInfo) layout.Widget {
+	if strings.HasPrefix(m.ID, "chatgpt/") {
+		return u.textStyle(18, u.tr("Subscription quota", "Cuota de suscripción"), nativeInk, font.SemiBold)
+	}
 	return func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 			layout.Flexed(1, u.textStyle(18, nativeTokenPrice(m.InputPrice)+" / "+nativeTokenPrice(m.OutputPrice), nativeInk, font.SemiBold)),

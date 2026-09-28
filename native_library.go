@@ -309,6 +309,13 @@ func (u *nativeUI) modelsPanel() layout.Widget {
 		top = u.actionRow(u.column(u.heading(u.tr("Add models", "Añadir modelos")), u.note(u.tr("Select once. Every agent uses this library.", "Elige una vez. Todos los agentes usan esta biblioteca."))), done)
 	}
 	widgets := []layout.Widget{top}
+	if u.chatGPTConnected() {
+		widgets = append(widgets, u.note(u.tr("One library for both connections. Models marked ChatGPT use subscription quota; other models use Kilo credit.", "Una biblioteca para ambas conexiones. Los modelos marcados ChatGPT usan la cuota de suscripción; los demás usan crédito de Kilo.")))
+	}
+	if len(nativeArray(u.state, "catalogWarnings")) > 0 {
+		widgets = append(widgets, u.message(nativeToneWarning, u.tr("Some models could not be loaded. Check the affected connection and refresh the catalog.", "No se pudieron cargar algunos modelos. Comprueba la conexión afectada y actualiza el catálogo.")))
+	}
+
 	if recovery || failed || u.library.validation != "" {
 		label := u.tr("Retry save", "Reintentar guardado")
 		if recovery {

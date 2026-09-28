@@ -269,7 +269,7 @@ func (d *nativeDesktop) updateTray() {
 		return
 	}
 	if s.display != d.last.display || s.display != trayDisplayIcon && s.amount != d.last.amount {
-		if s.display == trayDisplaySpend || s.display == trayDisplayBalance {
+		if s.display == trayDisplaySpend || s.display == trayDisplayBalance || s.display == trayDisplayChatGPTQuota {
 			systray.SetTitle(s.amount)
 		} else {
 			systray.SetTitle("")

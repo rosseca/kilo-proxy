@@ -121,6 +121,7 @@ export function formatPrice(value, language = 'en') {
 export function modelPriceDetails(model, language = 'en') {
   const prices=document.createElement('span');
   prices.className='model-option-prices';
+  if(model.id?.startsWith('chatgpt/')){const quota=document.createElement('strong');quota.textContent=language==='es'?'Cuota de suscripción':'Subscription quota';prices.append(quota);return prices;}
   for(const [label,value] of [[language==='es'?'Entrada':'Input',model.inputPrice],[language==='es'?'Salida':'Output',model.outputPrice]]) {
     const item=document.createElement('span'),name=document.createElement('span'),amount=document.createElement('strong');
     item.className='model-price';name.className='model-price-label';name.textContent=label;

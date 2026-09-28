@@ -3,13 +3,14 @@ package main
 import "net/http"
 
 const (
-	trayDisplayIcon    = "icon"
-	trayDisplaySpend   = "spend"
-	trayDisplayBalance = "balance"
+	trayDisplayChatGPTQuota = "chatgpt-quota"
+	trayDisplayIcon         = "icon"
+	trayDisplaySpend        = "spend"
+	trayDisplayBalance      = "balance"
 )
 
 func normalizeTrayDisplay(display string) string {
-	if display == trayDisplaySpend || display == trayDisplayBalance {
+	if display == trayDisplaySpend || display == trayDisplayBalance || display == trayDisplayChatGPTQuota {
 		return display
 	}
 	return trayDisplayIcon
@@ -35,7 +36,7 @@ func (a *app) traySettings(w http.ResponseWriter, r *http.Request) {
 	if !decodeBody(w, r, &input) {
 		return
 	}
-	if input.Display != trayDisplayIcon && input.Display != trayDisplaySpend && input.Display != trayDisplayBalance {
+	if input.Display != trayDisplayIcon && input.Display != trayDisplaySpend && input.Display != trayDisplayBalance && input.Display != trayDisplayChatGPTQuota {
 		jsonError(w, http.StatusBadRequest, "Selecciona icon, spend o balance para la bandeja.")
 		return
 	}

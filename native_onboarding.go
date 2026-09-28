@@ -31,9 +31,12 @@ func (u *nativeUI) setupNeeded() bool {
 }
 
 func (u *nativeUI) setupConnectionNeeded() bool {
+	if u.chatGPTReady() {
+		return false
+	}
 	u.owner.mu.Lock()
 	defer u.owner.mu.Unlock()
-	return strings.TrimSpace(u.owner.apiKey) == "" || strings.TrimSpace(u.owner.config.OrgID) == "" || u.owner.authPending() || u.owner.connectionNeedsSave
+	return !u.owner.connectionReadyLocked()
 }
 
 func (u *nativeUI) setSetupStep(step int) {
@@ -63,6 +66,24 @@ func (u *nativeUI) connectionHasKey() bool {
 }
 
 func (u *nativeUI) connectionWorking() bool {
+	if u.chatGPTRequestBusy() {
+		return true
+	}
+	for _, path := range []string{"/api/config", "/api/start", "/api/stop", "/api/forget", "/api/auth/start", "/api/auth/cancel", "/api/auth/organizations"} {
+		if u.busy["POST"+path] {
+			return true
+		}
+	}
+	if u.clients != nil && u.clients.Launching != "" {
+		return true
+	}
+	auth := nativeString(nativeMap(u.state["auth"]), "status")
+	if (auth == "pending" || auth == "starting") && !u.chatGPTReady() {
+		return true
+	}
+	return nativeString(nativeMap(u.state["chatgpt"]), "status") == "pending" && !nativeBool(u.state, "kiloReady")
+}
+func (u *nativeUI) kiloConnectionWorking() bool {
 	auth := nativeString(nativeMap(u.state["auth"]), "status")
 	if auth == "pending" || auth == "starting" {
 		return true
@@ -89,10 +110,10 @@ func (u *nativeUI) beginKiloLogin() {
 }
 
 func (u *nativeUI) setupConnectionContinue() {
-	if u.connectionWorking() {
+	if u.chatGPTRequestBusy() || u.chatGPTReady() && u.connectionWorking() || !u.chatGPTReady() && u.kiloConnectionWorking() {
 		return
 	}
-	u.saveConnection(func() {
+	continueSetup := func() {
 		if u.page != "setup" {
 			u.refreshState()
 			return
@@ -105,7 +126,14 @@ func (u *nativeUI) setupConnectionContinue() {
 		// previous account's catalog cannot win a concurrent refresh.
 		u.modelsPending = true
 		u.refreshState()
-	})
+	}
+	if u.chatGPTReady() {
+		if !u.setupConnectionNeeded() {
+			continueSetup()
+		}
+	} else {
+		u.saveConnection(continueSetup)
+	}
 }
 
 func (u *nativeUI) setupModelsContinue() {
@@ -177,7 +205,7 @@ func (u *nativeUI) proxyButton() layout.Widget {
 	if running {
 		label = u.tr("Stop proxy", "Detener proxy")
 	} else if !u.agentConnectionReady() {
-		label = u.tr("Connect Kilo", "Conectar Kilo")
+		label = u.tr("Connect an account", "Conectar una cuenta")
 	} else if u.setupConnectionNeeded() {
 		label = u.tr("Save connection", "Guardar conexión")
 	}
@@ -213,7 +241,7 @@ func (u *nativeUI) setupStepReachable(step int) bool {
 }
 
 func (u *nativeUI) setupStepper() layout.Widget {
-	labels := [...]string{u.tr("Account & team", "Cuenta y equipo"), u.tr("Models", "Modelos"), u.tr("Start", "Arrancar")}
+	labels := [...]string{u.tr("Accounts", "Cuentas"), u.tr("Models", "Modelos"), u.tr("Start", "Arrancar")}
 	steps := [3]layout.Widget{}
 	for i, label := range labels {
 		step, text := i, label
@@ -370,6 +398,18 @@ func (u *nativeUI) setupPanel() layout.Widget {
 		if team != "" {
 			account += " · " + team
 		}
+		if u.chatGPTReady() {
+			subscription := nativeString(nativeMap(u.state["chatgpt"]), "email")
+			if subscription == "" {
+				subscription = u.tr("ChatGPT subscription", "Suscripción de ChatGPT")
+			}
+			if nativeBool(u.state, "kiloReady") {
+				account += " · ChatGPT: " + subscription
+			} else {
+				account = subscription
+			}
+		}
+
 		count := len(u.library.selection.Models)
 		modelCount := fmt.Sprintf(u.tr("%d models selected", "%d modelos seleccionados"), count)
 		if count == 1 {
@@ -379,15 +419,15 @@ func (u *nativeUI) setupPanel() layout.Widget {
 		if choice := u.library.selection.choice(defaultModel); choice != nil {
 			defaultModel = nativeCodexDisplayName(*choice)
 		}
-		summary := u.section(u.tr("Your setup", "Tu configuración"), u.tr("Your Kilo account and models are ready for the local proxy.", "Tu cuenta de Kilo y tus modelos están listos para el proxy local."),
-			u.setupSummaryRowWidget(u.tr("Account and team", "Cuenta y equipo"), account),
+		summary := u.section(u.tr("Your setup", "Tu configuración"), u.tr("Your connection and models are ready for the local proxy.", "Tu conexión y tus modelos están listos para el proxy local."),
+			u.setupSummaryRowWidget(u.tr("Connected accounts", "Cuentas conectadas"), account),
 			u.setupSummaryRowWidget(u.tr("Models", "Modelos"), modelCount),
 			u.setupSummaryRowWidget(u.tr("Default model", "Modelo predeterminado"), defaultModel),
 			u.pills(u.button("setup.connection-settings", u.tr("Connection settings", "Ajustes de conexión"), func() { u.page = "settings" })),
 		)
 		content = u.column(u.banner(nativeToneSuccess, u.tr("You're ready", "Todo está listo")), summary)
 	default:
-		content = u.setupConnectionPanel()
+		content = u.column(u.setupConnectionPanel(), u.chatGPTAccountPanel())
 	}
 	return u.column(u.setupStepper(), content)
 }
@@ -396,13 +436,19 @@ func (u *nativeUI) setupFooter() layout.Widget {
 	var back, primary layout.Widget
 	switch u.setupStep {
 	case setupConnect:
+		if u.chatGPTReady() {
+			if nativeBool(nativeMap(u.state["chatgpt"]), "connected") {
+				primary = u.disabled(!u.connectionWorking() && !u.setupConnectionNeeded(), u.primaryButton("primary.setup.connection-next", u.tr("Choose models", "Elegir modelos"), u.setupConnectionContinue))
+			}
+			break
+		}
 		hasKey := u.connectionHasKey()
 		auth := nativeMap(u.state["auth"])
 		pending := nativeString(auth, "status") == "pending" || nativeString(auth, "status") == "starting"
 		if !hasKey && !pending && !u.expanded["setup.manual"] {
-			primary = u.disabled(!u.connectionWorking() && !nativeBool(u.state, "running"), u.primaryButton("connection.login", u.tr("Sign in with Kilo / SSO", "Iniciar sesión con Kilo / SSO"), u.beginKiloLogin))
+			primary = u.disabled(!u.kiloConnectionWorking() && !nativeBool(u.state, "running"), u.primaryButton("connection.login", u.tr("Sign in with Kilo / SSO", "Iniciar sesión con Kilo / SSO"), u.beginKiloLogin))
 		} else if hasKey || u.expanded["setup.manual"] {
-			canContinue := !u.connectionWorking() && !nativeBool(u.state, "running") && (hasKey || strings.TrimSpace(u.value("connection.key")) != "") && strings.TrimSpace(u.value("connection.org")) != ""
+			canContinue := !u.kiloConnectionWorking() && !nativeBool(u.state, "running") && (hasKey || strings.TrimSpace(u.value("connection.key")) != "") && strings.TrimSpace(u.value("connection.org")) != ""
 			primary = u.disabled(canContinue, u.primaryButton("primary.setup.connection-next", u.tr("Save & choose models", "Guardar y elegir modelos"), u.setupConnectionContinue))
 		}
 	case setupModels:
@@ -436,7 +482,7 @@ func (u *nativeUI) setupConnectionPanel() layout.Widget {
 	auth := nativeMap(u.state["auth"])
 	pending := nativeString(auth, "status") == "pending" || nativeString(auth, "status") == "starting"
 	hasKey := u.connectionHasKey()
-	editable := !u.connectionWorking() && !nativeBool(u.state, "running")
+	editable := !u.kiloConnectionWorking() && !nativeBool(u.state, "running")
 	widgets := []layout.Widget{}
 	if !hasKey && u.expanded["setup.manual"] && !pending {
 		widgets = append(widgets, u.disabled(editable, u.button("connection.login", u.tr("Sign in with Kilo / SSO", "Iniciar sesión con Kilo / SSO"), u.beginKiloLogin)))

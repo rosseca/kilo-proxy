@@ -102,9 +102,9 @@ func (a *app) terminalPrepareAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.mu.Lock()
-	if a.apiKey == "" || a.config.OrgID == "" {
+	if !a.connectionReadyLocked() {
 		a.mu.Unlock()
-		jsonError(w, 409, "Connect your Kilo account and organization in Kilo Proxy first.")
+		jsonError(w, 409, "Connect the selected provider in Kilo Proxy first.")
 		return
 	}
 	name, _ := launchClientIdentity(input.Client)
@@ -156,7 +156,7 @@ func (a *app) prepareTerminalProfile(client, home string, library modelLibrary, 
 		return a.prepareTerminalOpenCodeProfile(library)
 	}
 	if client == "omp" {
-		selection, err := ompSelectionFromChoices(terminalLibraryChoices(library, readNativeCatalogCache(a.dir, a.config.OrgID)), library.DefaultModel)
+		selection, err := ompSelectionFromChoices(terminalLibraryChoices(library, readNativeCatalogCache(a.dir, a.catalogScopeLocked())), library.DefaultModel)
 		if err != nil {
 			return err
 		}
@@ -168,7 +168,7 @@ func (a *app) prepareTerminalProfile(client, home string, library modelLibrary, 
 		if dir == "" {
 			dir = filepath.Join(home, ".codex-kilo-cli")
 		}
-		catalog, err := buildCodexCatalog(terminalLibraryChoices(library, readNativeCatalogCache(a.dir, a.config.OrgID)), library.DefaultModel, false)
+		catalog, err := buildCodexCatalog(terminalLibraryChoices(library, readNativeCatalogCache(a.dir, a.catalogScopeLocked())), library.DefaultModel, false)
 		if err != nil {
 			return err
 		}
@@ -184,7 +184,7 @@ func (a *app) prepareTerminalProfile(client, home string, library modelLibrary, 
 	}
 	selection := claudeSelection{Initial: library.DefaultModel, Mode: "installed", Aliases: map[string]string{}}
 	ids := map[string]bool{}
-	choices := terminalLibraryChoices(library, readNativeCatalogCache(a.dir, a.config.OrgID))
+	choices := terminalLibraryChoices(library, readNativeCatalogCache(a.dir, a.catalogScopeLocked()))
 	for i, model := range library.Models {
 		context, err := contextPolicyForChoice(choices[i])
 		if err != nil {

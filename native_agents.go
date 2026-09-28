@@ -142,6 +142,9 @@ func (u *nativeUI) agentSetup(key string) {
 }
 
 func (u *nativeUI) agentConnectionReady() bool {
+	if u.chatGPTReady() {
+		return true
+	}
 	u.owner.mu.Lock()
 	defer u.owner.mu.Unlock()
 	return strings.TrimSpace(u.owner.apiKey) != "" && strings.TrimSpace(u.owner.config.OrgID) != ""
@@ -210,7 +213,7 @@ func (u *nativeUI) agentModelSummary() layout.Widget {
 		widgets = append(widgets, u.note(status))
 	}
 	if u.setupNeeded() {
-		setupCard := u.card(u.actionRow(u.column(u.heading(u.tr("Finish setting up your workspace", "Termina de configurar tu espacio")), u.note(u.tr("Connect Kilo and choose at least one model. We'll guide you through it.", "Conecta Kilo y elige al menos un modelo. Te guiamos paso a paso."))), u.primaryButton("primary.agents.setup", u.tr("Continue setup", "Continuar configuración"), u.beginSetup)))
+		setupCard := u.card(u.actionRow(u.column(u.heading(u.tr("Finish setting up your workspace", "Termina de configurar tu espacio")), u.note(u.tr("Connect Kilo or ChatGPT and choose at least one model. We'll guide you through it.", "Conecta Kilo o ChatGPT y elige al menos un modelo. Te guiamos paso a paso."))), u.primaryButton("primary.agents.setup", u.tr("Continue setup", "Continuar configuración"), u.beginSetup)))
 		widgets = append(widgets, setupCard)
 	}
 	return u.column(widgets...)
@@ -401,7 +404,7 @@ func (u *nativeUI) agentCard(key string) layout.Widget {
 			disabledReason = u.tr("Install this app, then refresh installed apps.", "Instala esta aplicación y actualiza las aplicaciones instaladas.")
 		}
 	case !connectionReady:
-		disabledReason = u.tr("Finish setting up and saving your Kilo connection first.", "Termina de configurar y guardar tu conexión de Kilo.")
+		disabledReason = u.tr("Finish setting up a connection first.", "Termina de configurar una conexión.")
 	case !libraryReady:
 		disabledReason = libraryStatus
 	case key == "claude" && (!c.ClaudeChecked || u.busy["GET/api/claude/info"]):

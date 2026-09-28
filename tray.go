@@ -18,7 +18,7 @@ type trayState struct {
 // Format the existing integer nanodollar accumulator without floating-point
 // conversion. A positive amount below one cent must never look like free usage.
 func traySpendAmount(summary usageSummary) string {
-	if summary.Requests == 0 {
+	if summary.Requests-summary.SubscriptionRequests == 0 {
 		return "$0.00"
 	}
 	if summary.Priced == 0 {
@@ -35,7 +35,7 @@ func traySpendAmount(summary usageSummary) string {
 		}
 		amount = fmt.Sprintf("$%d.%02d", cents/100, cents%100)
 	}
-	if summary.Priced < summary.Requests {
+	if summary.Priced < summary.Requests-summary.SubscriptionRequests {
 		amount += "*"
 	}
 	return amount
@@ -45,23 +45,24 @@ func (a *app) trayState() trayState {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.ensureBillingRefreshLocked(false)
+	a.ensureChatGPTQuotaLocked()
 	labels := trayText(a.config.Language)
 	s := trayState{
 		labels:  labels,
-		running: a.proxyServer != nil, pending: a.authPending(),
+		running: a.proxyServer != nil, pending: a.authPending() && !a.chatGPTReadyLocked(),
 		display:    normalizeTrayDisplay(a.config.TrayDisplay),
-		configured: a.apiKey != "" && a.config.OrgID != "",
+		configured: a.connectionReadyLocked(),
 		address:    fmt.Sprintf("127.0.0.1:%d", a.config.Port),
 		activity:   fmt.Sprintf(labels.activity, a.active, a.requests, a.failures),
 		team:       labels.teamEmpty, status: labels.stopped,
 	}
 	s.amount = traySpendAmount(a.usageTotal)
 	spendLabel := labels.spend
-	if a.usageTotal.Priced > 0 && a.usageTotal.Priced < a.usageTotal.Requests {
+	if a.usageTotal.Priced > 0 && a.usageTotal.Priced < a.usageTotal.Requests-a.usageTotal.SubscriptionRequests {
 		spendLabel = labels.subtotal
 	}
 	s.spend = spendLabel + ": " + s.amount
-	s.coverage = fmt.Sprintf(labels.coverage, a.usageTotal.Priced, a.usageTotal.Requests)
+	s.coverage = fmt.Sprintf(labels.coverage, a.usageTotal.Priced, a.usageTotal.Requests-a.usageTotal.SubscriptionRequests)
 	s.tooltip = labels.tooltip
 	billing := a.billingSnapshotLocked()
 	balanceAmount, balanceStatus := "—", labels.balanceUnavailable
@@ -102,6 +103,18 @@ func (a *app) trayState() trayState {
 			}
 		}
 		s.team = labels.teamPrefix + menuText(name)
+	}
+	if s.display == trayDisplayChatGPTQuota {
+		connection := a.chatgpt.snapshot()
+		remaining := "—"
+		if connection.Quota.Available && connection.Quota.Primary != nil && connection.Quota.Primary.UsedPercent != nil {
+			remaining = fmt.Sprintf("%.0f%%", max(0, min(100, 100-*connection.Quota.Primary.UsedPercent)))
+		}
+		s.amount = remaining
+		s.tooltip = "ChatGPT · " + remaining + " remaining"
+		if a.config.Language == "es" {
+			s.tooltip = "ChatGPT · " + remaining + " disponible"
+		}
 	}
 	if s.running {
 		s.status = labels.running

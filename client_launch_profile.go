@@ -76,7 +76,7 @@ func (a *app) launchProfile(p *clientLaunchPlan, home string) error {
 				return fail
 			}
 		} else {
-			updated, e = mergeCodexImages(updated, a.config.ImageGeneration, a.config.Port)
+			updated, e = mergeCodexImages(updated, a.clientImageSettingsLocked(), a.config.Port)
 			if e != nil {
 				return fail
 			}

@@ -30,6 +30,12 @@ type event struct {
 }
 
 type app struct {
+	catalogWarnings           []string
+	chatGPTLastIdentity       string
+	chatgpt                   *chatGPTConnection
+	chatGPTResponsesURL       string // Test override; never accepted from clients or settings.
+	chatGPTQuotaDue           time.Time
+	providerChanging          bool
 	updates                   *releaseUpdateChecker
 	imageURLBackends          imageURLBackendManager
 	imageDependencyLookup     func(string) string
@@ -113,11 +119,12 @@ func newApp(dir string, vault credentialVault) (*app, error) {
 	cfg.Language = initialLanguage(cfg.Language)
 	u, _ := url.Parse(gatewayURL)
 	tr := http.DefaultTransport.(*http.Transport).Clone()
-	// Credentials only travel directly to Kilo; ignore ambient HTTP(S)_PROXY settings.
+	// Credentials travel directly to their service; ignore ambient HTTP(S)_PROXY settings.
 	tr.Proxy = nil
 	tr.ResponseHeaderTimeout = 120 * time.Second
 	a := &app{dir: dir, config: cfg, vault: vault, adminToken: randomKey(""), upstream: u, transport: tr, quit: make(chan struct{})}
 	a.updates = newReleaseUpdateChecker(version)
+	a.chatgpt = newChatGPTConnection(vault, cfg.VaultID, tr, dir)
 	a.modelLibrary = newModelLibraryStore(dir)
 	a.usageHistory = newUsageHistoryStore(dir)
 	a.zedCredentialStore = storeZedCredential
@@ -216,6 +223,10 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 			return
 		}
 		if r.URL.Path == "/mcp/images" && r.URL.RawPath == "" && r.URL.RawQuery == "" {
+			if key == "" || orgID == "" {
+				jsonError(w, http.StatusNotImplemented, "The Kilo image-generation MCP requires the Kilo connection. ChatGPT subscription mode currently supports image inputs, not this MCP.")
+				return
+			}
 			a.imageMCPHandler(w, r, key, orgID, localKey)
 			return
 		}
@@ -321,6 +332,38 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 			jsonError(recorder, http.StatusBadRequest, "Could not adapt Codex cross-task input: "+err.Error())
 			return
 		}
+		if r.Method == http.MethodGet {
+			if a.chatgpt.snapshot().Connected {
+				a.serveModelList(recorder, r)
+			} else {
+				proxy.ServeHTTP(recorder, r)
+			}
+			return
+		}
+		model, routeErr := requestModel(r)
+		if routeErr != nil {
+			status := http.StatusBadRequest
+			var oversized *http.MaxBytesError
+			if errors.As(routeErr, &oversized) {
+				status = http.StatusRequestEntityTooLarge
+			}
+			jsonError(recorder, status, routeErr.Error())
+			return
+		}
+		if strings.HasPrefix(model, "chatgpt/") {
+			usage = newUsageObserver(r, "chatgpt:"+a.chatgpt.identity())
+			usage.historyAccount = usageAccountID(a.chatgpt.identity(), "chatgpt")
+			usage.org = "chatgpt"
+			usage.usage.Billing = "subscription"
+			usage.messages = false
+			r = r.WithContext(context.WithValue(r.Context(), usageContextKey{}, usage))
+			a.serveChatGPT(recorder, r)
+			return
+		}
+		if key == "" || orgID == "" {
+			jsonError(recorder, 401, "This model requires a Kilo connection. Connect Kilo or choose a ChatGPT subscription model.")
+			return
+		}
 		bridge, err := prepareSchemaBridge(r)
 		if err != nil {
 			var oversized *http.MaxBytesError
@@ -408,10 +451,13 @@ func (a *app) startLocked() error {
 	if a.proxyServer != nil {
 		return nil
 	}
-	if a.authPending() {
+	if a.providerChanging {
+		return errors.New("provider authentication is changing")
+	}
+	if a.authPending() && !a.chatGPTReadyLocked() {
 		return errors.New("login pending")
 	}
-	if a.apiKey == "" || a.config.OrgID == "" {
+	if !a.connectionReadyLocked() {
 		return errMissingCredentials
 	}
 	host := net.JoinHostPort("127.0.0.1", strconv.Itoa(a.config.Port))

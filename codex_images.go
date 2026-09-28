@@ -102,6 +102,19 @@ func (a *app) saveCodexProfileSettings(dir string, catalog []byte, draft *imageG
 	if draft != nil {
 		images = *draft
 	}
+	if a.chatgpt.snapshot().Connected && (a.apiKey == "" || a.config.OrgID == "") {
+		// Preserve Kilo's image settings, but omit its paid image MCP from
+		// subscription profiles. Image inputs still pass through Responses.
+		images = imageGenerationSettings{}
+		var transforms []func([]byte) ([]byte, error)
+		if queueMode != nil {
+			if !validCodexQueueMode(*queueMode) {
+				return false, false, errors.New("Queue mode must be queue or steer")
+			}
+			transforms = append(transforms, codexQueueModeTransform(*queueMode))
+		}
+		return saveCodexProfileOptions(dir, catalog, a.config.Port, "", &images, nil, transforms...)
+	}
 	if err := validateImageGenerationSettings(images); err != nil {
 		return false, false, err
 	}

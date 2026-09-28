@@ -220,5 +220,9 @@ func (u *nativeUI) accountUsagePanel() layout.Widget {
 			local = append(local, u.scroll("history.days", 240, rows...))
 		}
 	}
-	return u.column(u.card(account...), u.card(local...), u.heading(u.tr("This Kilo Proxy session", "Esta sesión de Kilo Proxy")))
+	panels := []layout.Widget{u.card(account...), u.card(local...)}
+	if u.chatGPTConnected() {
+		panels = append(panels, u.chatGPTQuotaPanel())
+	}
+	return u.column(append(panels, u.heading(u.tr("This Kilo Proxy session", "Esta sesión de Kilo Proxy")))...)
 }

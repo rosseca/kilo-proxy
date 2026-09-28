@@ -128,9 +128,9 @@ func (u *nativeUI) clientLauncherPanel(key string, s *nativeClientSelection, can
 		}
 		widgets = append(widgets, u.hint(reason))
 	case !connectionReady:
-		widgets = append(widgets, u.hint(u.tr("Save your Kilo connection before opening this app.", "Guarda tu conexión de Kilo antes de abrir esta aplicación.")))
+		widgets = append(widgets, u.hint(u.tr("Connect Kilo or ChatGPT before opening this app.", "Conecta Kilo o ChatGPT antes de abrir esta aplicación.")))
 	case connectionWorking:
-		widgets = append(widgets, u.hint(u.tr("Wait for the Kilo connection update to finish.", "Espera a que termine la actualización de la conexión de Kilo.")))
+		widgets = append(widgets, u.hint(u.tr("Wait for the connection update to finish.", "Espera a que termine la actualización de la conexión.")))
 	case working:
 		widgets = append(widgets, u.hint(u.tr("Wait for the current profile operation to finish.", "Espera a que termine la operación actual del perfil.")))
 	}

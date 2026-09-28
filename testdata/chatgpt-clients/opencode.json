@@ -1,0 +1,72 @@
+{
+  "path": "/v1/chat/completions",
+  "request": {
+    "max_tokens": 8192,
+    "messages": [
+      {
+        "content": "Fixture system instructions.",
+        "role": "system"
+      },
+      {
+        "content": "Read sentinel.txt and return its contents.",
+        "role": "user"
+      },
+      {
+        "content": "",
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": "{\"filePath\":\"/fixture/project/sentinel.txt\"}",
+              "name": "read"
+            },
+            "id": "call_read_sentinel",
+            "type": "function"
+          }
+        ]
+      },
+      {
+        "content": "<path>/fixture/project/sentinel.txt</path>\n<type>file</type>\n<content>\n1: KILO_SUBSCRIPTION_TOOL_ROUNDTRIP_7d692a\n\n(End of file - total 1 lines)\n</content>",
+        "role": "tool",
+        "tool_call_id": "call_read_sentinel"
+      }
+    ],
+    "model": "chatgpt/gpt-5.4",
+    "reasoning_effort": "medium",
+    "stream": true,
+    "stream_options": {
+      "include_usage": true
+    },
+    "tool_choice": "auto",
+    "tools": [
+      {
+        "function": {
+          "name": "read",
+          "parameters": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "filePath": {
+                "type": "string"
+              },
+              "limit": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "offset": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "filePath"
+            ],
+            "type": "object"
+          }
+        },
+        "type": "function"
+      }
+    ]
+  }
+}

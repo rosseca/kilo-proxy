@@ -1,0 +1,256 @@
+{
+  "path": "/v1/responses",
+  "request": {
+    "include": [
+      "reasoning.encrypted_content"
+    ],
+    "input": [
+      {
+        "content": "Fixture system instructions.",
+        "id": "msg_01a0e726-ae7d-7761-894a-663edb7279ef",
+        "role": "developer",
+        "type": "message"
+      },
+      {
+        "content": [
+          {
+            "text": "Read sentinel.txt and return its contents.",
+            "type": "input_text"
+          }
+        ],
+        "id": "msg_01a0e726-ae7d-7761-894a-664ca98d841f",
+        "role": "user",
+        "type": "message"
+      },
+      {
+        "content": [
+          {
+            "text": "Read sentinel.txt and return its contents.",
+            "type": "input_text"
+          }
+        ],
+        "id": "msg_01a0e726-ae84-7cd3-86e7-f0dfbfde8659",
+        "role": "user",
+        "type": "message"
+      },
+      {
+        "arguments": "{\"cmd\":\"cat '/fixture/project/sentinel.txt'\",\"max_output_tokens\":1000}",
+        "call_id": "call_read_sentinel",
+        "id": "fc_read",
+        "name": "exec_command",
+        "type": "function_call"
+      },
+      {
+        "call_id": "call_read_sentinel",
+        "id": "fco_01a0e726-aec9-7bb1-af6f-2d0135f6c897",
+        "output": "Chunk ID: a1f953\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 10\nOutput:\nKILO_SUBSCRIPTION_TOOL_ROUNDTRIP_7d692a",
+        "type": "function_call_output"
+      }
+    ],
+    "instructions": "Fixture system instructions.",
+    "model": "chatgpt/gpt-5.4",
+    "parallel_tool_calls": true,
+    "reasoning": {
+      "effort": "medium"
+    },
+    "store": false,
+    "stream": true,
+    "text": {
+      "verbosity": "low"
+    },
+    "tool_choice": "auto",
+    "tools": [
+      {
+        "name": "exec_command",
+        "parameters": {
+          "additionalProperties": false,
+          "properties": {
+            "cmd": {
+              "type": "string"
+            },
+            "justification": {
+              "type": "string"
+            },
+            "login": {
+              "type": "boolean"
+            },
+            "max_output_tokens": {
+              "type": "number"
+            },
+            "prefix_rule": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "sandbox_permissions": {
+              "enum": [
+                "use_default",
+                "require_escalated"
+              ],
+              "type": "string"
+            },
+            "shell": {
+              "type": "string"
+            },
+            "tty": {
+              "type": "boolean"
+            },
+            "workdir": {
+              "type": "string"
+            },
+            "yield_time_ms": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "cmd"
+          ],
+          "type": "object"
+        },
+        "strict": false,
+        "type": "function"
+      },
+      {
+        "name": "write_stdin",
+        "parameters": {
+          "additionalProperties": false,
+          "properties": {
+            "chars": {
+              "type": "string"
+            },
+            "max_output_tokens": {
+              "type": "number"
+            },
+            "session_id": {
+              "type": "number"
+            },
+            "yield_time_ms": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "session_id"
+          ],
+          "type": "object"
+        },
+        "strict": false,
+        "type": "function"
+      },
+      {
+        "name": "request_user_input",
+        "parameters": {
+          "additionalProperties": false,
+          "properties": {
+            "questions": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "header": {
+                    "type": "string"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "options": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "label": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "label",
+                        "description"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "question": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "header",
+                  "question",
+                  "options"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "questions"
+          ],
+          "type": "object"
+        },
+        "strict": false,
+        "type": "function"
+      },
+      {
+        "format": {
+          "definition": "start: begin_patch hunk+ end_patch\nbegin_patch: \"*** Begin Patch\" LF\nend_patch: \"*** End Patch\" LF?\n\nhunk: add_hunk | delete_hunk | update_hunk\nadd_hunk: \"*** Add File: \" filename LF add_line+\ndelete_hunk: \"*** Delete File: \" filename LF\nupdate_hunk: \"*** Update File: \" filename LF change_move? change?\n\nfilename: /(.+)/\nadd_line: \"+\" /(.*)/ LF -> line\n\nchange_move: \"*** Move to: \" filename LF\nchange: (change_context | change_line)+ eof_line?\nchange_context: (\"@@\" | \"@@ \" /(.+)/) LF\nchange_line: (\"+\" | \"-\" | \" \") /(.*)/ LF\neof_line: \"*** End of File\" LF\n\n%import common.LF\n",
+          "syntax": "lark",
+          "type": "grammar"
+        },
+        "name": "apply_patch",
+        "type": "custom"
+      },
+      {
+        "name": "view_image",
+        "parameters": {
+          "additionalProperties": false,
+          "properties": {
+            "detail": {
+              "enum": [
+                "high",
+                "original"
+              ],
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "type": "object"
+        },
+        "strict": false,
+        "type": "function"
+      },
+      {
+        "execution": "client",
+        "parameters": {
+          "additionalProperties": false,
+          "properties": {
+            "limit": {
+              "type": "number"
+            },
+            "query": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "type": "object"
+        },
+        "type": "tool_search"
+      },
+      {
+        "external_web_access": false,
+        "search_content_types": [
+          "text",
+          "image"
+        ],
+        "type": "web_search"
+      }
+    ]
+  }
+}
