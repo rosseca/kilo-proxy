@@ -383,6 +383,7 @@ var nativeKnownReasoning = map[string]nativeReasoning{
 	"anthropic/claude-opus-5":         {Levels: []string{"low", "medium", "high", "xhigh", "max"}, Initial: "high"},
 	"anthropic/claude-opus-4.8":       {Levels: []string{"low", "medium", "high", "xhigh", "max"}, Initial: "high"},
 	"anthropic/claude-opus-4.7":       {Levels: []string{"low", "medium", "high", "xhigh", "max"}, Initial: "high"},
+	"anthropic/claude-sonnet-5.5":     {Levels: []string{"low", "medium", "high", "xhigh", "max"}, Initial: "high"},
 	"anthropic/claude-sonnet-5":       {Levels: []string{"low", "medium", "high", "xhigh", "max"}, Initial: "high"},
 	"anthropic/claude-opus-4.6":       {Levels: []string{"low", "medium", "high", "max"}, Initial: "high"},
 	"anthropic/claude-sonnet-4.6":     {Levels: []string{"low", "medium", "high", "max"}, Initial: "high"},

@@ -763,11 +763,9 @@ func (c *chatGPTConnection) models(ctx context.Context) ([]modelInfo, error) {
 		}
 		reasoning := len(model.ReasoningEfforts) > 0 || (m.DefaultEffort != "" && m.DefaultEffort != "none")
 		model.Reasoning = &reasoning
-		// The endpoint accepts client function tools; tool_mode=code_mode_only
-		// models need a separate adapter and must not advertise compatibility.
-		if m.ToolMode == "code_mode_only" {
-			continue
-		}
+		// tool_mode describes the Codex client's tool orchestration, not
+		// subscription access or Responses function-tool compatibility.
+		// Keep visible account models available to each client's own tools.
 		tools := true
 		model.Tools = &tools
 		models = append(models, model)

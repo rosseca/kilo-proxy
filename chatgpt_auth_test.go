@@ -374,11 +374,93 @@ func TestChatGPTModelsUseAccountCatalogAndRealCapabilities(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(models) != 2 || models[0].ID != "chatgpt/gpt-fixture" || models[0].Name != "Fixture · ChatGPT" || models[0].ContextWindow != 272000 || models[0].MaxOutputTokens != 10000 || models[0].InputPrice != nil || models[0].OutputPrice != nil || !reflect.DeepEqual(models[0].ReasoningEfforts, []string{"low", "high"}) {
+	if len(models) != 3 || models[0].ID != "chatgpt/gpt-fixture" || models[0].Name != "Fixture · ChatGPT" || models[0].ContextWindow != 272000 || models[0].MaxOutputTokens != 10000 || models[0].InputPrice != nil || models[0].OutputPrice != nil || !reflect.DeepEqual(models[0].ReasoningEfforts, []string{"low", "high"}) {
 		t.Fatalf("models: %+v", models)
 	}
-	if models[1].ContextWindow != 0 || models[1].MaxOutputTokens != 0 {
+	if models[1].ID != "chatgpt/only-code" || models[1].Tools == nil || !*models[1].Tools {
+		t.Fatalf("code-mode model lost tool compatibility: %+v", models[1])
+	}
+	if models[2].ID != "chatgpt/missing-limits" || models[2].ContextWindow != 0 || models[2].MaxOutputTokens != 0 {
 		t.Fatal("invented model limits")
+	}
+}
+
+func TestChatGPTModelsRetainVisibleCodeModeFamilies(t *testing.T) {
+	// Mirror the account catalog's visible families and hidden internal entries.
+	// Capabilities vary deliberately: these are fixture values, not model defaults.
+	families := []struct{ slug, name string }{
+		{"gpt-6-astra", "GPT-6 Astra"},
+		{"gpt-6-sol", "GPT-6 Sol"},
+		{"gpt-6-luna", "GPT-6 Luna"},
+		{"gpt-5.6-sol", "GPT-5.6 Sol"},
+		{"gpt-5.6-terra", "GPT-5.6 Terra"},
+		{"gpt-5.6-luna", "GPT-5.6 Luna"},
+		{"gpt-5.5", "GPT-5.5"},
+	}
+	var catalog []map[string]any
+	want := make(map[string]modelInfo, len(families))
+	for i, family := range families {
+		efforts := []string{"low", "high"}
+		input := []string{"text", "image"}
+		if i%2 != 0 {
+			efforts = []string{"medium", "xhigh"}
+			input = []string{"text"}
+		}
+		levels := make([]map[string]string, len(efforts))
+		for j, effort := range efforts {
+			levels[j] = map[string]string{"effort": effort}
+		}
+		contextWindow, maxOutput := 272000+i*1000, 10000+i*100
+		entry := map[string]any{
+			"slug": family.slug, "display_name": family.name, "visibility": "list",
+			"context_window": contextWindow, "max_output_tokens": maxOutput,
+			"input_modalities": input, "supported_reasoning_levels": levels,
+		}
+		if family.slug != "gpt-5.5" {
+			entry["tool_mode"] = "code_mode_only"
+		}
+		catalog = append(catalog, entry)
+		tools, reasoning := true, true
+		id := "chatgpt/" + family.slug
+		want[id] = modelInfo{
+			ID: id, Name: family.name + " · ChatGPT", Provider: "OpenAI",
+			ContextWindow: contextWindow, MaxOutputTokens: maxOutput,
+			InputModalities: input, OutputModalities: []string{"text"},
+			ReasoningEfforts: efforts, Tools: &tools, Reasoning: &reasoning,
+		}
+	}
+	catalog = append(catalog,
+		map[string]any{"slug": "reserve", "visibility": "hide", "tool_mode": "code_mode_only"},
+		map[string]any{"slug": "autoreview", "visibility": "hidden", "tool_mode": "code_mode_only"},
+	)
+	c, _ := chatGPTTestConnection(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/codex/models" {
+			t.Errorf("unexpected catalog path: %s", r.URL.Path)
+		}
+		if err := json.NewEncoder(w).Encode(map[string]any{"models": catalog}); err != nil {
+			t.Error(err)
+		}
+	}, true)
+	c.mu.Lock()
+	c.creds.Expires = time.Now().Add(time.Hour).Unix()
+	c.mu.Unlock()
+	models, err := c.models(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(models) != len(want) {
+		t.Fatalf("visible account models = %d, want %d: %+v", len(models), len(want), models)
+	}
+	seen := make(map[string]bool, len(models))
+	for _, model := range models {
+		expected, ok := want[model.ID]
+		if !ok || seen[model.ID] {
+			t.Fatalf("hidden, unknown or duplicate model in account catalog: %q", model.ID)
+		}
+		seen[model.ID] = true
+		if !reflect.DeepEqual(model, expected) {
+			t.Errorf("%s capabilities changed:\n got: %+v\nwant: %+v", model.ID, model, expected)
+		}
 	}
 }
 

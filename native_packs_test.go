@@ -26,7 +26,7 @@ func nativePackModelsForTest() []modelInfo {
 		{ID: "anthropic/claude-opus-5.5", Name: "Claude Opus", ContextWindow: 1000000, MaxOutputTokens: 8192, Tools: &tools, InputPrice: price(4), OutputPrice: price(20)},
 		{ID: "vendor/new-model", Name: "New model", ContextWindow: 128000, MaxOutputTokens: 4096, Tools: &tools, InputPrice: price(.2), OutputPrice: price(.5)},
 		{ID: "openai/gpt-6-sol", Name: "GPT-6 Sol", ContextWindow: 1050000, MaxOutputTokens: 8192, Tools: &tools, InputPrice: price(2), OutputPrice: price(10)},
-		{ID: "anthropic/claude-sonnet-5", Name: "Claude Sonnet 5", ContextWindow: 1000000, MaxOutputTokens: 8192, Tools: &tools, InputPrice: price(2), OutputPrice: price(10)},
+		{ID: "anthropic/claude-sonnet-5.5", Name: "Claude Sonnet 5.5", ContextWindow: 1000000, MaxOutputTokens: 8192, Tools: &tools, InputPrice: price(2), OutputPrice: price(10)},
 	}
 }
 

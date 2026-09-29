@@ -20,8 +20,8 @@
       "note": { "en": "Previous fast model, kept for stable workflows.", "es": "El modelo rápido anterior, para flujos que ya funcionan." }
     },
     {
-      "id": "anthropic/claude-sonnet-5",
-      "note": { "en": "Anthropic's most used model. Balanced quality and price.", "es": "El Anthropic más usado. Buen equilibrio entre calidad y precio." }
+      "id": "anthropic/claude-sonnet-5.5",
+      "note": { "en": "Anthropic's latest Sonnet for everyday coding.", "es": "El Sonnet más reciente de Anthropic para programar a diario." }
     },
     {
       "id": "anthropic/claude-opus-5.5",
