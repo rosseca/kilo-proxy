@@ -21,7 +21,7 @@
       "models": [
         {"id": "openai/gpt-6-sol", "role": {"en": "Daily driver", "es": "Modelo principal"}},
         {"id": "deepseek/deepseek-v4.1-flash", "role": {"en": "Fast iteration", "es": "Iteración rápida"}},
-        {"id": "anthropic/claude-sonnet-5", "role": {"en": "Independent review", "es": "Revisión independiente"}}
+        {"id": "anthropic/claude-sonnet-5.5", "role": {"en": "Independent review", "es": "Revisión independiente"}}
       ],
       "optional": [{"id": "openai/gpt-6-astra", "role": {"en": "Premium escalation", "es": "Escalación premium"}}]
     },
@@ -35,7 +35,7 @@
         {"id": "z-ai/glm-5.3-flash", "role": {"en": "Screenshot-driven iteration", "es": "Iteración desde capturas"}},
         {"id": "google/gemini-3.8-flash", "role": {"en": "Multimodal references", "es": "Referencias multimodales"}}
       ],
-      "optional": [{"id": "anthropic/claude-sonnet-5", "role": {"en": "Lower-cost alternative", "es": "Alternativa de menor coste"}}]
+      "optional": [{"id": "anthropic/claude-sonnet-5.5", "role": {"en": "Lower-cost alternative", "es": "Alternativa de menor coste"}}]
     },
     {
       "id": "docs-multilingual",
@@ -53,9 +53,9 @@
       "id": "marketing-growth",
       "name": {"en": "Marketing · Growth", "es": "Marketing · Growth"},
       "description": {"en": "Experimental copy, rapid variants, and visual references. Requires human brand review.", "es": "Textos experimentales, variantes rápidas y referencias visuales. Requiere revisión humana de marca."},
-      "defaultModel": "anthropic/claude-sonnet-5",
+      "defaultModel": "anthropic/claude-sonnet-5.5",
       "models": [
-        {"id": "anthropic/claude-sonnet-5", "role": {"en": "Main draft candidate", "es": "Candidato para borrador principal"}},
+        {"id": "anthropic/claude-sonnet-5.5", "role": {"en": "Main draft candidate", "es": "Candidato para borrador principal"}},
         {"id": "openai/gpt-6-luna", "role": {"en": "Economical variants", "es": "Variantes económicas"}},
         {"id": "google/gemini-3.8-flash", "role": {"en": "Visual references", "es": "Referencias visuales"}}
       ],

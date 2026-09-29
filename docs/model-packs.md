@@ -19,7 +19,7 @@ These five built-in packs are **candidate starting points**, reviewed on Septemb
 ## Full Stack Dev
 
 - **Default: GPT-6 Sol** for daily coding; it is a candidate based on Kilo's current catalog and use, not a claimed benchmark winner for this exact ID.
-- **DeepSeek V4.1 Flash** for economical iteration; **Claude Sonnet 5** for a second-provider review.
+- **DeepSeek V4.1 Flash** for economical iteration; **Claude Sonnet 5.5** for a second-provider review.
 - **Optional: GPT-6 Astra** only by user choice for expensive escalations; the coding benchmark and its cost per attempt are shown on [Kilo's leaderboard](https://kilo.ai/leaderboard).
 - **Evaluation gate:** repository changes that compile and pass tests, unintended changes in diffs, tool compatibility, and total cost/time for a completed task.
 
@@ -27,7 +27,7 @@ These five built-in packs are **candidate starting points**, reviewed on Septemb
 
 - **Default: Claude Opus 5.5** for direction and polish. [Anthropic](https://www.anthropic.com/claude-opus-5-5) reports improvements on a visual/game-building exercise, not a general UX or brand benchmark.
 - **GLM-5.3 Flash** for less expensive screenshot-driven implementation; [Z.ai's model guide](https://docs.z.ai/guides/vlm/glm-5.3-flash) explicitly describes visual UI coding. **Gemini 3.8 Flash** for another multimodal reading of reference material; [Google's model guide](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash) lists image, video, audio, and PDF input.
-- **Optional: Claude Sonnet 5** for a different cost tier.
+- **Optional: Claude Sonnet 5.5** for a different cost tier.
 - **Evaluation gate:** real reference-screen fidelity, responsive layouts, accessibility, implementation correctness, and human design critique.
 
 ## Docs · Multilingual
@@ -39,7 +39,7 @@ These five built-in packs are **candidate starting points**, reviewed on Septemb
 
 ## Marketing · Growth
 
-This pack is **experimental**: Claude Sonnet 5 for the first draft, GPT-6 Luna for inexpensive variants, Gemini 3.8 Flash for multimodal reference material, and Qwen3.8 Max 0902 as an optional localization candidate. It must pass blind human brand-voice, accuracy, and cultural-localization reviews before being presented as a quality recommendation.
+This pack is **experimental**: Claude Sonnet 5.5 for the first draft, GPT-6 Luna for inexpensive variants, Gemini 3.8 Flash for multimodal reference material, and Qwen3.8 Max 0902 as an optional localization candidate. It must pass blind human brand-voice, accuracy, and cultural-localization reviews before being presented as a quality recommendation.
 
 ## Personal packs and updates
 
