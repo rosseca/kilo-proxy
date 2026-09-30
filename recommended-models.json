@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "models": [
     {
-      "id": "openai/gpt-6-sol",
+      "id": "openai/gpt-6.1-sol",
       "note": { "en": "OpenAI's current flagship for everyday coding.", "es": "El modelo principal actual de OpenAI para programar a diario." }
     },
     {
