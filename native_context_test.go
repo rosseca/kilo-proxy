@@ -298,7 +298,13 @@ func TestNativeContextBlockerDialogPointerConfirmation(t *testing.T) {
 		for _, lang := range []string{"en", "es"} {
 			t.Run(fmtSize(size)+"-"+lang, func(t *testing.T) {
 				u := nativeTestUI(t)
-				u.page, u.language = "models", lang
+				u.page = "models"
+				// Save through the real language action so background state
+				// polls cannot restore English during screenshots or clicks.
+				u.setLanguage(lang)
+				nativeTestWait(t, u, func() bool {
+					return u.languageTarget == "" && !u.busy["GET/api/state"] && u.language == lang && nativeString(u.state, "language") == lang
+				})
 				known := nativeContextModels()[0]
 				unknown := modelInfo{ID: "provider/unknown", Name: "Unknown"}
 				u.models = []modelInfo{known}
