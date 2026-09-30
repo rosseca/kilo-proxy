@@ -289,12 +289,12 @@ func modelMetricNumber(raw json.RawMessage) *float64 {
 }
 
 func (a *app) models(w http.ResponseWriter, r *http.Request) {
-	models, revision, err := a.fetchModels(r.Context(), false)
+	models, revision, complete, err := a.fetchModelsWithCompleteness(r.Context(), false)
 	if err != nil {
 		catalogFailure(w, err)
 		return
 	}
-	jsonResponse(w, 200, map[string]any{"models": models, "revision": revision, "fetchedAt": time.Now().UTC().Format(time.RFC3339)})
+	jsonResponse(w, 200, map[string]any{"models": models, "revision": revision, "complete": complete, "fetchedAt": time.Now().UTC().Format(time.RFC3339)})
 }
 
 func parseModels(body []byte) ([]modelInfo, error) {

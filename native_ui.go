@@ -33,6 +33,7 @@ type nativeUI struct {
 	catalogCache        nativeCatalogCache
 	catalogGeneration   uint64
 	catalogCached       bool
+	catalogFetchedAt    time.Time
 	library             *nativeLibrary
 	packs               *nativePackUI
 	agents              *nativeAgents
@@ -93,7 +94,8 @@ func newNativeUI(owner *app, invalidate func()) *nativeUI {
 	u.language = owner.config.Language
 	u.setValue("connection.org", owner.config.OrgID)
 	u.setValue("connection.port", strconv.Itoa(owner.config.Port))
-	u.models = readNativeCatalogCache(owner.dir, owner.catalogScopeLocked())
+	catalog := readNativeCachedCatalog(owner.dir, owner.catalogScopeLocked())
+	u.models, u.catalogFetchedAt = catalog.Models, catalog.FetchedAt
 	u.catalogCached = len(u.models) > 0
 	u.setChecked("connection.remember", owner.config.Remember)
 	owner.mu.Unlock()
@@ -644,6 +646,7 @@ func (u *nativeUI) acceptState(raw json.RawMessage) {
 	}
 	if !first && oldRevision != nativeNumber(state, "catalogRevision") {
 		u.models = nil
+		u.catalogFetchedAt = time.Time{}
 		if u.library != nil {
 			for i := range u.library.selection.Models {
 				choice := &u.library.selection.Models[i]
@@ -692,6 +695,7 @@ func (u *nativeUI) applyModels(raw json.RawMessage, requestedRevision float64, f
 		Models   []modelInfo `json:"models"`
 		Catalog  []modelInfo `json:"catalog"`
 		Revision float64     `json:"revision"`
+		Complete *bool       `json:"complete"`
 	}
 	if json.Unmarshal(raw, &response) != nil {
 		return false
@@ -714,6 +718,12 @@ func (u *nativeUI) applyModels(raw json.RawMessage, requestedRevision float64, f
 		u.models = response.Catalog
 	}
 	u.catalogCached = false
+	// Missing flags preserve compatibility with older local API responses.
+	// Partial success must also invalidate a previously fresh catalog's date.
+	u.catalogFetchedAt = time.Time{}
+	if response.Complete == nil || *response.Complete {
+		u.catalogFetchedAt = time.Now().UTC()
+	}
 	u.cacheModels(org)
 	return true
 }

@@ -315,12 +315,7 @@ func (u *nativeUI) libraryModelsPanel() layout.Widget {
 	if u.page == "setup" || len(s.Models) == 0 && len(recommended) > 0 {
 		addKind = nativeButtonSecondary
 	}
-	add := u.iconButton("primary.models.add", u.tr("Add models", "Añadir modelos"), addKind, nativeIconAdd, func() {
-		u.expanded["library.catalog"] = true
-		if len(u.models) == 0 {
-			u.refreshModels()
-		}
-	})
+	add := u.iconButton("primary.models.add", u.tr("Add models", "Añadir modelos"), addKind, nativeIconAdd, u.openModelCatalog)
 	top := u.actionRow(u.column(u.heading(u.tr("Your models", "Tus modelos")), u.note(modelCount), u.message(statusTone, statusText)), add)
 	if u.expanded["library.catalog"] {
 		done := u.primaryButton("models.done", u.tr("Done", "Listo"), func() { u.expanded["library.catalog"] = false })

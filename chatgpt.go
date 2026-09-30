@@ -39,6 +39,14 @@ func requestModel(r *http.Request) (string, error) {
 // Subscription IDs have their own namespace, so equal model names never change
 // how an existing conversation is billed.
 func (a *app) fetchModels(ctx context.Context, requireAccount bool) ([]modelInfo, uint64, error) {
+	models, revision, _, err := a.fetchModelsWithCompleteness(ctx, requireAccount)
+	return models, revision, err
+}
+
+// Completeness belongs to this fetch, rather than catalogWarnings, which another
+// concurrent request can replace. A partial catalog remains useful, but must not
+// postpone discovering models from the unavailable connection for another hour.
+func (a *app) fetchModelsWithCompleteness(ctx context.Context, requireAccount bool) ([]modelInfo, uint64, bool, error) {
 	a.mu.Lock()
 	revision, key, org := a.catalogRevision, a.apiKey, a.config.OrgID
 	chatgpt, connection := a.chatGPTReadyLocked(), a.chatgpt
@@ -55,7 +63,7 @@ func (a *app) fetchModels(ctx context.Context, requireAccount bool) ([]modelInfo
 		for i := range models {
 			models[i].Connection = "kilo"
 		}
-		return models, revision, err
+		return models, revision, err == nil, err
 	}
 	type result struct {
 		models     []modelInfo
@@ -89,13 +97,13 @@ func (a *app) fetchModels(ctx context.Context, requireAccount bool) ([]modelInfo
 	}
 	a.mu.Unlock()
 	if changed {
-		return nil, revision, &catalogError{409, "A connection changed while loading models. Refresh the catalog."}
+		return nil, revision, false, &catalogError{409, "A connection changed while loading models. Refresh the catalog."}
 	}
 	if len(all) == 0 && len(warnings) > 0 {
-		return nil, revision, &catalogError{502, strings.Join(warnings, "; ")}
+		return nil, revision, false, &catalogError{502, strings.Join(warnings, "; ")}
 	}
 	sort.SliceStable(all, func(i, j int) bool { return strings.ToLower(all[i].Name) < strings.ToLower(all[j].Name) })
-	return all, revision, nil
+	return all, revision, len(warnings) == 0, nil
 }
 
 // Each model identifies its connection; no global provider switch is needed.

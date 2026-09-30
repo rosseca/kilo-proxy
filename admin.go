@@ -390,10 +390,10 @@ func (a *app) forget(w http.ResponseWriter) {
 // This intentionally reads the catalog only; it does not imply that organization
 // credits or model policy were checked. Inference remains a deliberate client action.
 func (a *app) check(w http.ResponseWriter, r *http.Request) {
-	models, revision, err := a.fetchModels(r.Context(), true)
+	models, revision, complete, err := a.fetchModelsWithCompleteness(r.Context(), true)
 	if err != nil {
 		catalogFailure(w, err)
 		return
 	}
-	jsonResponse(w, 200, map[string]any{"models": len(models), "catalog": models, "revision": revision, "fetchedAt": time.Now().UTC().Format(time.RFC3339), "message": "Gateway accesible. El catálogo no verifica el saldo ni los permisos de generación de tu organización."})
+	jsonResponse(w, 200, map[string]any{"models": len(models), "catalog": models, "revision": revision, "complete": complete, "fetchedAt": time.Now().UTC().Format(time.RFC3339), "message": "Gateway accesible. El catálogo no verifica el saldo ni los permisos de generación de tu organización."})
 }
