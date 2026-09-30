@@ -52,14 +52,14 @@ let updateFailedCheck = '';
 try { const saved=JSON.parse(sessionStorage.getItem('kilo-cloudflare-prompt')||'{}');if(saved&&typeof saved==='object')imageDependencyPrompt={dismissed:saved.dismissed===true,mode:saved.mode,running:saved.running===true}; } catch {}
 let lastAuthStatus, teamSignature = '';
 const clientModels = {};
-const codexClients = Object.fromEntries(['codex','codex-cli'].map(id=>[id,{models:new Map(),initial:'',setup:null,preparing:false,imageGeneration:null,imageGenerationBaseline:null,queueMode:'queue'}]));
+const codexClients = Object.fromEntries(['codex','codex-cli'].map(id=>[id,{models:new Map(),initial:'',setup:null,preparing:false,imageGeneration:null,imageGenerationBaseline:null,queueMode:'queue',chatgptDictation:null}]));
 const isCodexClient = () => ['codex','codex-cli'].includes(client);
 const codexSelection = () => codexClients[client] || codexClients.codex;
 const multiClients = Object.fromEntries(['opencode','claude'].map(id=>[id,{models:new Map(),initial:'',aliases:{},signature:''}]));
 let claudeInstalled=claudeCapabilities(), claudeChecked=false, claudeSetup=null, claudeRendering='',claudePreparing=false,claudeDetecting=false;
 let launchInfo=null,launchDetecting=false,launchDetected=false,launchBusy=false,launchMessage='',launchError=false,launchDirectoryEdited=false;
 let desktopSignature = '';
-function codexSetupSignature(selection=codexSelection()) { return JSON.stringify([state?.baseURL,contextPreview(()=>codexCatalog([...selection.models.values()],selection.initial)),selection.imageGeneration,selection===codexClients.codex?selection.queueMode:'']); }
+function codexSetupSignature(selection=codexSelection()) { return JSON.stringify([state?.baseURL,contextPreview(()=>codexCatalog([...selection.models.values()],selection.initial)),selection.imageGeneration,selection===codexClients.codex?selection.queueMode:'',selection===codexClients.codex?selection.chatgptDictation:null]); }
 function renderCodexSetup() {
   const cli=client==='codex-cli', setup=codexSelection().setup;
   $('save-codex-catalog').disabled=codexSelection().preparing||!!contextError(codexSelection().models)||!imageGenerationValid(codexSelection().imageGeneration,catalog,state);
@@ -106,10 +106,14 @@ function renderCodexImages() {
   $('codex-image-save').textContent=imageSettingsSaving?L('Saving…','Guardando…'):L('Save image settings','Guardar ajustes de imágenes');
   $('codex-image-save').disabled=images===null||imageSettingsSaving||!imageGenerationValid(images);
 }
-function renderCodexQueueMode() {
+function renderCodexDesktopSettings() {
   const L=(en,es)=>language==='en'?en:es,desktop=client==='codex',selection=codexSelection();
   $('codex-queue-mode-settings').hidden=!desktop;
+  $('codex-dictation-settings').hidden=!desktop;
   if(!desktop)return;
+  $('codex-dictation').checked=selection.chatgptDictation===true;
+  $('codex-dictation-label').textContent=L('Use ChatGPT dictation (experimental)','Usar dictado de ChatGPT (experimental)');
+  $('codex-dictation-help').textContent=L('Prepare and restart Codex Kilo, then sign in to ChatGPT in that window. Audio goes to ChatGPT; coding requests use the local proxy key. Availability depends on your ChatGPT account and app version.','Prepara y reinicia Codex Kilo e inicia sesión en ChatGPT en esa ventana. El audio se envía a ChatGPT; las peticiones de código usan la clave local del proxy. La disponibilidad depende de tu cuenta de ChatGPT y de la versión de la app.');
   const select=$('codex-queue-mode');
   select.querySelector('option[value="queue"]').textContent=L('Queue · wait for the next turn','Queue · esperar al siguiente turno');
   select.querySelector('option[value="steer"]').textContent=L('Steer · add them to the current turn','Steer · incorporarlos al turno actual');
@@ -144,6 +148,7 @@ $('codex-image-save').addEventListener('click',async()=>{
   }catch(error){notify(error.message,true);}finally{imageSettingsSaving=false;renderSnippet();}
 });
 $('codex-image-refresh').addEventListener('click',()=>{void loadModels();});
+$('codex-dictation').addEventListener('change',()=>{codexClients.codex.chatgptDictation=$('codex-dictation').checked;renderSnippet();});
 $('codex-queue-mode').addEventListener('change',()=>{codexSelection().queueMode=$('codex-queue-mode').value==='steer'?'steer':'queue';renderSnippet();});
 function effectiveModel() { if(multiClients[client]?.models.size)return multiClients[client].initial; return isCodexClient() ? codexSelection().initial : $('model').value.trim(); }
 let catalog = [], catalogRevision, catalogLoading = false, catalogError = '', catalogFetchedAt = '', catalogRequest = 0;
@@ -190,7 +195,7 @@ function snippet(reveal = false) {
   if (!state || !validModelID(effectiveModel())) return t('Selecciona un modelo para generar la configuración.');
   const model = effectiveModel();
   const key = reveal ? state.localKey : 'kl_local_••••••••••••••••';
-  const config=clientConfig({client,language,selectedModels:[...(multiClients[client]?.models.values() || [])],aliases:multiClients[client]?.aliases,catalogPath:isCodexClient() && codexSelection().models.size ? 'models.json' : '',baseURL:state.baseURL,zedBaseURL:state.zedBaseURL,key,model,queueMode:codexSelection().queueMode,contextWindow:Math.max(1024, Number($('context-window').value) || 200000)});
+  const config=clientConfig({client,language,selectedModels:[...(multiClients[client]?.models.values() || [])],aliases:multiClients[client]?.aliases,catalogPath:isCodexClient() && codexSelection().models.size ? 'models.json' : '',baseURL:state.baseURL,zedBaseURL:state.zedBaseURL,key,model,queueMode:codexSelection().queueMode,chatgptDictation:codexSelection().chatgptDictation,contextWindow:Math.max(1024, Number($('context-window').value) || 200000)});
   return isCodexClient()?codexImageMCPConfig(config,codexSelection().imageGeneration,state.baseURL):config;
 }
 function launch(key) {
@@ -396,6 +401,7 @@ function render(s) {
   state = s;
   if(chatGPTLoginRequested&&s.chatgpt?.status==='pending'&&validChatGPTVerificationURL(s.chatgpt.verificationUrl)){chatGPTLoginRequested=false;void openExternal(s.chatgpt.verificationUrl).catch(error=>notify(error.message,true));}
   if(s.chatgpt?.status==='error'||s.chatgpt?.connected)chatGPTLoginRequested=false;
+  if(codexClients.codex.chatgptDictation===null)codexClients.codex.chatgptDictation=s.codexChatGPTDictation===true;
   for(const selection of Object.values(codexClients))if(selection.imageGeneration===null){selection.imageGeneration=imageGenerationSelection(s.imageGeneration);selection.imageGenerationBaseline=imageGenerationSelection(s.imageGeneration);}
   configureDesktop(api, !!s.desktop);
   if (!initialized) {
@@ -619,7 +625,7 @@ for(const alias of ['sonnet','opus','haiku'])$('claude-alias-'+alias).addEventLi
 function renderDesktopModels() {
   renderCodexSetup();
   renderCodexImages();
-  renderCodexQueueMode();
+  renderCodexDesktopSettings();
   const active=['codex','codex-cli','claude'].includes(client);
   $('codex-models').hidden=!isCodexClient();
   $('codex-bulk-controls').hidden=!active;
@@ -713,7 +719,7 @@ $('load-codex-catalog').addEventListener('click',async()=>{
     selection.imageGeneration=imageGenerationSelection(data.imageGeneration)??imageGenerationSelection(state?.imageGeneration);
     selection.imageGenerationBaseline=imageGenerationSelection(selection.imageGeneration);
     acceptCodexImageSettings(selection.imageGeneration);
-    if(target==='codex')selection.queueMode=data.followUpQueueMode==='steer'?'steer':'queue';
+    if(target==='codex'){selection.queueMode=data.followUpQueueMode==='steer'?'steer':'queue';selection.chatgptDictation=data.chatgptDictation===true;}
     for(const model of data.catalog.models){selection.models.set(model.slug,{...catalog.find(entry=>entry.id===model.slug),id:model.slug,name:catalog.find(entry=>entry.id===model.slug)?.name || model.slug,displayName:model.display_name || '',contextPreset:'custom',contextTokens:model.context_window,contextMaximum:catalog.find(entry=>entry.id===model.slug)?.contextWindow||0,contextWindow:model.context_window,inputModalities:model.input_modalities,reasoningLevels:(model.supported_reasoning_levels || []).map(r=>r.effort),defaultReasoning:model.default_reasoning_level});}
     selection.initial=selection.models.has(data.defaultModel) ? data.defaultModel : selection.models.keys().next().value || '';
     if(client===target){$('codex-selected-only').checked=true;$('model-search').value='';}
@@ -730,7 +736,7 @@ async function prepareCodex(){
   const signature=codexSetupSignature(selection);
   const imagesSent=imageGenerationSelection(selection.imageGeneration);
   try {
-    const result=await api(target+'/catalog',{catalog:codexCatalog([...selection.models.values()],selection.initial),...(imagesSent?{imageGeneration:imagesSent}:{}),...(target==='codex'?{followUpQueueMode:selection.queueMode==='steer'?'steer':'queue'}:{})});
+    const result=await api(target+'/catalog',{catalog:codexCatalog([...selection.models.values()],selection.initial),...(imagesSent?{imageGeneration:imagesSent}:{}),...(target==='codex'?{followUpQueueMode:selection.queueMode==='steer'?'steer':'queue',...(selection.chatgptDictation===null?{}:{chatgptDictation:selection.chatgptDictation})}:{})});
     acceptCodexImageSettings(imagesSent);
     selection.setup={signature,path:result.profileDir};renderCodexSetup();toast(target==='codex-cli' ? 'Perfil de Codex CLI preparado' : 'Perfil de Codex GUI preparado');
   }catch(error){selection.setup=null;throw error;}

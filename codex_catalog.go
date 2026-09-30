@@ -54,6 +54,7 @@ func (a *app) codexCatalog(w http.ResponseWriter, r *http.Request) {
 		response := map[string]any{"catalog": json.RawMessage(data), "defaultModel": first, "imageGeneration": a.config.ImageGeneration}
 		if profileName == ".codex-kilo-desktop" {
 			response["followUpQueueMode"] = codexQueueModeFromConfig(dir)
+			response["chatgptDictation"] = codexChatGPTDictationFromConfig(dir)
 		}
 		jsonResponse(w, 200, response)
 		return
@@ -63,9 +64,10 @@ func (a *app) codexCatalog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input struct {
-		Catalog         json.RawMessage          `json:"catalog"`
-		ImageGeneration *imageGenerationSettings `json:"imageGeneration,omitempty"`
-		QueueMode       *string                  `json:"followUpQueueMode,omitempty"`
+		Catalog          json.RawMessage          `json:"catalog"`
+		ImageGeneration  *imageGenerationSettings `json:"imageGeneration,omitempty"`
+		QueueMode        *string                  `json:"followUpQueueMode,omitempty"`
+		ChatGPTDictation *bool                    `json:"chatgptDictation,omitempty"`
 	}
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, catalogLimit))
 	decoder.DisallowUnknownFields()
@@ -81,7 +83,11 @@ func (a *app) codexCatalog(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, 400, "Queue mode is available only for Codex Desktop.")
 		return
 	}
-	configChanged, catalogChanged, err := a.saveCodexProfileSettings(dir, input.Catalog, input.ImageGeneration, input.QueueMode)
+	if profileName != ".codex-kilo-desktop" && input.ChatGPTDictation != nil {
+		jsonError(w, 400, "ChatGPT dictation is available only for Codex Desktop.")
+		return
+	}
+	configChanged, catalogChanged, err := a.saveCodexProfileSettings(dir, input.Catalog, input.ImageGeneration, input.QueueMode, input.ChatGPTDictation)
 	if err != nil {
 		jsonError(w, 409, err.Error())
 		return
