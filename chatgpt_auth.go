@@ -32,7 +32,10 @@ const (
 	chatGPTResponsesURL    = chatGPTBackendURL + "/codex/responses"
 	chatGPTVerificationURL = chatGPTAuthURL + "/codex/device"
 	chatGPTClientID        = "app_EMoamEEZ73f0CkXaXp7hrann"
-	chatGPTClientVersion   = "0.155.1"
+	// The models endpoint gates visibility on the client_version query, not
+	// just the version header. Keep this compatibility version live-validated:
+	// 0.159.0 exposes Sol 6.1, which the same account's 0.155.1 query omitted.
+	chatGPTClientVersion = "0.159.0"
 )
 
 type chatGPTQuotaWindow struct {

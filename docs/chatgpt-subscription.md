@@ -13,6 +13,8 @@ This is an **experimental direct connection** to the subscription backend used b
 
 ChatGPT can be used without a Kilo connection. You can also add Kilo later, or disconnect either account independently. Disconnecting ChatGPT does not remove Kilo credentials or erase the shared model library; a saved ChatGPT model needs a connected ChatGPT account to run.
 
+The subscription backend also filters its catalog by the client compatibility version sent by Kilo Proxy. If a newly available model is missing, update Kilo Proxy and use **Refresh catalog**. For example, version 0.51.1 sent compatibility version `0.155.1`, which omitted GPT-6.1 Sol even for an eligible account. Version 0.51.2 sends the live-validated `0.159.0` version. Updating does not grant access to models unavailable to the connected account.
+
 The existing agent helpers continue to prepare their own profiles with the local proxy URL and local API key. Agents do not receive ChatGPT OAuth tokens. The native interface shares one model library; the optional browser helper retains its existing per-client selections. See [client setup](clients.md), [terminal commands](terminal-commands.md), and the additional [Claude Desktop compatibility requirements](claude-desktop.md).
 
 ## Credentials and privacy
@@ -55,6 +57,8 @@ Live validation on September 28, 2026 used a separately authorized ChatGPT accou
 Regression tests cover two observed subscription behaviors: SSE responses without a `Content-Type` header, and terminal responses with an empty `output` after completed output items have already streamed. The latter items are retained when assembling nonstreaming replies.
 
 Live validation on September 29, 2026 confirmed Responses function-call/result round trips for the account's six visible `code_mode_only` models: GPT-6 Astra, Sol and Luna, and GPT-5.6 Sol, Terra and Luna. Astra also completed a Responses custom-tool round trip and function-tool round trips through the Chat Completions and Anthropic Messages adapters. Each check returned an unpredictable synthetic value supplied only in the tool result. These checks used subscription quota without Kilo inference or paid fallback. Catalog regression tests retain these visible families and their account-provided capabilities while excluding hidden models.
+
+Live validation on September 30, 2026 compared catalog queries using compatibility versions `0.155.1` and `0.159.0` with the same connected account. Only the newer query returned GPT-6.1 Sol; changing the version header alone did not expose it. The updated proxy retained the model's account-provided context and reasoning levels. GPT-6.1 Sol completed function-call/result round trips through Responses, Chat Completions and Anthropic Messages, each returning an unpredictable synthetic tool result. These checks used an isolated temporary proxy and subscription quota without Kilo inference or paid fallback.
 
 To repeat the installed-client live check, explicitly set `KILO_CHATGPT_LIVE_CLIENTS` (a comma-separated selection of `claude-full,opencode,omp,codex`), `KILO_CHATGPT_LIVE_URL` (the local proxy origin without `/v1`), `KILO_CHATGPT_LIVE_MODEL` and `KILO_CHATGPT_LIVE_KEY`, then run `go test -run '^TestChatGPTLiveClients$' -count=1 -v`. Supply the local key privately through the environment, never a committed file or shared command. This opt-in test consumes subscription quota; ordinary test runs skip it.
 

@@ -385,6 +385,35 @@ func TestChatGPTModelsUseAccountCatalogAndRealCapabilities(t *testing.T) {
 	}
 }
 
+func TestChatGPTModelsVersionUnlocksSol61Catalog(t *testing.T) {
+	// Reproduce the observed upstream gate: changing only the version header
+	// does not expose Sol 6.1; the client_version query must be current.
+	c, _ := chatGPTTestConnection(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/codex/models" {
+			t.Errorf("unexpected catalog path: %s", r.URL.Path)
+		}
+		if r.URL.Query().Get("client_version") != "0.159.0" {
+			fmt.Fprint(w, `{"models":[{"slug":"gpt-6-sol","display_name":"GPT-6 Sol"}]}`)
+			return
+		}
+		fmt.Fprint(w, `{"models":[{"slug":"gpt-6-sol","display_name":"GPT-6 Sol"},{"slug":"gpt-6.1-sol","display_name":"GPT-6.1 Sol","visibility":"list","tool_mode":"code_mode_only","context_window":272000,"input_modalities":["text","image"],"supported_reasoning_levels":[{"effort":"low"},{"effort":"medium"},{"effort":"high"},{"effort":"xhigh"},{"effort":"max"},{"effort":"ultra"}]},{"slug":"gpt-hidden","visibility":"hide"},{"slug":"gpt-internal","visibility":"hidden"}]}`)
+	}, true)
+	c.mu.Lock()
+	c.creds.Expires = time.Now().Add(time.Hour).Unix()
+	c.mu.Unlock()
+	models, err := c.models(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(models) != 2 {
+		t.Fatalf("expected the current visible account catalog, got %d models: %+v", len(models), models)
+	}
+	model := models[1]
+	if model.ID != "chatgpt/gpt-6.1-sol" || model.Name != "GPT-6.1 Sol · ChatGPT" || model.ContextWindow != 272000 || model.MaxOutputTokens != 0 || model.Tools == nil || !*model.Tools || model.Reasoning == nil || !*model.Reasoning || model.InputPrice != nil || model.OutputPrice != nil || !reflect.DeepEqual(model.ReasoningEfforts, []string{"low", "medium", "high", "xhigh", "max", "ultra"}) || !reflect.DeepEqual(model.InputModalities, []string{"text", "image"}) {
+		t.Fatalf("Sol 6.1 account capabilities changed: %+v", model)
+	}
+}
+
 func TestChatGPTModelsRetainVisibleCodeModeFamilies(t *testing.T) {
 	// Mirror the account catalog's visible families and hidden internal entries.
 	// Capabilities vary deliberately: these are fixture values, not model defaults.
