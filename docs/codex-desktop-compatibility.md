@@ -10,6 +10,28 @@ The generated launchers use a new Codex home and a new Electron user-data direct
 
 The [official configuration documentation](https://learn.chatgpt.com/docs/config-file/config-advanced#config-and-state-locations) documents CODEX_HOME for local configuration/state. It does not establish a stable public contract for the Electron variable above. Recheck the installed version if the second GUI opens the original window or ignores its provider.
 
+## Dictation authentication
+
+Read-only inspection on 2026-09-30: `/Applications/ChatGPT.app`, version `26.915.31029`, bundled `codex-cli 0.155.0-alpha.9`.
+
+- The composer dictation capability requires `authMethod === "chatgpt"`, in addition to microphone APIs, feature gates and workspace policy.
+- HTTP dictation calls `/transcribe`. Streaming dictation obtains backend authentication and connects to `/dictation/stream`; missing authentication produces `Sign in to ChatGPT to use dictation.` These are desktop backend routes, not the configured model provider's Responses endpoint.
+- Codex's `getAuthStatus` returns no method/token when the active provider has `requires_openai_auth = false`, even when that profile contains a ChatGPT login. Enabling it exposes the login to Desktop. The provider's explicit `env_key` still takes precedence for inference authentication.
+
+The opt-in therefore sets `model_providers.kilo-local.requires_openai_auth = true`, retaining the localhost base URL and `env_key = "KILO_LOCAL_API_KEY"`. Model refreshes preserve this boolean; disabling it explicitly writes `false`. It does not enable `supports_websockets`, change model selection, bypass an account entitlement or override dictation policy. Profiles created without the option retain the original authentication behavior.
+
+Public implementation references: [auth status](https://github.com/openai/codex/blob/2e5fea64eefcaa19f48458b2386011b619f69c70/codex-rs/app-server/src/request_processors/account_processor.rs#L1125), [provider credential priority](https://github.com/openai/codex/blob/2e5fea64eefcaa19f48458b2386011b619f69c70/codex-rs/model-provider/src/auth.rs#L197). The desktop UI behavior above comes from the installed bundle; it is version-dependent.
+
+Run the compatibility probe against the binary bundled with the app:
+
+```sh
+python3 scripts/check-codex-dictation.py /absolute/path/to/codex
+```
+
+It generates profiles through the browser helper, uses synthetic ChatGPT credentials and a loopback Responses server, and blocks upstream traffic through loopback proxy settings. Both off/on cases must expose the expected auth status and complete a mock inference using only the local provider key, with no ChatGPT token or account header reaching the provider. It does not read your credentials or touch your normal profiles. This passed with the bundled version above.
+
+Actual ChatGPT sign-in, microphone capture and live transcription still require a manual account-backed smoke test. The probe does not establish account entitlement, transcription quality or compatibility with every desktop release. Before release, verify one real dictation in the isolated window and one coding response through the proxy, then disable the option and confirm ordinary Kilo use still works.
+
 Validation: the macOS command is executed against a mock `open` executable to verify exact arguments, whitespace/quote handling and isolation. The CLI command is executed against a mock `codex` executable to verify child environment values, rejection of missing config and preservation of the parent shell environment. PowerShell restoration is checked structurally. These are not claims of an end-to-end desktop run or successful Kilo inference. No main-profile auth, cookies or conversation databases are copied.
 
 The installed app bundle is not included in Kilo Proxy distributions. Install it separately from the vendor and select its actual path. The normal app retains its normal updates. Profiles isolate settings and history; they do not sandbox repositories shared between instances.

@@ -87,3 +87,14 @@ test('desktop catalog launcher refuses missing models.json before opening the ap
   assert.equal(present.status,0,present.stderr);assert.equal(present.stdout,'opened');
  } finally {rmSync(dir,{recursive:true,force:true});}
 });
+
+test('ChatGPT dictation opt-in keeps local inference credentials and is desktop-only',()=>{
+ const enabled=clientConfig({...base,client:'codex',chatgptDictation:true});
+ assert.match(enabled,/requires_openai_auth = true/);
+ assert.match(enabled,/env_key = "KILO_LOCAL_API_KEY"/);
+ assert.ok(enabled.includes(base.baseURL));
+ assert.ok(!enabled.includes(base.key));
+ for(const options of [{client:'codex'}, {client:'codex',chatgptDictation:false}, {client:'codex-cli',chatgptDictation:true}]) {
+  assert.match(clientConfig({...base,...options}),/requires_openai_auth = false/);
+ }
+});

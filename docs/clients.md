@@ -68,6 +68,20 @@ Keep the normal `~/.codex/config.toml` unchanged. Do not copy its `auth.json`, c
 
 The Electron isolation variable is version-dependent rather than a stable public API. [Compatibility notes](codex-desktop-compatibility.md) describe the inspected macOS version and what was tested. The original vendor app is installed separately and is not redistributed here. Windows and Linux require verification with the installed app version.
 
+### Optional ChatGPT dictation in Codex Desktop
+
+Under **Codex → Options → Integration settings**, enable **Use ChatGPT dictation (experimental)**. The same option is in the browser helper's Codex Desktop panel. It is off by default.
+
+1. Enable the option and prepare the profile, or use **Open Codex** to prepare it automatically.
+2. Restart the isolated Codex Kilo window and sign in to ChatGPT **in that window**. The ChatGPT connection in Kilo Proxy is a separate login and does not sign Codex in. No credentials are copied from your normal Codex profile.
+3. Allow microphone access when Codex asks, then use the composer microphone to dictate a prompt. Availability depends on the installed app, account/workspace permissions and feature rollout.
+
+The option enables Codex's native ChatGPT authentication while retaining `KILO_LOCAL_API_KEY` and the proxy URL for inference. Audio goes directly to ChatGPT's transcription service and follows that account's availability and limits. Coding requests continue through Kilo Proxy and its normal model routing. This option does not add an audio endpoint to Kilo Proxy or enable live voice conversations.
+
+The preference survives model and port changes, re-preparation and restarting Kilo Proxy. To turn it off, uncheck it, prepare the profile and restart Codex. This removes the dictation authentication opt-in but does not sign you out or delete Codex-owned credentials; use Codex's sign-out action if needed. CLI and Xcode have no dictation toggle.
+
+If the microphone is still unavailable, check that the isolated window is signed in with ChatGPT, that microphone access is allowed and that dictation is available for your account. An existing `features.in_app_dictation = false` or organization restriction is preserved. See [compatibility evidence and the local verification command](codex-desktop-compatibility.md#dictation-authentication).
+
 ### Multiple models, reasoning, and short names
 
 The native **Models** page is the source for both Codex integrations. Add up to 50 exact IDs, edit display names, choose the default and set supported reasoning. Open a model card's **Edit** controls for its name and additional preferences; advanced options expose custom supported reasoning levels. Names are limited to 80 characters. These preferences save automatically in the common library, independently of generated profiles.

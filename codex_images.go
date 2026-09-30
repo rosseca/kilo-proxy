@@ -94,10 +94,10 @@ func mergeCodexImages(data []byte, images imageGenerationSettings, port int) ([]
 // up, and restored on an ordinary write failure. As with profile preparation,
 // this is not a crash-atomic transaction across multiple files.
 func (a *app) saveCodexImageProfile(dir string, catalog []byte, draft *imageGenerationSettings) (bool, bool, error) {
-	return a.saveCodexProfileSettings(dir, catalog, draft, nil)
+	return a.saveCodexProfileSettings(dir, catalog, draft, nil, nil)
 }
 
-func (a *app) saveCodexProfileSettings(dir string, catalog []byte, draft *imageGenerationSettings, queueMode *string) (bool, bool, error) {
+func (a *app) saveCodexProfileSettings(dir string, catalog []byte, draft *imageGenerationSettings, queueMode *string, dictation *bool) (bool, bool, error) {
 	images := a.config.ImageGeneration
 	if draft != nil {
 		images = *draft
@@ -127,6 +127,10 @@ func (a *app) saveCodexProfileSettings(dir string, catalog []byte, draft *imageG
 		extra = append(extra, file)
 	}
 	var transforms []func([]byte) ([]byte, error)
+	if dictation != nil {
+		enabled := *dictation
+		transforms = append(transforms, func(data []byte) ([]byte, error) { return mergeCodexChatGPTDictation(data, enabled) })
+	}
 	if queueMode != nil {
 		if !validCodexQueueMode(*queueMode) {
 			return false, false, errors.New("Queue mode must be queue or steer")

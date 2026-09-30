@@ -10,6 +10,8 @@ Connect with your personal Kilo account, choose your organization, add models on
 
 **Native desktop app:** releases from v0.21.0 use the native window and system tray. The browser interface remains available as an optional helper.
 
+Codex Desktop also has an optional [ChatGPT dictation setting](docs/clients.md#optional-chatgpt-dictation-in-codex-desktop). It uses a separate ChatGPT login in the isolated Codex window while model requests continue through the proxy.
+
 ## Get started
 
 1. Download the archive for your operating system and architecture from **Releases**, then extract it.

@@ -229,6 +229,7 @@ func (a *app) state(w http.ResponseWriter) {
 		"imageTransportDependency":        imageDependency,
 		"imageUploadWarning":              a.imageUploadWarning,
 		"imageGeneration":                 a.config.ImageGeneration,
+		"codexChatGPTDictation":           codexChatGPTDictationFromConfig(a.codexProfileDir),
 		"trayDisplay":                     normalizeTrayDisplay(a.config.TrayDisplay),
 		"language":                        a.config.Language, "catalogRevision": a.catalogRevision,
 		"auth": a.login, "organizations": a.organizations, "accountEmail": a.accountEmail, "keySaved": a.keySaved,

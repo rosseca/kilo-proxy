@@ -42,6 +42,7 @@ type nativeClientSelection struct {
 	DesktopExperimentalModels bool                     `json:"-"`
 	ImageGeneration           *imageGenerationSettings `json:"imageGeneration,omitempty"`
 	imageGenerationBaseline   *imageGenerationSettings
+	ChatGPTDictation          *bool  `json:"chatgptDictation,omitempty"`
 	QueueMode                 string `json:"followUpQueueMode,omitempty"`
 	Models                    []nativeModelChoice
 	Initial                   string
@@ -176,6 +177,9 @@ func nativeClientPayload(key string, s *nativeClientSelection) (any, error) {
 				mode = codexQueueModeQueue
 			}
 			payload["followUpQueueMode"] = mode
+			if s.ChatGPTDictation != nil {
+				payload["chatgptDictation"] = *s.ChatGPTDictation
+			}
 		}
 		return payload, err
 	}
@@ -362,6 +366,11 @@ func (u *nativeUI) seedClientChoice(key string, m nativeModelChoice) {
 
 func (u *nativeUI) syncClientSelection(key string, s *nativeClientSelection) {
 	u.seedClientImages(key, s)
+	if key == "codex" && s.ChatGPTDictation == nil {
+		if enabled, ok := u.state["codexChatGPTDictation"].(bool); ok {
+			s.ChatGPTDictation = &enabled
+		}
+	}
 	catalog := make(map[string]modelInfo, len(u.models))
 	for _, m := range u.models {
 		catalog[m.ID] = m
@@ -556,6 +565,12 @@ func (u *nativeUI) clientsPanel() layout.Widget {
 		modelWidgets = append(modelWidgets,
 			u.selectField("client:codex:queue-mode", u.tr("Messages sent while Codex is working", "Mensajes enviados mientras Codex trabaja"), nativeChoices([]string{codexQueueModeQueue, codexQueueModeSteer})),
 			u.note(u.tr("queue waits for the next turn. steer adds the message to the task currently running. Restart Codex after preparing the profile.", "queue espera al siguiente turno. steer añade el mensaje a la tarea que se está ejecutando. Reinicia Codex después de preparar el perfil.")),
+		)
+		enabled := s.ChatGPTDictation != nil && *s.ChatGPTDictation
+		u.setChecked("client:codex:dictation", enabled)
+		modelWidgets = append(modelWidgets,
+			u.check("client:codex:dictation", u.tr("Use ChatGPT dictation (experimental)", "Usar dictado de ChatGPT (experimental)"), func(value bool) { s.ChatGPTDictation = &value }),
+			u.note(u.tr("Prepare and restart Codex Kilo, then sign in to ChatGPT in that window. Audio goes to ChatGPT; coding requests use the local proxy key. Availability depends on your ChatGPT account and app version.", "Prepara y reinicia Codex Kilo e inicia sesión en ChatGPT en esa ventana. El audio se envía a ChatGPT; las peticiones de código usan la clave local del proxy. La disponibilidad depende de tu cuenta de ChatGPT y de la versión de la app.")),
 		)
 	}
 	widgets = append(widgets, u.section(u.tr("Models", "Modelos"), u.tr("One shared library for this agent.", "Una biblioteca compartida para este agente."), modelWidgets...))
@@ -1257,9 +1272,10 @@ func decodeNativeClientSelection(key string, data []byte, catalog []modelInfo) (
 	}
 	if key == "codex" || key == "codex-cli" || key == "xcode-codex" {
 		var envelope struct {
-			Catalog         json.RawMessage          `json:"catalog"`
-			ImageGeneration *imageGenerationSettings `json:"imageGeneration"`
-			QueueMode       string                   `json:"followUpQueueMode"`
+			Catalog          json.RawMessage          `json:"catalog"`
+			ImageGeneration  *imageGenerationSettings `json:"imageGeneration"`
+			QueueMode        string                   `json:"followUpQueueMode"`
+			ChatGPTDictation bool                     `json:"chatgptDictation"`
 		}
 		if err := json.Unmarshal(data, &envelope); err != nil {
 			return nil, err
@@ -1270,6 +1286,7 @@ func decodeNativeClientSelection(key string, data []byte, catalog []modelInfo) (
 			s.imageGenerationBaseline = cloneClientImageSettings(&images)
 		}
 		if key == "codex" {
+			s.ChatGPTDictation = &envelope.ChatGPTDictation
 			s.QueueMode = envelope.QueueMode
 			if !validCodexQueueMode(s.QueueMode) {
 				s.QueueMode = codexQueueModeQueue
@@ -1434,6 +1451,9 @@ func (u *nativeUI) clientExport(key string, s *nativeClientSelection, reveal boo
 				mode = codexQueueModeQueue
 			}
 			data, err = mergeCodexQueueMode(data, mode)
+			if err == nil && s.ChatGPTDictation != nil {
+				data, err = mergeCodexChatGPTDictation(data, *s.ChatGPTDictation)
+			}
 		}
 		return string(data), err
 	}

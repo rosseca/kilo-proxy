@@ -80,7 +80,8 @@ func mergeCodexConfig(data, catalog []byte, port int) ([]byte, error) {
 	for key, value := range map[string]any{
 		"name": "Kilo Proxy", "base_url": "http://127.0.0.1:" + strconv.Itoa(port) + "/v1",
 		"env_key": "KILO_LOCAL_API_KEY", "env_key_instructions": "Launch Codex Kilo with the command from the Kilo Proxy Codex helper.",
-		"wire_api": "responses", "requires_openai_auth": false, "supports_websockets": false,
+		// Preserve the explicit desktop dictation opt-in across model/port refreshes.
+		"wire_api": "responses", "requires_openai_auth": provider["requires_openai_auth"] == true, "supports_websockets": false,
 	} {
 		provider[key] = value
 	}

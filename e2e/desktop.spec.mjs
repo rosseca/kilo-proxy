@@ -76,8 +76,12 @@ test('Codex Desktop and CLI prepare independent profiles with names and reasonin
       await expect(page.locator('#codex-queue-mode option[value="steer"]')).toHaveText('Steer · incorporarlos al turno actual');
       await page.locator('#language').selectOption('en');
       await page.locator('#codex-queue-mode').selectOption('steer');
+      await expect(page.locator('#codex-dictation')).not.toBeChecked();
+      await expect(page.locator('#codex-dictation')).toHaveAccessibleName('Use ChatGPT dictation (experimental)');
+      await page.locator('#codex-dictation').check();
     } else {
       await expect(page.locator('#codex-queue-mode-settings')).toBeHidden();
+      await expect(page.locator('#codex-dictation-settings')).toBeHidden();
     }
     await expect(model(page,first)).toBeVisible();
     await model(page,first).check();await model(page,second).check();
@@ -90,6 +94,7 @@ test('Codex Desktop and CLI prepare independent profiles with names and reasonin
     expect(config).toContain('approval_policy = "on-request"');
     expect(config).toMatch(/env_key"?\s*=\s*['"]KILO_LOCAL_API_KEY['"]/);
     expect(config).toContain(gateway.baseURL);
+    expect(config).toMatch(client==='codex'?/requires_openai_auth"?\s*=\s*true/:/requires_openai_auth"?\s*=\s*false/);
     if(client==='codex')expect(config).toMatch(/followUpQueueMode"?\s*=\s*['"]steer['"]/);
     else expect(config).not.toContain('followUpQueueMode');
     expect(await readFile(path.join(dir,'config.toml.bak'),'utf8')).toBe(original);
@@ -136,7 +141,19 @@ test('Codex Desktop and CLI prepare independent profiles with names and reasonin
       await page.locator('#load-codex-catalog').click();
     }
     await expect(page.locator(`[data-focus="name:${first}"]`)).toHaveValue(client==='codex'?'Short GUI':'Short CLI');
-    if(client==='codex')await expect(page.locator('#codex-queue-mode')).toHaveValue('steer');
+    if(client==='codex'){
+      await expect(page.locator('#codex-queue-mode')).toHaveValue('steer');
+      await expect(page.locator('#codex-dictation')).toBeChecked();
+      await page.reload();
+      await page.locator('#tab-codex').click();
+      await expect(page.locator('#codex-dictation')).toBeChecked();
+      await page.locator('#load-codex-catalog').click();
+      await expect(page.locator(`[data-focus="name:${first}"]`)).toHaveValue('Short GUI');
+      await page.locator('#codex-dictation').uncheck();
+      await page.locator('#save-codex-catalog').click();
+      await expect(page.locator('#codex-setup-status')).toContainText('Profile ready');
+      expect(await readFile(path.join(dir,'config.toml'),'utf8')).toMatch(/requires_openai_auth"?\s*=\s*false/);
+    }
   }
 });
 
