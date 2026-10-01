@@ -99,7 +99,7 @@ func TestClientLaunchProxyStartupFailureBlocksDispatch(t *testing.T) {
 				a.launcher.start = func(clientLaunchPlan) error { calls++; return nil }
 				body, _ := json.Marshal(input)
 				response := adminRequest(a, "clients/launch", string(body))
-				if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "Cannot start the saved proxy") {
+				if response.Code != proxyFailureHTTPStatus(failure.name) || !strings.Contains(response.Body.String(), `"code":"proxy_`) {
 					t.Fatalf("startup failure was not reported: %d %s", response.Code, response.Body.String())
 				}
 				if calls != 0 || a.proxyListener != nil || a.proxyServer != nil {
@@ -164,4 +164,11 @@ func TestTerminalPrepareProxyStartupFailureWithholdsPlan(t *testing.T) {
 			})
 		}
 	}
+}
+
+func proxyFailureHTTPStatus(name string) int {
+	if name == "missing API key" || name == "missing organization" {
+		return http.StatusBadRequest
+	}
+	return http.StatusConflict
 }

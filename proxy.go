@@ -455,17 +455,17 @@ func (a *app) start() error {
 func (a *app) startLocked() error {
 	select {
 	case <-a.quit:
-		return errors.New("application is closing")
+		return errProxyClosing
 	default:
 	}
 	if a.proxyServer != nil {
 		return nil
 	}
 	if a.providerChanging {
-		return errors.New("provider authentication is changing")
+		return errProxyAuthenticationChanging
 	}
 	if a.authPending() && !a.chatGPTReadyLocked() {
-		return errors.New("login pending")
+		return errProxyLoginPending
 	}
 	if !a.connectionReadyLocked() {
 		return errMissingCredentials
@@ -477,7 +477,7 @@ func (a *app) startLocked() error {
 	}
 	ln, err := listen("tcp4", host)
 	if err != nil {
-		return err
+		return wrapProxyListenError(host, err)
 	}
 	srv := &http.Server{Handler: a.inferenceHandler(a.apiKey, a.config.OrgID, a.config.LocalKey, host), ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 2 * time.Minute, IdleTimeout: 90 * time.Second, MaxHeaderBytes: 32 << 10}
 	a.proxyServer = srv
