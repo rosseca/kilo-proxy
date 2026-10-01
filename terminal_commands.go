@@ -137,7 +137,7 @@ func (a *app) terminalPrepareAPI(w http.ResponseWriter, r *http.Request) {
 	}
 	if err = a.startLocked(); err != nil {
 		a.mu.Unlock()
-		jsonError(w, 409, "Cannot start the proxy. Check your Kilo connection and local port in the app.")
+		a.writeProxyStartError(w, err)
 		return
 	}
 	a.mu.Unlock()

@@ -90,6 +90,14 @@ func (d *nativeDesktop) dispatch(action string) {
 	}
 }
 
+// A closed window does not drain UI updates. Never block the tray controller
+// on a full queue: it must still be able to reopen the window or process Quit.
+func (u *nativeUI) reportProxyStartFailure(err error) {
+	go u.enqueue(func() {
+		u.setNotice(nativeToneError, describeProxyStartFailure(err, u.language).Message)
+	})
+}
+
 func (d *nativeDesktop) show() {
 	d.mu.Lock()
 	if w := d.window; w != nil {
@@ -356,6 +364,7 @@ func (d *nativeDesktop) control() {
 				} else if err := d.owner.start(); err != nil {
 					d.message = "start-error"
 					d.show()
+					d.ui.reportProxyStartFailure(err)
 				}
 			case "stop":
 				d.owner.stop()

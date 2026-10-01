@@ -180,11 +180,7 @@ func (a *app) adminHandler() http.Handler {
 			a.saveConfig(w, r)
 		case "/api/start":
 			if err := a.start(); err != nil {
-				if errors.Is(err, errMissingCredentials) {
-					jsonError(w, 400, err.Error())
-				} else {
-					jsonError(w, 409, "No se pudo abrir el puerto. Puede estar ocupado por otra instancia; elige otro puerto.")
-				}
+				a.writeProxyStartError(w, err)
 				return
 			}
 			a.state(w)

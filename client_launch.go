@@ -164,7 +164,7 @@ func (a *app) clientsLaunch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err = a.start(); err != nil {
-		a.clientLaunchError(w, 409, "Cannot start the saved proxy. Check the Kilo credentials, organization and local port.")
+		a.writeProxyStartError(w, err)
 		return
 	}
 	if err = rt.start(plan); err != nil {

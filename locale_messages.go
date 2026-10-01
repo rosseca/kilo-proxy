@@ -37,7 +37,12 @@ func nativeMessage(message, language string) string {
 
 // Canonical backend translations shared with ui/i18n.mjs.
 var nativeBackendMessages = map[string]string{
-	"Elige entre 1 y 50 modelos.": "Choose 1–50 models.",
+	"No se pudo iniciar el proxy. Vuelve a intentarlo; si persiste, reinicia Kilo Proxy.":                                                    "Could not start the proxy. Try again; if it persists, restart Kilo Proxy.",
+	"Conecta Kilo o ChatGPT en Ajustes antes de arrancar el proxy.":                                                                          "Connect Kilo or ChatGPT in Settings before starting the proxy.",
+	"Termina de iniciar sesión antes de arrancar el proxy.":                                                                                  "Finish signing in before starting the proxy.",
+	"Espera a que termine de cambiar la conexión de la cuenta y arranca el proxy.":                                                           "Wait for the account connection to finish changing, then start the proxy.",
+	"Kilo Proxy se está cerrando. Vuelve a abrirlo para arrancar el proxy.":                                                                  "Kilo Proxy is closing. Open it again to start the proxy.",
+	"Elige entre 1 y 50 modelos.":                                                                                                            "Choose 1–50 models.",
 	"Elige IDs reales de modelos con nombres válidos; Desktop no admite límites de contexto o salida personalizados.":                        "Choose real model IDs with valid names; Desktop context/output overrides are not supported.",
 	"Los modelos experimentales de Claude Desktop están desactivados. Actívalos o prepara un perfil que solo contenga modelos Claude.":       "Experimental Claude Desktop models are disabled. Enable them or prepare a profile containing only Claude models.",
 	"Indica experimentalModels como un booleano JSON.":                                                                                       "Provide experimentalModels as a JSON boolean.",

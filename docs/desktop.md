@@ -152,3 +152,39 @@ python3 scripts/smoke_desktop.py --binary ./kilo-proxy
 ```
 
 The executable's `--desktop-self-test REPORT.json` mode creates a fresh temporary profile and synthetic local gateway. Its report contains check names and errors. It does not use a saved Kilo account or send paid inference. Native lifecycle tests do not establish compatibility with every remote model, provider, client application or production Kilo service. Linux CI runs graphical tests inside Xvfb with a private D-Bus session and software graphics enabled.
+## Troubleshooting proxy startup
+
+The proxy listens on `127.0.0.1:8877` by default. Startup failures show the
+configured address and distinguish an occupied port, permission denial, an
+unavailable local address, and other listener errors. The message includes the
+original operating-system error and its numeric code when available. The same
+diagnostic appears when starting from the window, the tray, an agent launch, or
+the installed terminal commands. Pending sign-in and account changes have their
+own messages and are not reported as port conflicts.
+
+On Windows, error **10048** means the address is already in use. Closing the
+Kilo Proxy window keeps the proxy running in the notification area; choose
+**Quit Kilo Proxy** there before opening another copy. Another application may
+also be using the port. To inspect its owner in PowerShell:
+
+```powershell
+Get-NetTCPConnection -LocalPort 8877 -State Listen -ErrorAction SilentlyContinue |
+  Select-Object LocalAddress, LocalPort, OwningProcess
+```
+
+Use the displayed `OwningProcess` number with `Get-Process -Id <number>`.
+Replace `8877` if you configured another local port.
+
+Windows error **10013** means binding was denied. It may involve a reserved or
+restricted port, or another service holding exclusive access; it does not prove
+that another Kilo Proxy instance is listening. To inspect excluded TCP ranges:
+
+```powershell
+netsh interface ipv4 show excludedportrange protocol=tcp
+```
+
+While the proxy is stopped, its port can be changed in **Settings → Advanced →
+Local port**. Open managed agents again from Kilo Proxy to prepare their profiles
+with the new address. Investigate the reported system error before changing
+security settings. See Microsoft's [Winsock error reference](https://learn.microsoft.com/en-us/windows/win32/winsock/windows-sockets-error-codes-2)
+and [Get-NetTCPConnection reference](https://learn.microsoft.com/en-us/powershell/module/nettcpip/get-nettcpconnection).
