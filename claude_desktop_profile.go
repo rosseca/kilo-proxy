@@ -78,6 +78,7 @@ func validateClaudeDesktopSelectionMode(s editorSelection, experimental bool) er
 
 type claudeDesktopProfilePaths struct {
 	Root, ProfileDir, ConfigPath, MetaPath, ModePath, SelectionPath, Platform string
+	UserDataDir, ClaudeConfigDir, LocalAppData, AppData                       string
 }
 
 func (a *app) claudeDesktopPaths() (claudeDesktopProfilePaths, error) {
@@ -89,39 +90,32 @@ func (a *app) claudeDesktopPaths() (claudeDesktopProfilePaths, error) {
 	if !filepath.IsAbs(home) || !filepath.IsAbs(a.dir) {
 		return claudeDesktopProfilePaths{}, errors.New("Cannot locate Claude Desktop settings.")
 	}
-	root := home
-	var dir string
-	realHome, _ := os.UserHomeDir()
-	useSystemEnv := a.editorTestRoot == "" && filepath.Clean(home) == filepath.Clean(realHome)
+	// Keep every mutable Desktop/Code file inside Kilo's own configuration
+	// directory. Starting with a -3p user-data directory avoids Desktop's
+	// first-party to third-party migration touching the ordinary Claude profile.
+	root := filepath.Clean(a.dir)
+	base := filepath.Join(root, "claude-desktop")
+	userData := filepath.Join(base, "ui-3p")
+	localAppData, appData := "", ""
 	switch rt.platform {
-	case "macos", "darwin":
-		dir = filepath.Join(home, "Library", "Application Support", "Claude-3p")
+	case "macos", "darwin", "linux":
 	case "windows":
-		base := filepath.Join(home, "AppData", "Local")
-		if env := os.Getenv("LOCALAPPDATA"); useSystemEnv && runtime.GOOS == "windows" && filepath.IsAbs(env) {
-			base = env
-		}
-		dir = filepath.Join(base, "Claude-3p")
-		if !claudeDesktopWithin(home, base) {
-			root = base
-		}
-	case "linux":
-		base := filepath.Join(home, ".config")
-		if env := os.Getenv("XDG_CONFIG_HOME"); useSystemEnv && runtime.GOOS == "linux" && filepath.IsAbs(env) {
-			base = env
-		}
-		dir = filepath.Join(base, "Claude-3p")
-		if !claudeDesktopWithin(home, base) {
-			root = base
-		}
+		// Windows' vendor 3p path is based on LOCALAPPDATA even when Electron
+		// receives --user-data-dir. APPDATA must also be private so legacy
+		// migration cannot import or modify the ordinary roaming profile.
+		localAppData = filepath.Join(base, "local-app-data")
+		appData = filepath.Join(base, "app-data")
+		userData = filepath.Join(localAppData, "Claude-3p")
 	default:
 		return claudeDesktopProfilePaths{}, errors.New("Unsupported Claude Desktop platform.")
 	}
 	return claudeDesktopProfilePaths{
-		Root: root, ProfileDir: dir, Platform: rt.platform,
-		ConfigPath:    filepath.Join(dir, "configLibrary", claudeDesktopProfileID+".json"),
-		MetaPath:      filepath.Join(dir, "configLibrary", "_meta.json"),
-		ModePath:      filepath.Join(dir, "claude_desktop_config.json"),
+		Root: root, ProfileDir: userData, Platform: rt.platform,
+		UserDataDir: userData, ClaudeConfigDir: filepath.Join(base, "code"),
+		LocalAppData: localAppData, AppData: appData,
+		ConfigPath:    filepath.Join(userData, "configLibrary", claudeDesktopProfileID+".json"),
+		MetaPath:      filepath.Join(userData, "configLibrary", "_meta.json"),
+		ModePath:      filepath.Join(userData, "claude_desktop_config.json"),
 		SelectionPath: filepath.Join(a.dir, "claude-desktop-models.json"),
 	}, nil
 }
@@ -480,6 +474,11 @@ func (a *app) verifyClaudeDesktopProfile() error {
 	if !safeLaunchDir(filepath.Dir(paths.ConfigPath), paths.Root) {
 		return errors.New("Prepare the Claude Desktop profile first; its settings directory is missing or unsafe.")
 	}
+	for _, dir := range []string{paths.UserDataDir, paths.ClaudeConfigDir, paths.LocalAppData, paths.AppData} {
+		if dir != "" && !safeLaunchDir(dir, paths.Root) {
+			return errors.New("Prepare the Claude Desktop profile first; its private directories are missing or unsafe.")
+		}
+	}
 	config, _, exists, err := readClaudeDesktopObject(paths.ConfigPath)
 	if err != nil || !exists {
 		return errors.New("Prepare the Claude Desktop profile first; its configuration is missing or invalid.")
@@ -513,11 +512,21 @@ func (a *app) saveClaudeDesktopProfile(s editorSelection, paths claudeDesktopPro
 	if err := a.claudeDesktopManagedConfig(paths); err != nil {
 		return false, err
 	}
+	if err := a.claudeDesktopCanPrepare(paths); err != nil {
+		return false, err
+	}
 	if err := safeEditorDir(paths.Root, filepath.Dir(paths.ConfigPath)); err != nil {
 		return false, err
 	}
 	if err := safeEditorDir(a.dir, a.dir); err != nil {
 		return false, err
+	}
+	for _, dir := range []string{paths.UserDataDir, paths.ClaudeConfigDir, paths.LocalAppData, paths.AppData} {
+		if dir != "" {
+			if err := safeEditorDir(paths.Root, dir); err != nil {
+				return false, err
+			}
+		}
 	}
 	config, oldConfig, _, err := readClaudeDesktopObject(paths.ConfigPath)
 	if err != nil {
@@ -584,6 +593,15 @@ func (a *app) claudeDesktopProfile(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodPost {
 		jsonError(w, http.StatusMethodNotAllowed, "Method not allowed.")
 		return
+	}
+	if r.Method == http.MethodPost {
+		// Share the launch transaction lock: the profile must not be changed
+		// between launch validation and the child process starting to read it.
+		if !a.launchMu.TryLock() {
+			jsonError(w, 409, "Another launch is already being prepared.")
+			return
+		}
+		defer a.launchMu.Unlock()
 	}
 	paths, err := a.claudeDesktopPaths()
 	if err != nil {

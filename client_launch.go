@@ -189,7 +189,7 @@ func (a *app) clientsLaunch(w http.ResponseWriter, r *http.Request) {
 	}
 	message := plan.Name + " opened."
 	if input.Client == "claude-desktop" {
-		message = "Claude Desktop opened with its Kilo gateway configuration."
+		message = "Claude Desktop opened with its separate Kilo profile."
 	}
 	if input.Client == "zed" {
 		message = "Zed opened. Local credentials and models are ready; existing projects stay open."
@@ -261,16 +261,16 @@ func (a *app) planClientLaunch(input clientLaunchRequest, rt clientLaunchRuntime
 		return p, err
 	}
 	if input.Client == "claude-desktop" {
-		check := a.claudeDesktopCheckRunning
-		if check == nil {
-			check = claudeDesktopRunning
+		paths, pathsErr := a.claudeDesktopPaths()
+		if pathsErr != nil {
+			return p, pathsErr
 		}
-		running, checkErr := check(p.Executable)
+		running, checkErr := a.claudeDesktopProfileRunning(paths)
 		if checkErr != nil {
-			return p, errors.New("Cannot check whether Claude Desktop is running. Quit Claude Desktop and try again.")
+			return p, errors.New("Cannot check whether the Kilo Claude Desktop window is running. Close that window and try again.")
 		}
 		if running {
-			return p, errors.New("Quit Claude Desktop, then open it here to load the Kilo configuration. Existing sessions are not closed automatically.")
+			return p, errors.New("Quit the Kilo Claude Desktop window, then open it here again. Your regular Claude session can stay open.")
 		}
 	}
 	if kind == "terminal" {
@@ -321,11 +321,28 @@ func (a *app) planClientLaunch(input clientLaunchRequest, rt clientLaunchRuntime
 			p.Executable = filepath.Join(p.Executable, "Contents", "MacOS", binary)
 		}
 	} else if input.Client == "claude-desktop" {
-		// Keep the validated home as the child process working directory. Desktop
-		// restores its own workspace, so no project folder is passed as an argument.
+		paths, pathsErr := a.claudeDesktopPaths()
+		if pathsErr != nil {
+			return p, pathsErr
+		}
+		p.Args = []string{"--user-data-dir=" + paths.UserDataDir}
+		p.Env["CLAUDE_CONFIG_DIR"] = paths.ClaudeConfigDir
+		p.Env["CLAUDE_SECURESTORAGE_CONFIG_DIR"] = paths.ClaudeConfigDir
+		p.Unset = claudeDesktopInheritedEnvironment(os.Environ())
+		if rt.platform == "windows" {
+			// The vendor migrates legacy 3P data from APPDATA and places current
+			// 3P data under LOCALAPPDATA. Both overrides belong only to this child.
+			p.Env["LOCALAPPDATA"] = paths.LocalAppData
+			p.Env["APPDATA"] = paths.AppData
+		}
+		// LaunchServices may reuse the regular Claude process. Start the native
+		// executable directly so the separate data directory takes effect.
 		if rt.platform == "macos" && strings.HasSuffix(p.Executable, ".app") {
-			p.Args = []string{"-a", p.Executable}
-			p.Executable = "/usr/bin/open"
+			binary := plistValue(filepath.Join(p.Executable, "Contents", "Info.plist"), "CFBundleExecutable")
+			if binary == "" || filepath.Base(binary) != binary {
+				return p, errors.New("The Claude Desktop application bundle is invalid.")
+			}
+			p.Executable = filepath.Join(p.Executable, "Contents", "MacOS", binary)
 		}
 	} else if input.Client == "open-design" || input.Client == "openmausbot" {
 		// These clients already selected their isolated native executable.

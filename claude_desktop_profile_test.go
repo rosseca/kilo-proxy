@@ -17,6 +17,7 @@ import (
 func desktopProfileTestApp(t *testing.T) (*app, claudeDesktopProfilePaths) {
 	t.Helper()
 	a := testApp(t)
+	a.claudeDesktopCheckRunning = func(string) (bool, error) { return false, nil }
 	a.editorTestRoot = t.TempDir()
 	a.launcher = &clientLaunchRuntime{platform: "macos", home: a.editorTestRoot}
 	p, err := a.claudeDesktopPaths()
@@ -235,20 +236,155 @@ func TestClaudeDesktopProfileManagedPreferences(t *testing.T) {
 }
 
 func TestClaudeDesktopProfileFakeHomePaths(t *testing.T) {
-	for _, platform := range []string{"macos", "windows", "linux"} {
+	for _, platform := range []string{"macos", "darwin", "windows", "linux"} {
 		t.Run(platform, func(t *testing.T) {
 			a := testApp(t)
+			a.claudeDesktopCheckRunning = func(string) (bool, error) { return false, nil }
 			home := t.TempDir()
 			a.launcher = &clientLaunchRuntime{platform: platform, home: home}
 			p, err := a.claudeDesktopPaths()
-			if err != nil || !claudeDesktopWithin(home, p.ProfileDir) || filepath.Dir(p.SelectionPath) != a.dir {
-				t.Fatalf("fake home ignored: %+v %v", p, err)
+			base := filepath.Join(a.dir, "claude-desktop")
+			wantUI := filepath.Join(base, "ui-3p")
+			wantLocal, wantApp := "", ""
+			if platform == "windows" {
+				wantLocal = filepath.Join(base, "local-app-data")
+				wantApp = filepath.Join(base, "app-data")
+				wantUI = filepath.Join(wantLocal, "Claude-3p")
+			}
+			if err != nil || p.Root != a.dir || p.UserDataDir != wantUI || p.ProfileDir != wantUI || p.ClaudeConfigDir != filepath.Join(base, "code") || p.LocalAppData != wantLocal || p.AppData != wantApp || filepath.Dir(p.SelectionPath) != a.dir {
+				t.Fatalf("private paths ignored: %+v %v", p, err)
+			}
+			if !claudeDesktopWithin(a.dir, p.ProfileDir) || claudeDesktopWithin(home, p.ProfileDir) || p.ConfigPath != filepath.Join(wantUI, "configLibrary", claudeDesktopProfileID+".json") || p.ModePath != filepath.Join(wantUI, "claude_desktop_config.json") {
+				t.Fatalf("profile escaped private root: %+v", p)
 			}
 			if _, err := a.saveClaudeDesktopProfile(desktopProfileTestSelection(), p); err != nil {
 				t.Fatal(err)
 			}
+			for _, dir := range []string{p.UserDataDir, p.ClaudeConfigDir, p.LocalAppData, p.AppData} {
+				if dir == "" {
+					continue
+				}
+				info, err := os.Stat(dir)
+				if err != nil || !info.IsDir() || runtime.GOOS != "windows" && info.Mode().Perm() != 0700 {
+					t.Fatalf("private directory not prepared: %s %v", dir, err)
+				}
+			}
 			if err := a.verifyClaudeDesktopProfile(); err != nil {
 				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestClaudeDesktopPrivateProfileDoesNotTouchOrdinaryProfiles(t *testing.T) {
+	for _, platform := range []string{"macos", "windows", "linux"} {
+		t.Run(platform, func(t *testing.T) {
+			a := testApp(t)
+			a.claudeDesktopCheckRunning = func(string) (bool, error) { return false, nil }
+			home := t.TempDir()
+			a.editorTestRoot = home
+			a.launcher = &clientLaunchRuntime{platform: platform, home: home}
+			local, roaming, xdg := filepath.Join(home, "AppData", "Local"), filepath.Join(home, "AppData", "Roaming"), filepath.Join(home, ".config")
+			t.Setenv("LOCALAPPDATA", local)
+			t.Setenv("APPDATA", roaming)
+			t.Setenv("XDG_CONFIG_HOME", xdg)
+			var originals = map[string][]byte{}
+			for _, base := range []string{filepath.Join(home, "Library", "Application Support"), local, roaming, xdg} {
+				for _, profile := range []string{"Claude", "Claude-3p"} {
+					for _, file := range []string{"claude_desktop_config.json", "Preferences", filepath.Join("configLibrary", "_meta.json"), filepath.Join("configLibrary", claudeDesktopProfileID+".json")} {
+						path := filepath.Join(base, profile, file)
+						// Deliberately invalid JSON must not prevent preparation of the
+						// new profile or get interpreted as a file to migrate/repair.
+						originals[path] = []byte("ordinary authenticated profile: " + path + "\n")
+					}
+				}
+			}
+			originals[filepath.Join(home, ".claude", ".credentials.json")] = []byte("ordinary Claude Code authentication\n")
+			for path, data := range originals {
+				if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, data, 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			s := desktopProfileTestSelection()
+			oldSelection, _ := json.Marshal(s)
+			p, err := a.claudeDesktopPaths()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(p.SelectionPath, oldSelection, 0600); err != nil {
+				t.Fatal(err)
+			}
+			for _, key := range []string{a.config.LocalKey, "rotated-synthetic-key"} {
+				a.config.LocalKey = key
+				if _, err := a.saveClaudeDesktopProfile(s, p); err != nil {
+					t.Fatal(err)
+				}
+				if err := a.verifyClaudeDesktopProfile(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for path, original := range originals {
+				data, err := os.ReadFile(path)
+				if err != nil || !bytes.Equal(data, original) {
+					t.Fatalf("ordinary profile changed: %s %v", path, err)
+				}
+				if _, err := os.Lstat(path + ".bak"); !os.IsNotExist(err) {
+					t.Fatalf("ordinary backup created: %s %v", path, err)
+				}
+			}
+			if data, err := os.ReadFile(p.SelectionPath); err != nil || !bytes.Equal(data, oldSelection) {
+				t.Fatalf("existing model selection replaced: %s %v", data, err)
+			}
+			for _, path := range []string{filepath.Join(p.UserDataDir, "Preferences"), filepath.Join(p.ClaudeConfigDir, ".credentials.json")} {
+				if _, err := os.Lstat(path); !os.IsNotExist(err) {
+					t.Fatalf("ordinary authenticated state copied: %s %v", path, err)
+				}
+			}
+		})
+	}
+}
+
+func TestClaudeDesktopPrivateProfileRejectsUnsafeAuxiliaryDirectories(t *testing.T) {
+	for _, field := range []string{"user-data", "code", "local-app-data", "app-data"} {
+		t.Run(field, func(t *testing.T) {
+			a, _ := desktopProfileTestApp(t)
+			a.launcher.platform = "windows"
+			p, err := a.claudeDesktopPaths()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := a.saveClaudeDesktopProfile(desktopProfileTestSelection(), p); err != nil {
+				t.Fatal(err)
+			}
+			dir := map[string]string{"user-data": p.UserDataDir, "code": p.ClaudeConfigDir, "local-app-data": p.LocalAppData, "app-data": p.AppData}[field]
+			// Move our synthetic directory away before replacing its path with
+			// a link. Never remove a real vendor directory in this fixture.
+			moved := dir + "-fixture"
+			if err := os.Rename(dir, moved); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(moved, dir); err != nil {
+				t.Skip(err)
+			}
+			if err := a.verifyClaudeDesktopProfile(); err == nil {
+				t.Fatal("accepted linked private directory")
+			}
+			before, err := os.ReadFile(filepath.Join(moved, "claude_desktop_config.json"))
+			if field != "user-data" {
+				before, err = os.ReadFile(p.ModePath)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := a.saveClaudeDesktopProfile(desktopProfileTestSelection(), p); err == nil {
+				t.Fatal("accepted linked private directory during preparation")
+			}
+			after, err := os.ReadFile(p.ModePath)
+			if err != nil || !bytes.Equal(after, before) {
+				t.Fatal("profile changed on failed preparation", err)
 			}
 		})
 	}

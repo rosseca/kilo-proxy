@@ -41,12 +41,12 @@ func TestNativeMessagesTranslateBackendWithoutChangingDetails(t *testing.T) {
 
 func TestClaudeDesktopLaunchMessagesUseSavedLanguage(t *testing.T) {
 	a := testApp(t)
-	const message = "Claude Desktop opened with its Kilo gateway configuration."
+	const message = "Claude Desktop opened with its separate Kilo profile."
 	a.config.Language = "es"
-	if got := a.clientLaunchMessage(message); got != "Claude Desktop abierto con su configuración de gateway de Kilo." {
+	if got := a.clientLaunchMessage(message); got != "Claude Desktop abierto con su perfil Kilo separado." {
 		t.Fatalf("Desktop launch result was not translated: %s", got)
 	}
-	if got := a.clientLaunchMessage("Quit Claude Desktop, then open it here to load the Kilo configuration. Existing sessions are not closed automatically."); !strings.HasPrefix(got, "Cierra Claude Desktop") {
+	if got := a.clientLaunchMessage("Quit the Kilo Claude Desktop window, then open it here again. Your regular Claude session can stay open."); !strings.HasPrefix(got, "Cierra la ventana Kilo de Claude Desktop") {
 		t.Fatalf("running-app guidance was not translated: %s", got)
 	}
 	a.config.Language = "en"

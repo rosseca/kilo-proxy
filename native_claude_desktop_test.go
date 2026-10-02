@@ -188,10 +188,10 @@ func TestNativeClaudeDesktopAgentFullRowBelowCodex(t *testing.T) {
 			h := &nativePointerHarness{t: t, u: u, size: image.Pt(1180, 1500), now: time.Now()}
 			h.frame()
 			codex := h.target(u.tr("Open Codex", "Abrir Codex"), semantic.Button).Desc.Bounds
-			desktop := h.target(u.tr("Open Claude Desktop", "Abrir Claude Desktop"), semantic.Button).Desc.Bounds
+			desktop := h.target(u.tr("Open Claude Desktop · Kilo", "Abrir Claude Desktop · Kilo"), semantic.Button).Desc.Bounds
 			var desktopHeader, codeHeader image.Rectangle
 			for _, node := range h.nodes() {
-				if node.Desc.Label == "Claude Desktop" {
+				if node.Desc.Label == "Claude Desktop · Kilo" {
 					desktopHeader = node.Desc.Bounds
 				}
 				if node.Desc.Label == "Claude Code" {
@@ -215,7 +215,7 @@ func TestNativeClaudeDesktopAgentFullRowBelowCodex(t *testing.T) {
 				t.Fatal("Desktop exposed an unsupported folder picker")
 			}
 			nativeGridCapture(t, h, "native-claude-desktop-agents-"+lang)
-			h.click(u.tr("Open Claude Desktop", "Abrir Claude Desktop"), semantic.Button)
+			h.click(u.tr("Open Claude Desktop · Kilo", "Abrir Claude Desktop · Kilo"), semantic.Button)
 			nativeTestWait(t, u, func() bool { return u.clientState().Launching == "" })
 			if recorder.count() != 1 || recorder.prepares.Load() != 1 {
 				t.Fatalf("Desktop did not prepare and launch: %s", u.notice)
