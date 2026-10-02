@@ -58,7 +58,7 @@ Open or prepare an agent again after editing presets, and restart an already run
 - **Oh My Pi, OpenCode and Zed:** per-model context and output limits. The client decides how to compact. OpenCode always receives its context limit even when output is unspecified.
 - **Claude Code:** one session-wide compaction window, using the smallest selected context budget and capped at 1M. Claude may further cap it to its recognized model capacity. Its supported explicit range starts at 100K; preparing Claude with a smaller selected window reports an error instead of silently increasing it. Output also uses the smallest selected allowance. This does not provide distinct compaction windows on each `/model` switch.
 - **Open Design:** inherits the behavior of its selected CLI engine.
-- **OpenMausBot:** one workspace-wide automatic-compaction threshold, bounded by the smallest selected model budget. Its OpenAI-compatible engine does not expose per-model output or reasoning settings.
+- **OpenMausBot:** one workspace-wide automatic-compaction threshold, bounded by the smallest selected model budget. Kilo Proxy applies prepared reasoning defaults per model; its OpenAI-compatible engine does not expose a native reasoning picker or per-model output settings.
 - **Xcode Chat:** its integration does not expose an equivalent managed context budget. Xcode's Codex and Claude engines use the corresponding adapter, subject to bundled-version support.
 
 Context tokens and HTTP payload size are different limits. These presets do not remove Kilo Gateway's request-body size limit; image upload and compression settings still apply.
@@ -73,7 +73,7 @@ Context tokens and HTTP payload size are different limits. These presets do not 
 | Oh My Pi | Names, default model, supported reasoning, per-model context and output limits, and the optional Kilo images MCP. |
 | OpenCode and Zed | Model IDs, names, default and token limits. Reasoning remains automatic; the library's Codex effort preferences are not exported as equivalent native controls. The client controls its final model-picker ordering. |
 | Open Design | Private Codex CLI, Claude Code or OpenCode profiles receive the same supported shared settings as those engines. Open Design selects **CLI default** for the shared default; its own picker may not list every shared model. Quit its Kilo instance before applying model, engine or connection changes. See [setup](open-design.md). |
-| OpenMausBot | Exact model IDs, shared default and a workspace-wide compaction threshold in a separate desktop profile. Its current OpenAI-compatible driver shows IDs, without custom names or a managed reasoning selector. Quit its Kilo workspace before applying changed models or connection settings. See [setup](openmausbot.md). |
+| OpenMausBot | Exact model IDs, shared default, prepared reasoning levels applied by the proxy, and a workspace-wide compaction threshold in a separate desktop profile. Its current OpenAI-compatible driver shows IDs, without custom names or a native reasoning selector. Quit its Kilo workspace before applying changed models, reasoning or connection settings. See [setup](openmausbot.md). |
 | Xcode | Chat, Codex and Claude derive their selections from the library, with protocol and installed-version restrictions. Xcode controls its active picker. Older bundled Claude versions can require reducing the selection to their supported alias limit. |
 | Other clients | Connection guidance includes the library's default model ID. Configure the client according to its supported protocol. |
 

@@ -18,7 +18,7 @@ import (
 
 const openMausBotEndpoint = "/api/clients/openmausbot"
 const openMausBotInstance = "kilo-local"
-const openMausBotMessage = "Models and the initial selection are ready. OpenMausBot displays exact model IDs; custom names and reasoning levels are not supported by this driver. The smallest shared context budget sets one automatic compaction threshold; OpenMausBot may compact earlier."
+const openMausBotMessage = "Models and the initial selection are ready. Kilo Proxy applies your prepared reasoning defaults when OpenMausBot does not specify one. OpenMausBot displays exact model IDs; custom names and its reasoning selector are not configured. The smallest shared context budget sets one automatic compaction threshold; OpenMausBot may compact earlier."
 
 type openMausBotPaths struct{ Root, Data, UI, Config, Selection string }
 
@@ -29,13 +29,14 @@ func openMausBotProfilePaths(dir string) openMausBotPaths {
 }
 
 type openMausBotPrepared struct {
-	Library     modelLibrary `json:"library"`
-	Fingerprint string       `json:"fingerprint"`
-	CompactAt   int          `json:"compactAt"`
+	Library          modelLibrary      `json:"library"`
+	Fingerprint      string            `json:"fingerprint"`
+	CompactAt        int               `json:"compactAt"`
+	ReasoningEfforts map[string]string `json:"reasoningEfforts"`
 }
 
-func openMausBotFingerprint(library modelLibrary, port int, key string, compactAt int) string {
-	data, _ := json.Marshal([]any{library, port, key, compactAt})
+func openMausBotFingerprint(library modelLibrary, port int, key string, compactAt int, efforts map[string]string) string {
+	data, _ := json.Marshal([]any{2, library, port, key, compactAt, efforts})
 	return openDesignHash(data)
 }
 
@@ -126,7 +127,7 @@ func mergeOpenMausBotConfig(old []byte, library modelLibrary, port int, key stri
 	for _, field := range []struct {
 		name  string
 		value any
-	}{{"url", "http://127.0.0.1:" + strconv.Itoa(port) + "/v1"}, {"apiKeyEnv", "KILO_LOCAL_API_KEY"}, {"model", library.DefaultModel}, {"managedModels", models}, {"provider", ""}, {"tools", true}} {
+	}{{"url", "http://127.0.0.1:" + strconv.Itoa(port) + openMausBotBasePath}, {"apiKeyEnv", "KILO_LOCAL_API_KEY"}, {"model", library.DefaultModel}, {"managedModels", models}, {"provider", ""}, {"tools", true}} {
 		add(instancePath+"/config/"+field.name, field.value)
 	}
 	selection := map[string]string{"instanceId": openMausBotInstance, "model": library.DefaultModel}
@@ -164,7 +165,7 @@ func managedOpenMausBotInstance(value hujson.Value) bool {
 		return false
 	}
 	u, err := url.Parse(instance.Config.URL)
-	if err != nil || u.Scheme != "http" || u.Hostname() != "127.0.0.1" || u.User != nil || u.Path != "/v1" || u.RawPath != "" || u.RawQuery != "" || u.Fragment != "" {
+	if err != nil || u.Scheme != "http" || u.Hostname() != "127.0.0.1" || u.User != nil || (u.Path != "/v1" && u.Path != openMausBotBasePath) || u.RawPath != "" || u.RawQuery != "" || u.Fragment != "" {
 		return false
 	}
 	port, err := strconv.Atoi(u.Port())
@@ -179,9 +180,12 @@ func (a *app) readOpenMausBotPrepared() (openMausBotPrepared, error) {
 	}
 	data, err := readCatalogFile(paths.Selection)
 	if err == nil {
-		err = json.Unmarshal(data, &saved)
+		_, err = decodeClaudeDesktopObject(data)
+		if err == nil {
+			err = json.Unmarshal(data, &saved)
+		}
 	}
-	if err == nil && (validateModelLibrary(saved.Library) != nil || len(saved.Library.Models) == 0 || saved.CompactAt < 1 || saved.CompactAt > 10000000) {
+	if err == nil && (validateModelLibrary(saved.Library) != nil || len(saved.Library.Models) == 0 || saved.CompactAt < 1 || saved.CompactAt > 10000000 || !validOpenMausBotReasoning(saved.Library, saved.ReasoningEfforts)) {
 		err = errors.New("Invalid private OpenMausBot selection.")
 	}
 	return saved, err
@@ -189,8 +193,20 @@ func (a *app) readOpenMausBotPrepared() (openMausBotPrepared, error) {
 
 // Caller owns mu. Never expose the private config or local credential in GET.
 func (a *app) openMausBotReady(saved openMausBotPrepared) bool {
+	return a.openMausBotProfileMatches(saved, false)
+}
+
+// The model picker legitimately persists these two defaults during a session.
+// Only inference may ignore them: preparing or launching must still restore the
+// shared initial selection while retaining all connection and policy checks.
+func (a *app) openMausBotInferenceReady(saved openMausBotPrepared) bool {
+	return a.openMausBotProfileMatches(saved, true)
+}
+
+// Caller owns mu.
+func (a *app) openMausBotProfileMatches(saved openMausBotPrepared, allowRuntimeSelection bool) bool {
 	paths := openMausBotProfilePaths(a.dir)
-	if !safeLaunchDir(paths.Data, a.dir) || !safeLaunchDir(paths.UI, a.dir) || saved.Fingerprint != openMausBotFingerprint(saved.Library, a.config.Port, a.config.LocalKey, saved.CompactAt) {
+	if !validOpenMausBotReasoning(saved.Library, saved.ReasoningEfforts) || !safeLaunchDir(paths.Data, a.dir) || !safeLaunchDir(paths.UI, a.dir) || saved.Fingerprint != openMausBotFingerprint(saved.Library, a.config.Port, a.config.LocalKey, saved.CompactAt, saved.ReasoningEfforts) {
 		return false
 	}
 	old, err := readCatalogFile(paths.Config)
@@ -198,7 +214,27 @@ func (a *app) openMausBotReady(saved openMausBotPrepared) bool {
 		return false
 	}
 	want, err := mergeOpenMausBotConfig(old, saved.Library, a.config.Port, a.config.LocalKey, saved.CompactAt)
-	return err == nil && launchEqualJSON(old, want)
+	if err != nil {
+		return false
+	}
+	if allowRuntimeSelection {
+		for _, data := range []*[]byte{&old, &want} {
+			tree, err := hujson.Parse(*data)
+			if err != nil {
+				return false
+			}
+			for _, path := range []string{"/defaultModelSelection", "/newBotDefaults/profile/modelSelection"} {
+				if tree.Find(path) != nil {
+					patch, _ := json.Marshal([]map[string]string{{"op": "remove", "path": path}})
+					if tree.Patch(patch) != nil {
+						return false
+					}
+				}
+			}
+			*data = tree.Pack()
+		}
+	}
+	return launchEqualJSON(old, want)
 }
 
 func (a *app) openMausBotProfile(w http.ResponseWriter, r *http.Request) {
@@ -209,8 +245,11 @@ func (a *app) openMausBotProfile(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			saved = openMausBotPrepared{}
 		}
+		if saved.ReasoningEfforts == nil {
+			saved.ReasoningEfforts = map[string]string{}
+		}
 		a.mu.Unlock()
-		jsonResponse(w, 200, map[string]any{"prepared": ready, "configPath": openMausBotProfilePaths(a.dir).Config, "modelCount": len(saved.Library.Models), "initialModel": saved.Library.DefaultModel, "message": openMausBotMessage})
+		jsonResponse(w, 200, map[string]any{"prepared": ready, "library": saved.Library, "configPath": openMausBotProfilePaths(a.dir).Config, "modelCount": len(saved.Library.Models), "initialModel": saved.Library.DefaultModel, "reasoningEfforts": saved.ReasoningEfforts, "message": openMausBotMessage})
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -264,13 +303,15 @@ func (a *app) openMausBotProfile(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, 409, "Save an available provider connection before preparing OpenMausBot.")
 		return
 	}
-	compactAt, err := openMausBotCompaction(library, readNativeCatalogCache(a.dir, a.catalogScopeLocked()))
+	catalog := readNativeCatalogCache(a.dir, a.catalogScopeLocked())
+	compactAt, err := openMausBotCompaction(library, catalog)
 	if err != nil {
 		jsonError(w, 400, err.Error())
 		return
 	}
 	saved, readErr := a.readOpenMausBotPrepared()
-	fingerprint := openMausBotFingerprint(library, a.config.Port, a.config.LocalKey, compactAt)
+	efforts := openMausBotReasoning(library, catalog)
+	fingerprint := openMausBotFingerprint(library, a.config.Port, a.config.LocalKey, compactAt, efforts)
 	unchanged := readErr == nil && saved.Fingerprint == fingerprint && a.openMausBotReady(saved)
 	check := a.openMausBotCheckRunning
 	if check == nil {
@@ -314,7 +355,7 @@ func (a *app) openMausBotProfile(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, 409, "Cannot safely prepare the private OpenMausBot configuration.")
 			return
 		}
-		data, _ := json.MarshalIndent(openMausBotPrepared{library, fingerprint, compactAt}, "", "  ")
+		data, _ := json.MarshalIndent(openMausBotPrepared{Library: library, Fingerprint: fingerprint, CompactAt: compactAt, ReasoningEfforts: efforts}, "", "  ")
 		selection, err := prepareProfileFile(paths.Selection, append(data, '\n'))
 		if err != nil {
 			jsonError(w, 409, "Cannot safely prepare the private OpenMausBot selection.")
@@ -325,7 +366,7 @@ func (a *app) openMausBotProfile(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	jsonResponse(w, 200, map[string]any{"prepared": true, "configPath": openMausBotProfilePaths(a.dir).Config, "modelCount": len(library.Models), "initialModel": library.DefaultModel, "message": openMausBotMessage})
+	jsonResponse(w, 200, map[string]any{"prepared": true, "library": library, "configPath": openMausBotProfilePaths(a.dir).Config, "modelCount": len(library.Models), "initialModel": library.DefaultModel, "reasoningEfforts": efforts, "message": openMausBotMessage})
 }
 
 func (a *app) applyOpenMausBotLaunch(plan *clientLaunchPlan, platform string) error {

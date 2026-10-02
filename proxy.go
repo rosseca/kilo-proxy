@@ -250,6 +250,10 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 			r = r.Clone(r.Context())
 			r.URL.Path = "/v1/chat/completions"
 		}
+		if path, ok := openMausBotInferencePath(r); ok {
+			r = r.Clone(context.WithValue(r.Context(), openMausBotRequestContextKey{}, true))
+			r.URL.Path = path
+		}
 		if prefix := zedProxyPrefix(localKey); r.URL.RawPath == "" && strings.HasPrefix(r.URL.Path, prefix+"/v1/") {
 			r = r.Clone(r.Context())
 			r.URL.Path = strings.TrimPrefix(r.URL.Path, prefix)
@@ -324,6 +328,15 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 			return
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, 32<<20)
+		if err := a.prepareOpenMausBotReasoning(r); err != nil {
+			status := http.StatusBadRequest
+			var oversized *http.MaxBytesError
+			if errors.As(err, &oversized) {
+				status = http.StatusRequestEntityTooLarge
+			}
+			jsonError(w, status, err.Error())
+			return
+		}
 		var aliasErr error
 		r, aliasErr = a.prepareClaudeDesktopAlias(r)
 		if aliasErr != nil {
@@ -345,6 +358,10 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 			return
 		}
 		if r.Method == http.MethodGet {
+			if managed, _ := r.Context().Value(openMausBotRequestContextKey{}).(bool); managed {
+				a.serveOpenMausBotModels(recorder)
+				return
+			}
 			if a.chatgpt.snapshot().Connected {
 				a.serveModelList(recorder, r)
 			} else {

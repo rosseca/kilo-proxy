@@ -3,19 +3,42 @@
 // No desktop is opened: export the bundled driver from a temporary copy after
 // removing its CLI entrypoint. All requests go to a synthetic loopback gateway.
 // Usage: node scripts/smoke_openmausbot.mjs [--resources /path/to/resources]
+// The Go opt-in test also passes --proxy-fixture for a real proxy backed by
+// synthetic Kilo/ChatGPT servers. This mode refuses arbitrary credentials.
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, rm, lstat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const args = process.argv.slice(2);
-if (args.length && (args.length !== 2 || args[0] !== '--resources')) {
-  throw new Error('Usage: node scripts/smoke_openmausbot.mjs [--resources PATH]');
+const options = {};
+for (let index = 0; index < args.length; index += 2) {
+  const name = args[index];
+  if (!['--resources', '--proxy-fixture'].includes(name) || !args[index + 1] || options[name]) {
+    throw new Error('Usage: node scripts/smoke_openmausbot.mjs [--resources PATH] [--proxy-fixture PATH]');
+  }
+  options[name] = args[index + 1];
 }
-const resources = resolve(args[1] || '/Applications/OpenMausBot.app/Contents/Resources');
+let fixture;
+if (options['--proxy-fixture']) {
+  const info = await lstat(options['--proxy-fixture']);
+  assert(info.isFile() && !info.isSymbolicLink() && info.size <= 16384, 'Use a regular, bounded synthetic fixture');
+  if (process.platform !== 'win32') assert.equal(info.mode & 0o077, 0, 'Fixture must be private');
+  fixture = JSON.parse(await readFile(options['--proxy-fixture'], 'utf8'));
+  assert.equal(fixture.fixture, 'kilo-openmaus-reasoning-test-v1');
+  assert.equal(fixture.localKey, 'synthetic-openmaus-reasoning-local');
+  const url = new URL(fixture.baseURL);
+  assert.equal(url.hostname, '127.0.0.1');
+  assert.equal(url.protocol, 'http:');
+  assert.equal(url.pathname, '/openmausbot/v1');
+  assert(url.port && !url.username && !url.password && !url.search && !url.hash);
+  assert(Array.isArray(fixture.models) && fixture.models.length >= 3);
+  assert(fixture.models.every(model => /^(vendor\/synthetic-|chatgpt\/gpt-synthetic-)[a-z-]+$/.test(model)));
+}
+const resources = resolve(options['--resources'] || '/Applications/OpenMausBot.app/Contents/Resources');
 const source = await readFile(join(resources, 'server', 'openmausbot.js'), 'utf8');
 const marker = '\n// server/openmausbot.ts\n';
 const entrypoint = source.lastIndexOf(marker);
@@ -50,15 +73,24 @@ try {
     const url = new URL(typeof target === 'string' || target instanceof URL ? target : target.url);
     assert.equal(url.hostname, '127.0.0.1', 'Smoke attempted a non-loopback request');
     assert.equal(url.protocol, 'http:');
-    assert(server && url.port === String(server.address().port), 'Unexpected local server');
+    assert.equal(url.port, fixture ? new URL(fixture.baseURL).port : String(server?.address().port), 'Unexpected local server');
+    if (url.pathname.endsWith('/models')) requests.push({ route: 'models' });
+    if (init?.method === 'POST') {
+      assert.equal(url.pathname, `${fixture ? '/openmausbot' : ''}/v1/chat/completions`);
+      const body = JSON.parse(init.body);
+      assert.equal(body.reasoning_effort, undefined, 'Installed driver added native effort support; review compatibility');
+      assert.equal(body.reasoning, undefined, 'Installed driver added native reasoning support; review compatibility');
+      assert.equal(body.provider, undefined, 'Inherited an unrelated upstream provider pin');
+      requests.push(body);
+    }
     return originalFetch(target, { ...init, redirect: 'error' });
   };
   const imported = join(scratch, 'installed-driver.mjs');
   await writeFile(imported, source.slice(0, entrypoint) +
     '\ninit_openai_compat(); init_config(); export { OpenAICompatDriver, parseStoredConfig };\n', { mode: 0o600 });
   const { OpenAICompatDriver: driver, parseStoredConfig } = await import(pathToFileURL(imported));
-  const models = ['openai/gpt-6.1-sol', 'chatgpt/gpt-6.1-sol'];
-  const localKey = 'synthetic-local-proxy-key';
+  const models = fixture?.models || ['openai/gpt-6.1-sol', 'chatgpt/gpt-6.1-sol'];
+  const localKey = fixture?.localKey || 'synthetic-local-proxy-key';
   const sentinel = 'KILO_OPENMAUS_SENTINEL';
   const executed = join(scratch, 'mcp-executed');
   const mcp = join(scratch, 'sentinel-mcp.mjs');
@@ -80,12 +112,12 @@ lines.on('line', line => {
   process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:req.id,result})+'\\n');
 });
 `, { mode: 0o600 });
-  server = createServer(async (req, res) => {
+  if (!fixture) {
+    server = createServer(async (req, res) => {
     try {
       assert.equal(req.headers.authorization, `Bearer ${localKey}`);
       assert.equal(req.headers['x-kilocode-organizationid'], undefined);
       if (req.url === '/v1/models') {
-        requests.push({ route: 'models' });
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end(JSON.stringify({ data: models.map((id, i) => ({ id, name: `Friendly ${i}`, context_length: 272000 })) }));
         return;
@@ -94,7 +126,6 @@ lines.on('line', line => {
       const chunks = [];
       for await (const chunk of req) chunks.push(chunk);
       const body = JSON.parse(Buffer.concat(chunks).toString());
-      requests.push(body);
       assert(models.includes(body.model));
       assert.equal(body.provider, undefined, 'Inherited an unrelated upstream provider pin');
       assert.equal(body.reasoning_effort, undefined, 'Upstream added reasoning support; update compatibility claims');
@@ -130,13 +161,26 @@ lines.on('line', line => {
       res.writeHead(500, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ error: { message: 'Synthetic gateway assertion failed' } }));
     }
-  });
-  await new Promise((resolveListen, reject) => {
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', resolveListen);
-  });
-  const raw = { url: `http://127.0.0.1:${server.address().port}/v1`, apiKeyEnv: 'KILO_LOCAL_API_KEY',
+    });
+    await new Promise((resolveListen, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', resolveListen);
+    });
+  }
+  let raw = { url: fixture?.baseURL || `http://127.0.0.1:${server.address().port}/v1`, apiKeyEnv: 'KILO_LOCAL_API_KEY',
     model: models[0], managedModels: models, provider: '', tools: true };
+  if (fixture?.configPath) {
+    const info = await lstat(fixture.configPath);
+    assert(info.isFile() && !info.isSymbolicLink() && info.size <= 128 * 1024);
+    const prepared = parseStoredConfig(JSON.parse(await readFile(fixture.configPath, 'utf8')));
+    const instance = prepared.instances['kilo-local'];
+    assert.equal(instance.driver, 'openai-compat');
+    assert.equal(instance.environment.KILO_LOCAL_API_KEY, localKey);
+    assert.equal(instance.config.url, fixture.baseURL);
+    assert.deepEqual(instance.config.managedModels, models);
+    assert.equal(prepared.defaultModelSelection.model, models[0]);
+    raw = instance.config;
+  }
   parseStoredConfig({ instances: { kiloProxy: { driver: 'openai-compat', enabled: true, config: raw } },
     defaultModelSelection: { instanceId: 'kiloProxy', model: models[0] }, context: { autoCompact: true, compactAt: 272000 } });
   const create = async (config, key = localKey) => {
@@ -165,11 +209,14 @@ lines.on('line', line => {
 
   const turn = async (model, behavior) => {
     const events = [];
-    const threadId = `synthetic-${behavior}`;
+    // Switch models on one conversation, preserving the same runtime.
+    const threadId = 'synthetic-model-switch';
     let completion;
+    let unsubscribe;
+    let timer;
     const ended = new Promise((resolveEnd, reject) => {
-      const timer = setTimeout(() => reject(new Error('OpenMausBot synthetic turn timed out')), 15000);
-      runtime.adapter.onEvent(event => {
+      timer = setTimeout(() => reject(new Error('OpenMausBot synthetic turn timed out')), 15000);
+      unsubscribe = runtime.adapter.onEvent(event => {
         if (event.threadId !== threadId) return;
         events.push(event);
         if (event.type === 'request.opened') {
@@ -183,9 +230,14 @@ lines.on('line', line => {
         }
       });
     });
-    await runtime.adapter.sendTurn({ threadId, model, text: 'Use the synthetic sentinel tool.', approvalMode: 'ask',
-      integrations: { custom: { fixture: { command: process.execPath, args: [mcp] } } } });
-    await ended;
+    try {
+      await runtime.adapter.sendTurn({ threadId, model, text: 'Use the synthetic sentinel tool.', approvalMode: 'ask',
+        integrations: { custom: { fixture: { command: process.execPath, args: [mcp] } } } });
+      await ended;
+    } finally {
+      clearTimeout(timer);
+      unsubscribe?.();
+    }
     if (serverFailure) throw serverFailure;
     assert(events.some(event => event.type === 'request.opened'), 'Tool bypassed permission prompt');
     assert(events.some(event => event.type === 'request.resolved' && event.behavior === behavior));
@@ -198,10 +250,15 @@ lines.on('line', line => {
   assert.equal(existsSync(executed), false, 'Denied MCP tool was executed');
   await turn(models[1], 'allow');
   assert.equal(await readFile(executed, 'utf8'), 'executed');
+  for (const model of models.slice(2)) {
+    const next = await create({ ...raw, model, managedModels: [model, ...models.filter(id => id !== model)] });
+    assert.equal(await next.generateText('synthetic helper'), 'synthetic helper');
+  }
   assert.equal(requests.filter(request => request.stream).length, 4);
   assert.equal(requests.filter(request => request.route === 'models').length, 0);
   console.log('PASS: installed OpenMausBot managed model catalog, two namespaces, streamed tool/results, permission deny/allow, dedicated key isolation, nonstream usage');
   console.log('Verified limits: no effort selector; managed labels are model IDs; context metadata is not imported; streamed costs stay in Kilo Proxy Activity.');
+  if (fixture) console.log('PASS: real proxy fixture exercised every configured reasoning model; upstream assertions belong to the Go test.');
 } finally {
   await Promise.allSettled(runtimes.map(runtime => runtime.adapter.stopAll()));
   if (server) {

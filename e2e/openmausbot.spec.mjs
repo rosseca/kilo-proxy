@@ -2,8 +2,8 @@ import {test, expect, startProxy} from './fixture.mjs';
 import {readFile, writeFile} from 'node:fs/promises';
 
 const library = () => ({schemaVersion:1,defaultModel:'anthropic/claude-sonnet-4.6',models:[
- {id:'vendor/one',displayName:'My coding model',contextPreset:'low',reasoningEffort:'high'},
- {id:'anthropic/claude-sonnet-4.6',displayName:'My default model',contextPreset:'recommended'},
+ {id:'vendor/one',displayName:'My coding model',contextPreset:'low',reasoningEffort:'high',reasoningCustom:true,reasoningLevels:['low','high']},
+ {id:'anthropic/claude-sonnet-4.6',displayName:'My default model',contextPreset:'recommended',reasoningCustom:true,reasoningLevels:[]},
 ]});
 const headers = gateway => ({Authorization:'Bearer '+gateway.token});
 async function getAPI(request,gateway,path) {
@@ -39,15 +39,19 @@ test('OpenMausBot uses shared models and prepares every desktop launch without a
  const profile=await getAPI(request,gateway,'clients/openmausbot');
  expect(profile.configPath.startsWith(gateway.root)).toBe(true);
  expect(profile.modelCount).toBe(2);expect(profile.initialModel).toBe(library().defaultModel);
+ expect(profile.reasoningEfforts).toEqual({'vendor/one':'high'});
+ await expect(page.locator('#openmausbot-models li')).toHaveText([library().defaultModel+' · Reasoning: Automatic','vendor/one · Reasoning: High']);
  const config=await readFile(profile.configPath,'utf8');
  expect(config).toContain('vendor/one');expect(config).not.toContain('synthetic-kilo-personal-key');
  await page.locator('#openmausbot-options').click();
- await expect(page.locator('#openmausbot-compatibility')).toContainText('does not apply custom names or reasoning levels');
+ await expect(page.locator('#openmausbot-compatibility')).toContainText('Kilo Proxy applies each model’s supported reasoning level saved in Models');
  await expect(page.locator('#openmausbot-install')).toHaveAttribute('href','https://github.com/milind-soni/OpenMausBot/releases/latest');
+ await expect(page.locator('#toast')).toBeHidden();
  await page.locator('#openmausbot-helper').screenshot({path:testInfo.outputPath('openmausbot-en-wide.png')});
  await page.locator('#language').selectOption('es');
  await page.setViewportSize({width:390,height:844});
- await expect(page.locator('#openmausbot-compatibility')).toContainText('no aplica nombres personalizados ni niveles de razonamiento');
+ await expect(page.locator('#openmausbot-models li')).toHaveText([library().defaultModel+' · Razonamiento: Automático','vendor/one · Razonamiento: Alto']);
+ await expect(page.locator('#openmausbot-compatibility')).toContainText('Kilo Proxy aplica el nivel de razonamiento compatible de cada modelo guardado en Modelos');
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
  await page.locator('#openmausbot-helper').screenshot({path:testInfo.outputPath('openmausbot-es-mobile.png')});
  expect(await page.evaluate(()=>window.__copied)).toEqual([]);
@@ -95,4 +99,28 @@ test('OpenMausBot stops stale preparation and refreshes an externally changed sh
   await page.locator('#client-launch').click();
   await expect.poll(async()=>(await records(gateway)).length).toBe(1);
  }finally{release();}
+});
+
+
+test('OpenMausBot reasoning summary distinguishes None and hides unapplied shared edits',async({page,gateway,request},testInfo)=>{
+ const chosen=library();chosen.models[0].reasoningEffort='none';chosen.models[0].reasoningLevels=['none','high'];
+ await saveLibrary(request,gateway,chosen);
+ await startProxy(page,gateway);
+ await page.locator('#tab-openmausbot').click();
+ await page.locator('#openmausbot-options').click();
+ await page.locator('#openmausbot-prepare').click();
+ await expect(page.locator('#openmausbot-models li')).toHaveText([chosen.defaultModel+' · Reasoning: Automatic','vendor/one · Reasoning: None']);
+ await page.locator('#language').selectOption('es');
+ await expect(page.locator('#openmausbot-models li')).toHaveText([chosen.defaultModel+' · Razonamiento: Automático','vendor/one · Razonamiento: Sin razonamiento']);
+ chosen.models[0].reasoningEffort='high';
+ await saveLibrary(request,gateway,chosen);
+ await page.locator('#openmausbot-reload').click();
+ await expect(page.locator('#openmausbot-models li')).toHaveText([chosen.defaultModel,'vendor/one']);
+ await expect(page.locator('#openmausbot-library-help')).toContainText('Prepara o abre OpenMausBot para confirmar');
+ await page.locator('#openmausbot-prepare').click();
+ await expect(page.locator('#openmausbot-models li')).toHaveText([chosen.defaultModel+' · Razonamiento: Automático','vendor/one · Razonamiento: Alto']);
+ await page.setViewportSize({width:390,height:844});
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
+ await page.locator('#openmausbot-helper').screenshot({path:testInfo.outputPath('openmausbot-reasoning-es-mobile.png')});
+ expect(await records(gateway)).toEqual([]);
 });

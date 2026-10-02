@@ -1182,6 +1182,7 @@ func (u *nativeUI) prepareClientAfter(key string, done func(error)) {
 	base, local, _ := u.clientBase()
 	fingerprint := nativeSelectionFingerprint(key, s, base, local, u.clientCaps(key))
 	imagesSent := cloneClientImageSettings(s.ImageGeneration)
+	openMausBotConnection := u.launchConnectionFingerprint()
 	u.clientRequest(http.MethodPost, nativeClientEndpoint(key), payload, func(data json.RawMessage, err error) {
 		if err != nil {
 			done(err)
@@ -1204,6 +1205,9 @@ func (u *nativeUI) prepareClientAfter(key string, done func(error)) {
 			s.Path = result.ConfigPath
 		}
 		s.Saved = fingerprint
+		if key == "openmausbot" {
+			u.acceptOpenMausBotProfile(data, openMausBotConnection)
+		}
 		if key == "codex" || key == "codex-cli" {
 			u.acceptClientImages(imagesSent)
 		}
