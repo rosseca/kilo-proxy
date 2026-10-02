@@ -470,7 +470,7 @@ func (u *nativeUI) clientsPanel() layout.Widget {
 			}
 		})
 	}
-	clientNames := map[string]string{"codex": "Codex Desktop", "codex-cli": "Codex CLI", "claude": "Claude Code", "claude-desktop": "Claude Desktop", "opencode": "OpenCode", "omp": "Oh My Pi", "zed": "Zed", "open-design": "Open Design", "openmausbot": "OpenMausBot", "xcode": "Xcode", "generic": u.tr("Other agents", "Otros agentes")}
+	clientNames := map[string]string{"codex": "Codex Desktop", "codex-cli": "Codex CLI", "claude": "Claude Code", "claude-desktop": "Claude Desktop · Kilo", "opencode": "OpenCode", "omp": "Oh My Pi", "zed": "Zed", "open-design": "Open Design", "openmausbot": "OpenMausBot", "xcode": "Xcode", "generic": u.tr("Other agents", "Otros agentes")}
 	widgets := []layout.Widget{
 		u.pills(u.iconButton("agents.back", u.tr("All agents", "Todos los agentes"), nativeButtonGhost, nativeIconBack, func() { u.page = "agents" })),
 		u.heading(clientNames[u.client]),
@@ -675,16 +675,17 @@ func (u *nativeUI) claudeDesktopClientPanel(s *nativeClientSelection) layout.Wid
 		widgets = append(widgets, u.message(nativeToneError, nativeMessage(validation.Error(), u.language)))
 	}
 	u.setChecked("client:claude-desktop:experimental", u.claudeDesktopExperimentalModels())
-	experimental := u.section(u.tr("Experimental models", "Modelos experimentales"), u.tr("Off by default. Changes affect only Claude Desktop; your shared library is preserved.", "Desactivado por defecto. Los cambios solo afectan a Claude Desktop; se conserva tu biblioteca compartida."),
+	experimental := u.section(u.tr("Experimental models", "Modelos experimentales"), u.tr("Off by default. Changes affect only the Kilo Desktop profile; your shared library is preserved.", "Desactivado por defecto. Los cambios solo afectan al perfil Kilo de Desktop; se conserva tu biblioteca compartida."),
 		u.disabled(!working, u.check("client:claude-desktop:experimental", u.tr("Experimental: use models from other providers", "Experimental: usar modelos de otros proveedores"), u.setClaudeDesktopExperimentalModels)))
 	if u.chatGPTConnected() {
 		experimental = u.section(u.tr("Experimental models", "Modelos experimentales"), u.tr("Experimental aliases are required for ChatGPT models. This does not change your saved Kilo preference.", "Los alias experimentales son necesarios para los modelos de ChatGPT. No cambia tu preferencia guardada de Kilo."))
 	}
 	return u.column(experimental,
-		u.section(u.tr("Launch", "Arranque"), u.tr("Prepares the named Kilo third-party configuration with your shared models, names and default.", "Prepara la configuración de terceros Kilo con tus modelos compartidos, nombres y modelo inicial."), widgets...),
+		u.section(u.tr("Launch", "Arranque"), u.tr("Prepares a separate Kilo profile with your shared models, names and default. Open regular Claude from its usual icon.", "Prepara un perfil Kilo separado con tus modelos compartidos, nombres y modelo inicial. Abre Claude normal desde su icono habitual."), widgets...),
 		u.section(u.tr("Compatibility", "Compatibilidad"), u.agentCompatibility(key),
 			u.note(u.tr("Context and output limits are managed by Claude Desktop and the model. Shared context presets are not applied.", "Claude Desktop y el modelo gestionan los límites de contexto y salida. Los preajustes de contexto compartidos no se aplican.")),
-			u.note(u.tr("Claude Desktop uses one applied third-party configuration at a time. Features depend on the installed app and operating system.", "Claude Desktop usa una configuración de terceros activa cada vez. Las funciones dependen de la app y del sistema operativo.")),
+			u.note(u.tr("Application data and Code authentication are separate. Existing history and sign-in are not copied. This is a data profile, not an operating-system sandbox.", "Los datos de la app y la autenticación de Code están separados. No se copian el historial ni la sesión existentes. Es un perfil de datos, no un aislamiento del sistema operativo.")),
+			u.note(u.tr("Claude disables Chrome-extension pairing with relocated data. Cowork and updates have not been verified with this profile. A real Windows Desktop session has not been tested.", "Claude desactiva el enlace con la extensión de Chrome al cambiar la ubicación de los datos. Cowork y las actualizaciones no se han verificado con este perfil. No se ha probado una sesión real de Desktop en Windows.")),
 			u.pills(u.iconButton("client:claude-desktop:install", u.tr("Get Claude Desktop", "Obtener Claude Desktop"), nativeButtonGhost, nativeIconOpenInNew, func() { u.open("https://claude.ai/download") })),
 		),
 	)
@@ -1213,7 +1214,7 @@ func (u *nativeUI) prepareClientAfter(key string, done func(error)) {
 		}
 		u.setNotice(nativeToneSuccess, u.tr("Editor profile prepared.", "Perfil del editor preparado."))
 		if key == "claude-desktop" {
-			u.setNotice(nativeToneSuccess, u.tr("Kilo configuration prepared. Reopen Claude Desktop to apply changes.", "Configuración Kilo preparada. Vuelve a abrir Claude Desktop para aplicar los cambios."))
+			u.setNotice(nativeToneSuccess, u.tr("Kilo profile prepared. Open Claude Desktop · Kilo to apply changes.", "Perfil Kilo preparado. Abre Claude Desktop · Kilo para aplicar los cambios."))
 		}
 		done(nil)
 	})

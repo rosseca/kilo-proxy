@@ -58,7 +58,7 @@ Checks use GitHub's public release API without your Kilo credentials, organizati
 | Oh My Pi | Isolated OMP terminal profile, shared models, names, supported reasoning, and Kilo image MCP |
 | Open Design | Codex CLI, Claude Code or OpenCode engine, private profiles from shared models, separate desktop workspace, and automatic proxy startup |
 | Claude Code | Automatic isolated profile, version-aware model picker, short names, native effort and terminal launcher |
-| Claude Desktop | Official gateway configuration, shared Claude models and names, automatic preparation and desktop launch |
+| Claude Desktop · Kilo | Private Desktop and Code/auth profiles, official gateway configuration, shared Claude models and names, automatic desktop launch |
 | OpenMausBot | Separate desktop workspace, shared model IDs and default, OpenAI-compatible connection, and automatic proxy startup |
 | Zed | Automatic local credentials and JSONC settings updates, multiple models, names, and initial model |
 | Xcode | Dedicated Chat model list, automatic Codex/Claude agent profiles, version-aware Claude aliases and setup guidance |
@@ -85,7 +85,7 @@ From v0.23.1, image results include a preview bounded to **1024 pixels per side 
 
 The Claude Code card detects the installed version, prepares a separate profile with backups, and opens an interactive terminal. Shared names and reasoning preferences apply only where that version and model support them. See [client setup](docs/clients.md) for profile isolation, saving, and compatibility limits.
 
-**Claude Desktop** has its own full-width row immediately below Codex. **Open Claude Desktop** prepares its third-party gateway configuration from the shared library. Claude models work directly; **Integration settings → Experimental: use models from other providers** enables local aliases for other Kilo models while preserving their real display names and cost attribution. Quit an already running Claude Desktop before opening the changed configuration. See [Desktop setup and compatibility limits](docs/claude-desktop.md).
+**Claude Desktop · Kilo** has its own full-width row immediately below Codex. **Open Claude Desktop · Kilo** prepares a private Desktop and Code/auth profile from the shared library, without copying ordinary Claude's history or login. Ordinary Claude can stay open and launches from its usual icon; quit only the Kilo instance before reopening it or changing its profile. Claude models work directly; **Integration settings → Experimental: use models from other providers** enables local aliases for other Kilo models while preserving their real display names and cost attribution. See [profile storage, restoration for earlier users and compatibility limits](docs/claude-desktop.md).
 
 **OpenMausBot** has a full-width row below Codex and Claude Desktop. **Open OpenMausBot** configures its OpenAI-compatible engine from the shared library and opens a separate workspace. Both Kilo and `chatgpt/` models use the local proxy, which applies the prepared reasoning level for each model. Its current engine shows exact model IDs and has no native reasoning selector. See [setup, profile isolation and compatibility](docs/openmausbot.md).
 

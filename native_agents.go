@@ -179,7 +179,7 @@ func (u *nativeUI) agentCompatibility(key string) string {
 	case "openmausbot":
 		return u.tr("Uses the local OpenAI-compatible connection with your shared models, listing the default first. OpenMausBot shows exact model IDs instead of custom names. Kilo Proxy applies each model’s supported reasoning level saved in Models. Generation and tools depend on the model and provider.", "Usa la conexión local compatible con OpenAI con tus modelos compartidos, mostrando primero el predeterminado. OpenMausBot muestra los ID exactos en lugar de nombres personalizados. Kilo Proxy aplica el nivel de razonamiento compatible de cada modelo guardado en Modelos. La generación y las herramientas dependen del modelo y del proveedor.")
 	case "claude-desktop":
-		return u.tr("Uses the Kilo third-party configuration for Chat, Cowork and Code. Close Claude before opening to apply changes. Other providers require the experimental option in these settings.", "Usa la configuración de terceros Kilo para Chat, Cowork y Code. Cierra Claude antes de abrir para aplicar cambios. Los demás proveedores requieren la opción experimental de estos ajustes.")
+		return u.tr("Opens a separate Kilo data profile. Regular Claude can stay open; use its usual icon to open it. Quit only the Kilo window before applying changes or opening it again. Other providers require the experimental option in these settings.", "Abre un perfil de datos Kilo separado. Claude normal puede seguir abierto; ábrelo desde su icono habitual. Cierra solo la ventana Kilo antes de aplicar cambios o volver a abrirla. Los demás proveedores requieren la opción experimental de estos ajustes.")
 	case "opencode":
 		return u.tr("Uses Chat Completions with shared names and default model; reasoning stays automatic. Opens a terminal in your project. Local OpenCode settings can override this profile.", "Usa Chat Completions con nombres y modelo inicial compartidos; el razonamiento sigue automático. Abre una terminal en tu proyecto. Los ajustes de OpenCode pueden prevalecer.")
 	case "omp":
@@ -289,7 +289,7 @@ func (u *nativeUI) agentPurpose(key string) string {
 	case "claude":
 		return u.tr("Claude Code with compatible models.", "Claude Code con modelos compatibles.")
 	case "claude-desktop":
-		return u.tr("Chat, Cowork and Code with your Kilo models.", "Chat, Cowork y Code con tus modelos de Kilo.")
+		return u.tr("Separate Kilo profile; regular Claude can stay open.", "Perfil Kilo separado; Claude normal puede seguir abierto.")
 	case "opencode":
 		return u.tr("OpenCode in your project terminal.", "OpenCode en tu terminal de proyecto.")
 	case "omp":
@@ -363,6 +363,8 @@ func (u *nativeUI) agentCard(key string) layout.Widget {
 	name, kind := launchClientIdentity(key)
 	if key == "codex" {
 		name = "Codex"
+	} else if key == "claude-desktop" {
+		name = "Claude Desktop · Kilo"
 	}
 	available := u.nativeLaunchAvailable(key)
 	cli := terminalClientSupported(key)

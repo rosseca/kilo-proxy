@@ -60,7 +60,7 @@ func TestNativeOpenMausBotWideCardAfterDesktopApps(t *testing.T) {
 			h := &nativePointerHarness{t: t, u: u, size: image.Pt(1180, 1700), now: time.Now()}
 			h.frame()
 			codex := h.target(u.tr("Open Codex", "Abrir Codex"), semantic.Button).Desc.Bounds
-			claude := h.target(u.tr("Open Claude Desktop", "Abrir Claude Desktop"), semantic.Button).Desc.Bounds
+			claude := h.target(u.tr("Open Claude Desktop · Kilo", "Abrir Claude Desktop · Kilo"), semantic.Button).Desc.Bounds
 			maus := h.target(u.tr("Open OpenMausBot", "Abrir OpenMausBot"), semantic.Button).Desc.Bounds
 			var code image.Rectangle
 			for _, node := range h.nodes() {
