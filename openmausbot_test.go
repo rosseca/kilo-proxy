@@ -109,7 +109,7 @@ func TestOpenMausBotConfigPreservesSettingsAndAppliesSharedDefaults(t *testing.T
 	if len(models) != len(library.Models) || models[0] != library.DefaultModel {
 		t.Fatal("driver default did not follow shared selection")
 	}
-	if config["url"] != "http://127.0.0.1:8877/v1" || config["apiKeyEnv"] != "KILO_LOCAL_API_KEY" || config["model"] != library.DefaultModel || config["tools"] != true || config["catalog"] != nil || config["effort"] != nil {
+	if config["url"] != "http://127.0.0.1:8877/openmausbot/v1" || config["apiKeyEnv"] != "KILO_LOCAL_API_KEY" || config["model"] != library.DefaultModel || config["tools"] != true || config["catalog"] != nil || config["effort"] != nil {
 		t.Fatal("unsupported or incorrect driver configuration")
 	}
 	if instance["environment"].(map[string]any)["KILO_LOCAL_API_KEY"] != "local-only" {

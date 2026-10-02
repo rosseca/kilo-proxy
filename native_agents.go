@@ -16,6 +16,7 @@ import (
 )
 
 type nativeAgents struct {
+	OpenMausBot       nativeOpenMausBotState
 	Preferences       agentPreferences
 	Error             string
 	ClaudeError       string
@@ -176,7 +177,7 @@ func (u *nativeUI) agentCompatibility(key string) string {
 	case "claude":
 		return u.tr("Uses Anthropic Messages. Applies only reasoning levels supported by each model and installed Claude Code version. Gateway support is also required.", "Usa Anthropic Messages. Aplica solo niveles de razonamiento compatibles con cada modelo y la versión de Claude Code. También requiere compatibilidad del gateway.")
 	case "openmausbot":
-		return u.tr("Uses the local OpenAI-compatible connection with your shared models, listing the default first. OpenMausBot shows exact model IDs; this engine does not apply custom names or reasoning levels. Generation and tools depend on the model and provider.", "Usa la conexión local compatible con OpenAI con tus modelos compartidos, mostrando primero el predeterminado. OpenMausBot muestra los ID exactos; este motor no aplica nombres personalizados ni niveles de razonamiento. La generación y las herramientas dependen del modelo y del proveedor.")
+		return u.tr("Uses the local OpenAI-compatible connection with your shared models, listing the default first. OpenMausBot shows exact model IDs instead of custom names. Kilo Proxy applies each model’s supported reasoning level saved in Models. Generation and tools depend on the model and provider.", "Usa la conexión local compatible con OpenAI con tus modelos compartidos, mostrando primero el predeterminado. OpenMausBot muestra los ID exactos en lugar de nombres personalizados. Kilo Proxy aplica el nivel de razonamiento compatible de cada modelo guardado en Modelos. La generación y las herramientas dependen del modelo y del proveedor.")
 	case "claude-desktop":
 		return u.tr("Uses the Kilo third-party configuration for Chat, Cowork and Code. Close Claude before opening to apply changes. Other providers require the experimental option in these settings.", "Usa la configuración de terceros Kilo para Chat, Cowork y Code. Cierra Claude antes de abrir para aplicar cambios. Los demás proveedores requieren la opción experimental de estos ajustes.")
 	case "opencode":
@@ -310,7 +311,7 @@ func (u *nativeUI) agentOptions(key string) layout.Widget {
 	if key == "openmausbot" {
 		return u.column(u.note(u.agentCompatibility(key)), u.pills(
 			u.button("agent:openmausbot:setup", u.tr("Integration settings", "Ajustes de integración"), func() { u.agentSetup(key) }),
-			u.button("agent:openmausbot:detect", u.tr("Refresh detection", "Actualizar detección"), u.detectLaunchers),
+			u.button("agent:openmausbot:detect", u.tr("Refresh detection", "Actualizar detección"), func() { u.detectLaunchers(); u.refreshOpenMausBotProfile() }),
 			u.iconButton("agent:openmausbot:install", u.tr("Get OpenMausBot", "Obtener OpenMausBot"), nativeButtonGhost, nativeIconOpenInNew, func() { u.open(openMausBotDownloadURL) }),
 		))
 	}

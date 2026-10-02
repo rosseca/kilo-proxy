@@ -5,8 +5,11 @@ package main
 import (
 	"encoding/json"
 	"image"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -39,8 +42,8 @@ func TestNativeOpenMausBotUsesSharedLibrarySnapshot(t *testing.T) {
 	if nativeClientEndpoint("openmausbot") != "/api/clients/openmausbot" || strings.Contains(string(data), u.owner.apiKey) || strings.Contains(string(data), u.owner.config.LocalKey) {
 		t.Fatal("wrong endpoint or credentials in shared payload")
 	}
-	if !strings.Contains(u.agentCompatibility("openmausbot"), "does not apply custom names or reasoning levels") {
-		t.Fatal("unsupported OpenMausBot preferences were not explained")
+	if !strings.Contains(u.agentCompatibility("openmausbot"), "Kilo Proxy applies each model’s supported reasoning level saved in Models") {
+		t.Fatal("proxy reasoning behavior was not explained")
 	}
 }
 
@@ -144,5 +147,100 @@ func TestNativeOpenMausBotPreparationFailureAndEditsNeverLaunch(t *testing.T) {
 				t.Fatal("failed preparation changed the common library")
 			}
 		})
+	}
+}
+
+func TestNativeOpenMausBotPreparedReasoningIsReadOnlyAndFresh(t *testing.T) {
+	for _, lang := range []string{"en", "es"} {
+		t.Run(lang, func(t *testing.T) {
+			u, _ := nativeLaunchTestUI(t, "openmausbot", false, false)
+			u.language = lang
+			models := append(nativeClientModelsForTest(), modelInfo{ID: "vendor/automatic", Name: "Automatic model", ContextWindow: 128000})
+			shared := nativeSeedSharedForTest(t, u, models...)
+			for i := range shared.Models {
+				choice := &shared.Models[i]
+				choice.ReasoningCustom = true
+				switch i {
+				case 0:
+					choice.ReasoningLevels, choice.DefaultReasoning = []string{"low", "high"}, "high"
+				case 1:
+					choice.ReasoningLevels, choice.DefaultReasoning = []string{"none"}, "none"
+				default:
+					choice.ReasoningLevels, choice.DefaultReasoning = []string{}, ""
+				}
+				u.seedClientChoice(sharedModelKey, *choice)
+			}
+			u.persistLibraryEdits()
+			u.flushModelLibrary()
+			u.prepareClient("openmausbot")
+			nativeTestWait(t, u, func() bool { return !u.busy["POST/api/clients/openmausbot"] })
+			selection := u.sharedClientSelection("openmausbot")
+			if !u.openMausBotReasoningReady(selection) {
+				t.Fatalf("prepared metadata was not accepted: info=%+v notice=%s", u.agentsState().OpenMausBot.Info, u.notice)
+			}
+			efforts := u.agentsState().OpenMausBot.Info.ReasoningEfforts
+			if efforts[models[0].ID] != "high" || efforts[models[1].ID] != "none" || efforts[models[2].ID] != "" {
+				t.Fatalf("effective levels were inferred incorrectly: %v", efforts)
+			}
+			u.agentSetup("openmausbot")
+			h := &nativePointerHarness{t: t, u: u, size: image.Pt(1180, 1500), now: time.Now()}
+			h.frame()
+			labels := map[string]bool{}
+			for _, node := range h.nodes() {
+				labels[node.Desc.Label] = true
+			}
+			for _, row := range []string{models[0].ID + " · " + u.tr("High", "Alto"), models[1].ID + " · " + u.tr("None", "Sin razonamiento"), models[2].ID + " · " + u.tr("Automatic", "Automático")} {
+				if !labels[row] {
+					t.Fatalf("missing prepared reasoning row %q", row)
+				}
+			}
+			nativeGridCapture(t, h, "native-openmausbot-reasoning-"+lang)
+			u.setValue(nativeClientField(sharedModelKey, models[0].ID, "reasoning"), "low")
+			if u.openMausBotReasoningReady(u.sharedClientSelection("openmausbot")) {
+				t.Fatal("changed draft displayed stale applied reasoning")
+			}
+			h.size = image.Pt(720, 900)
+			h.frame()
+			nativeGridCapture(t, h, "native-openmausbot-reasoning-pending-"+lang)
+			u.setValue(nativeClientField(sharedModelKey, models[0].ID, "reasoning"), "high")
+			selection = u.sharedClientSelection("openmausbot")
+			u.agentsState().OpenMausBot.Info.Prepared = false
+			if u.openMausBotReasoningReady(selection) {
+				t.Fatal("invalid prepared profile displayed applied reasoning")
+			}
+			u.agentsState().OpenMausBot.Info.Prepared = true
+			u.owner.mu.Lock()
+			u.owner.config.OrgID = "changed-team"
+			u.owner.mu.Unlock()
+			if u.openMausBotReasoningReady(selection) {
+				t.Fatal("changed connection displayed stale applied reasoning")
+			}
+		})
+	}
+}
+
+func TestNativeOpenMausBotLateMetadataDoesNotReplacePreparedReasoning(t *testing.T) {
+	u := nativeTestUI(t)
+	nativeSeedSharedForTest(t, u, nativeClientModelsForTest()[0])
+	payload, _ := nativeClientPayload("openmausbot", u.sharedClientSelection("openmausbot"))
+	library := payload.(map[string]any)["library"].(modelLibrary)
+	entered, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	unblock := func() { once.Do(func() { close(release) }) }
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(entered)
+		<-release
+		jsonResponse(w, 200, nativeOpenMausBotInfo{Prepared: true, Library: &library, ReasoningEfforts: map[string]string{"vendor/one": "low"}})
+	}))
+	t.Cleanup(func() { unblock(); server.Close() })
+	u.owner.adminHost = strings.TrimPrefix(server.URL, "http://")
+	u.refreshOpenMausBotProfile()
+	<-entered
+	prepared, _ := json.Marshal(nativeOpenMausBotInfo{Prepared: true, Library: &library, ReasoningEfforts: map[string]string{"vendor/one": "high"}})
+	u.acceptOpenMausBotProfile(prepared, u.launchConnectionFingerprint())
+	unblock()
+	nativeTestWait(t, u, func() bool { return !u.busy["GET/api/clients/openmausbot"] })
+	if u.agentsState().OpenMausBot.Info.ReasoningEfforts["vendor/one"] != "high" {
+		t.Fatal("late metadata GET replaced the newer prepared response")
 	}
 }

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createOpenMausBotHelper, openMausBotLibraryReady} from '../ui/openmausbot-helper.mjs';
+import {createOpenMausBotHelper, openMausBotLibraryReady, openMausBotReasoningReady, openMausBotReasoningLabel} from '../ui/openmausbot-helper.mjs';
 
 const saved = () => ({revision:2, library:{schemaVersion:1, defaultModel:'vendor/second', models:[{id:'vendor/first',displayName:'Friendly',contextPreset:'low',reasoningEffort:'high'},{id:'vendor/second'}]}});
 const tick = () => new Promise(resolve => setImmediate(resolve));
@@ -21,7 +21,7 @@ test('requires a saved nonempty library with its selected default and no recover
 
 test('always prepares an immutable shared snapshot without writing a second selection or exposing credentials', async t => {
  const source=saved(),calls=[];
- const {helper,nodes}=fixture(t,async(path,body)=>{calls.push({path,body});return path==='model-library'?source:{prepared:true,configPath:'/isolated/OpenMausBot/config.json'};});
+ const {helper,nodes}=fixture(t,async(path,body)=>{calls.push({path,body});return path==='model-library'?source:{prepared:true,configPath:'/isolated/OpenMausBot/config.json',library:structuredClone(source.library),reasoningEfforts:{'vendor/first':'high'}};});
  await tick();
  assert.equal(helper.launchState().valid,true);
  assert.equal(helper.launchState().ready,false);
@@ -32,8 +32,8 @@ test('always prepares an immutable shared snapshot without writing a second sele
  source.library.models[0].displayName='Changed later';
  assert.equal(sent.body.library.models[0].displayName,'Friendly');
  assert.equal(calls.filter(call=>call.path==='model-library'&&call.body).length,0);
- assert.match(nodes.get('openmausbot-compatibility').textContent,/does not apply custom names or reasoning levels/);
- assert.deepEqual(nodes.get('openmausbot-models').children.map(node=>node.textContent),['vendor/second','vendor/first']);
+ assert.match(nodes.get('openmausbot-compatibility').textContent,/Kilo Proxy applies each model’s supported reasoning level/);
+ assert.deepEqual(nodes.get('openmausbot-models').children.map(node=>node.textContent),['vendor/second · Reasoning: Automatic','vendor/first · Reasoning: High']);
  assert.equal(helper.launchState().ready,false);
  assert.doesNotMatch([...nodes.values()].map(node=>node.textContent).join(' '),/synthetic/);
 });
@@ -52,4 +52,34 @@ test('saved library changes require a fresh launch and a load failure never reus
  assert.equal(helper.launchState().valid,false);
  assert.equal(helper.launchState().count,0);
  assert.match(helper.launchState().reason,/disk unreadable/);
+});
+
+
+test('effective reasoning requires matching prepared metadata and keeps None distinct from Automatic', () => {
+ const current=saved(),profile={prepared:true,library:structuredClone(current.library),reasoningEfforts:{'vendor/first':'none'}};
+ assert.equal(openMausBotReasoningReady(current,profile),true);
+ for(const changed of [{...profile,prepared:false},{...profile,library:undefined},{...profile,reasoningEfforts:undefined},{...profile,library:{...profile.library,defaultModel:'vendor/first'}}])assert.equal(openMausBotReasoningReady(current,changed),false);
+ current.library.models[0].reasoningEffort='low';
+ assert.equal(openMausBotReasoningReady(current,profile),false);
+ assert.equal(openMausBotReasoningLabel('none'),'None');
+ assert.equal(openMausBotReasoningLabel('none','es'),'Sin razonamiento');
+ assert.equal(openMausBotReasoningLabel(''),'Automatic');
+ assert.equal(openMausBotReasoningLabel(undefined,'es'),'Automático');
+});
+
+test('read-only levels follow prepared metadata and disappear for a changed library or connection', async t => {
+ let source=saved(),profile={prepared:true,library:structuredClone(source.library),reasoningEfforts:{'vendor/first':'none'}};
+ const {helper,nodes}=fixture(t,async path=>path==='model-library'?structuredClone(source):structuredClone(profile));
+ await tick();
+ assert.deepEqual(nodes.get('openmausbot-models').children.map(node=>node.textContent),['vendor/second · Reasoning: Automatic','vendor/first · Reasoning: None']);
+ source.library.models[0].reasoningEffort='low';
+ await helper.reload();
+ assert.deepEqual(nodes.get('openmausbot-models').children.map(node=>node.textContent),['vendor/second','vendor/first']);
+ assert.match(nodes.get('openmausbot-library-help').textContent,/Prepare or open/);
+ profile={...profile,library:structuredClone(source.library),reasoningEfforts:{'vendor/first':'low'}};
+ await helper.reload();
+ assert.match(nodes.get('openmausbot-models').children[1].textContent,/Reasoning: Low/);
+ helper.render({state:{connectionReady:true,baseURL:'http://127.0.0.1:9999/v1',localKey:'synthetic'},language:'es'});
+ assert.deepEqual(nodes.get('openmausbot-models').children.map(node=>node.textContent),['vendor/second','vendor/first']);
+ assert.match(nodes.get('openmausbot-library-help').textContent,/Prepara o abre/);
 });

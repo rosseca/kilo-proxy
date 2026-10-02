@@ -49,12 +49,21 @@ func TestInstalledOpenMausBotDesktop(t *testing.T) {
 			t.Error("wrong upstream credential or organization")
 		}
 		var body struct {
-			Model  string `json:"model"`
-			Stream bool   `json:"stream"`
+			Model     string `json:"model"`
+			Stream    bool   `json:"stream"`
+			Reasoning struct {
+				Effort  string `json:"effort"`
+				Enabled *bool  `json:"enabled"`
+			} `json:"reasoning"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Model != "vendor/desktop-default" {
 			t.Error("OpenMausBot did not use the configured shared default")
 			http.Error(w, "unexpected model", 400)
+			return
+		}
+		if body.Reasoning.Effort != "high" || body.Reasoning.Enabled == nil || !*body.Reasoning.Enabled {
+			t.Error("OpenMausBot's prepared high reasoning did not reach the gateway")
+			http.Error(w, "unexpected reasoning", 400)
 			return
 		}
 		requests.Add(1)
@@ -68,7 +77,7 @@ func TestInstalledOpenMausBotDesktop(t *testing.T) {
 	}))
 	defer upstream.Close()
 	setUpstream(a, upstream.URL)
-	library := modelLibrary{SchemaVersion: 1, DefaultModel: "vendor/desktop-default", Models: []modelLibraryItem{{ID: "chatgpt/gpt-6.1-sol", DisplayName: "Subscription test", ContextPreset: contextPresetLow}, {ID: "vendor/desktop-default", DisplayName: "Default test", ContextPreset: contextPresetLow}}}
+	library := modelLibrary{SchemaVersion: 1, DefaultModel: "vendor/desktop-default", Models: []modelLibraryItem{{ID: "chatgpt/gpt-6.1-sol", DisplayName: "Subscription test", ContextPreset: contextPresetLow, ReasoningCustom: true, ReasoningLevels: []string{"low", "high"}, ReasoningEffort: "low"}, {ID: "vendor/desktop-default", DisplayName: "Default test", ContextPreset: contextPresetLow, ReasoningCustom: true, ReasoningLevels: []string{"low", "high"}, ReasoningEffort: "high"}}}
 	if _, err := a.modelLibrary.save(library, 0, false); err != nil {
 		t.Fatal(err)
 	}
