@@ -298,6 +298,9 @@ func TestChatGPTMixedDesktopAndEditorProfiles(t *testing.T) {
 					t.Fatal("Zed wrote key into JSON")
 				}
 			case "claude-desktop":
+				// This test verifies generated profiles with no Desktop instance.
+				// Running-profile guards have their own launcher tests.
+				a.claudeDesktopCheckRunning = func(string) (bool, error) { return false, nil }
 				for i := range editor.Models {
 					editor.Models[i].Context, editor.Models[i].Output = 0, 0
 				}

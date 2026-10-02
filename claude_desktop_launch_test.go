@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -24,19 +25,24 @@ func TestClaudeDesktopLaunchUsesSeparateDesktopAndCodeProfiles(t *testing.T) {
 	a := launchTestApp(t)
 	application := filepath.Join(a.launcher.home, "Applications", "Claude.app")
 	wantExecutable := filepath.Join(application, "Contents", "MacOS", "Claude")
-	if os.PathSeparator == '\\' {
-		// Process plans must use absolute paths for the host OS. A simulated
-		// macOS /usr/bin/open is correctly rejected by the Windows validator.
+	switch runtime.GOOS {
+	case "windows":
 		a.launcher.platform = "windows"
 		application = filepath.Join(a.launcher.home, "Applications", "Claude.exe")
 		wantExecutable = application
-	} else {
+	case "darwin":
 		if err := os.MkdirAll(filepath.Join(application, "Contents"), 0700); err != nil {
 			t.Fatal(err)
 		}
 		if err := os.WriteFile(filepath.Join(application, "Contents", "Info.plist"), []byte(`<plist><dict><key>CFBundleExecutable</key><string>Claude</string></dict></plist>`), 0600); err != nil {
 			t.Fatal(err)
 		}
+	default:
+		// Exercise the native Linux plan instead of simulating a macOS bundle,
+		// whose metadata reader needs the host's PlistBuddy utility.
+		a.launcher.platform = "linux"
+		application = filepath.Join(a.launcher.home, "Applications", "claude-desktop")
+		wantExecutable = application
 	}
 	a.claudeDesktopCheckRunning = func(string) (bool, error) { return false, nil }
 	a.launcher.resolve = func(client, _ string) (string, error) {
