@@ -68,6 +68,10 @@ func resolveLaunchClient(id, custom string) (string, error) {
 		home, _ := os.UserHomeDir()
 		return resolveClaudeDesktop(runtime.GOOS, home, os.Getenv("LOCALAPPDATA"))
 	}
+	if id == "openmausbot" {
+		home, _ := os.UserHomeDir()
+		return resolveOpenMausBot(runtime.GOOS, home, os.Getenv("LOCALAPPDATA"))
+	}
 	if kind == "terminal" {
 		if id == "omp" {
 			if path, err := exec.LookPath("omp"); err == nil && filepath.IsAbs(path) {

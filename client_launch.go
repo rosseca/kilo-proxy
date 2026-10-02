@@ -40,10 +40,10 @@ type clientLaunchAvailability struct {
 	InstallURL string `json:"installURL,omitempty"`
 }
 
-var launchClients = []string{"codex", "claude-desktop", "codex-cli", "claude", "opencode", "omp", "open-design", "zed", "xcode-chat", "xcode-codex", "xcode-claude"}
+var launchClients = []string{"codex", "claude-desktop", "codex-cli", "claude", "opencode", "omp", "open-design", "openmausbot", "zed", "xcode-chat", "xcode-codex", "xcode-claude"}
 
 func clientLaunchUsesProject(client string) bool {
-	return client != "codex" && client != "claude-desktop" && client != "open-design"
+	return client != "codex" && client != "claude-desktop" && client != "open-design" && client != "openmausbot"
 }
 
 func launchClientIdentity(id string) (string, string) {
@@ -62,6 +62,8 @@ func launchClientIdentity(id string) (string, string) {
 		return "Oh My Pi", "terminal"
 	case "open-design":
 		return "Open Design", "desktop"
+	case "openmausbot":
+		return "OpenMausBot", "desktop"
 	case "zed":
 		return "Zed", "desktop"
 	case "xcode-chat", "xcode-codex", "xcode-claude":
@@ -79,6 +81,9 @@ func launchClientPlatformReason(id, platform string) string {
 	}
 	if id == "open-design" && platform != "macos" && platform != "windows" {
 		return "Open Design desktop launch is available on macOS and Windows. Linux currently requires a source build."
+	}
+	if id == "openmausbot" && platform != "macos" && platform != "windows" && platform != "linux" {
+		return "OpenMausBot desktop is supported on macOS, Windows and Linux."
 	}
 	return ""
 }
@@ -126,6 +131,12 @@ func (a *app) clientsLaunch(w http.ResponseWriter, r *http.Request) {
 				info.Available = true
 				if id == "open-design" {
 					if err := openDesignCompatibility(path, rt.platform); err != nil {
+						info.Available = false
+						info.Reason = err.Error()
+					}
+				}
+				if id == "openmausbot" {
+					if err := openMausBotCompatibility(path, rt.platform); err != nil {
 						info.Available = false
 						info.Reason = err.Error()
 					}
@@ -187,6 +198,12 @@ func (a *app) clientsLaunch(w http.ResponseWriter, r *http.Request) {
 		message = "Open Design opened with its Kilo CLI profile. Use Local CLI mode in Open Design."
 		a.mu.Lock()
 		a.openDesignLaunchUntil = time.Now().Add(30 * time.Second)
+		a.mu.Unlock()
+	}
+	if input.Client == "openmausbot" {
+		message = "OpenMausBot opened with its private Kilo configuration."
+		a.mu.Lock()
+		a.openMausBotLaunchUntil = time.Now().Add(30 * time.Second)
 		a.mu.Unlock()
 	}
 	if strings.HasPrefix(input.Client, "xcode-") {
@@ -264,6 +281,8 @@ func (a *app) planClientLaunch(input clientLaunchRequest, rt clientLaunchRuntime
 	a.mu.Lock()
 	if input.Client == "open-design" {
 		err = a.applyOpenDesignProfile(&p, input.Engine, rt)
+	} else if input.Client == "openmausbot" {
+		err = a.applyOpenMausBotLaunch(&p, rt.platform)
 	} else {
 		err = a.launchProfile(&p, rt.home)
 	}
@@ -308,8 +327,8 @@ func (a *app) planClientLaunch(input clientLaunchRequest, rt clientLaunchRuntime
 			p.Args = []string{"-a", p.Executable}
 			p.Executable = "/usr/bin/open"
 		}
-	} else if input.Client == "open-design" {
-		// configureOpenDesignLaunch already selected its isolated native executable.
+	} else if input.Client == "open-design" || input.Client == "openmausbot" {
+		// These clients already selected their isolated native executable.
 	} else if kind == "desktop" {
 		if rt.platform == "macos" && strings.HasSuffix(p.Executable, ".app") {
 			p.Args = []string{"-a", p.Executable}

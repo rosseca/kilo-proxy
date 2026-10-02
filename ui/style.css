@@ -151,3 +151,6 @@
 #chatgpt-account { border-top: 1px solid var(--border); border-bottom: 0; margin: 22px 0 0; padding: 18px 0 0; }
 #chatgpt-title { margin: 0 0 10px; font-size: 16px; }
 #subscription-usage { border-top: 1px solid var(--border); margin-top: 28px; padding-top: 24px; }
+
+/* Exact provider/model IDs can be long; keep the shared list readable on mobile. */
+#openmausbot-models, #openmausbot-config { overflow-wrap: anywhere; }
