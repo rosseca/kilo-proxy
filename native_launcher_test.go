@@ -44,6 +44,8 @@ func nativeLaunchTestUI(t *testing.T, key string, delay, failPrepare bool) (*nat
 	if err := os.WriteFile(openDesignBinary, []byte("synthetic; never executed"), 0700); err != nil {
 		t.Fatal(err)
 	}
+	openMausBotBinary := syntheticOpenMausBotExecutable(t, u.owner.editorTestRoot, "macos")
+	u.owner.openMausBotCheckRunning = func(openMausBotPaths) (bool, error) { return false, nil }
 	openCodeBinary := syntheticOpenCodeExecutable(t, u.owner.editorTestRoot)
 	clientBinary := filepath.Join(u.owner.editorTestRoot, "fake-client.exe")
 	if err := os.WriteFile(clientBinary, []byte("synthetic; never executed"), 0700); err != nil {
@@ -58,6 +60,9 @@ func nativeLaunchTestUI(t *testing.T, key string, delay, failPrepare bool) (*nat
 	u.owner.launcher = &clientLaunchRuntime{
 		platform: "macos", home: u.owner.editorTestRoot,
 		resolve: func(client, customPath string) (string, error) {
+			if client == "openmausbot" {
+				return openMausBotBinary, nil
+			}
 			if client == "open-design" {
 				return openDesignBinary, nil
 			}

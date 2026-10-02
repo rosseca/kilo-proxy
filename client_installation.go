@@ -12,6 +12,8 @@ func launchClientInstallURL(id string) string {
 		return "https://opencode.ai/docs/#install"
 	case "omp":
 		return "https://github.com/can1357/oh-my-pi#install"
+	case "openmausbot":
+		return "https://github.com/milind-soni/OpenMausBot/releases"
 	default:
 		return ""
 	}

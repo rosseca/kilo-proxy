@@ -123,6 +123,8 @@ func (s *nativeClientSelection) ids() []string {
 
 func nativeClientEndpoint(key string) string {
 	switch key {
+	case "openmausbot":
+		return "/api/clients/openmausbot"
 	case "open-design":
 		return openDesignProfileEndpoint
 	case "codex", "codex-cli":
@@ -142,6 +144,13 @@ func nativeClientEndpoint(key string) string {
 }
 
 func nativeClientPayload(key string, s *nativeClientSelection) (any, error) {
+	if key == "openmausbot" {
+		library := modelLibrary{SchemaVersion: 1, DefaultModel: s.Initial}
+		for _, m := range s.Models {
+			library.Models = append(library.Models, nativeLibraryItem(m))
+		}
+		return map[string]any{"library": library}, validateModelLibrary(library)
+	}
 	if key == "omp" {
 		selection, err := nativeOMPSelection(s)
 		if err != nil {
@@ -461,7 +470,7 @@ func (u *nativeUI) clientsPanel() layout.Widget {
 			}
 		})
 	}
-	clientNames := map[string]string{"codex": "Codex Desktop", "codex-cli": "Codex CLI", "claude": "Claude Code", "claude-desktop": "Claude Desktop", "opencode": "OpenCode", "omp": "Oh My Pi", "zed": "Zed", "open-design": "Open Design", "xcode": "Xcode", "generic": u.tr("Other agents", "Otros agentes")}
+	clientNames := map[string]string{"codex": "Codex Desktop", "codex-cli": "Codex CLI", "claude": "Claude Code", "claude-desktop": "Claude Desktop", "opencode": "OpenCode", "omp": "Oh My Pi", "zed": "Zed", "open-design": "Open Design", "openmausbot": "OpenMausBot", "xcode": "Xcode", "generic": u.tr("Other agents", "Otros agentes")}
 	widgets := []layout.Widget{
 		u.pills(u.iconButton("agents.back", u.tr("All agents", "Todos los agentes"), nativeButtonGhost, nativeIconBack, func() { u.page = "agents" })),
 		u.heading(clientNames[u.client]),
@@ -559,6 +568,9 @@ func (u *nativeUI) clientsPanel() layout.Widget {
 		)
 	}
 	widgets = append(widgets, u.section(u.tr("Models", "Modelos"), u.tr("One shared library for this agent.", "Una biblioteca compartida para este agente."), modelWidgets...))
+	if key == "openmausbot" {
+		return u.column(append(widgets, u.openMausBotClientPanel(s))...)
+	}
 	if key == "open-design" {
 		return u.column(append(widgets, u.openDesignClientPanel(s))...)
 	}

@@ -175,6 +175,8 @@ func (u *nativeUI) agentCompatibility(key string) string {
 		return u.tr("Uses Responses through an isolated Kilo profile, with the library's names, default and supported reasoning levels. Model support depends on the gateway.", "Usa Responses con un perfil Kilo separado: nombres, modelo inicial y niveles de razonamiento compatibles de la biblioteca. La compatibilidad depende del gateway.")
 	case "claude":
 		return u.tr("Uses Anthropic Messages. Applies only reasoning levels supported by each model and installed Claude Code version. Gateway support is also required.", "Usa Anthropic Messages. Aplica solo niveles de razonamiento compatibles con cada modelo y la versión de Claude Code. También requiere compatibilidad del gateway.")
+	case "openmausbot":
+		return u.tr("Uses the local OpenAI-compatible connection with your shared models, listing the default first. OpenMausBot shows exact model IDs; this engine does not apply custom names or reasoning levels. Generation and tools depend on the model and provider.", "Usa la conexión local compatible con OpenAI con tus modelos compartidos, mostrando primero el predeterminado. OpenMausBot muestra los ID exactos; este motor no aplica nombres personalizados ni niveles de razonamiento. La generación y las herramientas dependen del modelo y del proveedor.")
 	case "claude-desktop":
 		return u.tr("Uses the Kilo third-party configuration for Chat, Cowork and Code. Close Claude before opening to apply changes. Other providers require the experimental option in these settings.", "Usa la configuración de terceros Kilo para Chat, Cowork y Code. Cierra Claude antes de abrir para aplicar cambios. Los demás proveedores requieren la opción experimental de estos ajustes.")
 	case "opencode":
@@ -261,6 +263,8 @@ func (u *nativeUI) agentMonogram(key string) layout.Widget {
 		initials = "ZE"
 	case "open-design":
 		initials = "OD"
+	case "openmausbot":
+		initials = "MB"
 	}
 	return func(gtx layout.Context) layout.Dimensions {
 		side := gtx.Dp(40)
@@ -275,6 +279,8 @@ func (u *nativeUI) agentMonogram(key string) layout.Widget {
 
 func (u *nativeUI) agentPurpose(key string) string {
 	switch key {
+	case "openmausbot":
+		return u.tr("Desktop assistant with your shared models.", "Asistente de escritorio con tus modelos compartidos.")
 	case "codex":
 		return u.tr("Desktop app with shared Kilo models.", "App de escritorio con modelos Kilo.")
 	case "codex-cli":
@@ -300,6 +306,13 @@ func (u *nativeUI) agentOptions(key string) layout.Widget {
 	a, c := u.agentsState(), u.clientState()
 	if key == "open-design" {
 		return u.column(u.note(u.agentCompatibility(key)), u.pills(u.button("agent:open-design:detect", u.tr("Refresh detection", "Actualizar detección"), func() { u.detectLaunchers(); u.detectOpenDesign() }), u.button("agent:open-design:install", u.tr("Installation instructions", "Instrucciones de instalación"), func() { u.open(u.openDesignInstallURL()) })))
+	}
+	if key == "openmausbot" {
+		return u.column(u.note(u.agentCompatibility(key)), u.pills(
+			u.button("agent:openmausbot:setup", u.tr("Integration settings", "Ajustes de integración"), func() { u.agentSetup(key) }),
+			u.button("agent:openmausbot:detect", u.tr("Refresh detection", "Actualizar detección"), u.detectLaunchers),
+			u.iconButton("agent:openmausbot:install", u.tr("Get OpenMausBot", "Obtener OpenMausBot"), nativeButtonGhost, nativeIconOpenInNew, func() { u.open(openMausBotDownloadURL) }),
+		))
 	}
 	if key == "claude-desktop" {
 		return u.column(u.note(u.agentCompatibility(key)), u.pills(
@@ -501,7 +514,7 @@ func (u *nativeUI) agentsPanel() layout.Widget {
 	if !c.OpenDesignDetectStarted {
 		u.detectOpenDesign()
 	}
-	widgets := []layout.Widget{u.agentModelSummary(), u.agentCard("codex"), u.agentCard("claude-desktop"), u.topRow(u.agentCard("claude"), u.agentCard("opencode")), u.topRow(u.agentCard("omp"), u.agentCard("codex-cli")), u.topRow(u.agentCard("zed"), u.agentCard("open-design"))}
+	widgets := []layout.Widget{u.agentModelSummary(), u.agentCard("codex"), u.agentCard("claude-desktop"), u.agentCard("openmausbot"), u.topRow(u.agentCard("claude"), u.agentCard("opencode")), u.topRow(u.agentCard("omp"), u.agentCard("codex-cli")), u.topRow(u.agentCard("zed"), u.agentCard("open-design"))}
 	if a.Error != "" {
 		widgets = append([]layout.Widget{u.message(nativeToneError, a.Error)}, widgets...)
 	}

@@ -55,6 +55,8 @@ type app struct {
 	claudeDesktopCheckRunning func(string) (bool, error)
 	openDesignCheckRunning    func(string) (bool, error)
 	openDesignLaunchUntil     time.Time
+	openMausBotCheckRunning   func(openMausBotPaths) (bool, error)
+	openMausBotLaunchUntil    time.Time
 	terminalCommandsBinary    string
 	terminalCommandsShell     string
 	terminalCommandsProfiles  []string

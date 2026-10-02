@@ -2,6 +2,7 @@ import {chatGPTConnected,chatGPTReady,connectionReady,validChatGPTVerificationUR
 import {contextControls,contextModel,syncContextModels,contextError,contextPreview} from './context-policy.mjs';
 import {renderAccountUsage} from './account-usage.mjs';
 import {renderUpdates} from './update-helper.mjs';
+import {createOpenMausBotHelper} from './openmausbot-helper.mjs';
 import {createOpenDesignHelper} from './open-design-helper.mjs';
 import {createEditorHelper} from './editor-helper.mjs';
 import {configureDesktop, writeClipboard, openExternal, bindDesktopLinks} from './desktop-helper.mjs';
@@ -151,6 +152,7 @@ const descriptions = {
   generic: ['Dos valores. Ninguna cabecera extra.', 'En tu herramienta, elige un proveedor compatible con OpenAI. Pega la URL y la clave local. El modelo mantiene su ID de Kilo.', 'Conexión compatible con OpenAI'],
   zed: ['Tu agente de Zed, con saldo de empresa.', 'En Agent Settings → LLM Providers, añade un proveedor compatible con OpenAI. Combina este bloque con tus ajustes y guarda la clave local en la interfaz del proveedor.', 'settings.json · combinar con tus ajustes'],
   'open-design': ['Open Design', '', ''],
+  openmausbot: ['OpenMausBot', '', ''],
   omp: ['Oh My Pi', '', ''],
   'claude-desktop': ['Claude Desktop', '', ''],
   opencode: ['OpenCode, conectado directamente.', 'Configuración para OpenCode v1. En /connect → Other usa el ID kilo-local y pega la clave local. Combina este bloque con tu configuración.', 'opencode.json · v1'],
@@ -196,6 +198,7 @@ function snippet(reveal = false) {
 function launch(key) {
   return launchCommand({client,key,shell:$('launch-shell').value,platform:$('desktop-platform').value,appPath:$('desktop-app-path').value.trim(),language,catalog:isCodexClient() && codexSelection().models.size > 0});
 }
+const openMausBotHelper=createOpenMausBotHelper({api,onChange:renderClientLaunch});
 const openDesignHelper=createOpenDesignHelper({api,refreshCatalog:loadModels,onChange:renderClientLaunch});
 const editorHelper=createEditorHelper({api,notify,copy,refreshCatalog:loadModels,onChange:renderClientLaunch});
 const xcodeHelper=createXcodeHelper({api,notify,refreshCatalog:loadModels,onChange:renderClientLaunch});
@@ -205,6 +208,7 @@ function clientLaunchSelection(){
   return {id:client,count:selection.models.size,ready:selection.setup?.signature===fingerprint,fingerprint,working:selection.preparing,valid:!contextError(selection.models)&&imageGenerationValid(selection.imageGeneration,catalog,state),reason:contextError(selection.models),prepare:prepareCodex};
  }
  if(client==='claude')return {id:client,count:multiClients.claude.models.size,valid:!contextError(multiClients.claude.models),reason:contextError(multiClients.claude.models),ready:claudeSetup?.signature===claudeSetupSignature(),fingerprint:claudeSetupSignature(),working:claudePreparing||claudeDetecting,prepare:prepareClaude};
+ if(client==='openmausbot')return openMausBotHelper.launchState();
  if(client==='open-design')return openDesignHelper.launchState();
  if(['opencode','zed','omp','claude-desktop'].includes(client))return editorHelper.launchState();
  if(client==='xcode')return xcodeHelper.launchState();
@@ -217,7 +221,7 @@ function renderClientLaunch(){
  if(!launchDetected&&!launchDetecting)void detectLaunchClients();
  const detected=launchInfo?.clients?.[selection.id],custom=selection.id==='codex'&&$('client-launch-app').value.trim();
  const cli=['codex-cli','claude','opencode','omp'].includes(selection.id),available=!!detected?.available||!!custom,terminal=detected?.kind==='terminal'||cli;
- const name=detected?.name||({'codex':'Codex Desktop','codex-cli':'Codex CLI',claude:'Claude Code','claude-desktop':'Claude Desktop',opencode:'OpenCode',omp:'Oh My Pi','open-design':'Open Design',zed:'Zed'}[selection.id]||'Xcode');
+ const name=detected?.name||({'codex':'Codex Desktop','codex-cli':'Codex CLI',claude:'Claude Code','claude-desktop':'Claude Desktop',opencode:'OpenCode',omp:'Oh My Pi','open-design':'Open Design',openmausbot:'OpenMausBot',zed:'Zed'}[selection.id]||'Xcode');
  $('client-launch-title').textContent=L('Open on this computer','Abrir en este ordenador');
  const checking=launchDetecting||client==='claude'&&claudeDetecting;
  $('client-launch-refresh').textContent=checking?L('Checking…','Comprobando…'):L('Check again','Volver a comprobar');
@@ -234,7 +238,7 @@ function renderClientLaunch(){
  installLink.setAttribute('aria-label',L(name+' installation guide', 'Guía de instalación de '+name));
  installLink.title=L('Open official installation instructions','Abrir las instrucciones oficiales de instalación');
  $('client-launch-directory-label').textContent=L('Project folder (optional)','Carpeta del proyecto (opcional)');
- $('client-launch-directory-field').hidden=['codex','open-design','claude-desktop'].includes(selection.id);
+ $('client-launch-directory-field').hidden=['codex','open-design','claude-desktop','openmausbot'].includes(selection.id);
  $('client-launch-directory').placeholder=launchInfo?.directory||'';
  $('client-launch-custom').hidden=selection.id!=='codex';
  $('client-launch-custom-label').textContent=L('Custom Codex application','Aplicación de Codex personalizada');
@@ -242,7 +246,7 @@ function renderClientLaunch(){
  $('client-launch-app').placeholder=launchInfo?.clients?.codex?.path||L('Absolute application path','Ruta absoluta de la aplicación');
  $('client-launch').textContent=launchBusy?L('Launching…','Abriendo…'):L('Launch ',terminal?'Iniciar ':'Abrir ')+name;
  $('client-launch').disabled=launchBusy||launchDetecting||selection.working||selection.valid===false||!state||(!connectionReady(state))||!selection.count||!available;
- $('client-launch-help').textContent=selection.id==='claude-desktop'?L('Prepares Kilo with the selected models and starts the proxy before opening Claude Desktop. Close Claude first to apply configuration changes.','Prepara Kilo con los modelos seleccionados y arranca el proxy antes de abrir Claude Desktop. Cierra Claude primero para aplicar los cambios de configuración.'):selection.id==='open-design'?L('Prepares the selected CLI with your Kilo models, starts the proxy and opens Open Design in its separate Kilo profile.','Prepara el CLI elegido con tus modelos de Kilo, arranca el proxy y abre Open Design en su perfil de Kilo independiente.'):L('Opens with the current models and Kilo configuration. Changes are saved first. Command export settings below apply only to copied commands.','Abre con los modelos y la configuración de Kilo actuales. Los cambios se guardan antes. Los ajustes de exportación inferiores solo afectan a los comandos copiados.')+(selection.id==='zed'?L(' Paste the local key into Zed once using the instructions below.',' Pega la clave local en Zed una vez siguiendo las instrucciones inferiores.'):selection.id==='xcode-chat'?L(' Add the chat provider in Xcode once using the connection details below.',' Añade el proveedor de chat en Xcode una vez con la conexión indicada abajo.'):'');
+ $('client-launch-help').textContent=selection.id==='openmausbot'?L('Applies the saved shared models and starts the proxy before opening OpenMausBot in its separate Kilo profile.','Aplica los modelos compartidos guardados y arranca el proxy antes de abrir OpenMausBot en su perfil Kilo independiente.'):selection.id==='claude-desktop'?L('Prepares Kilo with the selected models and starts the proxy before opening Claude Desktop. Close Claude first to apply configuration changes.','Prepara Kilo con los modelos seleccionados y arranca el proxy antes de abrir Claude Desktop. Cierra Claude primero para aplicar los cambios de configuración.'):selection.id==='open-design'?L('Prepares the selected CLI with your Kilo models, starts the proxy and opens Open Design in its separate Kilo profile.','Prepara el CLI elegido con tus modelos de Kilo, arranca el proxy y abre Open Design en su perfil de Kilo independiente.'):L('Opens with the current models and Kilo configuration. Changes are saved first. Command export settings below apply only to copied commands.','Abre con los modelos y la configuración de Kilo actuales. Los cambios se guardan antes. Los ajustes de exportación inferiores solo afectan a los comandos copiados.')+(selection.id==='zed'?L(' Paste the local key into Zed once using the instructions below.',' Pega la clave local en Zed una vez siguiendo las instrucciones inferiores.'):selection.id==='xcode-chat'?L(' Add the chat provider in Xcode once using the connection details below.',' Añade el proveedor de chat en Xcode una vez con la conexión indicada abajo.'):'');
  const reason=selection.reason||(!available&&!launchDetecting?(detected?.reason||(installed===true?L('The application is installed but cannot be launched on this computer.','La aplicación está instalada pero no se puede abrir en este ordenador.'):L('Application not detected. Install it, then check again.','Aplicación no detectada. Instálala y vuelve a comprobar.'))):!selection.count?L('Select at least one model.','Selecciona al menos un modelo.'):'');
  $('client-launch-status').textContent=launchMessage||reason;
  $('client-launch-status').classList.toggle('error',launchError);
@@ -256,11 +260,11 @@ async function detectLaunchClients(){
  }catch(error){launchMessage=error.message;launchError=true;}
  finally{launchDetecting=false;renderClientLaunch();}
 }
-function launchFingerprint(){const selection=clientLaunchSelection();return JSON.stringify([selection?.id,selection?.fingerprint,['codex','open-design','claude-desktop'].includes(selection?.id)?'':$('client-launch-directory').value.trim(),selection?.id==='codex'?$('client-launch-app').value.trim():'']);}
+function launchFingerprint(){const selection=clientLaunchSelection();return JSON.stringify([selection?.id,selection?.fingerprint,['codex','open-design','claude-desktop','openmausbot'].includes(selection?.id)?'':$('client-launch-directory').value.trim(),selection?.id==='codex'?$('client-launch-app').value.trim():'']);}
 async function openClient(){
  if(launchBusy||$('client-launch').disabled)return;
  const selection=clientLaunchSelection(),fingerprint=launchFingerprint();
- const body={client:selection.id,...(selection.id==='open-design'?{engine:selection.engine}:{}),...(['codex','open-design','claude-desktop'].includes(selection.id)?{}:{directory:$('client-launch-directory').value.trim()}),...(selection.id==='codex'&&$('client-launch-app').value.trim()?{appPath:$('client-launch-app').value.trim()}:{})};
+ const body={client:selection.id,...(selection.id==='open-design'?{engine:selection.engine}:{}),...(['codex','open-design','claude-desktop','openmausbot'].includes(selection.id)?{}:{directory:$('client-launch-directory').value.trim()}),...(selection.id==='codex'&&$('client-launch-app').value.trim()?{appPath:$('client-launch-app').value.trim()}:{})};
  launchBusy=true;launchMessage='';launchError=false;renderClientLaunch();
  try{
   if(!selection.ready||selection.id==='claude-desktop')await selection.prepare();
@@ -270,10 +274,13 @@ async function openClient(){
  finally{launchBusy=false;renderClientLaunch();}
 }
 $('client-launch').addEventListener('click',openClient);
-$('client-launch-refresh').addEventListener('click',()=>{launchMessage='';launchError=false;void detectLaunchClients();if(client==='claude')void detectClaude();if(client==='open-design')void openDesignHelper.reload();});
+$('client-launch-refresh').addEventListener('click',()=>{launchMessage='';launchError=false;void detectLaunchClients();if(client==='claude')void detectClaude();if(client==='open-design')void openDesignHelper.reload();if(client==='openmausbot')void openMausBotHelper.reload();});
 $('client-launch-directory').addEventListener('input',()=>{launchDirectoryEdited=true;launchMessage='';launchError=false;renderClientLaunch();});
 $('client-launch-app').addEventListener('input',()=>{launchMessage='';launchError=false;renderClientLaunch();});
 function renderSnippet() {
+ const openMausBotActive=client==='openmausbot';
+ $('openmausbot-helper').hidden=!openMausBotActive;
+ if(openMausBotActive)openMausBotHelper.render({state,language});
  const openDesignActive=client==='open-design';
  $('open-design-helper').hidden=!openDesignActive;
  if(openDesignActive)openDesignHelper.render({state,catalog,language});
@@ -281,8 +288,8 @@ function renderSnippet() {
  $('editor-helper').hidden=!editorActive;
  if(editorActive)editorHelper.render({client,state,catalog,language});
  $('xcode-helper').hidden=!xcodeActive;
- document.querySelector('#client-panel > .client-instructions').hidden=xcodeActive||editorActive||openDesignActive;
- document.querySelector('#client-panel > .snippet-stack').hidden=xcodeActive||editorActive||openDesignActive;
+ document.querySelector('#client-panel > .client-instructions').hidden=xcodeActive||editorActive||openDesignActive||openMausBotActive;
+ document.querySelector('#client-panel > .snippet-stack').hidden=xcodeActive||editorActive||openDesignActive||openMausBotActive;
  if(xcodeActive)xcodeHelper.render({state,catalog,language});
   const isCodex = ['codex','codex-cli'].includes(client);
   $('codex-copy-help').hidden = !isCodex;

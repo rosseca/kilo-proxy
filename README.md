@@ -59,6 +59,7 @@ Checks use GitHub's public release API without your Kilo credentials, organizati
 | Open Design | Codex CLI, Claude Code or OpenCode engine, private profiles from shared models, separate desktop workspace, and automatic proxy startup |
 | Claude Code | Automatic isolated profile, version-aware model picker, short names, native effort and terminal launcher |
 | Claude Desktop | Official gateway configuration, shared Claude models and names, automatic preparation and desktop launch |
+| OpenMausBot | Separate desktop workspace, shared model IDs and default, OpenAI-compatible connection, and automatic proxy startup |
 | Zed | Automatic local credentials and JSONC settings updates, multiple models, names, and initial model |
 | Xcode | Dedicated Chat model list, automatic Codex/Claude agent profiles, version-aware Claude aliases and setup guidance |
 
@@ -85,6 +86,8 @@ From v0.23.1, image results include a preview bounded to **1024 pixels per side 
 The Claude Code card detects the installed version, prepares a separate profile with backups, and opens an interactive terminal. Shared names and reasoning preferences apply only where that version and model support them. See [client setup](docs/clients.md) for profile isolation, saving, and compatibility limits.
 
 **Claude Desktop** has its own full-width row immediately below Codex. **Open Claude Desktop** prepares its third-party gateway configuration from the shared library. Claude models work directly; **Integration settings → Experimental: use models from other providers** enables local aliases for other Kilo models while preserving their real display names and cost attribution. Quit an already running Claude Desktop before opening the changed configuration. See [Desktop setup and compatibility limits](docs/claude-desktop.md).
+
+**OpenMausBot** has a full-width row below Codex and Claude Desktop. **Open OpenMausBot** configures its OpenAI-compatible engine from the shared library and opens a separate workspace. Both Kilo and `chatgpt/` models use the local proxy. Its current engine shows exact model IDs and controls reasoning itself. See [setup, profile isolation and compatibility](docs/openmausbot.md).
 
 OpenCode and Zed receive the shared IDs, names, default and token limits through JSONC-preserving updates. Their reasoning remains automatic. OpenCode includes local authentication in its dedicated profile; Zed receives its local key in the system credential store and refreshes the provider when the key changes, including in an already-open editor. See [their setup guide](docs/opencode-and-zed.md).
 

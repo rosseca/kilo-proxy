@@ -26,6 +26,9 @@ func (a *app) launchProfile(p *clientLaunchPlan, home string) error {
 	if id == "open-design" {
 		return errors.New("Prepare the selected Open Design CLI engine before launching.")
 	}
+	if id == "openmausbot" {
+		return errors.New("Prepare OpenMausBot before launching.")
+	}
 	dir := ""
 	switch id {
 	case "codex":
