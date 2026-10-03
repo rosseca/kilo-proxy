@@ -210,8 +210,62 @@ jobs:
           retention-days: 7
           path: dist/binaries/${{ matrix.binary }}
 
+  headless:
+    # These runners intentionally install no graphics or desktop-session helpers.
+    # Test raw console binaries before the shared packaging gate opens.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-latest
+            system: darwin
+            arch: arm64
+          - runner: macos-15-intel
+            system: darwin
+            arch: amd64
+          - runner: ubuntu-24.04
+            system: linux
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            system: linux
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test the console runtime and service plans
+        run: go test -race -tags headless ./...
+      - name: Vet the pure-Go console build
+        env:
+          CGO_ENABLED: '0'
+        run: go vet -tags headless ./...
+      - name: Build the console-only release executable
+        env:
+          KILO_TARGET: ${{ matrix.system }}/${{ matrix.arch }}
+        run: python scripts/package.py --headless --build-only --target "$KILO_TARGET" --output dist/headless-binaries
+      - name: Exercise the console executable without a desktop session
+        env:
+          KILO_SYSTEM: ${{ matrix.system }}
+          KILO_ARCH: ${{ matrix.arch }}
+        run: python scripts/smoke_headless.py --binary "dist/headless-binaries/kilo-proxy-headless-${KILO_SYSTEM}-${KILO_ARCH}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: headless-binary-${{ matrix.system }}-${{ matrix.arch }}
+          if-no-files-found: error
+          retention-days: 7
+          path: dist/headless-binaries/kilo-proxy-headless-${{ matrix.system }}-${{ matrix.arch }}
+
   package:
-    needs: [test, browser-e2e, native]
+    needs: [test, browser-e2e, native, headless]
     strategy:
       fail-fast: false
       matrix:
@@ -260,6 +314,11 @@ jobs:
         with:
           name: desktop-binary-${{ matrix.system }}-${{ matrix.arch }}
           path: dist/binaries
+      - uses: actions/download-artifact@v4
+        if: runner.os != 'Windows'
+        with:
+          name: headless-binary-${{ matrix.system }}-${{ matrix.arch }}
+          path: dist/headless-binaries
       - name: Install Linux runtime and graphical test dependencies
         if: runner.os == 'Linux'
         run: |
@@ -297,6 +356,21 @@ jobs:
         run: |
           kilo_release_version="$(cat VERSION)"
           python scripts/smoke_desktop.py --archive "dist/kilo-proxy-${kilo_release_version}-${KILO_SYSTEM}-${KILO_ARCH}.zip"
+      - name: Package the exact tested console executable
+        if: runner.os != 'Windows'
+        env:
+          KILO_TARGET: ${{ matrix.system }}/${{ matrix.arch }}
+        shell: bash
+        run: python scripts/package.py --headless --binaries-directory dist/headless-binaries --target "$KILO_TARGET"
+      - name: Exercise the extracted console release archive
+        if: runner.os != 'Windows'
+        env:
+          KILO_SYSTEM: ${{ matrix.system }}
+          KILO_ARCH: ${{ matrix.arch }}
+        shell: bash
+        run: |
+          kilo_release_version="$(cat VERSION)"
+          python scripts/smoke_headless.py --archive "dist/kilo-proxy-headless-${kilo_release_version}-${KILO_SYSTEM}-${KILO_ARCH}.tar.gz"
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-archive-${{ matrix.system }}-${{ matrix.arch }}
@@ -319,7 +393,7 @@ jobs:
           pattern: desktop-archive-*
           merge-multiple: true
           path: dist
-      - name: Create and verify the complete six-target checksum manifest
+      - name: Create and verify the complete desktop and headless checksum manifest
         run: |
           python scripts/package.py --checksums-only
           python scripts/release.py verify-assets

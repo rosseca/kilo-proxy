@@ -31,7 +31,7 @@ type terminalRuntime struct {
 	OpenCodeConfig string `json:"openCodeConfig,omitempty"`
 }
 
-var errTerminalAppUnavailable = errors.New("Open the updated Kilo Proxy app first. It can stay in the system tray while you use kilo-codex, kilo-claude, kilo-omp or kilo-opencode.")
+var errTerminalAppUnavailable = errors.New("Start Kilo Proxy first: open the app or run kilo-proxy-headless serve with this configuration directory, then use kilo-codex, kilo-claude, kilo-omp or kilo-opencode.")
 
 func validateTerminalRuntime(info terminalRuntime) error {
 	host, port, err := net.SplitHostPort(info.Host)

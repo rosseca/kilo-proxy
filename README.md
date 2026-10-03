@@ -38,9 +38,9 @@ Prefer to configure your shell yourself? **Manual setup** on the same Settings p
 | Windows | x64 / ARM64 | Standalone native GUI executable in ZIP |
 | Linux | x64 / ARM64 | Native executable in TAR.GZ; system graphics libraries; optional `install-user.sh` launcher |
 
-Every release includes six archives and `SHA256SUMS.txt`. Linux’s installer adds an application-menu entry for the current user without administrator privileges. Linux tray support requires a graphical session with D-Bus and StatusNotifierItem/AppIndicator support; GNOME may need an AppIndicator extension. Use `--browser` for the optional browser interface or `--no-tray` for headless mode. See [desktop dependencies and launch options](docs/desktop.md) for Linux graphics requirements. Desktop builds target macOS, Windows and Linux; there are no mobile packages.
+From 0.55.0, every release includes six desktop archives, four separate macOS/Linux headless archives, and `SHA256SUMS.txt`. Earlier releases contain the six desktop archives. Linux’s desktop installer adds an application-menu entry for the current user without administrator privileges. Linux tray support requires a graphical session with D-Bus and StatusNotifierItem/AppIndicator support; GNOME may need an AppIndicator extension. Use `--browser` for the optional browser interface. Desktop `--no-tray` disables its window and tray while retaining that build's dependencies and OS keyring; servers use the separate `kilo-proxy-headless` executable. See [desktop dependencies and launch options](docs/desktop.md) for Linux graphics requirements and [headless setup](docs/headless.md) for console operation. There are no mobile packages.
 
-macOS bundles have an **ad-hoc signature** covering the executable, bundle metadata, and resources. They are **not Developer ID signed or notarized**; Windows binaries are unsigned. macOS and Windows may show origin warnings. Company-wide managed distribution can add publisher signing and macOS notarization separately. The project does not install an auto-updater or change system startup settings.
+macOS bundles have an **ad-hoc signature** covering the executable, bundle metadata, and resources. They are **not Developer ID signed or notarized**; Windows binaries are unsigned. macOS and Windows may show origin warnings. Company-wide managed distribution can add publisher signing and macOS notarization separately. The desktop app does not install an auto-updater. Headless user services are installed only by an explicit CLI command.
 
 ## App updates
 
@@ -116,6 +116,10 @@ Request capture is **off by default**, including for existing installations upgr
 
 Costs that are missing stay **Not reported**, with coverage shown alongside the total. A partially reported amount is labeled **Reported subtotal**; unknown requests are never assumed to be free. Provider and gateway price fields are alternatives and are never added together for one request. A canceled response may not deliver final billing data. Totals cover all observed conversations and image calls since the current Kilo Proxy process opened. They survive hiding the window, stopping/restarting the proxy, changing organizations and clearing debug captures; quitting the process resets them. In spend-display mode, the tray shows `<$0.01` for a positive sub-cent amount, `—` when no costs were reported, and `*` for a partial subtotal. These are gateway observations, not a Kilo invoice or catalog estimate. See [accounting fields and limits](docs/security-and-debugging.md#passive-spend-tracking-0130).
 
+## Console and server use
+
+The macOS/Linux `kilo-proxy-headless` executable runs without a desktop or tray, with a separate private configuration profile. Configure Kilo or ChatGPT by device login, select shared models and reasoning from the CLI, then run `serve` and use `kilo-codex`, `kilo-claude`, `kilo-opencode`, or `kilo-omp`. Setup and startup suggest the exact command to install these wrappers on your machine, including a custom profile path; installation is explicit and reports how to activate your shell. Each headless profile keeps its agent configuration separate. Its file credential vault uses private files instead of the desktop OS keyring. See [headless setup, server operation, and credential storage](docs/headless.md).
+
 ## Develop and release
 
 Requirements: Go 1.26 or later, Python 3.9 or later for packaging, and Node 22 or later for helper tests. Runtime users do not need these tools.
@@ -130,10 +134,10 @@ Desktop builds require platform development tools on macOS/Linux; Windows uses i
 For an isolated headless development profile:
 
 ```sh
-go run . --no-browser --no-tray --config-dir ./tmp-profile
+CGO_ENABLED=0 go run -tags headless . --config-dir ./tmp-headless-profile serve --setup
 ```
 
-The printed panel URL contains an administrative token; keep it private.
+This runs the console controller without graphics libraries or a desktop credential store. Configure it from another terminal using the same profile. Headless startup prints setup guidance; its private control descriptor stays inside that profile. Browser mode prints a panel URL containing an administrative token, which must be kept private.
 
 ```sh
 go test -race ./...
@@ -145,7 +149,7 @@ go test -tags desktop ./...
 python3 scripts/package.py --build-only
 ```
 
-Build outputs go to `dist/` and are excluded from Git. `VERSION` is the single default version source for the application and packages. A matching version tag runs the reusable validation workflow and publishes six verified archives with checksums and generated notes. Packaging waits for the core, browser and native jobs, packages their tested executables, and checks the extracted archives before publication. It uses the repository’s built-in `GITHUB_TOKEN`; no personal release token is required.
+Build outputs go to `dist/` and are excluded from Git. `VERSION` is the single default version source for the application and packages. A matching version tag runs the reusable validation workflow and publishes ten verified archives from 0.55.0 with checksums and generated notes. Packaging waits for the core, browser, native desktop, and headless jobs, packages their tested executables, and checks the extracted archives before publication. It uses the repository’s built-in `GITHUB_TOKEN`; no personal release token is required.
 
 See [the release guide](docs/releases.md) for the exact commands, prereleases, recovery, and verification.
 

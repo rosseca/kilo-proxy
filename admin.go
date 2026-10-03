@@ -126,6 +126,10 @@ func (a *app) adminHandler() http.Handler {
 			a.modelLibraryAPI(w, r)
 			return
 		}
+		if r.URL.Path == "/api/headless/catalog" {
+			a.headlessCatalogAPI(w, r)
+			return
+		}
 		if strings.HasPrefix(r.URL.Path, "/api/desktop/") {
 			a.desktopAPI(w, r)
 			return
@@ -341,7 +345,7 @@ func (a *app) saveConfig(w http.ResponseWriter, r *http.Request) {
 	cfg := a.config
 	cfg.Port, cfg.OrgID, cfg.Remember = input.Port, input.OrgID, input.Remember
 	if cfg.Remember {
-		if len(key) > 2400 {
+		if len(key) > credentialVaultLimit(a.vault) {
 			jsonError(w, 400, "Esta clave supera el tamaño portable del almacén de credenciales. Desmarca Recordar para usarla durante esta sesión.")
 			return
 		}

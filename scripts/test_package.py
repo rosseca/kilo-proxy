@@ -6,6 +6,7 @@ import plistlib
 import subprocess
 import struct
 import tempfile
+import tarfile
 import unittest
 from unittest.mock import patch
 import zipfile
@@ -21,7 +22,7 @@ class PackageTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.output = self.root / 'dist'
         self.version = '0.20.1'
-        for filename in ['VERSION', 'README.md', 'THIRD-PARTY-NOTICES.txt',
+        for filename in ['VERSION', 'README.md', 'docs/headless.md', 'THIRD-PARTY-NOTICES.txt',
                          'third_party/systray/LICENSE', 'third_party/systray/PATCHES.md',
                          'ui/icon.svg', 'ui/icon.png']:
             path = self.root / filename
@@ -47,8 +48,9 @@ class PackageTests(unittest.TestCase):
             resource.write_bytes(b'resource fixture')
         elif command[0] == 'go':
             env = kwargs['env']
-            self.assertEqual(command[command.index('-tags') + 1], 'desktop')
-            self.assertEqual(env['CGO_ENABLED'], '0' if env['GOOS'] == 'windows' else '1')
+            tags = command[command.index('-tags') + 1]
+            self.assertIn(tags, ('desktop', 'headless'))
+            self.assertEqual(env['CGO_ENABLED'], '0' if tags == 'headless' or env['GOOS'] == 'windows' else '1')
             Path(command[command.index('-o') + 1]).write_bytes(self.binary_fixture(env['GOOS'], env['GOARCH']))
         elif command[0] == '/usr/bin/codesign':
             bundle = Path(command[-1])
@@ -189,6 +191,52 @@ class PackageTests(unittest.TestCase):
         with self.assertRaises(SystemExit):
             self.build('--build-only', '--target', 'linux/arm64', platform='linux')
         self.assertEqual(self.calls, [])
+
+    def test_headless_cross_build_has_no_cgo_desktop_or_native_signing(self):
+        self.build('--headless', '--build-only', '--target', 'darwin/arm64',
+                   '--target', 'linux/arm64', platform='linux')
+        self.assertEqual([call[:2] for call in self.calls], [['go', 'build'], ['go', 'build']])
+        self.assertTrue((self.output / 'kilo-proxy-headless-darwin-arm64').is_file())
+        self.assertTrue((self.output / 'kilo-proxy-headless-linux-arm64').is_file())
+        self.assertFalse((self.output / 'SHA256SUMS.txt').exists())
+
+    def test_headless_prebuilt_archive_has_console_binary_and_no_desktop_installer(self):
+        prebuilt = self.root / 'binaries'
+        prebuilt.mkdir()
+        data = self.binary_fixture('darwin', 'arm64') + b'tested headless contents'
+        (prebuilt / 'kilo-proxy-headless-darwin-arm64').write_bytes(data)
+        self.build('--headless', '--binaries-directory', str(prebuilt),
+                   '--target', 'darwin/arm64', platform='linux')
+        self.assertEqual(self.calls, [])
+        archive = self.output / f'kilo-proxy-headless-{self.version}-darwin-arm64.tar.gz'
+        with tarfile.open(archive) as tar:
+            name = f'kilo-proxy-headless-{self.version}-darwin-arm64/kilo-proxy-headless'
+            self.assertEqual(tar.extractfile(name).read(), data)
+            self.assertEqual(tar.getmember(name).mode, 0o755)
+            self.assertEqual(tar.extractfile(f'kilo-proxy-headless-{self.version}-darwin-arm64/docs/headless.md').read(), b'fixture')
+            self.assertFalse(any('Kilo Proxy.app' in member.name or member.name.endswith('install-user.sh')
+                                 for member in tar.getmembers()))
+
+    def test_headless_rejects_windows_and_app_bundle_verification(self):
+        for arguments in [('--target', 'windows/amd64'), ('--verify-macos-archives',)]:
+            with self.subTest(arguments=arguments), self.assertRaises(SystemExit):
+                self.build('--headless', *arguments, platform='linux')
+        self.assertEqual(self.calls, [])
+
+    def test_current_release_checksums_require_all_ten_archives_atomically(self):
+        self.version = '0.55.0'
+        self.output.mkdir()
+        manifest = self.output / 'SHA256SUMS.txt'
+        manifest.write_text('previous manifest')
+        names = package.archive_names(self.version, package.TARGETS, package.HEADLESS_TARGETS)
+        for name in names[:-1]:
+            (self.output / name).write_bytes(b'archive')
+        with self.assertRaises(SystemExit):
+            self.build('--checksums-only', '--version', self.version, platform='linux')
+        self.assertEqual(manifest.read_text(), 'previous manifest')
+        (self.output / names[-1]).write_bytes(b'archive')
+        self.build('--checksums-only', '--version', self.version, platform='linux')
+        self.assertEqual(len(manifest.read_text().splitlines()), 10)
 
     def test_checksums_require_all_six_archives_before_replacing_manifest(self):
         self.output.mkdir()

@@ -176,6 +176,10 @@ func safeEditorDir(root, dir string) error {
 	return nil
 }
 func (a *app) editorPaths(client string) (string, string, string, error) {
+	if client == "opencode" && a.openCodeProfileDir != "" {
+		dir := a.openCodeProfileDir
+		return filepath.Dir(dir), filepath.Join(dir, "opencode.json"), filepath.Join(dir, "kilo-models.json"), nil
+	}
 	home := a.editorTestRoot
 	if home == "" {
 		var err error

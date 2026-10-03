@@ -51,6 +51,9 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == clientLaunchRunnerFlag {
 		os.Exit(runClientLaunchMode(os.Args[2:]))
 	}
+	if handled, code := runHeadlessCLI(os.Args[1:]); handled {
+		os.Exit(code)
+	}
 	noBrowser := flag.Bool("no-browser", false, "Start with the window hidden (also suppresses --browser launch)")
 	noTray := flag.Bool("no-tray", false, "Run headlessly without a window or system tray")
 	useBrowser := flag.Bool("browser", false, "Use the system browser instead of the desktop window")
@@ -89,6 +92,12 @@ func main() {
 		os.Exit(1)
 	}
 	*configDir = absoluteConfig
+	releaseProfile, err := acquireProfileLock(*configDir)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	defer releaseProfile()
 	app, err := newApp(*configDir, systemVault{})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Cannot load Kilo Proxy:", err)
@@ -172,7 +181,9 @@ func main() {
 func (a *app) requestQuit() {
 	a.quitOnce.Do(func() {
 		close(a.quit)
-		if a.chatgpt != nil {
+		// The server drains requests before canceling credential refreshes. A
+		// request already waiting for an expired ChatGPT token can still finish.
+		if a.chatgpt != nil && !a.headless {
 			a.chatgpt.cancel()
 		}
 		if a.updates != nil {
