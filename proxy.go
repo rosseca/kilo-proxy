@@ -57,8 +57,8 @@ type app struct {
 	openDesignLaunchUntil     time.Time
 	openMausBotCheckRunning   func(openMausBotPaths) (bool, error)
 	openMausBotLaunchUntil    time.Time
-	t3CodeCheckRunning       func(string) (bool, error)
-	t3CodeLaunchUntil        time.Time
+	t3CodeCheckRunning        func(string) (bool, error)
+	t3CodeLaunchUntil         time.Time
 	terminalCommandsBinary    string
 	terminalCommandsShell     string
 	terminalCommandsProfiles  []string
@@ -81,6 +81,7 @@ type app struct {
 	xcodeTestRoot             string
 	claudeProfileDir          string
 	ompProfileDir             string
+	openCodeProfileDir        string
 	catalogRevision           uint64
 	modelStatsURL             string
 	modelStatsCache           modelStatsCache
@@ -113,6 +114,7 @@ type app struct {
 	events                    []event
 	quit                      chan struct{}
 	quitOnce                  sync.Once
+	headless                  bool
 }
 
 func newApp(dir string, vault credentialVault) (*app, error) {

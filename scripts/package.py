@@ -17,6 +17,19 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGETS = [('darwin', 'arm64'), ('darwin', 'amd64'), ('linux', 'amd64'), ('linux', 'arm64'), ('windows', 'amd64'), ('windows', 'arm64')]
+HEADLESS_TARGETS = [(system, arch) for system, arch in TARGETS if system != 'windows']
+
+
+def includes_headless(version):
+    """Preserve the historical asset contract while requiring the new family."""
+    return tuple(map(int, version.split('-')[0].split('.'))) >= (0, 55, 0)
+
+
+def archive_names(version, targets=TARGETS, headless_targets=()):
+    names = [f'kilo-proxy-{version}-{system}-{arch}' +
+             ('.tar.gz' if system == 'linux' else '.zip') for system, arch in targets]
+    return names + [f'kilo-proxy-headless-{version}-{system}-{arch}.tar.gz'
+                    for system, arch in headless_targets]
 
 
 def require_macos(targets):
@@ -66,8 +79,19 @@ def native_target():
     return system, arch
 
 
-def binary_name(system, arch):
-    return f'kilo-proxy-{system}-{arch}' + ('.exe' if system == 'windows' else '')
+def binary_name(system, arch, headless=False):
+    return f'kilo-proxy-{"headless-" if headless else ""}{system}-{arch}' + ('.exe' if system == 'windows' else '')
+
+
+def build_headless_binary(system, arch, executable, version):
+    if (system, arch) not in HEADLESS_TARGETS:
+        raise ValueError('Headless releases support macOS and Linux, x64 and ARM64')
+    executable.parent.mkdir(parents=True, exist_ok=True)
+    env = dict(os.environ, GOOS=system, GOARCH=arch, CGO_ENABLED='0')
+    subprocess.run(['go', 'build', '-trimpath', '-tags', 'headless',
+                    '-ldflags', f'-s -w -X main.version={version}',
+                    '-o', str(executable), '.'], cwd=ROOT, env=env, check=True)
+    executable.chmod(0o755)
 
 
 def require_build_host(targets):
@@ -194,9 +218,8 @@ def validate_binary(executable, system, arch):
         verify_windows_runtime(executable)
 
 
-def write_checksums(out, version, targets):
-    archives = [out / (f'kilo-proxy-{version}-{system}-{arch}' +
-                      ('.tar.gz' if system == 'linux' else '.zip')) for system, arch in targets]
+def write_checksums(out, version, targets, headless_targets=()):
+    archives = [out / name for name in archive_names(version, targets, headless_targets)]
     for archive in archives:
         if not archive.is_file() or archive.is_symlink() or not archive.stat().st_size:
             raise ValueError(f'Missing or invalid archive: {archive.name}')
@@ -217,9 +240,10 @@ def main():
     p.add_argument('--target', action='append', choices=[f'{o}/{a}' for o,a in TARGETS],
                    help='Select a target; repeat for several (default: native host, or all six with prebuilt binaries)')
     p.add_argument('--output', type=Path, default=ROOT/'dist')
-    p.add_argument('--build-only', action='store_true', help='Build raw desktop binaries for native smoke tests; do not create bundles')
-    p.add_argument('--binaries-directory', type=Path, help='Package previously built and tested kilo-proxy-OS-ARCH binaries without rebuilding')
-    p.add_argument('--checksums-only', action='store_true', help='Require all six archives and create their combined checksum manifest')
+    p.add_argument('--headless', action='store_true', help='Build/package the console-only macOS/Linux executable, with CGO disabled')
+    p.add_argument('--build-only', action='store_true', help='Build raw selected binaries for native smoke tests; do not create archives')
+    p.add_argument('--binaries-directory', type=Path, help='Package previously built and tested raw binaries without rebuilding')
+    p.add_argument('--checksums-only', action='store_true', help='Require every desktop and, from 0.55.0, headless archive and create their combined checksum manifest')
     p.add_argument('--verify-macos-archives', action='store_true',
                    help='Extract and verify macOS ZIPs without rebuilding; --target selects one (macOS only)')
     args = p.parse_args()
@@ -232,40 +256,51 @@ def main():
     try:
         if args.checksums_only:
             if requested:
-                p.error('--checksums-only requires all six archives; omit --target')
-            write_checksums(args.output.resolve(), args.version, TARGETS)
+                p.error('--checksums-only requires every release archive; omit --target')
+            if args.headless:
+                p.error('--checksums-only combines desktop and headless archives; omit --headless')
+            write_checksums(args.output.resolve(), args.version, TARGETS,
+                            HEADLESS_TARGETS if includes_headless(args.version) else ())
             return
         if args.verify_macos_archives:
+            if args.headless:
+                p.error('Headless archives contain a console executable, not a macOS app bundle')
             if requested and any(system != 'darwin' for system, _ in requested):
                 p.error('--verify-macos-archives only accepts Darwin targets')
             verify_macos_archives(args.output.resolve(), args.version, requested)
             return
-        targets = requested or (TARGETS if args.binaries_directory else [native_target()])
-        if not args.build_only:
+        supported = HEADLESS_TARGETS if args.headless else TARGETS
+        targets = requested or (supported if args.binaries_directory else [native_target()])
+        if any(target not in supported for target in targets):
+            raise ValueError('Headless releases support macOS and Linux, x64 and ARM64')
+        if not args.build_only and not args.headless:
             require_macos(targets)
-        if not args.binaries_directory:
+        if not args.binaries_directory and not args.headless:
             require_build_host(targets)
-        else:
+        elif args.binaries_directory:
             # Preflight every input before touching prior staging or archives.
             for system, arch in targets:
-                validate_binary(args.binaries_directory / binary_name(system, arch), system, arch)
+                validate_binary(args.binaries_directory / binary_name(system, arch, args.headless), system, arch)
     except ValueError as error:
         p.error(str(error))
     if args.build_only:
         for system, arch in targets:
-            executable = args.output.resolve() / binary_name(system, arch)
-            build_binary(system, arch, executable, args.version)
+            executable = args.output.resolve() / binary_name(system, arch, args.headless)
+            builder = build_headless_binary if args.headless else build_binary
+            builder(system, arch, executable, args.version)
             validate_binary(executable, system, arch)
             print(executable, flush=True)
         return
     bundle_version = args.version.split('-')[0]
     out = args.output.resolve(); out.mkdir(parents=True, exist_ok=True)
     for system, arch in targets:
-        name = f'kilo-proxy-{args.version}-{system}-{arch}'
+        name = f'kilo-proxy-{"headless-" if args.headless else ""}{args.version}-{system}-{arch}'
         stage = out/'staging'/name
         if stage.exists(): shutil.rmtree(stage)
         stage.mkdir(parents=True)
-        if system == 'darwin':
+        if args.headless:
+            executable = stage / 'kilo-proxy-headless'
+        elif system == 'darwin':
             bundle = stage/'Kilo Proxy.app'/'Contents'
             (bundle/'MacOS').mkdir(parents=True)
             (bundle/'Resources').mkdir()
@@ -278,12 +313,13 @@ def main():
         else:
             executable = stage/('Kilo Proxy.exe' if system == 'windows' else 'kilo-proxy')
         if args.binaries_directory:
-            shutil.copyfile(args.binaries_directory / binary_name(system, arch), executable)
+            shutil.copyfile(args.binaries_directory / binary_name(system, arch, args.headless), executable)
         else:
-            build_binary(system, arch, executable, args.version)
+            builder = build_headless_binary if args.headless else build_binary
+            builder(system, arch, executable, args.version)
         executable.chmod(0o755)
         validate_binary(executable, system, arch)
-        if system == 'darwin':
+        if system == 'darwin' and not args.headless:
             sign_macos_bundle(bundle.parent)
         shutil.copy2(ROOT/'README.md',stage/'README.md')
         shutil.copy2(ROOT/'THIRD-PARTY-NOTICES.txt',stage/'THIRD-PARTY-NOTICES.txt')
@@ -303,7 +339,7 @@ def main():
             notices.mkdir(parents=True)
             for filename in ('PATCHES.md', 'LICENSE', 'kilo-proxy.patch'):
                 shutil.copy2(ROOT/'third_party'/'fyne-systray'/filename, notices/filename)
-        if system == 'linux':
+        if system == 'linux' and not args.headless:
             shutil.copy2(ROOT/'ui'/'icon.svg', stage/'kilo-proxy.svg')
             installer = stage/'install-user.sh'
             installer.write_text('''#!/bin/sh
@@ -328,15 +364,23 @@ DESKTOP
 printf 'Kilo Proxy is available in your applications menu.\\n'
 ''')
             installer.chmod(0o755)
-        if system == 'linux':
+        if system == 'linux' or args.headless:
             archive = out/(name+'.tar.gz')
-            with tarfile.open(archive,'w:gz') as tar: tar.add(stage,arcname=name)
+            def archive_mode(member):
+                # Windows filesystems cannot encode Unix execute bits via
+                # chmod. The headless executable's TAR contract is portable.
+                if args.headless and member.name == name + '/kilo-proxy-headless':
+                    member.mode = 0o755
+                return member
+            with tarfile.open(archive,'w:gz') as tar:
+                tar.add(stage, arcname=name, filter=archive_mode)
         else:
             archive = out/(name+'.zip')
             with zipfile.ZipFile(archive,'w',zipfile.ZIP_DEFLATED) as zipped:
                 for entry in sorted(stage.rglob('*')):
                     zipped.write(entry,entry.relative_to(stage.parent))
         print(archive,flush=True)
-    write_checksums(out, args.version, targets)
+    write_checksums(out, args.version, () if args.headless else targets,
+                    targets if args.headless else ())
 
 if __name__ == '__main__': main()
