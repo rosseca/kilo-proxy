@@ -17,40 +17,56 @@ import (
 )
 
 const t3CodeSupportedVersion = "0.0.45"
+const t3CodeNightlyVersion = "0.0.46-nightly.20261003.2610"
 const t3CodeMarker = "--kilo-proxy-t3-root="
 
-func resolveT3Code(platform, home, localAppData string) (string, error) {
+func t3CodeVersionSupported(version string) bool {
+	return version == t3CodeSupportedVersion || version == t3CodeNightlyVersion
+}
+
+func t3CodeInstallationCandidates(platform, home, localAppData string) []string {
 	candidates := []string{}
 	switch platform {
 	case "darwin", "macos":
-		for _, root := range []string{"/Applications", filepath.Join(home, "Applications")} {
-			for _, name := range []string{"T3 Code.app", "T3 Code (Alpha).app", "T3 Code (Beta).app"} {
+		for _, name := range []string{"T3 Code (Nightly).app", "T3 Code.app", "T3 Code (Alpha).app", "T3 Code (Beta).app"} {
+			for _, root := range []string{"/Applications", filepath.Join(home, "Applications")} {
 				candidates = append(candidates, filepath.Join(root, name))
 			}
 		}
 	case "windows":
-		for _, root := range []string{localAppData, os.Getenv("ProgramFiles"), os.Getenv("ProgramFiles(x86)")} {
-			if !filepath.IsAbs(root) {
-				continue
-			}
-			for _, dir := range []string{"Programs/t3code", "Programs/T3 Code", "Programs/T3 Code (Alpha)", "t3code", "T3 Code", "T3 Code (Alpha)"} {
-				for _, name := range []string{"T3 Code.exe", "T3 Code (Alpha).exe", "t3code.exe"} {
+		for _, name := range []string{"T3 Code (Nightly).exe", "T3 Code.exe", "T3 Code (Alpha).exe", "t3code.exe"} {
+			for _, root := range []string{localAppData, os.Getenv("ProgramFiles"), os.Getenv("ProgramFiles(x86)")} {
+				if !filepath.IsAbs(root) {
+					continue
+				}
+				for _, dir := range []string{"Programs/T3 Code (Nightly)", "T3 Code (Nightly)", "Programs/t3code", "Programs/T3 Code", "Programs/T3 Code (Alpha)", "t3code", "T3 Code", "T3 Code (Alpha)"} {
 					candidates = append(candidates, filepath.Join(root, filepath.FromSlash(dir), name))
 				}
 			}
 		}
 	default:
+		for _, name := range []string{"t3code", "t3-code", "T3 Code (Nightly)"} {
+			candidates = append(candidates, filepath.Join("/opt/T3 Code (Nightly)", name))
+		}
 		for _, name := range []string{"t3code", "t3-code"} {
 			if path := launchLookPath(name); path != "" {
 				candidates = append(candidates, path)
 			}
 		}
 		for _, root := range []string{"/opt/t3code", "/opt/T3 Code", "/opt/T3 Code (Alpha)", filepath.Join(home, ".local", "share", "t3code")} {
-			for _, name := range []string{"t3code", "t3-code", "T3 Code", "T3 Code (Alpha)"} {
+			for _, name := range []string{"t3code", "t3-code", "T3 Code (Nightly)", "T3 Code", "T3 Code (Alpha)"} {
 				candidates = append(candidates, filepath.Join(root, name))
 			}
 		}
 	}
+	return candidates
+}
+
+func resolveT3Code(platform, home, localAppData string) (string, error) {
+	return resolveT3CodeCandidates(t3CodeInstallationCandidates(platform, home, localAppData))
+}
+
+func resolveT3CodeCandidates(candidates []string) (string, error) {
 	for _, path := range candidates {
 		if strings.HasSuffix(path, ".app") {
 			if info, err := os.Stat(path); err == nil && info.IsDir() {
@@ -60,7 +76,7 @@ func resolveT3Code(platform, home, localAppData string) (string, error) {
 			return path, nil
 		}
 	}
-	return "", errors.New("Install T3 Code desktop 0.0.45, Codex CLI and Claude Code, then refresh installed apps. Extract an AppImage before using it on Linux.")
+	return "", errors.New("Install T3 Code desktop 0.0.45 or nightly 0.0.46-nightly.20261003.2610, Codex CLI and Claude Code, then refresh installed apps. Extract an AppImage before using it on Linux.")
 }
 
 type t3CodeASAREntry struct {
@@ -90,7 +106,7 @@ func t3CodeVersion(executable, platform string) (string, error) {
 		}
 	}
 	if err != nil {
-		return "", errors.New("Cannot verify this T3 Code desktop installation. Install the supported 0.0.45 desktop release and refresh detection.")
+		return "", errors.New("Cannot verify this T3 Code desktop installation. Install supported desktop 0.0.45 or nightly 0.0.46-nightly.20261003.2610 and refresh detection.")
 	}
 	var metadata struct{ Name, Version string }
 	if json.Unmarshal(packageData, &metadata) != nil || metadata.Name != "t3code" || len(metadata.Version) > 80 {
@@ -141,8 +157,8 @@ func t3CodeCompatibility(executable, platform string) error {
 	if err != nil {
 		return err
 	}
-	if version != t3CodeSupportedVersion {
-		return errors.New("This integration supports T3 Code desktop 0.0.45. Other versions must be validated before preparing their private configuration.")
+	if !t3CodeVersionSupported(version) {
+		return errors.New("This integration supports T3 Code desktop 0.0.45 and nightly 0.0.46-nightly.20261003.2610. Other versions must be validated before preparing their private configuration.")
 	}
 	return nil
 }
@@ -267,6 +283,18 @@ func (a *app) applyT3CodeLaunch(plan *clientLaunchPlan, rt clientLaunchRuntime) 
 	saved, err := a.readT3CodePrepared()
 	if err != nil || !a.t3CodeReady(saved, plan.Executable, rt) {
 		return errors.New("Prepare T3 Code again: its private profiles or proxy connection changed.")
+	}
+	if saved.Version == t3CodeNightlyVersion {
+		for _, model := range saved.Library.Models {
+			if model.ReasoningEffort == "" || !validClaudeEffort(model.ID, model.ReasoningEffort) {
+				continue
+			}
+			claude, err := rt.resolve("claude", "")
+			if err != nil || !a.t3CodeClaudeCapabilities(claude, rt).PerModelEffort {
+				return errors.New("T3 Code nightly requires Claude Code 2.1.251 or newer to apply saved per-model reasoning. Update Claude Code and prepare again.")
+			}
+			break
+		}
 	}
 	paths := t3CodePaths(a.dir)
 	check := a.t3CodeCheckRunning

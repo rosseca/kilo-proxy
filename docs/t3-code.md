@@ -13,13 +13,17 @@ This integration uses **Codex CLI and Claude Code**, rather than either Desktop 
 
 ## Requirements
 
-- Install [T3 Code](https://github.com/pingdotgg/t3code/releases/tag/v0.0.45) **0.0.45**, the currently validated release. Other releases are rejected until their settings contract is verified.
+- Install [T3 Code 0.0.45](https://github.com/pingdotgg/t3code/releases/tag/v0.0.45) or [nightly 0.0.46-nightly.20261003.2610](https://github.com/pingdotgg/t3code/releases/tag/v0.0.46-nightly.20261003.2610), the validated releases. Other releases, including other nightlies, are rejected until their settings contract is verified.
 - On Linux, use an extracted AppImage installation so the executable and its package metadata are accessible to the launcher.
 - Install Codex CLI and Claude Code so Kilo Proxy can find their executables.
 - Sign in to the CLIs normally to use the normal agent options.
 - Connect Kilo Proxy to your provider and save at least one model in **Models**.
 
 The preparation step checks the installed T3 Code contract before writing its private settings. An unsupported or incomplete installation produces an error instead of modifying your usual T3 Code workspace.
+
+On macOS and Windows, the launcher prefers **T3 Code (Nightly)** when installed alongside the stable app. Without that installation it uses stable T3 Code. Linux uses the installed `t3code` executable, including an extracted nightly AppImage. Integration settings show the detected version. After installing a different supported version, close **T3 Code · Kilo**, refresh detection and reopen it to prepare for that version.
+
+This nightly introduces Orchestrator V2. On first opening the private Kilo workspace, T3 makes a one-time copy of its V1 database into a separate V2 database. The V1 database is retained, but new chats and changes do not synchronize between them. This applies only to Kilo's private workspace; the launcher does not open your regular T3 data directory. Stable mobile clients use V1 and cannot connect to this nightly's V2 server.
 
 ## Open the workspace
 
@@ -41,9 +45,13 @@ Manage the Kilo agents' models in Kilo Proxy's shared **Models** library. The no
 
 In **Claude · Kilo**, choose a prepared model by its exact gateway ID. T3 Code 0.0.45 also lists its built-in Claude models alongside the prepared models. Those extra entries are not mapped to your shared library and may not be available through your provider.
 
-Codex · Kilo exposes the supported reasoning levels for each model. Claude · Kilo exposes only the levels supported by its Claude Code driver and the model; its options can be narrower than Codex's. Model listing does not establish support for generation, tool use or every reasoning level. The selected provider must support the protocol and features used by the agent.
+Codex · Kilo exposes the supported reasoning levels for each model. In stable T3, Claude · Kilo exposes only the levels supported by its Claude Code driver and the model; its options can be narrower than Codex's. Model listing does not establish support for generation, tool use or every reasoning level. The selected provider must support the protocol and features used by the agent.
 
-A chat keeps its agent and native session. To switch between a normal agent and a Kilo agent, create a new chat. Model changes within a compatible agent follow T3 Code's own session and resume behavior.
+In stable 0.0.45, a chat keeps its agent and native session. To switch between a normal agent and a Kilo agent, create a new chat. Model changes within a compatible agent follow T3 Code's own session and resume behavior.
+
+The validated nightly can switch agents between turns in the same chat. Each normal or Kilo agent keeps its own CLI home and connection. T3 hands off a bounded summary when switching providers; previous reasoning, tool results and attachments are not transferred. Use a new chat when you need to keep work completely separate.
+
+This nightly ignores Claude effort options for custom gateway IDs. For **Claude · Kilo**, choose compatible reasoning defaults in Kilo Proxy’s **Models**, then close and reopen the private T3 workspace. Kilo prepares per-model Claude Code settings and hides the ineffective T3 effort selector. These defaults require Claude Code **2.1.251 or newer**; preparation rejects a configured compatible effort with an older CLI. Automatic and unsupported Claude levels do not receive a native effort override. Saved Claude reasoning defaults also require provider-qualified gateway IDs, such as `anthropic/claude-opus-4-6`: this nightly forces its own builtin effort for unqualified IDs, so preparation rejects that combination. IDs of the same Claude family/version cannot have conflicting prepared efforts, because Claude Code keys its defaults by family/version. Codex’s T3 reasoning selector remains available.
 
 ## Troubleshooting
 

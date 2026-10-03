@@ -139,3 +139,32 @@ func TestNativeT3CodePreparedStatusIsFresh(t *testing.T) {
 		t.Fatal("changed connection displays a stale prepared state")
 	}
 }
+
+func TestNativeT3CodeNightlyGuidance(t *testing.T) {
+	for _, lang := range []string{"en", "es"} {
+		t.Run(lang, func(t *testing.T) {
+			u, _ := nativeLaunchTestUI(t, "t3-code", false, false)
+			nativeSeedSharedForTest(t, u, u.models...)
+			u.language = lang
+			u.agentSetup("t3-code")
+			h := &nativePointerHarness{t: t, u: u, size: image.Pt(720, 1900), now: time.Now()}
+			h.frame()
+			nativeTestWait(t, u, func() bool { return u.agentsState().T3Code.Loaded })
+			u.agentsState().T3Code.Info.Version = t3CodeNightlyVersion
+			h.frame()
+			labels := ""
+			for _, node := range h.nodes() {
+				labels += node.Desc.Label + "\n"
+			}
+			for _, text := range []string{t3CodeNightlyVersion, u.tr("change agents between turns", "cambiar de agente entre turnos"), u.tr("attachments are not transferred", "ni los adjuntos")} {
+				if !strings.Contains(labels, text) {
+					t.Fatalf("missing nightly guidance %q", text)
+				}
+			}
+			if strings.Contains(labels, u.tr("start a new chat to switch", "inicia uno nuevo para cambiar")) {
+				t.Fatal("nightly shows stable-only chat restriction")
+			}
+			nativeGridCapture(t, h, "native-t3-nightly-settings-"+lang)
+		})
+	}
+}

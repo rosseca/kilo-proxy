@@ -22,6 +22,7 @@ const (
 
 type t3CodeProfileOptions struct {
 	RootDir, NormalHome, CodexBinary, ClaudeBinary string
+	Version                                        string
 	NormalEnvironment                              map[string]string
 	Library                                        modelLibrary
 	Catalog                                        []modelInfo
@@ -114,15 +115,45 @@ func planT3CodeProfiles(options t3CodeProfileOptions) (t3CodeProfiles, error) {
 		return t3CodeProfiles{}, err
 	}
 	selection := claudeSelection{Initial: options.Library.DefaultModel, Mode: "installed", Aliases: map[string]string{}}
+	claudeSettingsCaps := claudeCapabilities{}
+	if options.Version == t3CodeNightlyVersion && options.ClaudeCaps.PerModelEffort {
+		// Nightly V2 discards Claude effort options for custom gateway IDs.
+		// Keep the defaults in the private CLI profile without family aliases,
+		// a replacement picker or a global effort shared by unrelated models.
+		claudeSettingsCaps.PerModelEffort = true
+	}
 	for i, model := range options.Library.Models {
 		context, err := contextPolicyForChoice(choices[i])
 		if err != nil {
 			return t3CodeProfiles{}, err
 		}
-		// T3 owns per-model effort via the custom-model descriptors. A global
-		// effortLevel in this profile would leak the initial model's effort to
-		// models that do not support Claude's native effort parameter.
-		selection.Models = append(selection.Models, claudeModel{ID: model.ID, DisplayName: model.DisplayName, Context: context.ContextWindow, Output: context.MaxOutputTokens})
+		effort := ""
+		if options.Version == t3CodeNightlyVersion && model.ReasoningEffort != "" && validClaudeEffort(model.ID, model.ReasoningEffort) {
+			if !strings.Contains(model.ID, "/") {
+				return t3CodeProfiles{}, errors.New("T3 Code nightly requires provider-qualified Claude model IDs (for example anthropic/claude-opus-4-6) for saved reasoning defaults. Use the exact gateway ID in Models.")
+			}
+			_, preferred := nativeReasoningFor(choices[i])
+			if preferred != "" && validClaudeEffort(model.ID, preferred) {
+				if !options.ClaudeCaps.PerModelEffort {
+					return t3CodeProfiles{}, errors.New("T3 Code nightly requires Claude Code 2.1.251 or newer to apply saved per-model reasoning. Update Claude Code and prepare again.")
+				}
+				effort = preferred
+			}
+		}
+		selection.Models = append(selection.Models, claudeModel{ID: model.ID, DisplayName: model.DisplayName, Effort: effort, Context: context.ContextWindow, Output: context.MaxOutputTokens})
+	}
+	if claudeSettingsCaps.PerModelEffort {
+		byFamily := map[string]string{}
+		for _, model := range selection.Models {
+			family := claudeEffortKey(model.ID)
+			if family == "" {
+				continue
+			}
+			if effort, exists := byFamily[family]; exists && effort != model.Effort {
+				return t3CodeProfiles{}, errors.New("Choose one gateway ID per Claude family/version for native reasoning")
+			}
+			byFamily[family] = model.Effort
+		}
 	}
 	claudePath := filepath.Join(result.ClaudeHome, "settings.json")
 	oldClaude, err := read(claudePath)
@@ -131,7 +162,7 @@ func planT3CodeProfiles(options t3CodeProfileOptions) (t3CodeProfiles, error) {
 	}
 	// T3 supplies exact model IDs itself. Do not generate native family aliases
 	// or modelOverrides: those would change the identity selected in T3.
-	claudeConfig, err := mergeClaudeSettings(oldClaude, selection, claudeCapabilities{}, options.Port, options.LocalKey)
+	claudeConfig, err := mergeClaudeSettings(oldClaude, selection, claudeSettingsCaps, options.Port, options.LocalKey)
 	if err != nil {
 		return t3CodeProfiles{}, err
 	}
@@ -267,7 +298,7 @@ func removeT3CodeClaudeToken(data []byte) ([]byte, error) {
 	return append(data, '\n'), err
 }
 
-// T3 0.0.45 accepts the provider-instance envelope and environment records.
+// The validated T3 releases accept this provider-instance envelope and environment records.
 // Sensitive values belong to its server secret store; the registration layer
 // replaces their payload here with valueRedacted markers before writing JSON.
 func t3CodeProviderInstances(options t3CodeProfileOptions, profiles t3CodeProfiles, choices []nativeModelChoice, selection claudeSelection) map[string]any {
@@ -307,7 +338,13 @@ func t3CodeProviderInstances(options t3CodeProfileOptions, profiles t3CodeProfil
 		return map[string]any{"driver": driver, "displayName": displayName, "enabled": true, "config": config, "environment": env}
 	}
 	codex := map[string]any{"setupMode": "existing", "binaryPath": options.CodexBinary, "homePath": profiles.CodexHome, "shadowHomePath": "", "launchArgs": "", "customModels": t3CodeCustomModels(choices, false, options.ClaudeCaps)}
-	claude := map[string]any{"binaryPath": options.ClaudeBinary, "homePath": profiles.ClaudeHome, "launchArgs": "", "customModels": t3CodeCustomModels(choices, true, options.ClaudeCaps)}
+	claudeModels := t3CodeCustomModels(choices, true, options.ClaudeCaps)
+	if options.Version == t3CodeNightlyVersion {
+		for _, model := range claudeModels {
+			model["capabilities"].(map[string]any)["optionDescriptors"] = []map[string]any{}
+		}
+	}
+	claude := map[string]any{"binaryPath": options.ClaudeBinary, "homePath": profiles.ClaudeHome, "launchArgs": "", "customModels": claudeModels}
 	if window, _ := claudeContextBudget(selection); window >= 100000 {
 		claude["autoCompactWindow"] = strconv.Itoa(window)
 	}

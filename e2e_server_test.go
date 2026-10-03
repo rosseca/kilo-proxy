@@ -72,6 +72,7 @@ func TestE2EServer(t *testing.T) {
 	openCodeBinary := syntheticOpenCodeExecutable(t, root)
 	openMausBotBinary := syntheticOpenMausBotExecutable(t, root, "macos")
 	t3CodeBinary := syntheticT3CodeExecutable(t, root, "macos")
+	t3CodeNightlyBinary := syntheticT3CodeExecutable(t, filepath.Join(root, "nightly"), "macos", t3CodeNightlyVersion)
 	t.Setenv("CODEX_HOME", filepath.Join(root, ".codex"))
 	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(root, ".claude"))
 	codexBinary := writeOpenDesignCodexFixture(t, filepath.Join(root, "codex-cli"), []byte("synthetic; never executed"))
@@ -96,6 +97,9 @@ func TestE2EServer(t *testing.T) {
 				return openMausBotBinary, nil
 			}
 			if client == "t3-code" {
+				if readLaunchControl()["t3CodeVersion"] == t3CodeNightlyVersion {
+					return t3CodeNightlyBinary, nil
+				}
 				return t3CodeBinary, nil
 			}
 			if client == "opencode" {

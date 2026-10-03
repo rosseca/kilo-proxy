@@ -35,6 +35,10 @@ func TestT3CodeInstalledFourAgents(t *testing.T) {
 	if err := t3CodeCompatibility(installed, runtime.GOOS); err != nil {
 		t.Fatal(err)
 	}
+	version, err := t3CodeVersion(installed, runtime.GOOS)
+	if err != nil {
+		t.Fatal(err)
+	}
 	realHome, err := os.UserHomeDir()
 	if err != nil {
 		t.Fatal(err)
@@ -86,6 +90,7 @@ func TestT3CodeInstalledFourAgents(t *testing.T) {
 	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(a.launcher.home, ".claude"))
 	const codexModel = "vendor/t3-codex"
 	const claudeModel = "anthropic/claude-opus-4-6"
+	const claudeLowModel = "anthropic/claude-sonnet-4-6"
 	const chatgptModel = "chatgpt/gpt-synthetic-high"
 	const responseText = "SYNTHETIC_T3_OK"
 	library := modelLibrary{SchemaVersion: 1, DefaultModel: codexModel, Models: []modelLibraryItem{
@@ -97,6 +102,10 @@ func TestT3CodeInstalledFourAgents(t *testing.T) {
 		{ID: codexModel, Name: "Synthetic Codex", ContextWindow: 128000, MaxOutputTokens: 4096, ReasoningEfforts: []string{"low", "high"}},
 		{ID: claudeModel, Name: "Synthetic Claude", ContextWindow: 128000, MaxOutputTokens: 4096, ReasoningEfforts: []string{"low", "medium", "high"}},
 		{ID: chatgptModel, Name: "Synthetic ChatGPT", ContextWindow: 128000, MaxOutputTokens: 4096, ReasoningEfforts: []string{"low", "high"}},
+	}
+	if version == t3CodeNightlyVersion {
+		library.Models = append(library.Models, modelLibraryItem{ID: claudeLowModel, ReasoningEffort: "low", ReasoningCustom: true, ReasoningLevels: []string{"low", "medium", "high"}, ContextWindow: 128000, MaxOutputTokens: 4096})
+		catalog = append(catalog, modelInfo{ID: claudeLowModel, Name: "Synthetic Claude Low", ContextWindow: 128000, MaxOutputTokens: 4096, ReasoningEfforts: []string{"low", "medium", "high"}})
 	}
 	if _, err := a.modelLibrary.save(library, 0, false); err != nil {
 		t.Fatal(err)
@@ -193,11 +202,22 @@ func TestT3CodeInstalledFourAgents(t *testing.T) {
 			}
 			respond(w, r, body, t3CodeCodexProxyID)
 		case "/api/gateway/messages", "/api/gateway/messages/count_tokens":
-			if body["model"] != claudeModel {
-				t.Error("Kilo Claude lost its exact model")
+			expectedEffort := "high"
+			expectedModel := claudeModel
+			mu.Lock()
+			previousRequests := counts[t3CodeClaudeProxyID]
+			mu.Unlock()
+			if version == t3CodeNightlyVersion && previousRequests == 2 {
+				expectedEffort = "low"
+				expectedModel = claudeLowModel
 			}
-			if r.URL.Path == "/api/gateway/messages" && object(body["output_config"])["effort"] != "high" {
-				t.Errorf("Kilo Claude lost High reasoning: output_config=%v thinking=%v", body["output_config"], body["thinking"])
+			if body["model"] != expectedModel {
+				t.Errorf("Kilo Claude lost exact model: expected %s, got %v", expectedModel, body["model"])
+			}
+			if r.URL.Path == "/api/gateway/messages" {
+				if object(body["output_config"])["effort"] != expectedEffort {
+					t.Errorf("Kilo Claude reasoning mismatch at request %d: expected %s, output_config=%v thinking=%v", previousRequests+1, expectedEffort, body["output_config"], body["thinking"])
+				}
 			}
 			respond(w, r, body, t3CodeClaudeProxyID)
 		default:
@@ -303,14 +323,19 @@ func TestT3CodeInstalledFourAgents(t *testing.T) {
 			t.Fatalf("cannot prepare temporary T3 project: %v %s", err, output)
 		}
 	}
+	claudeOptions := map[string]any{"effort": "high"}
+	if version == t3CodeNightlyVersion {
+		claudeOptions = nil
+	}
 	fixture := map[string]any{
 		"binary": plan.Executable, "entry": filepath.Join(installed, "Contents", "Resources", "app.asar", "apps", "server", "dist", "bin.mjs"),
+		"version": version,
 		"baseDir": paths.Data, "home": paths.UIHome, "project": project, "env": env, "expectedResponse": responseText,
 		"instances": []map[string]any{
 			{"id": t3CodeCodexNormalID, "model": codexModel, "options": map[string]any{"reasoningEffort": "high"}},
 			{"id": t3CodeCodexProxyID, "model": codexModel, "options": map[string]any{"reasoningEffort": "high"}},
 			{"id": t3CodeClaudeNormalID, "model": claudeModel},
-			{"id": t3CodeClaudeProxyID, "model": claudeModel, "options": map[string]any{"effort": "high"}},
+			{"id": t3CodeClaudeProxyID, "model": claudeModel, "options": claudeOptions, "alternateModel": claudeLowModel},
 			{"id": t3CodeCodexProxyID, "model": chatgptModel, "options": map[string]any{"reasoningEffort": "high"}},
 		},
 	}

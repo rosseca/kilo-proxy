@@ -99,7 +99,12 @@ func TestT3CodeInstalledDesktop(t *testing.T) {
 		}
 		time.Sleep(250 * time.Millisecond)
 	}()
-	uiPath := filepath.Join(paths.UIHome, "Library", "Application Support", "t3code")
+	version, _ := t3CodeVersion(installed, runtime.GOOS)
+	uiName := "t3code"
+	if version == t3CodeNightlyVersion {
+		uiName = "t3code-v2"
+	}
+	uiPath := filepath.Join(paths.UIHome, "Library", "Application Support", uiName)
 	deadline := time.Now().Add(60 * time.Second)
 	for time.Now().Before(deadline) {
 		data, _ := readOpenDesignShimFile(filepath.Join(paths.Data, "userdata", "server-runtime.json"), 16<<10)
