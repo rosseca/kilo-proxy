@@ -71,6 +71,20 @@ test('connection edits invalidate prepared status and disconnect blocks preparat
  assert.equal(writes.length,0);
 });
 
+test('nightly guidance shows the detected version and explains handoff in both languages',async t=>{
+ const source=saved(),version='0.0.46-nightly.20261003.2610';
+ const {helper,nodes}=fixture(t,async path=>path==='model-library'?source:{prepared:true,library:source.library,version});
+ await tick();
+ assert.match(nodes.get('t3-code-requirements').textContent,/Detected: 0\.0\.46-nightly\.20261003\.2610/);
+ assert.match(nodes.get('t3-code-compatibility').textContent,/change agents between turns/);
+ assert.match(nodes.get('t3-code-compatibility').textContent,/attachments are not transferred/);
+ assert.doesNotMatch(nodes.get('t3-code-compatibility').textContent,/new chat to switch/);
+ helper.render({state:{connectionReady:true},language:'es'});
+ assert.match(nodes.get('t3-code-requirements').textContent,/Detectado: 0\.0\.46-nightly\.20261003\.2610/);
+ assert.match(nodes.get('t3-code-compatibility').textContent,/cambiar de agente entre turnos/);
+ assert.match(nodes.get('t3-code-compatibility').textContent,/no transfiere el razonamiento/);
+});
+
 test('preparation and installation guidance translates to Spanish',async t=>{
  const source=saved();let fail=false;
  const {helper,nodes}=fixture(t,async(path,body)=>{if(body&&fail)throw new Error('Quit the T3 Code Kilo window before changing its models or connection. Your regular T3 Code window can stay open.');return path==='model-library'?source:{message:'Install Claude Code CLI before preparing T3 Code. Claude Desktop is a separate application.'};});

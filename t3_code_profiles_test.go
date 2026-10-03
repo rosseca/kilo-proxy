@@ -235,6 +235,197 @@ func TestT3CodeProfilesModelIDsAndReasoningCapabilities(t *testing.T) {
 	}
 }
 
+func TestT3CodeNightlyProfilesApplyPrivateClaudeDefaultsWithoutGlobalEffort(t *testing.T) {
+	options := t3ProfileTestOptions(t)
+	options.Version = t3CodeNightlyVersion
+	options.Library.Models = []modelLibraryItem{
+		{ID: "anthropic/claude-opus-4-6", ReasoningEffort: "high", ContextWindow: 200000, MaxOutputTokens: 4096},
+		{ID: "anthropic/claude-sonnet-4-6", ReasoningEffort: "low", ContextWindow: 200000, MaxOutputTokens: 4096},
+		{ID: "anthropic/claude-fable-5.1", ContextWindow: 200000, MaxOutputTokens: 4096},
+		{ID: "anthropic/claude-sonnet-5", ReasoningEffort: "none", ContextWindow: 200000, MaxOutputTokens: 4096},
+		{ID: "openai/gpt-6.1-sol", ReasoningEffort: "max", ContextWindow: 200000, MaxOutputTokens: 4096},
+	}
+	options.Catalog = nil
+	for _, item := range options.Library.Models {
+		options.Catalog = append(options.Catalog, modelInfo{ID: item.ID, ContextWindow: 200000, ReasoningEfforts: []string{"low", "medium", "high", "xhigh", "max"}})
+	}
+	claudePath := filepath.Join(options.RootDir, "profiles", "claude-kilo", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(claudePath), 0700); err != nil {
+		t.Fatal(err)
+	}
+	old := []byte(`{"effortLevel":"high","modelOverrides":{"old-alias":"old-model"},"modelSettings":{"claude-opus-4-6":{"effortLevel":"low","custom":"keep"},"claude-fable-5-1":{"effortLevel":"high"},"claude-sonnet-5":{"effortLevel":"high"}}}`)
+	if err := os.WriteFile(claudePath, old, 0600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := prepareT3CodeProfiles(options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(claudePath)
+	var settings map[string]any
+	if err := json.Unmarshal(data, &settings); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"effortLevel", "modelOverrides", "modelPicker"} {
+		if _, present := settings[key]; present {
+			t.Fatal("nightly created global effort or family aliases", key)
+		}
+	}
+	modelSettings := settings["modelSettings"].(map[string]any)
+	if len(modelSettings) != 2 || modelSettings["claude-opus-4-6"].(map[string]any)["effortLevel"] != "high" || modelSettings["claude-sonnet-4-6"].(map[string]any)["effortLevel"] != "low" {
+		t.Fatal("per-model defaults leaked into automatic/none/unrelated models", modelSettings)
+	}
+	if modelSettings["claude-opus-4-6"].(map[string]any)["custom"] != "keep" {
+		t.Fatal("unmanaged per-model settings were lost")
+	}
+	var snapshot claudeSelection
+	data, _ = os.ReadFile(filepath.Join(result.ClaudeHome, "kilo-models.json"))
+	if err := json.Unmarshal(data, &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	for i, expected := range []string{"high", "low", "", "", ""} {
+		if snapshot.Models[i].ID != options.Library.Models[i].ID || snapshot.Models[i].Effort != expected {
+			t.Fatal("snapshot rewrote model identity or a saved default", snapshot.Models[i])
+		}
+	}
+	claudeModels := result.Providers[t3CodeClaudeProxyID].(map[string]any)["config"].(map[string]any)["customModels"].([]map[string]any)
+	for _, model := range claudeModels {
+		if len(model["capabilities"].(map[string]any)["optionDescriptors"].([]map[string]any)) != 0 {
+			t.Fatal("nightly exposed an effort selector ignored by its driver", model)
+		}
+	}
+	codexModels := result.Providers[t3CodeCodexProxyID].(map[string]any)["config"].(map[string]any)["customModels"].([]map[string]any)
+	if len(codexModels[0]["capabilities"].(map[string]any)["optionDescriptors"].([]map[string]any)) == 0 {
+		t.Fatal("nightly removed the working Codex effort selector")
+	}
+	options.Version = t3CodeSupportedVersion
+	result, err = prepareT3CodeProfiles(options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _ = os.ReadFile(claudePath)
+	settings = nil
+	if json.Unmarshal(data, &settings) != nil || settings["modelSettings"] != nil || settings["effortLevel"] != nil {
+		t.Fatal("stable retained nightly CLI defaults", string(data))
+	}
+	claudeModels = result.Providers[t3CodeClaudeProxyID].(map[string]any)["config"].(map[string]any)["customModels"].([]map[string]any)
+	if len(claudeModels[0]["capabilities"].(map[string]any)["optionDescriptors"].([]map[string]any)) != 1 {
+		t.Fatal("stable lost its working Claude effort selector")
+	}
+}
+
+func TestT3CodeNightlyProfilesRequireVerifiedCLIForExplicitClaudeDefaults(t *testing.T) {
+	options := t3ProfileTestOptions(t)
+	previous, err := prepareT3CodeProfiles(options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := map[string][]byte{}
+	for _, file := range previous.Files {
+		before[file.path], err = os.ReadFile(file.path)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	options.Version = t3CodeNightlyVersion
+	for _, caps := range []claudeCapabilities{claudeCaps("2.1.250"), {}} {
+		options.ClaudeCaps = caps
+		if _, err := prepareT3CodeProfiles(options); err == nil || !strings.Contains(err.Error(), "Claude Code 2.1.251") {
+			t.Fatal("older or unverified CLI silently lost saved effort", caps, err)
+		}
+		for path, expected := range before {
+			actual, err := os.ReadFile(path)
+			if err != nil || !bytes.Equal(actual, expected) {
+				t.Fatal("failed CLI compatibility check modified a prepared profile", path, err)
+			}
+		}
+	}
+	for _, automatic := range []string{"", "none"} {
+		options.Library.Models[0].ReasoningEffort = automatic
+		if _, err := prepareT3CodeProfiles(options); err != nil {
+			t.Fatal("automatic/unsupported-none model required native effort support", automatic, err)
+		}
+	}
+}
+
+func TestT3CodeNightlyProfilesRejectConflictingCanonicalClaudeDefaults(t *testing.T) {
+	for _, second := range []string{"low", ""} {
+		t.Run(second, func(t *testing.T) {
+			options := t3ProfileTestOptions(t)
+			options.Version = t3CodeNightlyVersion
+			options.Library.DefaultModel = "anthropic/claude-opus-4.6"
+			options.Library.Models = []modelLibraryItem{
+				{ID: "anthropic/claude-opus-4.6", ReasoningEffort: "high", ContextWindow: 200000, MaxOutputTokens: 4096},
+				{ID: "anthropic/claude-opus-4-6-20260813", ReasoningEffort: second, ContextWindow: 200000, MaxOutputTokens: 4096},
+			}
+			options.Catalog = []modelInfo{
+				{ID: options.Library.Models[0].ID, ReasoningEfforts: []string{"low", "high"}},
+				{ID: options.Library.Models[1].ID, ReasoningEfforts: []string{"low", "high"}},
+			}
+			if _, err := prepareT3CodeProfiles(options); err == nil || !strings.Contains(err.Error(), "one gateway ID per Claude family") {
+				t.Fatal("canonical key conflict silently changed a model's effort", second, err)
+			}
+			for _, relative := range []string{"profiles/codex-kilo/config.toml", "profiles/codex-kilo/models.json", "profiles/claude-kilo/settings.json", "profiles/claude-kilo/kilo-models.json"} {
+				if _, err := os.Stat(filepath.Join(options.RootDir, filepath.FromSlash(relative))); !os.IsNotExist(err) {
+					t.Fatal("conflicting defaults wrote provider files", relative, err)
+				}
+			}
+			options.Library.Models[1].ReasoningEffort = "high"
+			if _, err := prepareT3CodeProfiles(options); err != nil {
+				t.Fatal("identical canonical defaults were unnecessarily rejected", err)
+			}
+			options.Version = t3CodeSupportedVersion
+			options.Library.Models[1].ReasoningEffort = second
+			if _, err := prepareT3CodeProfiles(options); err != nil {
+				t.Fatal("stable descriptor compatibility changed", err)
+			}
+		})
+	}
+}
+
+func TestT3CodeNightlyProfilesRequireQualifiedClaudeIDsForSavedDefaults(t *testing.T) {
+	options := t3ProfileTestOptions(t)
+	options.Version = t3CodeNightlyVersion
+	options.Library.DefaultModel = "claude-opus-4-6"
+	options.Library.Models = []modelLibraryItem{{ID: options.Library.DefaultModel, ReasoningEffort: "low", ContextWindow: 200000, MaxOutputTokens: 4096}}
+	options.Catalog = []modelInfo{{ID: options.Library.DefaultModel, ReasoningEfforts: []string{"low", "high"}}}
+	if _, err := prepareT3CodeProfiles(options); err == nil || !strings.Contains(err.Error(), "provider-qualified Claude model IDs") {
+		t.Fatal("nightly silently accepted a builtin effort that overrides Models", err)
+	}
+	claudePath := filepath.Join(options.RootDir, "profiles", "claude-kilo", "settings.json")
+	if _, err := os.Stat(claudePath); !os.IsNotExist(err) {
+		t.Fatal("failed builtin effort validation wrote the Claude profile", err)
+	}
+	options.Library.DefaultModel = "anthropic/claude-opus-4-6"
+	options.Library.Models[0].ID = options.Library.DefaultModel
+	options.Catalog[0].ID = options.Library.DefaultModel
+	if _, err := prepareT3CodeProfiles(options); err != nil {
+		t.Fatal("qualified gateway ID was rejected", err)
+	}
+	data, _ := os.ReadFile(claudePath)
+	var settings struct {
+		Model         string `json:"model"`
+		ModelSettings map[string]struct {
+			Effort string `json:"effortLevel"`
+		} `json:"modelSettings"`
+	}
+	if json.Unmarshal(data, &settings) != nil || settings.Model != options.Library.DefaultModel || settings.ModelSettings["claude-opus-4-6"].Effort != "low" {
+		t.Fatal("qualified model changed identity or lost its prepared effort", string(data))
+	}
+	options.Library.DefaultModel = "claude-opus-4-6"
+	options.Library.Models[0].ID = options.Library.DefaultModel
+	options.Catalog[0].ID = options.Library.DefaultModel
+	options.Library.Models[0].ReasoningEffort = ""
+	if _, err := prepareT3CodeProfiles(options); err != nil {
+		t.Fatal("builtin automatic default was unnecessarily rejected", err)
+	}
+	options.Version = t3CodeSupportedVersion
+	options.Library.Models[0].ReasoningEffort = "low"
+	if _, err := prepareT3CodeProfiles(options); err != nil {
+		t.Fatal("stable builtin descriptor compatibility changed", err)
+	}
+}
+
 func TestT3CodeProfilesRestoreDefaultAndCustomProviderHomes(t *testing.T) {
 	options := t3ProfileTestOptions(t)
 	options.NormalEnvironment = nil

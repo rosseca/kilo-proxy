@@ -50,7 +50,7 @@ test('T3 Code prepares four agents before desktop launch and guards a second ope
  await expect(page.locator('#t3-code-compatibility')).toContainText('new chat to switch between normal and Kilo');
  await expect(page.locator('#t3-code-privacy')).toContainText('regular T3 Code workspace and chats stay separate');
  await expect(page.locator('#t3-code-requirements')).toContainText('not Desktop app logins');
- await expect(page.locator('#t3-code-install')).toHaveAttribute('href','https://github.com/pingdotgg/t3code/releases/tag/v0.0.45');
+ await expect(page.locator('#t3-code-install')).toHaveAttribute('href','https://github.com/pingdotgg/t3code/releases/tag/v0.0.46-nightly.20261003.2610');
  await expect(page.locator('#t3-code-helper')).not.toContainText('synthetic-kilo-personal-key');
  await expect(page.locator('#t3-code-helper')).not.toContainText(profile.profileDir);
  await page.locator('#t3-code-helper').screenshot({path:testInfo.outputPath('t3-code-en-wide.png')});
@@ -110,4 +110,26 @@ test('T3 Code refuses changing a running private workspace and recovers after qu
  await page.locator('#t3-code-prepare').click();
  await expect(page.locator('#t3-code-prepared')).toContainText('Four agents prepared');
  expect(await records(gateway)).toEqual([]);
+});
+
+test('T3 nightly prepares its actual version and explains V2 handoff in EN/ES',async({page,gateway,request},testInfo)=>{
+ const version='0.0.46-nightly.20261003.2610';
+ await writeFile(gateway.launchControl,JSON.stringify({t3CodeVersion:version}));
+ await saveLibrary(request,gateway,library());await startProxy(page,gateway);
+ await page.locator('#tab-t3-code').click();await page.locator('#t3-code-options').click();
+ await expect(page.locator('#t3-code-requirements')).toContainText('Detected: '+version);
+ await expect(page.locator('#t3-code-compatibility')).toContainText('change agents between turns');
+ await expect(page.locator('#t3-code-compatibility')).toContainText('attachments are not transferred');
+ await page.locator('#t3-code-prepare').click();
+ await expect(page.locator('#t3-code-prepared')).toContainText('Four agents prepared');
+ const profile=await getAPI(request,gateway,'clients/t3-code');
+ expect(profile.prepared).toBe(true);expect(profile.version).toBe(version);
+ await page.locator('#client-launch').click();
+ await expect.poll(async()=>(await records(gateway)).length).toBe(1);
+ await page.locator('#t3-code-helper').screenshot({path:testInfo.outputPath('t3-nightly-en.png')});
+ await page.locator('#language').selectOption('es');await page.setViewportSize({width:390,height:844});
+ await expect(page.locator('#t3-code-requirements')).toContainText('Detectado: '+version);
+ await expect(page.locator('#t3-code-compatibility')).toContainText('cambiar de agente entre turnos');
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
+ await page.locator('#t3-code-helper').screenshot({path:testInfo.outputPath('t3-nightly-es-mobile.png')});
 });

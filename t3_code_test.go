@@ -13,17 +13,30 @@ import (
 	"time"
 )
 
-func syntheticT3CodeExecutable(t *testing.T, root, platform string) string {
+func syntheticT3CodeExecutable(t *testing.T, root, platform string, versions ...string) string {
 	t.Helper()
+	version := t3CodeSupportedVersion
+	if len(versions) > 0 {
+		version = versions[0]
+	}
+	return syntheticT3CodeVersionExecutable(t, root, platform, version)
+}
+
+func syntheticT3CodeVersionExecutable(t *testing.T, root, platform, version string) string {
+	t.Helper()
+	appName := "T3 Code"
+	if strings.Contains(version, "-nightly.") {
+		appName += " (Nightly)"
+	}
 	appRoot := filepath.Join(root, "T3 Code fixture")
 	executable := filepath.Join(appRoot, "t3code")
 	resources := filepath.Join(appRoot, "resources")
 	if platform == "windows" {
-		executable = filepath.Join(appRoot, "T3 Code.exe")
+		executable = filepath.Join(appRoot, appName+".exe")
 	}
 	if platform == "macos" || platform == "darwin" {
-		appRoot = filepath.Join(root, "T3 Code.app")
-		executable = filepath.Join(appRoot, "Contents", "MacOS", "T3 Code")
+		appRoot = filepath.Join(root, appName+".app")
+		executable = filepath.Join(appRoot, "Contents", "MacOS", appName)
 		resources = filepath.Join(appRoot, "Contents", "Resources")
 	}
 	for _, dir := range []string{filepath.Dir(executable), resources} {
@@ -34,7 +47,10 @@ func syntheticT3CodeExecutable(t *testing.T, root, platform string) string {
 	if err := os.WriteFile(executable, []byte("synthetic native executable; never executed"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	packageData := []byte(`{"name":"t3code","version":"0.0.45"}`)
+	packageData, err := json.Marshal(map[string]string{"name": "t3code", "version": version})
+	if err != nil {
+		t.Fatal(err)
+	}
 	header, _ := json.Marshal(t3CodeASAREntry{Files: map[string]t3CodeASAREntry{"package.json": {Size: int64(len(packageData)), Offset: "0"}}})
 	prefix := make([]byte, 16)
 	binary.LittleEndian.PutUint32(prefix[:4], 4)
@@ -46,7 +62,7 @@ func syntheticT3CodeExecutable(t *testing.T, root, platform string) string {
 		t.Fatal(err)
 	}
 	if platform == "macos" || platform == "darwin" {
-		if err := os.WriteFile(filepath.Join(appRoot, "Contents", "Info.plist"), []byte(`<plist><dict><key>CFBundleExecutable</key><string>T3 Code</string></dict></plist>`), 0600); err != nil {
+		if err := os.WriteFile(filepath.Join(appRoot, "Contents", "Info.plist"), []byte(`<plist><dict><key>CFBundleExecutable</key><string>`+appName+`</string></dict></plist>`), 0600); err != nil {
 			t.Fatal(err)
 		}
 		return appRoot
@@ -54,14 +70,14 @@ func syntheticT3CodeExecutable(t *testing.T, root, platform string) string {
 	return executable
 }
 
-func t3CodeTestApp(t *testing.T, platform string) *app {
+func t3CodeTestApp(t *testing.T, platform string, versions ...string) *app {
 	t.Helper()
 	a := launchTestApp(t)
 	t.Setenv("CODEX_HOME", filepath.Join(a.launcher.home, ".codex"))
 	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(a.launcher.home, ".claude"))
 	a.config.Port = 9988
 	a.config.Language = "en"
-	binary := syntheticT3CodeExecutable(t, a.launcher.home, platform)
+	binary := syntheticT3CodeExecutable(t, a.launcher.home, platform, versions...)
 	cli := filepath.Join(a.launcher.home, "codex-native")
 	claude := filepath.Join(a.launcher.home, "claude-native")
 	for _, path := range []string{cli, claude} {
@@ -263,6 +279,81 @@ func TestT3CodeClaudeProbeUsesTheResolvedExecutableInPrivateHome(t *testing.T) {
 	}
 }
 
+func TestT3CodeNightlyLaunchRejectsInPlaceClaudeDowngrade(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX executable version fixture; profile capability guards are covered on every platform")
+	}
+	a := t3CodeTestApp(t, runtime.GOOS, t3CodeNightlyVersion)
+	paths := t3CodePaths(a.dir)
+	claude, err := a.launchRuntime().resolve("claude", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KILO_VERSION_EXPECTED_HOME", paths.UIHome)
+	writeVersion := func(version string) {
+		t.Helper()
+		script := "#!/bin/sh\n[ \"$1\" = --version ] || exit 2\n[ \"$HOME\" = \"$KILO_VERSION_EXPECTED_HOME\" ] || exit 3\nprintf '" + version + " (Claude Code)\\n'\n"
+		if err := os.WriteFile(claude, []byte(script), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeVersion("2.1.251")
+	library := modelLibrary{SchemaVersion: 1, DefaultModel: "anthropic/claude-opus-4-6", Models: []modelLibraryItem{
+		{ID: "anthropic/claude-opus-4-6", ReasoningEffort: "low", ReasoningCustom: true, ReasoningLevels: []string{"low", "high"}, ContextWindow: 200000, MaxOutputTokens: 4096},
+	}}
+	if _, err := a.modelLibrary.save(library, a.modelLibrary.snapshot().Revision, false); err != nil {
+		t.Fatal(err)
+	}
+	prepareT3CodeFixture(t, a)
+	if _, err := a.planClientLaunch(clientLaunchRequest{Client: "t3-code"}, a.launchRuntime()); err != nil {
+		t.Fatal("supported CLI could not launch its prepared nightly profile", err)
+	}
+	saved, err := a.readT3CodePrepared()
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := map[string][]byte{}
+	for relative := range saved.Files {
+		path := filepath.Join(paths.Root, relative)
+		before[path], err = os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, path := range []string{paths.Selection, paths.Settings} {
+		before[path], err = os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	starts := 0
+	a.launcher.start = func(clientLaunchPlan) error { starts++; return nil }
+	writeVersion("2.1.250")
+	if !a.t3CodeReady(saved, mustResolveT3CodeTest(t, a), a.launchRuntime()) {
+		t.Fatal("fixture did not preserve the executable path and prepared fingerprint")
+	}
+	response := adminRequest(a, "clients/launch", `{"client":"t3-code"}`)
+	if response.Code != 409 || !strings.Contains(response.Body.String(), "Claude Code 2.1.251 or newer") || !strings.Contains(response.Body.String(), "Update Claude Code and prepare again") {
+		t.Fatal("CLI downgrade did not produce an actionable launch error", response.Code, response.Body.String())
+	}
+	if starts != 0 || a.proxyListener != nil || !a.t3CodeLaunchUntil.IsZero() {
+		t.Fatal("rejected downgrade started a process, listener or launch lease")
+	}
+	for path, expected := range before {
+		actual, err := os.ReadFile(path)
+		if err != nil || !bytes.Equal(actual, expected) {
+			t.Fatal("rejected downgrade changed prepared data", path, err)
+		}
+	}
+	writeVersion("2.1.276")
+	if _, err := a.planClientLaunch(clientLaunchRequest{Client: "t3-code"}, a.launchRuntime()); err != nil {
+		t.Fatal("compatible in-place CLI update required unnecessary repreparation", err)
+	}
+	if starts != 0 || a.proxyListener != nil {
+		t.Fatal("planning a compatible update unexpectedly dispatched a process")
+	}
+}
+
 func TestT3CodeGuardsLiveChangesAndStaleConnection(t *testing.T) {
 	a := t3CodeTestApp(t, "windows")
 	prepareT3CodeFixture(t, a)
@@ -381,6 +472,158 @@ func TestT3CodeVersionAndMarkerBoundaries(t *testing.T) {
 		if t3CodeCommandMatches(command, root) {
 			t.Fatal("unrelated process matched", command)
 		}
+	}
+}
+
+func TestT3CodeCompatibilityAcceptsOnlyValidatedReleases(t *testing.T) {
+	for _, platform := range []string{"macos", "linux", "windows"} {
+		for _, version := range []string{t3CodeSupportedVersion, t3CodeNightlyVersion, "0.0.46", "0.0.46-nightly.20261003.2611", "0.0.45-nightly.20261002.2600", t3CodeNightlyVersion + "+modified"} {
+			t.Run(platform+"/"+version, func(t *testing.T) {
+				path := syntheticT3CodeVersionExecutable(t, t.TempDir(), platform, version)
+				parsed, err := t3CodeVersion(path, platform)
+				if err != nil || parsed != version {
+					t.Fatal("package version could not be read", parsed, err)
+				}
+				wantSupported := version == t3CodeSupportedVersion || version == t3CodeNightlyVersion
+				if err := t3CodeCompatibility(path, platform); (err == nil) != wantSupported {
+					t.Fatal("unvalidated version accepted or validated version rejected", version, err)
+				}
+				if platform == "macos" && t3CodeBundleExecutable(path) != filepath.Join(path, "Contents", "MacOS", filepath.Base(strings.TrimSuffix(path, ".app"))) {
+					t.Fatal("native bundle executable was not resolved")
+				}
+			})
+		}
+	}
+}
+
+func TestT3CodeNightlyPreparationReportsInstalledVersion(t *testing.T) {
+	for _, platform := range []string{"macos", "linux", "windows"} {
+		t.Run(platform, func(t *testing.T) {
+			a := t3CodeTestApp(t, platform, t3CodeNightlyVersion)
+			for _, body := range []string{"{}", ""} {
+				response := adminRequest(a, "clients/t3-code", body)
+				var metadata struct {
+					Prepared bool   `json:"prepared"`
+					Version  string `json:"version"`
+				}
+				if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &metadata) != nil || !metadata.Prepared || metadata.Version != t3CodeNightlyVersion {
+					t.Fatal("nightly preparation did not report its actual version", response.Code, response.Body.String())
+				}
+			}
+			saved, err := a.readT3CodePrepared()
+			if err != nil || saved.Version != t3CodeNightlyVersion || !a.t3CodeReady(saved, mustResolveT3CodeTest(t, a), a.launchRuntime()) {
+				t.Fatal("nightly snapshot could not be reopened", saved.Version, err)
+			}
+			if _, err := a.planClientLaunch(clientLaunchRequest{Client: "t3-code"}, a.launchRuntime()); err != nil {
+				t.Fatal("prepared nightly did not produce a launch plan", err)
+			}
+		})
+	}
+}
+
+func TestT3CodeVersionTransitionRequiresClosedRepreparation(t *testing.T) {
+	a := t3CodeTestApp(t, "linux")
+	prepareT3CodeFixture(t, a)
+	stable, err := a.readT3CodePrepared()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Keep the executable path unchanged, as an installed release update does.
+	nightly := syntheticT3CodeExecutable(t, a.launcher.home, "linux", t3CodeNightlyVersion)
+	if a.t3CodeReady(stable, nightly, a.launchRuntime()) {
+		t.Fatal("stable snapshot remained ready after a nightly update")
+	}
+	metadata := adminRequest(a, "clients/t3-code", "")
+	if metadata.Code != 200 || !strings.Contains(metadata.Body.String(), `"prepared":false`) || !strings.Contains(metadata.Body.String(), `"version":"`+t3CodeNightlyVersion+`"`) {
+		t.Fatal("updated nightly did not request preparation", metadata.Code, metadata.Body.String())
+	}
+	if _, err := a.planClientLaunch(clientLaunchRequest{Client: "t3-code"}, a.launchRuntime()); err == nil {
+		t.Fatal("nightly launched with a stale stable snapshot")
+	}
+	a.t3CodeCheckRunning = func(string) (bool, error) { return true, nil }
+	if response := adminRequest(a, "clients/t3-code", `{}`); response.Code != 409 {
+		t.Fatal("nightly overwrote a live stable profile", response.Code, response.Body.String())
+	}
+	unchanged, err := a.readT3CodePrepared()
+	if err != nil || unchanged.Version != t3CodeSupportedVersion {
+		t.Fatal("blocked transition modified the stable snapshot", unchanged.Version, err)
+	}
+	a.t3CodeCheckRunning = func(string) (bool, error) { return false, nil }
+	prepareT3CodeFixture(t, a)
+	saved, err := a.readT3CodePrepared()
+	if err != nil || saved.Version != t3CodeNightlyVersion || !a.t3CodeReady(saved, nightly, a.launchRuntime()) {
+		t.Fatal("closed profile could not migrate to nightly", saved.Version, err)
+	}
+	if _, err := a.planClientLaunch(clientLaunchRequest{Client: "t3-code"}, a.launchRuntime()); err != nil {
+		t.Fatal("reprepared nightly did not produce a launch plan", err)
+	}
+}
+
+func TestT3CodeNightlyResolutionAndStableFallback(t *testing.T) {
+	for _, platform := range []string{"macos", "windows"} {
+		t.Run(platform, func(t *testing.T) {
+			home := t.TempDir()
+			localAppData := filepath.Join(home, "AppData", "Local")
+			systemRoot := filepath.Join(home, "SystemApps")
+			t.Setenv("ProgramFiles", systemRoot)
+			t.Setenv("ProgramFiles(x86)", "")
+			install := func(version string) string {
+				if platform == "macos" {
+					root := filepath.Join(home, "Applications")
+					if version == t3CodeSupportedVersion {
+						root = systemRoot
+					}
+					return syntheticT3CodeVersionExecutable(t, root, platform, version)
+				}
+				source := syntheticT3CodeVersionExecutable(t, t.TempDir(), platform, version)
+				appName := strings.TrimSuffix(filepath.Base(source), ".exe")
+				root := systemRoot
+				if version == t3CodeSupportedVersion {
+					root = localAppData
+				}
+				destination := filepath.Join(root, "Programs", appName)
+				if err := os.MkdirAll(filepath.Dir(destination), 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Rename(filepath.Dir(source), destination); err != nil {
+					t.Fatal(err)
+				}
+				return filepath.Join(destination, filepath.Base(source))
+			}
+			stable, nightly := install(t3CodeSupportedVersion), install(t3CodeNightlyVersion)
+			candidates := []string{}
+			for _, candidate := range t3CodeInstallationCandidates(platform, home, localAppData) {
+				// Model a system install and a user install without touching the host.
+				if relative, ok := strings.CutPrefix(candidate, filepath.Join("/Applications")+string(filepath.Separator)); ok {
+					candidate = filepath.Join(systemRoot, relative)
+				}
+				if strings.HasPrefix(candidate, home+string(filepath.Separator)) {
+					candidates = append(candidates, candidate)
+				}
+			}
+			if selected, err := resolveT3CodeCandidates(candidates); err != nil || selected != nightly {
+				t.Fatal("nightly did not take priority over stable", selected, err)
+			}
+			nightlyRoot := nightly
+			if platform == "windows" {
+				nightlyRoot = filepath.Dir(nightly)
+			}
+			if err := os.RemoveAll(nightlyRoot); err != nil {
+				t.Fatal(err)
+			}
+			if selected, err := resolveT3CodeCandidates(candidates); err != nil || selected != stable {
+				t.Fatal("missing nightly did not fall back to stable", selected, err)
+			}
+			unvalidated := install("0.0.46-nightly.20261003.2611")
+			selected, err := resolveT3CodeCandidates(candidates)
+			if err != nil || selected != unvalidated || t3CodeCompatibility(selected, platform) == nil {
+				t.Fatal("unvalidated nightly silently fell back to stable", selected, err)
+			}
+		})
+	}
+	linuxCandidates := t3CodeInstallationCandidates("linux", t.TempDir(), "")
+	if len(linuxCandidates) == 0 || linuxCandidates[0] != filepath.Join("/opt/T3 Code (Nightly)", "t3code") {
+		t.Fatal("Linux nightly installation was not prioritized", linuxCandidates)
 	}
 }
 
