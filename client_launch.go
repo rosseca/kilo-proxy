@@ -40,10 +40,10 @@ type clientLaunchAvailability struct {
 	InstallURL string `json:"installURL,omitempty"`
 }
 
-var launchClients = []string{"codex", "claude-desktop", "codex-cli", "claude", "opencode", "omp", "open-design", "openmausbot", "zed", "xcode-chat", "xcode-codex", "xcode-claude"}
+var launchClients = []string{"codex", "claude-desktop", "codex-cli", "claude", "opencode", "omp", "open-design", "openmausbot", "t3-code", "zed", "xcode-chat", "xcode-codex", "xcode-claude"}
 
 func clientLaunchUsesProject(client string) bool {
-	return client != "codex" && client != "claude-desktop" && client != "open-design" && client != "openmausbot"
+	return client != "codex" && client != "claude-desktop" && client != "open-design" && client != "openmausbot" && client != "t3-code"
 }
 
 func launchClientIdentity(id string) (string, string) {
@@ -64,6 +64,8 @@ func launchClientIdentity(id string) (string, string) {
 		return "Open Design", "desktop"
 	case "openmausbot":
 		return "OpenMausBot", "desktop"
+	case "t3-code":
+		return "T3 Code · Kilo", "desktop"
 	case "zed":
 		return "Zed", "desktop"
 	case "xcode-chat", "xcode-codex", "xcode-claude":
@@ -141,6 +143,12 @@ func (a *app) clientsLaunch(w http.ResponseWriter, r *http.Request) {
 						info.Reason = err.Error()
 					}
 				}
+				if id == "t3-code" {
+					if err := a.t3CodeAvailability(path, rt); err != nil {
+						info.Available = false
+						info.Reason = err.Error()
+					}
+				}
 			}
 			if kind == "terminal" && info.Available && !terminal {
 				info.Available = false
@@ -204,6 +212,12 @@ func (a *app) clientsLaunch(w http.ResponseWriter, r *http.Request) {
 		message = "OpenMausBot opened with its private Kilo configuration."
 		a.mu.Lock()
 		a.openMausBotLaunchUntil = time.Now().Add(30 * time.Second)
+		a.mu.Unlock()
+	}
+	if input.Client == "t3-code" {
+		message = "T3 Code opened with four agents in its separate Kilo workspace."
+		a.mu.Lock()
+		a.t3CodeLaunchUntil = time.Now().Add(30 * time.Second)
 		a.mu.Unlock()
 	}
 	if strings.HasPrefix(input.Client, "xcode-") {
@@ -283,6 +297,8 @@ func (a *app) planClientLaunch(input clientLaunchRequest, rt clientLaunchRuntime
 		err = a.applyOpenDesignProfile(&p, input.Engine, rt)
 	} else if input.Client == "openmausbot" {
 		err = a.applyOpenMausBotLaunch(&p, rt.platform)
+	} else if input.Client == "t3-code" {
+		err = a.applyT3CodeLaunch(&p, rt)
 	} else {
 		err = a.launchProfile(&p, rt.home)
 	}
@@ -344,7 +360,7 @@ func (a *app) planClientLaunch(input clientLaunchRequest, rt clientLaunchRuntime
 			}
 			p.Executable = filepath.Join(p.Executable, "Contents", "MacOS", binary)
 		}
-	} else if input.Client == "open-design" || input.Client == "openmausbot" {
+	} else if input.Client == "open-design" || input.Client == "openmausbot" || input.Client == "t3-code" {
 		// These clients already selected their isolated native executable.
 	} else if kind == "desktop" {
 		if rt.platform == "macos" && strings.HasSuffix(p.Executable, ".app") {

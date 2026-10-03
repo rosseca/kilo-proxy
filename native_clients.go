@@ -125,6 +125,8 @@ func nativeClientEndpoint(key string) string {
 	switch key {
 	case "openmausbot":
 		return "/api/clients/openmausbot"
+	case "t3-code":
+		return "/api/clients/t3-code"
 	case "open-design":
 		return openDesignProfileEndpoint
 	case "codex", "codex-cli":
@@ -144,7 +146,7 @@ func nativeClientEndpoint(key string) string {
 }
 
 func nativeClientPayload(key string, s *nativeClientSelection) (any, error) {
-	if key == "openmausbot" {
+	if key == "openmausbot" || key == "t3-code" {
 		library := modelLibrary{SchemaVersion: 1, DefaultModel: s.Initial}
 		for _, m := range s.Models {
 			library.Models = append(library.Models, nativeLibraryItem(m))
@@ -470,7 +472,7 @@ func (u *nativeUI) clientsPanel() layout.Widget {
 			}
 		})
 	}
-	clientNames := map[string]string{"codex": "Codex Desktop", "codex-cli": "Codex CLI", "claude": "Claude Code", "claude-desktop": "Claude Desktop · Kilo", "opencode": "OpenCode", "omp": "Oh My Pi", "zed": "Zed", "open-design": "Open Design", "openmausbot": "OpenMausBot", "xcode": "Xcode", "generic": u.tr("Other agents", "Otros agentes")}
+	clientNames := map[string]string{"codex": "Codex Desktop", "codex-cli": "Codex CLI", "claude": "Claude Code", "claude-desktop": "Claude Desktop · Kilo", "t3-code": "T3 Code · Kilo", "opencode": "OpenCode", "omp": "Oh My Pi", "zed": "Zed", "open-design": "Open Design", "openmausbot": "OpenMausBot", "xcode": "Xcode", "generic": u.tr("Other agents", "Otros agentes")}
 	widgets := []layout.Widget{
 		u.pills(u.iconButton("agents.back", u.tr("All agents", "Todos los agentes"), nativeButtonGhost, nativeIconBack, func() { u.page = "agents" })),
 		u.heading(clientNames[u.client]),
@@ -568,6 +570,9 @@ func (u *nativeUI) clientsPanel() layout.Widget {
 		)
 	}
 	widgets = append(widgets, u.section(u.tr("Models", "Modelos"), u.tr("One shared library for this agent.", "Una biblioteca compartida para este agente."), modelWidgets...))
+	if key == "t3-code" {
+		return u.column(append(widgets, u.t3CodeClientPanel(s))...)
+	}
 	if key == "openmausbot" {
 		return u.column(append(widgets, u.openMausBotClientPanel(s))...)
 	}
@@ -1209,12 +1214,18 @@ func (u *nativeUI) prepareClientAfter(key string, done func(error)) {
 		if key == "openmausbot" {
 			u.acceptOpenMausBotProfile(data, openMausBotConnection)
 		}
+		if key == "t3-code" {
+			u.acceptT3CodeProfile(data, openMausBotConnection)
+		}
 		if key == "codex" || key == "codex-cli" {
 			u.acceptClientImages(imagesSent)
 		}
 		u.setNotice(nativeToneSuccess, u.tr("Editor profile prepared.", "Perfil del editor preparado."))
 		if key == "claude-desktop" {
 			u.setNotice(nativeToneSuccess, u.tr("Kilo profile prepared. Open Claude Desktop · Kilo to apply changes.", "Perfil Kilo preparado. Abre Claude Desktop · Kilo para aplicar los cambios."))
+		}
+		if key == "t3-code" {
+			u.setNotice(nativeToneSuccess, u.tr("Four agents prepared. Open T3 Code · Kilo and start a new chat to choose an agent.", "Cuatro agentes preparados. Abre T3 Code · Kilo e inicia un chat nuevo para elegir un agente."))
 		}
 		done(nil)
 	})

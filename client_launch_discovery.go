@@ -72,6 +72,10 @@ func resolveLaunchClient(id, custom string) (string, error) {
 		home, _ := os.UserHomeDir()
 		return resolveOpenMausBot(runtime.GOOS, home, os.Getenv("LOCALAPPDATA"))
 	}
+	if id == "t3-code" {
+		home, _ := os.UserHomeDir()
+		return resolveT3Code(runtime.GOOS, home, os.Getenv("LOCALAPPDATA"))
+	}
 	if kind == "terminal" {
 		if id == "omp" {
 			if path, err := exec.LookPath("omp"); err == nil && filepath.IsAbs(path) {

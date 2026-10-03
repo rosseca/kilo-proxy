@@ -57,6 +57,8 @@ type app struct {
 	openDesignLaunchUntil     time.Time
 	openMausBotCheckRunning   func(openMausBotPaths) (bool, error)
 	openMausBotLaunchUntil    time.Time
+	t3CodeCheckRunning       func(string) (bool, error)
+	t3CodeLaunchUntil        time.Time
 	terminalCommandsBinary    string
 	terminalCommandsShell     string
 	terminalCommandsProfiles  []string

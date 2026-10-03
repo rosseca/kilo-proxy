@@ -154,3 +154,5 @@
 
 /* Exact provider/model IDs can be long; keep the shared list readable on mobile. */
 #openmausbot-models, #openmausbot-config { overflow-wrap: anywhere; }
+
+#t3-code-models,#t3-code-agents{overflow-wrap:anywhere}
