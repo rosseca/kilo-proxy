@@ -26,6 +26,12 @@ def extract(archive, directory):
             if (directory not in target.parents or member.name.startswith('/') or
                     not (member.isfile() or member.isdir())):
                 raise ValueError('Unsafe headless archive entry')
+        executables = [member for member in tar.getmembers()
+                       if member.isfile() and member.name.rsplit('/', 1)[-1] == 'kilo-proxy-headless']
+        if len(executables) != 1:
+            raise ValueError('Archive must contain exactly one console executable')
+        if executables[0].mode & 0o111 == 0:
+            raise ValueError('Headless archive executable lacks executable permissions')
         if hasattr(tarfile, 'data_filter'):
             # Do not restore build-machine uid/gid. Besides being unnecessary,
             # a root container without CAP_CHOWN can otherwise skip chmod
@@ -45,7 +51,7 @@ def extract(archive, directory):
     candidates = [path for path in directory.rglob('kilo-proxy-headless') if path.is_file()]
     if len(candidates) != 1:
         raise ValueError('Archive must contain exactly one console executable')
-    if candidates[0].stat().st_mode & 0o111 == 0:
+    if os.name == 'posix' and candidates[0].stat().st_mode & 0o111 == 0:
         raise ValueError('Headless executable lost its executable permissions')
     return candidates[0]
 

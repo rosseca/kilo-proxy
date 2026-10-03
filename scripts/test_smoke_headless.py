@@ -1,9 +1,11 @@
 """Guard console smoke inputs without starting a daemon or contacting services."""
 import io
+import os
 from pathlib import Path
 import struct
 import tarfile
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -64,8 +66,31 @@ class HeadlessSmokeInputsTests(unittest.TestCase):
         with patch.object(tarfile.TarFile, 'chown', new=private_owner):
             executable = smoke_headless.extract(archive, self.extract)
         self.assertEqual(executable.read_bytes(), b'synthetic executable')
-        self.assertTrue(executable.stat().st_mode & 0o111)
+        if os.name == 'posix':
+            self.assertTrue(executable.stat().st_mode & 0o111)
         self.assertEqual(len(owners), 1)
+
+    def test_non_posix_extraction_still_requires_encoded_executable_mode(self):
+        entry = tarfile.TarInfo('console/kilo-proxy-headless')
+        entry.mode = 0o755
+        archive = self.archive([(entry, b'synthetic executable')])
+
+        def windows_mode(tar, member, target):
+            os.chmod(target, 0o666)
+
+        # Change only this smoke module's capability view, not global os.name
+        # (which would also change pathlib's choice of concrete Path class).
+        windows_os = SimpleNamespace(name='nt')
+        with patch.object(smoke_headless, 'os', windows_os), \
+             patch.object(tarfile.TarFile, 'chmod', new=windows_mode):
+            executable = smoke_headless.extract(archive, self.extract)
+        self.assertEqual(executable.read_bytes(), b'synthetic executable')
+        entry.mode = 0o644
+        archive = self.archive([(entry, b'invalid executable mode')])
+        with patch.object(smoke_headless, 'os', windows_os), \
+             self.assertRaisesRegex(ValueError, 'archive.*permissions'):
+            smoke_headless.extract(archive, self.extract)
+        self.assertEqual(executable.read_bytes(), b'synthetic executable')
 
     def elf(self, architecture=183, interpreter=False):
         data = bytearray(256)

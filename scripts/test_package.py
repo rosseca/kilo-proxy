@@ -223,6 +223,35 @@ class PackageTests(unittest.TestCase):
                 self.build('--headless', *arguments, platform='linux')
         self.assertEqual(self.calls, [])
 
+    def test_headless_archive_encodes_unix_execute_bits_from_windows_file_modes(self):
+        prebuilt = self.root / 'binaries'
+        prebuilt.mkdir()
+        data = self.binary_fixture('linux', 'arm64') + b'tested console contents'
+        (prebuilt / 'kilo-proxy-headless-linux-arm64').write_bytes(data)
+        gettarinfo = tarfile.TarFile.gettarinfo
+        chmod = Path.chmod
+        observed = []
+
+        def ineffective_chmod(path, mode, **kwargs):
+            chmod(path, 0o666 if path.name == 'kilo-proxy-headless' else mode, **kwargs)
+
+        def windows_file_mode(tar, *args, **kwargs):
+            member = gettarinfo(tar, *args, **kwargs)
+            if member.isfile():
+                member.mode = 0o666
+                observed.append(member.name)
+            return member
+
+        with patch.object(Path, 'chmod', new=ineffective_chmod), \
+             patch.object(tarfile.TarFile, 'gettarinfo', new=windows_file_mode):
+            self.build('--headless', '--binaries-directory', str(prebuilt),
+                       '--target', 'linux/arm64', platform='win32')
+        name = f'kilo-proxy-headless-{self.version}-linux-arm64/kilo-proxy-headless'
+        self.assertIn(name, observed)
+        with tarfile.open(self.output / f'kilo-proxy-headless-{self.version}-linux-arm64.tar.gz') as tar:
+            self.assertEqual(tar.getmember(name).mode, 0o755)
+            self.assertEqual(tar.extractfile(name).read(), data)
+
     def test_current_release_checksums_require_all_ten_archives_atomically(self):
         self.version = '0.55.0'
         self.output.mkdir()

@@ -366,7 +366,14 @@ printf 'Kilo Proxy is available in your applications menu.\\n'
             installer.chmod(0o755)
         if system == 'linux' or args.headless:
             archive = out/(name+'.tar.gz')
-            with tarfile.open(archive,'w:gz') as tar: tar.add(stage,arcname=name)
+            def archive_mode(member):
+                # Windows filesystems cannot encode Unix execute bits via
+                # chmod. The headless executable's TAR contract is portable.
+                if args.headless and member.name == name + '/kilo-proxy-headless':
+                    member.mode = 0o755
+                return member
+            with tarfile.open(archive,'w:gz') as tar:
+                tar.add(stage, arcname=name, filter=archive_mode)
         else:
             archive = out/(name+'.zip')
             with zipfile.ZipFile(archive,'w',zipfile.ZIP_DEFLATED) as zipped:
