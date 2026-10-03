@@ -66,6 +66,10 @@ func (a *app) adminHandler() http.Handler {
 			files.ServeHTTP(w, r)
 			return
 		}
+		if r.URL.Path == "/t3-code-helper.mjs" && r.Method == http.MethodGet {
+			files.ServeHTTP(w, r)
+			return
+		}
 		if !strings.HasPrefix(r.URL.Path, "/api/") {
 			if r.Method != "GET" || (r.URL.Path != "/" && r.URL.Path != "/app.js" && r.URL.Path != "/desktop-helper.mjs" && r.URL.Path != "/editor-helper.mjs" && r.URL.Path != "/omp-helper.mjs" && r.URL.Path != "/open-design-helper.mjs" && r.URL.Path != "/xcode-helper.mjs" && r.URL.Path != "/activity-helper.mjs" && r.URL.Path != "/usage-helper.mjs" && r.URL.Path != "/update-helper.mjs" && r.URL.Path != "/account-usage.mjs" && r.URL.Path != "/codex-catalog.mjs" && r.URL.Path != "/model-helper.mjs" && r.URL.Path != "/context-policy.mjs" && r.URL.Path != "/client-config.mjs" && r.URL.Path != "/claude-helper.mjs" && r.URL.Path != "/claude-desktop-helper.mjs" && r.URL.Path != "/i18n.mjs" && r.URL.Path != "/style.css" && r.URL.Path != "/icon.svg") {
 				http.NotFound(w, r)
@@ -92,6 +96,10 @@ func (a *app) adminHandler() http.Handler {
 		}
 		if r.URL.Path == openMausBotEndpoint {
 			a.openMausBotProfile(w, r)
+			return
+		}
+		if r.URL.Path == t3CodeProfileEndpoint {
+			a.t3CodeProfileAPI(w, r)
 			return
 		}
 		if r.URL.Path == "/api/omp/profile" {

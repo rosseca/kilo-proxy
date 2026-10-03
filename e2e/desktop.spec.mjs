@@ -32,7 +32,7 @@ test('connection, team selection, language persistence, all clients and mobile n
   await expect(page.locator('#org-id')).toHaveValue('other-team');
   await page.locator('#team-select').selectOption('e2e-team');
 
-  const clients=['generic','zed','opencode','omp','open-design','xcode','codex','claude-desktop','openmausbot','codex-cli','claude'];
+  const clients=['generic','zed','opencode','omp','open-design','xcode','codex','claude-desktop','t3-code','openmausbot','codex-cli','claude'];
   expect(await page.locator('[role="tab"][data-client]').evaluateAll(tabs=>tabs.map(tab=>tab.dataset.client))).toEqual(clients);
   for(const client of clients) {
     await page.locator('#tab-'+client).click();

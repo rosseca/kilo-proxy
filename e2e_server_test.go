@@ -71,9 +71,13 @@ func TestE2EServer(t *testing.T) {
 	}
 	openCodeBinary := syntheticOpenCodeExecutable(t, root)
 	openMausBotBinary := syntheticOpenMausBotExecutable(t, root, "macos")
+	t3CodeBinary := syntheticT3CodeExecutable(t, root, "macos")
+	t.Setenv("CODEX_HOME", filepath.Join(root, ".codex"))
+	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(root, ".claude"))
 	codexBinary := writeOpenDesignCodexFixture(t, filepath.Join(root, "codex-cli"), []byte("synthetic; never executed"))
 	a.openDesignCheckRunning = func(string) (bool, error) { return readLaunchControl()["openDesignRunning"] == true, nil }
 	a.openMausBotCheckRunning = func(openMausBotPaths) (bool, error) { return readLaunchControl()["openMausBotRunning"] == true, nil }
+	a.t3CodeCheckRunning = func(string) (bool, error) { return readLaunchControl()["t3CodeRunning"] == true, nil }
 	a.claudeDesktopCheckRunning = func(string) (bool, error) { return readLaunchControl()["claudeDesktopRunning"] == true, nil }
 	records := []map[string]string{}
 	a.launcher = &clientLaunchRuntime{
@@ -90,6 +94,9 @@ func TestE2EServer(t *testing.T) {
 			}
 			if client == "openmausbot" {
 				return openMausBotBinary, nil
+			}
+			if client == "t3-code" {
+				return t3CodeBinary, nil
 			}
 			if client == "opencode" {
 				return openCodeBinary, nil
