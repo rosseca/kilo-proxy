@@ -437,7 +437,9 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 			jsonError(recorder, status, err.Error())
 			return
 		}
+		capture.updateImageTransport(func(d *imageTransportTrace) { d.GatewayStartedAt = time.Now().UnixMilli() })
 		proxy.ServeHTTP(recorder, imageRequest)
+		capture.updateImageTransport(func(d *imageTransportTrace) { d.GatewayFinishedAt = time.Now().UnixMilli() })
 	})
 }
 
