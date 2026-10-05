@@ -25,6 +25,16 @@ KILO_TEST_T3_APP='/absolute/path/to/T3 Code.app' KILO_TEST_T3_PICKER=1 go test -
 
 This macOS opt-in check requires installed Codex CLI, Claude Code and Playwright Chromium. It uses disposable homes and synthetic local upstreams, reproduces an old built-in Claude selection, and verifies the exact gateway ID through the packaged frontend and native drivers. Desktop persistence/bootstrap IPC is injected into headless Chromium; this is not a native Electron IPC acceptance test. Existing application windows and account profiles are not used.
 
+When changing Synara profiles or account/model selection, run the installed-client acceptance against the supported Beta release:
+
+```sh
+KILO_TEST_SYNARA_APP='/absolute/path/to/Synara Beta.app' KILO_TEST_SYNARA_PICKER=1 go test -race -run '^TestSynaraInstalledFourAgents$' -count=1 .
+```
+
+This macOS opt-in check requires installed Codex CLI, Claude Code and Playwright Chromium. It uses disposable homes and synthetic local upstreams to exercise the four accounts, the packaged account/model picker and native CLI drivers. Desktop persistence/bootstrap IPC is injected into headless Chromium; this does not verify the native Electron GUI or its IPC. Existing application windows and account profiles are not used.
+
+Add `KILO_TEST_SYNARA_DESKTOP=1` to the same command for a separate native Electron startup check. It uses the production launch plan with disposable storage, verifies the private backend and native snapshot import, then sends SIGTERM only to its own process and checks graceful shutdown. It does not drive the native window or establish native GUI inference coverage.
+
 When changing Codex context presets, also check the installed client's actual model switching and auto-compaction against a disposable synthetic gateway:
 
 ```sh

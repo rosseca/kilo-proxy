@@ -66,6 +66,10 @@ func (a *app) adminHandler() http.Handler {
 			files.ServeHTTP(w, r)
 			return
 		}
+		if r.URL.Path == "/synara-helper.mjs" && r.Method == http.MethodGet {
+			files.ServeHTTP(w, r)
+			return
+		}
 		if r.URL.Path == "/t3-code-helper.mjs" && r.Method == http.MethodGet {
 			files.ServeHTTP(w, r)
 			return
@@ -96,6 +100,10 @@ func (a *app) adminHandler() http.Handler {
 		}
 		if r.URL.Path == openMausBotEndpoint {
 			a.openMausBotProfile(w, r)
+			return
+		}
+		if r.URL.Path == synaraProfileEndpoint {
+			a.synaraProfileAPI(w, r)
 			return
 		}
 		if r.URL.Path == t3CodeProfileEndpoint {

@@ -76,6 +76,10 @@ func resolveLaunchClient(id, custom string) (string, error) {
 		home, _ := os.UserHomeDir()
 		return resolveT3Code(runtime.GOOS, home, os.Getenv("LOCALAPPDATA"))
 	}
+	if id == "synara" {
+		home, _ := os.UserHomeDir()
+		return resolveSynara(runtime.GOOS, home, os.Getenv("LOCALAPPDATA"))
+	}
 	if kind == "terminal" {
 		if id == "omp" {
 			if path, err := exec.LookPath("omp"); err == nil && filepath.IsAbs(path) {

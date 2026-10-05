@@ -127,6 +127,8 @@ func nativeClientEndpoint(key string) string {
 		return "/api/clients/openmausbot"
 	case "t3-code":
 		return "/api/clients/t3-code"
+	case "synara":
+		return "/api/clients/synara"
 	case "open-design":
 		return openDesignProfileEndpoint
 	case "codex", "codex-cli":
@@ -146,13 +148,16 @@ func nativeClientEndpoint(key string) string {
 }
 
 func nativeClientPayload(key string, s *nativeClientSelection) (any, error) {
-	if key == "openmausbot" || key == "t3-code" {
+	if key == "openmausbot" || key == "t3-code" || key == "synara" {
 		library := modelLibrary{SchemaVersion: 1, DefaultModel: s.Initial}
 		for _, m := range s.Models {
 			library.Models = append(library.Models, nativeLibraryItem(m))
 		}
 		if key == "t3-code" {
 			return map[string]any{"library": library}, validateT3CodeLibrary(library)
+		}
+		if key == "synara" {
+			return map[string]any{"library": library}, validateSynaraLibrary(library)
 		}
 		return map[string]any{"library": library}, validateModelLibrary(library)
 	}
@@ -475,7 +480,7 @@ func (u *nativeUI) clientsPanel() layout.Widget {
 			}
 		})
 	}
-	clientNames := map[string]string{"codex": "Codex Desktop", "codex-cli": "Codex CLI", "claude": "Claude Code", "claude-desktop": "Claude Desktop · Kilo", "t3-code": "T3 Code · Kilo", "opencode": "OpenCode", "omp": "Oh My Pi", "zed": "Zed", "open-design": "Open Design", "openmausbot": "OpenMausBot", "xcode": "Xcode", "generic": u.tr("Other agents", "Otros agentes")}
+	clientNames := map[string]string{"codex": "Codex Desktop", "codex-cli": "Codex CLI", "claude": "Claude Code", "claude-desktop": "Claude Desktop · Kilo", "t3-code": "T3 Code · Kilo", "synara": "Synara · Kilo", "opencode": "OpenCode", "omp": "Oh My Pi", "zed": "Zed", "open-design": "Open Design", "openmausbot": "OpenMausBot", "xcode": "Xcode", "generic": u.tr("Other agents", "Otros agentes")}
 	widgets := []layout.Widget{
 		u.pills(u.iconButton("agents.back", u.tr("All agents", "Todos los agentes"), nativeButtonGhost, nativeIconBack, func() { u.page = "agents" })),
 		u.heading(clientNames[u.client]),
@@ -575,6 +580,9 @@ func (u *nativeUI) clientsPanel() layout.Widget {
 	widgets = append(widgets, u.section(u.tr("Models", "Modelos"), u.tr("One shared library for this agent.", "Una biblioteca compartida para este agente."), modelWidgets...))
 	if key == "t3-code" {
 		return u.column(append(widgets, u.t3CodeClientPanel(s))...)
+	}
+	if key == "synara" {
+		return u.column(append(widgets, u.synaraClientPanel(s))...)
 	}
 	if key == "openmausbot" {
 		return u.column(append(widgets, u.openMausBotClientPanel(s))...)
@@ -1220,6 +1228,9 @@ func (u *nativeUI) prepareClientAfter(key string, done func(error)) {
 		if key == "t3-code" {
 			u.acceptT3CodeProfile(data, openMausBotConnection)
 		}
+		if key == "synara" {
+			u.acceptSynaraProfile(data, openMausBotConnection)
+		}
 		if key == "codex" || key == "codex-cli" {
 			u.acceptClientImages(imagesSent)
 		}
@@ -1229,6 +1240,9 @@ func (u *nativeUI) prepareClientAfter(key string, done func(error)) {
 		}
 		if key == "t3-code" {
 			u.setNotice(nativeToneSuccess, u.tr("Four agents prepared. Open T3 Code · Kilo and start a new chat to choose an agent.", "Cuatro agentes preparados. Abre T3 Code · Kilo e inicia un chat nuevo para elegir un agente."))
+		}
+		if key == "synara" {
+			u.setNotice(nativeToneSuccess, u.tr("Four agents prepared. Open Synara · Kilo and start a new chat to choose an agent.", "Cuatro agentes preparados. Abre Synara · Kilo e inicia un chat nuevo para elegir un agente."))
 		}
 		done(nil)
 	})
