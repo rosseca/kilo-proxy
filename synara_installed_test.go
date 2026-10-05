@@ -473,13 +473,22 @@ func synaraInstalledDesktopStartup(t *testing.T, plan clientLaunchPlan, paths sy
 		if backendPID > 0 {
 			// This PID was read only from our private runtime file, never from
 			// the normal Synara instance or an installed-app process search.
-			deadline := time.Now().Add(5 * time.Second)
 			process, _ := os.FindProcess(backendPID)
-			for process != nil && process.Signal(syscall.Signal(0)) == nil && time.Now().Before(deadline) {
-				time.Sleep(50 * time.Millisecond)
+			waitStopped := func(timeout time.Duration) bool {
+				deadline := time.Now().Add(timeout)
+				for process != nil && process.Signal(syscall.Signal(0)) == nil && time.Now().Before(deadline) {
+					time.Sleep(50 * time.Millisecond)
+				}
+				return process == nil || process.Signal(syscall.Signal(0)) != nil
 			}
-			if process != nil && process.Signal(syscall.Signal(0)) == nil {
+			if !waitStopped(5 * time.Second) {
 				_ = process.Signal(syscall.SIGTERM)
+				if !waitStopped(5 * time.Second) {
+					_ = process.Kill()
+					if !waitStopped(5 * time.Second) {
+						t.Errorf("owned Electron backend %d did not terminate after forced cleanup", backendPID)
+					}
+				}
 				t.Errorf("owned Electron backend %d remained after graceful quit", backendPID)
 			}
 		}
