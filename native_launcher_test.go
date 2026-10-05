@@ -51,7 +51,8 @@ func nativeLaunchTestUI(t *testing.T, key string, delay, failPrepare bool) (*nat
 	openMausBotBinary := syntheticOpenMausBotExecutable(t, u.owner.editorTestRoot, "macos")
 	t3CodeBinary := syntheticT3CodeExecutable(t, u.owner.editorTestRoot, "macos")
 	synaraBinary := syntheticSynaraExecutable(t, u.owner.editorTestRoot, "macos")
-	codexBinary := writeOpenDesignCodexFixture(t, filepath.Join(u.owner.editorTestRoot, "t3-codex-cli"), []byte("synthetic; never executed"))
+	codexBinary := writeOpenDesignCodexFixture(t, filepath.Join(u.owner.editorTestRoot, "t3-codex-cli"), syntheticSynaraNativeHeader("macos"))
+	u.owner.synaraRuntimeDisabled = true
 	u.owner.openMausBotCheckRunning = func(openMausBotPaths) (bool, error) { return false, nil }
 	u.owner.t3CodeCheckRunning = func(string) (bool, error) { return false, nil }
 	u.owner.synaraCheckRunning = func(string) (bool, error) { return false, nil }

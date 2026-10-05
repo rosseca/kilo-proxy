@@ -29,6 +29,7 @@ var synaraEnvironmentName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,127}$`)
 
 type synaraProfileOptions struct {
 	RootDir, DataDir, UserDataDir, NormalHome, CodexBinary, ClaudeBinary string
+	NormalCodexBinary                                                    string
 	NormalEnvironment                                                    map[string]string
 	Library                                                              modelLibrary
 	Catalog                                                              []modelInfo
@@ -189,6 +190,9 @@ func synaraProviderInstances(options synaraProfileOptions, profiles synaraProfil
 		}
 		if id == synaraCodexNormalID {
 			config["homePath"] = normalCodex
+			if options.NormalCodexBinary != "" {
+				config["binaryPath"] = options.NormalCodexBinary
+			}
 		}
 		if id == synaraClaudeNormalID {
 			config["homePath"], config["configDir"], config["secureStorageDir"] = options.NormalHome, normalClaude, normalSecureStorage
@@ -553,7 +557,20 @@ func planSynaraSettings(options synaraProfileOptions, dataDir string, providers 
 			files = append(files, file)
 			variable["value"], variable["valueRedacted"] = "", true
 		}
-		all[id], _ = json.Marshal(instance)
+		written := make(map[string]any, len(instance))
+		for name, value := range instance {
+			written[name] = value
+		}
+		// Repreparation updates owned connection fields, while the user's
+		// account availability choice remains independent of those fields.
+		if previous, exists := all[id]; exists {
+			if object, err := decodeClaudeDesktopObject(previous); err == nil && synaraBoolean(object["enabled"]) {
+				var enabled bool
+				_ = json.Unmarshal(object["enabled"], &enabled)
+				written["enabled"] = enabled
+			}
+		}
+		all[id], _ = json.Marshal(written)
 	}
 	// The picker gates every account on its driver's global enabled flag.
 	// Disable the two implicit default instances separately so enabling those
@@ -674,7 +691,24 @@ func synaraProfilesReady(options synaraProfileOptions, expectedProviders map[str
 		return false
 	}
 	for id, expected := range expectedProviders {
-		if !t3CodeSubset(expected, actual[id]) {
+		owned, ok := expected.(map[string]any)
+		instance, actualOK := actual[id].(map[string]any)
+		if !ok || !actualOK {
+			return false
+		}
+		if _, ok := instance["enabled"].(bool); !ok {
+			return false
+		}
+		// Account availability is a Synara preference. Disabling one account
+		// must not invalidate the other managed accounts or rewrite the user's
+		// choice. Keep every owned connection/profile field bound to preparation.
+		connection := make(map[string]any, len(owned))
+		for name, value := range owned {
+			if name != "enabled" {
+				connection[name] = value
+			}
+		}
+		if !t3CodeSubset(connection, instance) {
 			return false
 		}
 	}

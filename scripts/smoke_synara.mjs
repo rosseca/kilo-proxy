@@ -1,4 +1,4 @@
-// Optional acceptance check against an installed, unmodified Synara desktop server.
+// Optional acceptance check against the version-checked private Synara server.
 // The Go fixture supplies disposable homes and synthetic loopback upstreams.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -15,7 +15,7 @@ await new Promise(resolve => listener.listen(0, '127.0.0.1', resolve));
 const port = listener.address().port;
 await new Promise(resolve => listener.close(resolve));
 const credential = randomBytes(32).toString('hex');
-const child = spawn(fixture.binary, [fixture.entry, '--mode', 'desktop', '--port', String(port),
+const child = spawn(fixture.binary, [...(fixture.backendHook ? ['--import', fixture.backendHook] : []), fixture.entry, '--mode', 'desktop', '--port', String(port),
   '--host', '127.0.0.1', '--home-dir', fixture.baseDir, '--no-browser'], {
   cwd: fixture.project,
   env: { ...fixture.env, ELECTRON_RUN_AS_NODE: '1', NODE_USE_ENV_PROXY: '0',

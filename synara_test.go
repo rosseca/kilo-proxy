@@ -73,17 +73,35 @@ func syntheticSynaraVersionExecutable(t *testing.T, root, platform, version stri
 func synaraTestApp(t *testing.T, platform string, versions ...string) *app {
 	t.Helper()
 	a := launchTestApp(t)
+	a.synaraRuntimeDisabled = true
 	t.Setenv("CODEX_HOME", filepath.Join(a.launcher.home, ".codex"))
 	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(a.launcher.home, ".claude"))
 	a.config.Port = 9988
 	a.config.Language = "en"
 	binary := syntheticSynaraExecutable(t, a.launcher.home, platform, versions...)
 	cli := filepath.Join(a.launcher.home, "codex-native")
+	if platform == "windows" {
+		cli += ".exe"
+	}
 	claude := filepath.Join(a.launcher.home, "claude-native")
 	for _, path := range []string{cli, claude} {
 		if err := os.WriteFile(path, []byte("synthetic native CLI"), 0700); err != nil {
 			t.Fatal(err)
 		}
+	}
+	// Preparation now copies a native status adapter. Simulated Windows tests
+	// need PE fixtures rather than pretending this host's Mach-O test executable
+	// is a Windows binary. These fixture executables are never started.
+	cliData := syntheticSynaraNativeHeader(platform)
+	if err := os.WriteFile(cli, cliData, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if platform == "windows" {
+		source := filepath.Join(a.launcher.home, "kilo-proxy-native.exe")
+		if err := os.WriteFile(source, cliData, 0700); err != nil {
+			t.Fatal(err)
+		}
+		a.synaraAdapterSource = func() (string, error) { return source, nil }
 	}
 	a.launcher.platform = platform
 	a.launcher.resolve = func(id, custom string) (string, error) {

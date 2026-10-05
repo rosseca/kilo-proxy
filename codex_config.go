@@ -125,6 +125,7 @@ type profileFile struct {
 	path            string
 	old, new        []byte
 	exists, changed bool
+	mode, oldMode   os.FileMode // Zero preserves the default private-file mode (0600).
 }
 
 func prepareProfileFile(path string, data []byte) (profileFile, error) {

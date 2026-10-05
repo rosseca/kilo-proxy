@@ -50,6 +50,11 @@ func TestSynaraInstalledFourAgents(t *testing.T) {
 		t.Fatal("Node is required for the installed Synara acceptance check")
 	}
 	a := launchTestApp(t)
+	adapterSource := os.Getenv("KILO_TEST_SYNARA_ADAPTER_SOURCE")
+	if adapterSource == "" || validateOpenDesignShimBinary(adapterSource, runtime.GOOS, true) != nil {
+		t.Fatal("set KILO_TEST_SYNARA_ADAPTER_SOURCE to a compiled native Kilo Proxy binary for the installed Synara acceptance")
+	}
+	a.synaraAdapterSource = func() (string, error) { return adapterSource, nil }
 	a.config.Language = "en"
 	a.config.LocalKey = "synthetic-synara-local"
 	a.chatgpt.creds = chatGPTCredentials{Access: "synthetic-synara-chatgpt-access", Refresh: "synthetic-refresh", Account: "synthetic-synara-account", Expires: time.Now().Add(time.Hour).Unix()}
@@ -311,6 +316,10 @@ func TestSynaraInstalledFourAgents(t *testing.T) {
 	defer proxy.Close()
 	normalFiles := t3CodeFixtureNormalProfiles(t, a.launcher.home, library, catalog, normalCodex.URL, normalClaude.URL)
 	prepareSynaraFixture(t, a)
+	saved, err := a.readSynaraPrepared()
+	if err != nil {
+		t.Fatal(err)
+	}
 	plan, err := a.planClientLaunch(clientLaunchRequest{Client: "synara"}, a.launchRuntime())
 	if err != nil {
 		t.Fatal(err)
@@ -372,6 +381,10 @@ func TestSynaraInstalledFourAgents(t *testing.T) {
 			{"id": synaraCodexProxyID, "model": chatgptModel, "options": map[string]any{"reasoningEffort": "high"}},
 		},
 	}
+	if saved.Runtime == nil {
+		t.Fatal("installed acceptance did not prepare its private account-aware runtime")
+	}
+	fixture["backendHook"] = filepath.Join(saved.Runtime.Root, synaraRuntimeHookName)
 	data, _ := json.Marshal(fixture)
 	manifest := filepath.Join(t.TempDir(), "fixture.json")
 	if err := os.WriteFile(manifest, data, 0600); err != nil {

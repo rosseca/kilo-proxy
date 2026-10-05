@@ -109,6 +109,13 @@ func readCatalogFile(path string) ([]byte, error) {
 	return data, err
 }
 func atomicCatalogFile(path string, data []byte) error {
+	return atomicProfileFile(path, data, 0600)
+}
+
+func atomicProfileFile(path string, data []byte, mode os.FileMode) error {
+	if mode == 0 {
+		mode = 0600
+	}
 	if info, err := os.Lstat(path); err == nil {
 		if !info.Mode().IsRegular() {
 			return errors.New("unsafe destination")
@@ -121,6 +128,10 @@ func atomicCatalogFile(path string, data []byte) error {
 		return err
 	}
 	defer os.Remove(file.Name())
+	if err = file.Chmod(mode); err != nil {
+		file.Close()
+		return err
+	}
 	if _, err = file.Write(data); err != nil {
 		file.Close()
 		return err

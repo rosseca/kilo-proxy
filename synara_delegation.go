@@ -1,0 +1,104 @@
+package main
+
+import (
+	"crypto/sha256"
+	_ "embed"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"strings"
+)
+
+// The private gateway correction applies only to the exact official beta server
+// that was validated. Installed application files are never rewritten.
+const synaraDelegationServerSHA256 = "0b825f9561cf1acd43efc78b589183ccaed932932913f3fa7fcbf7b9b9fac157"
+const synaraDelegationRevision = 1
+
+//go:embed synara_delegation_helpers.js
+var synaraDelegationHelpers string
+
+//go:embed synara_delegation_patches.json
+var synaraDelegationPatchesJSON []byte
+
+type synaraDelegationPatch struct {
+	Before string `json:"before"`
+	After  string `json:"after"`
+	Count  int    `json:"count"`
+}
+
+func synaraDelegationModels(options synaraProfileOptions) (map[string]any, error) {
+	if err := validateSynaraLibrary(options.Library); err != nil {
+		return nil, err
+	}
+	if len(options.Library.Models) == 0 {
+		return nil, errors.New("Choose a shared model library before preparing Synara delegation.")
+	}
+	codex, claude := []any{}, []any{}
+	for _, choice := range terminalLibraryChoices(options.Library, options.Catalog) {
+		name := choice.Model.Name
+		if name == "" {
+			name = choice.Model.ID
+		}
+		model := map[string]any{"slug": choice.Model.ID, "name": name}
+		levels, initial := nativeReasoningFor(choice)
+		if len(levels) > 0 {
+			efforts := []any{}
+			for _, level := range levels {
+				efforts = append(efforts, map[string]any{"value": level, "description": level})
+			}
+			model["supportedReasoningEfforts"] = efforts
+			if initial != "" {
+				model["defaultReasoningEffort"] = initial
+			}
+		}
+		codex = append(codex, model)
+		// Synara Claude's custom IDs use the private per-model defaults. Their
+		// delegation contract must not advertise a per-turn selector that can
+		// contradict those defaults or switch to the normal account silently.
+		claudeModel := map[string]any{"slug": choice.Model.ID, "name": name, "kiloEffortSource": "Kilo Proxy Models; close and reopen the workspace after changing defaults"}
+		for _, item := range options.Library.Models {
+			if item.ID == choice.Model.ID && item.ReasoningEffort != "" && validClaudeEffort(item.ID, item.ReasoningEffort) {
+				claudeModel["kiloSavedEffort"] = item.ReasoningEffort
+				claudeModel["supportedReasoningEfforts"] = []any{map[string]any{"value": item.ReasoningEffort, "description": "Saved in Kilo Proxy Models"}}
+				break
+			}
+		}
+		claude = append(claude, claudeModel)
+	}
+	return map[string]any{"codex": codex, "claudeAgent": claude, "defaultModel": options.Library.DefaultModel}, nil
+}
+
+func patchSynaraDelegationServer(source []byte, options synaraProfileOptions) ([]byte, error) {
+	sum := sha256.Sum256(source)
+	if hex.EncodeToString(sum[:]) != synaraDelegationServerSHA256 {
+		return nil, errors.New("This Synara server build has not been validated for account-aware delegation. Install the official Synara Beta 1.0.0-beta.1 and prepare again.")
+	}
+	return applySynaraDelegationPatches(source, options)
+}
+
+func applySynaraDelegationPatches(source []byte, options synaraProfileOptions) ([]byte, error) {
+	models, err := synaraDelegationModels(options)
+	if err != nil {
+		return nil, err
+	}
+	encoded, err := json.Marshal(models)
+	if err != nil {
+		return nil, err
+	}
+	var patches []synaraDelegationPatch
+	if json.Unmarshal(synaraDelegationPatchesJSON, &patches) != nil || len(patches) == 0 {
+		return nil, errors.New("Invalid private Synara delegation contract.")
+	}
+	text := string(source)
+	for _, patch := range patches {
+		if patch.Before == "" || patch.Count < 1 || strings.Count(text, patch.Before) != patch.Count {
+			return nil, errors.New("This Synara server does not match the verified delegation contract; no private changes saved.")
+		}
+		after := patch.After
+		if after == "__KILO_SYNARA_DELEGATION_HELPERS__" {
+			after = strings.Replace(synaraDelegationHelpers, "__KILO_SYNARA_GATEWAY_MODELS__", string(encoded), 1) + "\n" + patch.Before
+		}
+		text = strings.ReplaceAll(text, patch.Before, after)
+	}
+	return []byte(text), nil
+}

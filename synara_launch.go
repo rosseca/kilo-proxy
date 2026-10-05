@@ -109,6 +109,11 @@ func (a *app) applySynaraLaunch(plan *clientLaunchPlan, rt clientLaunchRuntime) 
 	if running || time.Now().Before(a.synaraLaunchUntil) {
 		return errors.New("Quit the Synara Kilo window before opening it again. Your regular Synara window can stay open.")
 	}
+	if saved.Runtime != nil {
+		if err := validateSynaraPrivateRuntimeLaunch(*saved.Runtime); err != nil {
+			return err
+		}
+	}
 	for _, dir := range []string{paths.UIHome, paths.Data, paths.Electron} {
 		if err := safeEditorDir(a.dir, dir); err != nil {
 			return err
@@ -132,6 +137,9 @@ func (a *app) applySynaraLaunch(plan *clientLaunchPlan, rt clientLaunchRuntime) 
 		plan.Env["XDG_STATE_HOME"] = filepath.Join(paths.UIHome, ".local", "state")
 		if rt.platform == "macos" || rt.platform == "darwin" {
 			binary := t3CodeBundleExecutable(plan.Executable)
+			if saved.Runtime != nil {
+				binary = saved.Runtime.Executable
+			}
 			if binary == "" {
 				return errors.New("The Synara desktop application bundle is invalid.")
 			}

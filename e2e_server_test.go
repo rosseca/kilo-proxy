@@ -76,7 +76,8 @@ func TestE2EServer(t *testing.T) {
 	t3CodeNightlyBinary := syntheticT3CodeExecutable(t, filepath.Join(root, "nightly"), "macos", t3CodeNightlyVersion)
 	t.Setenv("CODEX_HOME", filepath.Join(root, ".codex"))
 	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(root, ".claude"))
-	codexBinary := writeOpenDesignCodexFixture(t, filepath.Join(root, "codex-cli"), []byte("synthetic; never executed"))
+	codexBinary := writeOpenDesignCodexFixture(t, filepath.Join(root, "codex-cli"), syntheticSynaraNativeHeader("macos"))
+	a.synaraRuntimeDisabled = true
 	a.openDesignCheckRunning = func(string) (bool, error) { return readLaunchControl()["openDesignRunning"] == true, nil }
 	a.openMausBotCheckRunning = func(openMausBotPaths) (bool, error) { return readLaunchControl()["openMausBotRunning"] == true, nil }
 	a.synaraCheckRunning = func(string) (bool, error) { return readLaunchControl()["synaraRunning"] == true, nil }

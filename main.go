@@ -42,6 +42,9 @@ func randomKey(prefix string) string {
 }
 
 func main() {
+	if handled, code := runSynaraCodexNormalShim(); handled {
+		os.Exit(code)
+	}
 	if handled, code := runOpenDesignOpenCodeShim(); handled {
 		os.Exit(code)
 	}

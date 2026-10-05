@@ -61,6 +61,8 @@ type app struct {
 	t3CodeLaunchUntil         time.Time
 	synaraCheckRunning        func(string) (bool, error)
 	synaraCheckEnvironment    func() error
+	synaraAdapterSource       func() (string, error) // Test override; never accepted from clients or settings.
+	synaraRuntimeDisabled     bool                   // Synthetic test fixtures only; never accepted from clients or settings.
 	synaraLaunchUntil         time.Time
 	terminalCommandsBinary    string
 	terminalCommandsShell     string
