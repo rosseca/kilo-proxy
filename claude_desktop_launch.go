@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"os/exec"
 	"path/filepath"
@@ -32,13 +31,8 @@ func resolveClaudeDesktop(platform, home, localAppData string) (string, error) {
 		// The supported Cowork installer is MSIX. Query its installed package
 		// rather than confusing the unrelated `claude` terminal executable.
 		if platform == runtime.GOOS {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			out, err := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", "$ErrorActionPreference='Stop'; Get-AppxPackage -Name '*Claude*' | ForEach-Object { Join-Path $_.InstallLocation 'app\\Claude.exe'; Join-Path $_.InstallLocation 'Claude.exe' }").Output()
-			if err == nil && len(out) < 64<<10 {
-				for _, path := range strings.Split(string(out), "\n") {
-					candidates = append(candidates, strings.TrimSpace(path))
-				}
+			for _, base := range queryWindowsAppPackagePaths("*Claude*") {
+				candidates = append(candidates, filepath.Join(base, "app", "Claude.exe"), filepath.Join(base, "Claude.exe"))
 			}
 		}
 	default:
@@ -81,32 +75,14 @@ func claudeDesktopRunning(userDataDir string) (bool, error) {
 	if !filepath.IsAbs(userDataDir) || strings.ContainsAny(userDataDir, "\x00\r\n") {
 		return false, errors.New("Cannot inspect the Claude Desktop profile.")
 	}
+	if runtime.GOOS == "windows" {
+		return claudeDesktopWindowsRunning(userDataDir)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	var out []byte
-	var err error
-	if runtime.GOOS == "windows" {
-		out, err = exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", "$ErrorActionPreference='Stop'; [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false); $p=@(Get-CimInstance Win32_Process -Filter \"Name='Claude.exe'\" | Select-Object ExecutablePath,CommandLine); ConvertTo-Json -InputObject $p -Compress").Output()
-	} else {
-		out, err = exec.CommandContext(ctx, "ps", "-A", "-o", "pid=,comm=").Output()
-	}
+	out, err := exec.CommandContext(ctx, "ps", "-A", "-o", "pid=,comm=").Output()
 	if err != nil || len(out) > 4<<20 {
 		return false, errors.New("Cannot inspect running desktop applications.")
-	}
-	if runtime.GOOS == "windows" {
-		var processes []struct{ ExecutablePath, CommandLine string }
-		if json.Unmarshal(out, &processes) != nil {
-			return false, errors.New("Cannot inspect running desktop applications.")
-		}
-		for _, process := range processes {
-			if process.ExecutablePath == "" || process.CommandLine == "" {
-				return false, errors.New("Cannot inspect running desktop applications.")
-			}
-			if strings.EqualFold(filepath.Base(process.ExecutablePath), "Claude.exe") && claudeDesktopProfileArgument(process.CommandLine, userDataDir, "windows") {
-				return true, nil
-			}
-		}
-		return false, nil
 	}
 	for _, line := range strings.Split(string(out), "\n") {
 		pidText, path, ok := strings.Cut(strings.TrimSpace(line), " ")
