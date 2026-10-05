@@ -40,7 +40,7 @@ func (r *nativeLaunchRecorder) unblock()   { r.once.Do(func() { close(r.release)
 func nativeLaunchTestUI(t *testing.T, key string, delay, failPrepare bool) (*nativeUI, *nativeLaunchRecorder) {
 	t.Helper()
 	u := nativeTestUI(t)
-	if key == "t3-code" {
+	if key == "t3-code" || key == "synara" {
 		t.Setenv("CODEX_HOME", filepath.Join(u.owner.editorTestRoot, ".codex"))
 		t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(u.owner.editorTestRoot, ".claude"))
 	}
@@ -50,9 +50,11 @@ func nativeLaunchTestUI(t *testing.T, key string, delay, failPrepare bool) (*nat
 	}
 	openMausBotBinary := syntheticOpenMausBotExecutable(t, u.owner.editorTestRoot, "macos")
 	t3CodeBinary := syntheticT3CodeExecutable(t, u.owner.editorTestRoot, "macos")
+	synaraBinary := syntheticSynaraExecutable(t, u.owner.editorTestRoot, "macos")
 	codexBinary := writeOpenDesignCodexFixture(t, filepath.Join(u.owner.editorTestRoot, "t3-codex-cli"), []byte("synthetic; never executed"))
 	u.owner.openMausBotCheckRunning = func(openMausBotPaths) (bool, error) { return false, nil }
 	u.owner.t3CodeCheckRunning = func(string) (bool, error) { return false, nil }
+	u.owner.synaraCheckRunning = func(string) (bool, error) { return false, nil }
 	openCodeBinary := syntheticOpenCodeExecutable(t, u.owner.editorTestRoot)
 	clientBinary := filepath.Join(u.owner.editorTestRoot, "fake-client.exe")
 	if err := os.WriteFile(clientBinary, []byte("synthetic; never executed"), 0700); err != nil {
@@ -73,7 +75,10 @@ func nativeLaunchTestUI(t *testing.T, key string, delay, failPrepare bool) (*nat
 			if client == "t3-code" {
 				return t3CodeBinary, nil
 			}
-			if client == "codex-cli" && key == "t3-code" {
+			if client == "synara" {
+				return synaraBinary, nil
+			}
+			if client == "codex-cli" && (key == "t3-code" || key == "synara") {
 				return codexBinary, nil
 			}
 			if client == "open-design" {

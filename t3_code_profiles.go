@@ -14,11 +14,23 @@ import (
 )
 
 const (
-	t3CodeCodexNormalID  = "kilo_codex_normal"
-	t3CodeCodexProxyID   = "kilo_codex_proxy"
-	t3CodeClaudeNormalID = "kilo_claude_normal"
-	t3CodeClaudeProxyID  = "kilo_claude_proxy"
+	t3CodeCustomModelLimit = 32
+	t3CodeCodexNormalID    = "kilo_codex_normal"
+	t3CodeCodexProxyID     = "kilo_codex_proxy"
+	t3CodeClaudeNormalID   = "kilo_claude_normal"
+	t3CodeClaudeProxyID    = "kilo_claude_proxy"
+	t3CodeProxyAccentColor = "#327653"
 )
+
+func validateT3CodeLibrary(library modelLibrary) error {
+	if err := validateModelLibrary(library); err != nil {
+		return err
+	}
+	if len(library.Models) > t3CodeCustomModelLimit {
+		return errors.New("T3 Code supports up to 32 shared models. Reduce your selection in Models and prepare again.")
+	}
+	return nil
+}
 
 type t3CodeProfileOptions struct {
 	RootDir, NormalHome, CodexBinary, ClaudeBinary string
@@ -51,7 +63,7 @@ func planT3CodeProfiles(options t3CodeProfileOptions) (t3CodeProfiles, error) {
 	if options.Port < 1024 || options.Port > 65535 || options.LocalKey == "" || strings.ContainsAny(options.LocalKey, "\x00\r\n") {
 		return result, errors.New("T3 Code requires a valid local proxy port and key.")
 	}
-	if err := validateModelLibrary(options.Library); err != nil {
+	if err := validateT3CodeLibrary(options.Library); err != nil {
 		return result, err
 	}
 	if len(options.Library.Models) == 0 {
@@ -332,10 +344,15 @@ func t3CodeProviderInstances(options t3CodeProfileOptions, profiles t3CodeProfil
 	}
 	provider := func(driver, displayName string, config map[string]any, secretName string) map[string]any {
 		env := append([]map[string]any{}, baseEnv...)
+		instance := map[string]any{"driver": driver, "displayName": displayName, "enabled": true, "config": config}
 		if secretName != "" {
 			env = append(env, map[string]any{"name": secretName, "value": options.LocalKey, "sensitive": true})
+			// T3 badges use the first two words of displayName. Prefixing Kilo
+			// Proxy yields KP; an accent forces the badge even with one agent.
+			instance["accentColor"] = t3CodeProxyAccentColor
 		}
-		return map[string]any{"driver": driver, "displayName": displayName, "enabled": true, "config": config, "environment": env}
+		instance["environment"] = env
+		return instance
 	}
 	codex := map[string]any{"setupMode": "existing", "binaryPath": options.CodexBinary, "homePath": profiles.CodexHome, "shadowHomePath": "", "launchArgs": "", "customModels": t3CodeCustomModels(choices, false, options.ClaudeCaps)}
 	claudeModels := t3CodeCustomModels(choices, true, options.ClaudeCaps)
@@ -350,9 +367,9 @@ func t3CodeProviderInstances(options t3CodeProfileOptions, profiles t3CodeProfil
 	}
 	instances := map[string]any{
 		t3CodeCodexNormalID:  provider("codex", "Codex · Normal", map[string]any{"setupMode": "existing", "binaryPath": options.CodexBinary, "homePath": normalCodex, "shadowHomePath": "", "launchArgs": "", "customModels": []any{}}, ""),
-		t3CodeCodexProxyID:   provider("codex", "Codex · Kilo Proxy", codex, "KILO_LOCAL_API_KEY"),
+		t3CodeCodexProxyID:   provider("codex", "Kilo Proxy · Codex", codex, "KILO_LOCAL_API_KEY"),
 		t3CodeClaudeNormalID: provider("claudeAgent", "Claude · Normal", map[string]any{"binaryPath": options.ClaudeBinary, "homePath": normalClaude, "launchArgs": "", "customModels": []any{}}, ""),
-		t3CodeClaudeProxyID:  provider("claudeAgent", "Claude · Kilo Proxy", claude, "ANTHROPIC_AUTH_TOKEN"),
+		t3CodeClaudeProxyID:  provider("claudeAgent", "Kilo Proxy · Claude", claude, "ANTHROPIC_AUTH_TOKEN"),
 	}
 	claudeInstance := instances[t3CodeClaudeProxyID].(map[string]any)
 	claudeInstance["environment"] = append(claudeInstance["environment"].([]map[string]any), map[string]any{"name": "ANTHROPIC_BASE_URL", "value": "http://127.0.0.1:" + strconv.Itoa(options.Port), "sensitive": false})

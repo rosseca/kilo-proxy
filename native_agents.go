@@ -18,6 +18,7 @@ import (
 type nativeAgents struct {
 	OpenMausBot       nativeOpenMausBotState
 	T3Code            nativeT3CodeState
+	Synara            nativeSynaraState
 	Preferences       agentPreferences
 	Error             string
 	ClaudeError       string
@@ -179,6 +180,8 @@ func (u *nativeUI) agentCompatibility(key string) string {
 		return u.tr("Uses Anthropic Messages. Applies only reasoning levels supported by each model and installed Claude Code version. Gateway support is also required.", "Usa Anthropic Messages. Aplica solo niveles de razonamiento compatibles con cada modelo y la versión de Claude Code. También requiere compatibilidad del gateway.")
 	case "openmausbot":
 		return u.tr("Uses the local OpenAI-compatible connection with your shared models, listing the default first. OpenMausBot shows exact model IDs instead of custom names. Kilo Proxy applies each model’s supported reasoning level saved in Models. Generation and tools depend on the model and provider.", "Usa la conexión local compatible con OpenAI con tus modelos compartidos, mostrando primero el predeterminado. OpenMausBot muestra los ID exactos en lugar de nombres personalizados. Kilo Proxy aplica el nivel de razonamiento compatible de cada modelo guardado en Modelos. La generación y las herramientas dependen del modelo y del proveedor.")
+	case "synara":
+		return u.tr("Opens a separate Synara workspace with four Codex and Claude agents. Normal agents use existing CLI sessions; Kilo agents use shared models through the proxy. Start a new chat to change accounts and select the prepared exact gateway model ID.", "Abre un espacio Synara separado con cuatro agentes Codex y Claude. Los agentes normales usan sesiones CLI existentes; los agentes Kilo usan modelos compartidos a través del proxy. Inicia un chat nuevo para cambiar de cuenta y elige el ID exacto de modelo del gateway preparado.")
 	case "t3-code":
 		return u.tr("Opens a separate T3 Code workspace with Codex, Codex · Kilo, Claude and Claude · Kilo. Normal agents use your existing CLI login; Kilo agents use your shared models through the proxy. Choose the agent when creating a new chat. Codex supports the model's reasoning levels; Claude offers only levels supported by its CLI and model.", "Abre un espacio T3 Code separado con Codex, Codex · Kilo, Claude y Claude · Kilo. Los agentes normales usan tu sesión CLI existente; los agentes Kilo usan tus modelos compartidos a través del proxy. Elige el agente al crear un chat nuevo. Codex admite los niveles de razonamiento del modelo; Claude ofrece solo los compatibles con su CLI y modelo.")
 	case "claude-desktop":
@@ -271,6 +274,8 @@ func (u *nativeUI) agentMonogram(key string) layout.Widget {
 		initials = "MB"
 	case "t3-code":
 		initials = "T3"
+	case "synara":
+		initials = "SY"
 	}
 	return func(gtx layout.Context) layout.Dimensions {
 		side := gtx.Dp(40)
@@ -285,7 +290,7 @@ func (u *nativeUI) agentMonogram(key string) layout.Widget {
 
 func (u *nativeUI) agentPurpose(key string) string {
 	switch key {
-	case "t3-code":
+	case "t3-code", "synara":
 		return u.tr("One workspace, four Codex and Claude agent options.", "Un espacio, cuatro opciones de agentes Codex y Claude.")
 	case "openmausbot":
 		return u.tr("Desktop assistant with your shared models.", "Asistente de escritorio con tus modelos compartidos.")
@@ -317,6 +322,13 @@ func (u *nativeUI) agentOptions(key string) layout.Widget {
 			u.button("agent:t3-code:setup", u.tr("Integration settings", "Ajustes de integración"), func() { u.agentSetup(key) }),
 			u.button("agent:t3-code:detect", u.tr("Refresh detection", "Actualizar detección"), func() { u.detectLaunchers(); u.refreshT3CodeProfile() }),
 			u.iconButton("agent:t3-code:install", u.tr("Get T3 Code", "Obtener T3 Code"), nativeButtonGhost, nativeIconOpenInNew, func() { u.open(t3CodeDownloadURL) }),
+		))
+	}
+	if key == "synara" {
+		return u.column(u.note(u.agentCompatibility(key)), u.pills(
+			u.button("agent:synara:setup", u.tr("Integration settings", "Ajustes de integración"), func() { u.agentSetup(key) }),
+			u.button("agent:synara:detect", u.tr("Refresh detection", "Actualizar detección"), func() { u.detectLaunchers(); u.refreshSynaraProfile() }),
+			u.iconButton("agent:synara:install", u.tr("Get Synara", "Obtener Synara"), nativeButtonGhost, nativeIconOpenInNew, func() { u.open(synaraDownloadURL) }),
 		))
 	}
 	if key == "open-design" {
@@ -531,7 +543,7 @@ func (u *nativeUI) agentsPanel() layout.Widget {
 	if !c.OpenDesignDetectStarted {
 		u.detectOpenDesign()
 	}
-	widgets := []layout.Widget{u.agentModelSummary(), u.agentCard("codex"), u.agentCard("claude-desktop"), u.agentCard("t3-code"), u.agentCard("openmausbot"), u.topRow(u.agentCard("claude"), u.agentCard("opencode")), u.topRow(u.agentCard("omp"), u.agentCard("codex-cli")), u.topRow(u.agentCard("zed"), u.agentCard("open-design"))}
+	widgets := []layout.Widget{u.agentModelSummary(), u.agentCard("codex"), u.agentCard("claude-desktop"), u.agentCard("t3-code"), u.agentCard("synara"), u.agentCard("openmausbot"), u.topRow(u.agentCard("claude"), u.agentCard("opencode")), u.topRow(u.agentCard("omp"), u.agentCard("codex-cli")), u.topRow(u.agentCard("zed"), u.agentCard("open-design"))}
 	if a.Error != "" {
 		widgets = append([]layout.Widget{u.message(nativeToneError, a.Error)}, widgets...)
 	}

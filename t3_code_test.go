@@ -174,7 +174,7 @@ func TestT3CodeRuntimeDefaultsDoNotInvalidateManagedProfiles(t *testing.T) {
 	_ = json.Unmarshal(data, &settings)
 	settings["theme"] = "dark"
 	providers := settings["providerInstances"].(map[string]any)
-	providers[t3CodeCodexProxyID].(map[string]any)["accentColor"] = "blue"
+	providers[t3CodeCodexNormalID].(map[string]any)["accentColor"] = "#123456"
 	providers[t3CodeCodexProxyID].(map[string]any)["environment"].([]any)[0].(map[string]any)["valueRedacted"] = false
 	settings["defaultModelSelection"] = map[string]any{"instanceId": t3CodeClaudeNormalID, "model": "claude-sonnet-4-6"}
 	data, _ = json.Marshal(settings)
@@ -194,6 +194,50 @@ func TestT3CodeRuntimeDefaultsDoNotInvalidateManagedProfiles(t *testing.T) {
 	w = adminRequest(a, "clients/t3-code", "")
 	if !strings.Contains(w.Body.String(), `"prepared":false`) {
 		t.Fatal("managed provider mutation accepted", w.Body.String())
+	}
+}
+
+func TestT3CodeProxyBadgeMustBePreparedBeforeLaunch(t *testing.T) {
+	for _, id := range []string{t3CodeCodexProxyID, t3CodeClaudeProxyID} {
+		for _, field := range []string{"displayName", "accentColor"} {
+			t.Run(id+"/"+field, func(t *testing.T) {
+				a := t3CodeTestApp(t, "linux")
+				prepareT3CodeFixture(t, a)
+				paths := t3CodePaths(a.dir)
+				data, err := os.ReadFile(paths.Settings)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var settings map[string]any
+				if err := json.Unmarshal(data, &settings); err != nil {
+					t.Fatal(err)
+				}
+				provider := settings["providerInstances"].(map[string]any)[id].(map[string]any)
+				if field == "displayName" {
+					provider[field] = "Normal-looking agent"
+				} else {
+					delete(provider, field)
+				}
+				data, err = json.Marshal(settings)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(paths.Settings, data, 0600); err != nil {
+					t.Fatal(err)
+				}
+				w := adminRequest(a, "clients/t3-code", "")
+				if !strings.Contains(w.Body.String(), `"prepared":false`) {
+					t.Fatal("missing proxy badge remained prepared", w.Body.String())
+				}
+				if _, err := a.planClientLaunch(clientLaunchRequest{Client: "t3-code"}, a.launchRuntime()); err == nil {
+					t.Fatal("launch accepted a missing proxy badge")
+				}
+				prepareT3CodeFixture(t, a)
+				if _, err := a.planClientLaunch(clientLaunchRequest{Client: "t3-code"}, a.launchRuntime()); err != nil {
+					t.Fatal("preparation did not restore launchable proxy badges", err)
+				}
+			})
+		}
 	}
 }
 

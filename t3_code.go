@@ -14,14 +14,14 @@ import (
 )
 
 const t3CodeProfileEndpoint = "/api/clients/t3-code"
-const t3CodeProfileRevision = 1
+const t3CodeProfileRevision = 3
 
-type t3CodeManagedPaths struct{ Root, Data, UIHome, Settings, Secrets, Selection string }
+type t3CodeManagedPaths struct{ Root, Data, UIHome, Settings, ClientSettings, Secrets, Selection string }
 
 func t3CodePaths(appDir string) t3CodeManagedPaths {
 	root := filepath.Join(appDir, "t3-code")
 	data := filepath.Join(root, "data")
-	return t3CodeManagedPaths{Root: root, Data: data, UIHome: filepath.Join(root, "ui-home"), Settings: filepath.Join(data, "userdata", "settings.json"), Secrets: filepath.Join(data, "userdata", "secrets"), Selection: filepath.Join(root, "selection.json")}
+	return t3CodeManagedPaths{Root: root, Data: data, UIHome: filepath.Join(root, "ui-home"), Settings: filepath.Join(data, "userdata", "settings.json"), ClientSettings: filepath.Join(data, "userdata", "client-settings.json"), Secrets: filepath.Join(data, "userdata", "secrets"), Selection: filepath.Join(root, "selection.json")}
 }
 
 type t3CodePrepared struct {
@@ -66,7 +66,7 @@ func (a *app) readT3CodePrepared() (t3CodePrepared, error) {
 		return saved, errors.New("Prepare the private T3 Code profiles first.")
 	}
 	data, err := readCatalogFile(t3CodePaths(a.dir).Selection)
-	if err != nil || json.Unmarshal(data, &saved) != nil || !t3CodeVersionSupported(saved.Version) || saved.Fingerprint == "" || len(saved.Library.Models) == 0 || validateModelLibrary(saved.Library) != nil || len(saved.Providers) != 4 || len(saved.Files) < 4 || len(saved.Files) > 32 {
+	if err != nil || json.Unmarshal(data, &saved) != nil || !t3CodeVersionSupported(saved.Version) || saved.Fingerprint == "" || len(saved.Library.Models) == 0 || validateT3CodeLibrary(saved.Library) != nil || len(saved.Providers) != 4 || len(saved.Files) < 4 || len(saved.Files) > 32 {
 		return t3CodePrepared{}, errors.New("Prepare the private T3 Code profiles first.")
 	}
 	for _, id := range []string{t3CodeCodexNormalID, t3CodeCodexProxyID, t3CodeClaudeNormalID, t3CodeClaudeProxyID} {
@@ -115,7 +115,8 @@ func (a *app) t3CodeReady(saved t3CodePrepared, binary string, rt clientLaunchRu
 			return false
 		}
 	}
-	return true
+	clientSettings, err := readCatalogFile(paths.ClientSettings)
+	return err == nil && t3CodeClientSettingsReady(clientSettings, saved.Library, t3CodeCachedClaudeSlugs(paths))
 }
 
 func t3CodeSubset(expected, actual any) bool {
@@ -270,9 +271,22 @@ func (a *app) prepareT3Code(library modelLibrary, rt clientLaunchRuntime, binary
 		return err
 	}
 	files := append(planned.Files, settings...)
+	clientSettings, err := readCatalogFile(paths.ClientSettings)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return errors.New("Cannot safely read the private T3 Code client settings.")
+	}
+	clientSettings, err = planT3CodeClientSettings(clientSettings, library, t3CodeCachedClaudeSlugs(paths))
+	if err != nil {
+		return err
+	}
+	clientFile, err := prepareProfileFile(paths.ClientSettings, clientSettings)
+	if err != nil {
+		return err
+	}
+	files = append(files, clientFile)
 	saved := t3CodePrepared{Library: library, Version: version, Fingerprint: a.t3CodeFingerprint(binary, version, library, rt), Providers: planned.Providers, Files: map[string]string{}}
 	for _, file := range files {
-		if file.path == paths.Settings {
+		if file.path == paths.Settings || file.path == paths.ClientSettings {
 			continue
 		}
 		relative, err := filepath.Rel(paths.Root, file.path)
@@ -347,7 +361,11 @@ func (a *app) t3CodeProfileAPI(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, 409, "Recover and save your shared models first.")
 		return
 	}
-	if validateModelLibrary(library) != nil || len(library.Models) == 0 {
+	if err := validateT3CodeLibrary(library); err != nil {
+		jsonError(w, 400, err.Error())
+		return
+	}
+	if len(library.Models) == 0 {
 		jsonError(w, 400, "Choose a valid shared model library before preparing T3 Code.")
 		return
 	}

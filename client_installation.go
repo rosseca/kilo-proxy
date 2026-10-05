@@ -14,6 +14,8 @@ func launchClientInstallURL(id string) string {
 		return "https://github.com/can1357/oh-my-pi#install"
 	case "openmausbot":
 		return "https://github.com/milind-soni/OpenMausBot/releases"
+	case "synara":
+		return "https://github.com/Emanuele-web04/synara/releases/tag/v1.0.0-beta.1"
 	case "t3-code":
 		return "https://github.com/pingdotgg/t3code/releases/tag/v0.0.45"
 	default:

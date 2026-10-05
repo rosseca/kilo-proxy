@@ -79,7 +79,7 @@ func TestNativeT3CodeWideCardAndIntegrationSettings(t *testing.T) {
 			for _, node := range h.nodes() {
 				labels += node.Desc.Label + "\n"
 			}
-			for _, expected := range []string{u.tr("Codex · Existing Codex CLI login", "Codex · Sesión existente de Codex CLI"), u.tr("Claude · Existing Claude Code login", "Claude · Sesión existente de Claude Code"), u.tr("Choose one of these four options for each new chat.", "Elige una de estas cuatro opciones para cada chat nuevo.")} {
+			for _, expected := range []string{u.tr("Codex · Normal · Existing Codex CLI login", "Codex · Normal · Sesión existente de Codex CLI"), u.tr("Claude · Normal · Existing Claude Code login", "Claude · Normal · Sesión existente de Claude Code"), "Kilo Proxy · Codex", "Kilo Proxy · Claude", u.tr("green KP badge", "insignia verde KP"), u.tr("Choose one of these four options for each new chat.", "Elige una de estas cuatro opciones para cada chat nuevo."), u.tr("Preparation hides the built-in Claude entries", "La preparación oculta las entradas de Claude incluidas en T3"), u.tr("check the selected model before continuing", "revisa el modelo elegido antes de continuar")} {
 				if !strings.Contains(labels, expected) {
 					t.Fatalf("missing agent guidance: %q", expected)
 				}

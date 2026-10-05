@@ -76,6 +76,10 @@ func resolveLaunchClient(id, custom string) (string, error) {
 		home, _ := os.UserHomeDir()
 		return resolveT3Code(runtime.GOOS, home, os.Getenv("LOCALAPPDATA"))
 	}
+	if id == "synara" {
+		home, _ := os.UserHomeDir()
+		return resolveSynara(runtime.GOOS, home, os.Getenv("LOCALAPPDATA"))
+	}
 	if kind == "terminal" {
 		if id == "omp" {
 			if path, err := exec.LookPath("omp"); err == nil && filepath.IsAbs(path) {
@@ -102,6 +106,12 @@ func resolveLaunchClient(id, custom string) (string, error) {
 				if launchExecutable(path) {
 					return path, nil
 				}
+			}
+		}
+		if id == "codex-cli" && runtime.GOOS == "windows" {
+			home, _ := os.UserHomeDir()
+			if path := resolveWindowsCodexCLI(home, os.Getenv("LOCALAPPDATA")); path != "" {
+				return path, nil
 			}
 		}
 		return "", missing
@@ -132,6 +142,11 @@ func resolveLaunchClient(id, custom string) (string, error) {
 			return path, nil
 		}
 		if runtime.GOOS == "windows" {
+			if id == "codex" {
+				if path := resolveWindowsCodexDesktop(home, os.Getenv("LOCALAPPDATA")); path != "" {
+					return path, nil
+				}
+			}
 			for _, relative := range map[string][]string{"zed": {"Programs/Zed/zed.exe"}, "codex": {"Programs/Codex/Codex.exe", "Programs/ChatGPT/ChatGPT.exe"}}[id] {
 				path := filepath.Join(os.Getenv("LOCALAPPDATA"), filepath.FromSlash(relative))
 				if filepath.IsAbs(path) && launchExecutable(path) {

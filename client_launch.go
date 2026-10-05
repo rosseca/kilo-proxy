@@ -40,10 +40,10 @@ type clientLaunchAvailability struct {
 	InstallURL string `json:"installURL,omitempty"`
 }
 
-var launchClients = []string{"codex", "claude-desktop", "codex-cli", "claude", "opencode", "omp", "open-design", "openmausbot", "t3-code", "zed", "xcode-chat", "xcode-codex", "xcode-claude"}
+var launchClients = []string{"codex", "claude-desktop", "codex-cli", "claude", "opencode", "omp", "open-design", "openmausbot", "t3-code", "synara", "zed", "xcode-chat", "xcode-codex", "xcode-claude"}
 
 func clientLaunchUsesProject(client string) bool {
-	return client != "codex" && client != "claude-desktop" && client != "open-design" && client != "openmausbot" && client != "t3-code"
+	return client != "codex" && client != "claude-desktop" && client != "open-design" && client != "openmausbot" && client != "t3-code" && client != "synara"
 }
 
 func launchClientIdentity(id string) (string, string) {
@@ -66,6 +66,8 @@ func launchClientIdentity(id string) (string, string) {
 		return "OpenMausBot", "desktop"
 	case "t3-code":
 		return "T3 Code · Kilo", "desktop"
+	case "synara":
+		return "Synara · Kilo", "desktop"
 	case "zed":
 		return "Zed", "desktop"
 	case "xcode-chat", "xcode-codex", "xcode-claude":
@@ -149,6 +151,12 @@ func (a *app) clientsLaunch(w http.ResponseWriter, r *http.Request) {
 						info.Reason = err.Error()
 					}
 				}
+				if id == "synara" {
+					if err := a.synaraAvailability(path, rt); err != nil {
+						info.Available = false
+						info.Reason = err.Error()
+					}
+				}
 			}
 			if kind == "terminal" && info.Available && !terminal {
 				info.Available = false
@@ -218,6 +226,12 @@ func (a *app) clientsLaunch(w http.ResponseWriter, r *http.Request) {
 		message = "T3 Code opened with four agents in its separate Kilo workspace."
 		a.mu.Lock()
 		a.t3CodeLaunchUntil = time.Now().Add(30 * time.Second)
+		a.mu.Unlock()
+	}
+	if input.Client == "synara" {
+		message = "Synara opened with four agents in its separate Kilo workspace."
+		a.mu.Lock()
+		a.synaraLaunchUntil = time.Now().Add(30 * time.Second)
 		a.mu.Unlock()
 	}
 	if strings.HasPrefix(input.Client, "xcode-") {
@@ -299,6 +313,8 @@ func (a *app) planClientLaunch(input clientLaunchRequest, rt clientLaunchRuntime
 		err = a.applyOpenMausBotLaunch(&p, rt.platform)
 	} else if input.Client == "t3-code" {
 		err = a.applyT3CodeLaunch(&p, rt)
+	} else if input.Client == "synara" {
+		err = a.applySynaraLaunch(&p, rt)
 	} else {
 		err = a.launchProfile(&p, rt.home)
 	}
@@ -360,7 +376,7 @@ func (a *app) planClientLaunch(input clientLaunchRequest, rt clientLaunchRuntime
 			}
 			p.Executable = filepath.Join(p.Executable, "Contents", "MacOS", binary)
 		}
-	} else if input.Client == "open-design" || input.Client == "openmausbot" || input.Client == "t3-code" {
+	} else if input.Client == "open-design" || input.Client == "openmausbot" || input.Client == "t3-code" || input.Client == "synara" {
 		// These clients already selected their isolated native executable.
 	} else if kind == "desktop" {
 		if rt.platform == "macos" && strings.HasSuffix(p.Executable, ".app") {

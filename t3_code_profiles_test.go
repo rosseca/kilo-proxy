@@ -137,6 +137,17 @@ func assertT3ProfileProviders(t *testing.T, options t3CodeProfileOptions, result
 			t.Fatalf("bad Claude driver: %#v", instance)
 		}
 		isProxy := strings.HasSuffix(id, "proxy")
+		if isProxy {
+			label := "Kilo Proxy · Claude"
+			if id == t3CodeCodexProxyID {
+				label = "Kilo Proxy · Codex"
+			}
+			if instance["displayName"] != label || instance["accentColor"] != "#327653" {
+				t.Fatalf("proxy badge identity missing for %s: %#v", id, instance)
+			}
+		} else if _, exists := instance["accentColor"]; exists {
+			t.Fatalf("normal agent acquired a Kilo badge: %s", id)
+		}
 		secrets := 0
 		baseURL := ""
 		for _, variable := range instance["environment"].([]map[string]any) {

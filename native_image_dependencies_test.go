@@ -4,6 +4,7 @@ package main
 
 import (
 	"image"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -42,6 +43,36 @@ func nativeImageDependencyText(h *nativePointerHarness, label string, visible bo
 	return false
 }
 
+// A frame or reveal can drain the real one-second background poll after the
+// caller observed an idle API. Wait for the rendered control, rather than an
+// earlier busy-map snapshot, before sending its real pointer events.
+func nativeImageDependencyWaitForCheck(h *nativePointerHarness, visible bool) {
+	h.t.Helper()
+	label := h.u.tr("Check again", "Comprobar de nuevo")
+	deadline := time.Now().Add(8 * time.Second)
+	for time.Now().Before(deadline) {
+		h.frame()
+		if h.u.busy["GET/api/state"] {
+			time.Sleep(5 * time.Millisecond)
+			continue
+		}
+		nodes := h.nodes()
+		for _, text := range nodes {
+			if text.Desc.Label != label {
+				continue
+			}
+			for _, node := range nodes {
+				if node.Desc.Class == semantic.Button && !node.Desc.Disabled && text.Desc.Bounds.Min.In(node.Desc.Bounds) && (!visible || !node.Desc.Bounds.Intersect(image.Rectangle{Max: h.size}).Empty()) {
+					return
+				}
+			}
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	h.target(label, semantic.Button)
+	h.t.Fatalf("image dependency check did not become ready: state request busy=%v", h.u.busy["GET/api/state"])
+}
+
 func TestNativeImageDependencyNoticeActionsAndRecheck(t *testing.T) {
 	for _, size := range []image.Point{{1180, 820}, {780, 700}} {
 		for _, lang := range []string{"en", "es"} {
@@ -55,6 +86,7 @@ func TestNativeImageDependencyNoticeActionsAndRecheck(t *testing.T) {
 				nativeGridCapture(t, h, "image-dependency-agents-"+fmtSize(size)+"-"+lang)
 				nativeTestWait(t, u, func() bool { return !u.busy["GET/api/state"] })
 				h.frame()
+				nativeImageDependencyWaitForCheck(h, true)
 				h.click(u.tr("Check again", "Comprobar de nuevo"), semantic.Button)
 				nativeTestWait(t, u, func() bool { return !u.busy["GET/api/state"] })
 				h.frame()
@@ -109,7 +141,9 @@ func TestNativeImageDependencyNoticeActionsAndRecheck(t *testing.T) {
 				nativeGridCapture(t, h, "image-dependency-settings-missing-"+fmtSize(size)+"-"+lang)
 				nativeTestWait(t, u, func() bool { return !u.busy["GET/api/state"] })
 				h.frame()
+				nativeImageDependencyWaitForCheck(h, false)
 				h.reveal(u.tr("Check again", "Comprobar de nuevo"), semantic.Button)
+				nativeImageDependencyWaitForCheck(h, true)
 				found.Store(true)
 				h.click(u.tr("Check again", "Comprobar de nuevo"), semantic.Button)
 				nativeTestWait(t, u, func() bool { return !u.busy["GET/api/state"] && u.imageDependency().Installed })
@@ -127,6 +161,92 @@ func TestNativeImageDependencyNoticeActionsAndRecheck(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestNativeImageDependencyRecheckWaitsForPollDrainedDuringReveal(t *testing.T) {
+	for _, beforeReveal := range []bool{false, true} {
+		name := "during-reveal"
+		if beforeReveal {
+			name = "before-reveal"
+		}
+		t.Run(name, func(t *testing.T) {
+			h, found := nativeImageDependencyFixture(t, image.Pt(780, 700), "en")
+			u := h.u
+			u.showImageSettings()
+			h.frame()
+			h.frame()
+			nativeTestWait(t, u, func() bool { return !u.busy["GET/api/state"] })
+			nativeImageDependencyWaitForCheck(h, true)
+			entered, release := make(chan struct{}), make(chan struct{})
+			var releaseOnce sync.Once
+			closeRelease := func() { releaseOnce.Do(func() { close(release) }) }
+			t.Cleanup(closeRelease)
+			var held atomic.Bool
+			u.owner.mu.Lock()
+			u.owner.imageDependencyLookup = func(tool string) string {
+				installed := found.Load()
+				if tool == "cloudflared" && held.CompareAndSwap(false, true) {
+					close(entered)
+					<-release
+				}
+				if tool == "cloudflared" && installed {
+					return "/synthetic/cloudflared"
+				}
+				return ""
+			}
+			u.owner.mu.Unlock()
+			// Precisely the CI sequence: the idle wait passed, then reveal's frame
+			// drains a newly queued background poll and disables Check again.
+			u.enqueue(u.refreshState)
+			if beforeReveal {
+				h.frame()
+			} else {
+				h.reveal("Check again", semantic.Button)
+			}
+			select {
+			case <-entered:
+			case <-time.After(8 * time.Second):
+				t.Fatal("queued background poll did not reach the held fixture response")
+			}
+			if !u.busy["GET/api/state"] {
+				t.Fatal("fixture did not retain the background poll during reveal")
+			}
+			nodes := h.nodes()
+			labelPresent := false
+			for _, text := range nodes {
+				if text.Desc.Label != "Check again" {
+					continue
+				}
+				labelPresent = true
+				for _, node := range nodes {
+					if node.Desc.Class == semantic.Button && !node.Desc.Disabled && text.Desc.Bounds.Min.In(node.Desc.Bounds) {
+						t.Fatal("busy poll did not disable the rendered Check again control")
+					}
+				}
+			}
+			if !labelPresent {
+				t.Fatal("held poll removed the exact Check again semantic label")
+			}
+			// The response is released by the next real frame, so the new wait must
+			// consume both that frame and the API completion before trying the click.
+			u.enqueue(closeRelease)
+			if beforeReveal {
+				nativeImageDependencyWaitForCheck(h, false)
+				h.reveal("Check again", semantic.Button)
+			}
+			nativeImageDependencyWaitForCheck(h, true)
+			found.Store(true)
+			h.click("Check again", semantic.Button)
+			nativeTestWait(t, u, func() bool { return !u.busy["GET/api/state"] && u.imageDependency().Installed })
+			h.frame()
+			if nativeImageDependencyText(h, "Install cloudflared for large images", false) || !nativeImageDependencyText(h, "cloudflared found", false) {
+				t.Fatal("enabled pointer recheck did not replace the missing dependency notice")
+			}
+			if nativeBool(u.state, "running") {
+				t.Fatal("rechecking started the proxy")
+			}
+		})
 	}
 }
 

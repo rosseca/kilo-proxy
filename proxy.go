@@ -59,6 +59,9 @@ type app struct {
 	openMausBotLaunchUntil    time.Time
 	t3CodeCheckRunning        func(string) (bool, error)
 	t3CodeLaunchUntil         time.Time
+	synaraCheckRunning        func(string) (bool, error)
+	synaraCheckEnvironment    func() error
+	synaraLaunchUntil         time.Time
 	terminalCommandsBinary    string
 	terminalCommandsShell     string
 	terminalCommandsProfiles  []string
@@ -258,6 +261,10 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 			r = r.Clone(context.WithValue(r.Context(), openMausBotRequestContextKey{}, true))
 			r.URL.Path = path
 		}
+		if synaraInferencePath(r) {
+			r = r.Clone(context.WithValue(r.Context(), synaraRequestContextKey{}, true))
+			r.URL.Path = "/v1/messages"
+		}
 		if prefix := zedProxyPrefix(localKey); r.URL.RawPath == "" && strings.HasPrefix(r.URL.Path, prefix+"/v1/") {
 			r = r.Clone(r.Context())
 			r.URL.Path = strings.TrimPrefix(r.URL.Path, prefix)
@@ -342,6 +349,16 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 			return
 		}
 		var aliasErr error
+		r, aliasErr = a.prepareSynaraRequest(r)
+		if aliasErr != nil {
+			status := http.StatusBadRequest
+			var oversized *http.MaxBytesError
+			if errors.As(aliasErr, &oversized) {
+				status = http.StatusRequestEntityTooLarge
+			}
+			jsonError(w, status, aliasErr.Error())
+			return
+		}
 		r, aliasErr = a.prepareClaudeDesktopAlias(r)
 		if aliasErr != nil {
 			var oversized *http.MaxBytesError
@@ -437,7 +454,9 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 			jsonError(recorder, status, err.Error())
 			return
 		}
+		capture.updateImageTransport(func(d *imageTransportTrace) { d.GatewayStartedAt = time.Now().UnixMilli() })
 		proxy.ServeHTTP(recorder, imageRequest)
+		capture.updateImageTransport(func(d *imageTransportTrace) { d.GatewayFinishedAt = time.Now().UnixMilli() })
 	})
 }
 
