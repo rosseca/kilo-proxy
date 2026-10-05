@@ -310,6 +310,27 @@ func responseImagePartsForTest(doc map[string]any) []map[string]any {
 	return result
 }
 
+// Expire only after image preparation succeeds. A short wall-clock deadline
+// also measures PNG decoding and runner scheduling, making race builds flaky.
+type imageDiagnosticDeadlineContext struct {
+	context.Context
+	done chan struct{}
+	once sync.Once
+}
+
+func (c *imageDiagnosticDeadlineContext) Done() <-chan struct{} { return c.done }
+func (c *imageDiagnosticDeadlineContext) Err() error {
+	select {
+	case <-c.done:
+		return context.DeadlineExceeded
+	default:
+		return nil
+	}
+}
+func (c *imageDiagnosticDeadlineContext) expire() {
+	c.once.Do(func() { close(c.done) })
+}
+
 func TestImageTransportDiagnosticsCleanupReasons(t *testing.T) {
 	body := responseUploadBody(t, [][]byte{responseUploadPNG(t, 1366, 1000, 1)}, false, 0)
 	for _, reason := range []string{"request_canceled", "request_deadline", "preparation_failed"} {
@@ -321,18 +342,29 @@ func TestImageTransportDiagnosticsCleanupReasons(t *testing.T) {
 			ctx, c := imageDiagnosticContext()
 			var cancel context.CancelFunc
 			if reason == "request_deadline" {
-				ctx, cancel = context.WithTimeout(ctx, time.Second)
+				deadline := &imageDiagnosticDeadlineContext{Context: ctx, done: make(chan struct{})}
+				ctx, cancel = deadline, deadline.expire
 			} else {
 				ctx, cancel = context.WithCancel(ctx)
 			}
 			defer cancel()
 			r := httptest.NewRequest("POST", "/v1/responses", bytes.NewReader(body)).WithContext(ctx)
-			_, cleanup, err := a.prepareResponseImageUploads(r, "key", "org")
+			prepared, cleanup, err := a.prepareResponseImageUploads(r, "key", "org")
 			if err != nil || cleanup == nil {
 				t.Fatal("preparation failed", err)
 			}
 			if reason == "request_deadline" {
-				<-ctx.Done()
+				cancel()
+				// Wait for propagation into the actual production request context
+				// that cleanup inspects, rather than racing the parent signal.
+				select {
+				case <-prepared.Context().Done():
+				case <-time.After(5 * time.Second):
+					t.Fatal("deadline did not propagate to the prepared request")
+				}
+				if !errors.Is(prepared.Context().Err(), context.DeadlineExceeded) {
+					t.Fatal("prepared request did not expire with DeadlineExceeded")
+				}
 			} else if reason == "request_canceled" {
 				cancel()
 			}

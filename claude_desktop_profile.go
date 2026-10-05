@@ -372,31 +372,12 @@ func (a *app) claudeDesktopManagedConfig(paths claudeDesktopProfilePaths) error 
 		if isolated || runtime.GOOS != "windows" {
 			return nil
 		}
-		for _, hive := range []string{"LocalMachine", "CurrentUser"} {
-			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-			// Query names only. .NET distinguishes an absent key from an access
-			// failure without depending on the language of reg.exe error text.
-			script := "$ErrorActionPreference='Stop'; try { $k=[Microsoft.Win32.Registry]::" + hive + ".OpenSubKey('SOFTWARE\\Policies\\Claude'); if ($null -eq $k) { exit 3 }; foreach ($n in $k.GetValueNames()) { [Console]::WriteLine($n) }; $k.Close() } catch { exit 1 }"
-			data, err := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script).Output()
-			cancel()
-			if err != nil {
-				var exit *exec.ExitError
-				if errors.As(err, &exit) && exit.ExitCode() == 3 {
-					continue
-				}
-				return errors.New("Cannot inspect managed Claude Desktop settings.")
-			}
-			keys := strings.Split(strings.TrimSuffix(string(data), "\r\n"), "\n")
-			if len(data) == 0 {
-				keys = nil
-			}
-			for i := range keys {
-				keys[i] = strings.TrimSuffix(keys[i], "\r")
-			}
-			if claudeDesktopManagedKeys(keys) {
-				return errors.New("Claude Desktop inference is managed by your organization; local profiles would be ignored.")
-			}
-			return nil // An existing HKLM key takes precedence over HKCU.
+		keys, err := claudeDesktopWindowsManagedKeys()
+		if err != nil {
+			return errors.New("Cannot inspect managed Claude Desktop settings.")
+		}
+		if claudeDesktopManagedKeys(keys) {
+			return errors.New("Claude Desktop inference is managed by your organization; local profiles would be ignored.")
 		}
 		return nil
 	}

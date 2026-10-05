@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
@@ -245,6 +246,17 @@ func runClientLaunchTicket(path string, stdin io.Reader, stdout, stderr io.Write
 	return command.Run()
 }
 
+func waitClientRunnerFailure(input io.Reader, output io.Writer) {
+	if runtime.GOOS != "windows" {
+		return
+	}
+	// The private Windows bootstrap owns a new console. Keep failed launches
+	// visible instead of immediately closing their error messages with it.
+	// Ordinary terminal-agent commands do not use this runner.
+	_, _ = fmt.Fprintln(output, "\nPress Return to close this launch window.")
+	_, _ = bufio.NewReader(input).ReadString('\n')
+}
+
 func runClientLaunchMode(args []string) int {
 	if len(args) != 1 {
 		fmt.Fprintln(os.Stderr, "A private client launch ticket is required")
@@ -257,6 +269,7 @@ func runClientLaunchMode(args []string) int {
 	defer cleanup()
 	if err := runClientLaunchTicket(args[0], os.Stdin, os.Stdout, os.Stderr); err != nil {
 		fmt.Fprintln(os.Stderr, "Unable to launch the client:", err)
+		waitClientRunnerFailure(os.Stdin, os.Stderr)
 		return 1
 	}
 	return 0
