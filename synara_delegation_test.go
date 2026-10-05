@@ -94,7 +94,7 @@ func TestSynaraDelegationAccountsAndModelDefaults(t *testing.T) {
 	if err := json.Unmarshal(synaraDelegationPatchesJSON, &patches); err != nil {
 		t.Fatal(err)
 	}
-	fixture := map[string]any{"models": models, "helpers": synaraDelegationHelpers}
+	fixture := map[string]any{"models": models, "helpers": synaraDelegationHelpers, "modelRules": synaraDelegationModelRulesContract}
 	for _, patch := range patches {
 		for key, prefix := range map[string]string{
 			"catalog": "function loadAgentGatewayProviderCatalog(input) {",
@@ -129,6 +129,9 @@ func TestSynaraDelegationInstalledSource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if strings.Count(string(source), synaraDelegationModelRulesContract) != 1 {
+		t.Fatal("the installed model option guidance no longer matches the pinned contract")
+	}
 	options := synaraProfileTestOptions(t)
 	patched, err := patchSynaraDelegationServer(source, options)
 	if err != nil {
@@ -151,3 +154,98 @@ func TestSynaraDelegationInstalledSource(t *testing.T) {
 		t.Fatal("batch preflight no longer precedes durable creation reservation")
 	}
 }
+
+func TestSynaraDelegationClaudeEffortMatchesPreparedProfile(t *testing.T) {
+	for _, test := range []struct {
+		name, id, saved, expected string
+		catalog, custom           []string
+		useCustom                 bool
+	}{
+		{name: "resolved native default differs", id: "anthropic/claude-opus-5", saved: "high", catalog: []string{"low"}, expected: "low"},
+		{name: "no native levels", id: "anthropic/claude-opus-5.5", saved: "high"},
+		{name: "automatic", id: "anthropic/claude-opus-5", catalog: []string{"low", "high"}},
+		{name: "none", id: "anthropic/claude-opus-5", saved: "none", useCustom: true, custom: []string{"none", "low", "high"}},
+		{name: "explicit empty levels", id: "anthropic/claude-opus-5", useCustom: true},
+		{name: "non-native level", id: "anthropic/claude-opus-5", saved: "max", catalog: []string{"high", "max"}},
+		{name: "selected native level", id: "anthropic/claude-opus-5.5", saved: "high", useCustom: true, custom: []string{"low", "high"}, expected: "high"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			options := synaraProfileTestOptions(t)
+			options.ClaudeCaps = claudeCaps("2.1.288")
+			options.Library = modelLibrary{SchemaVersion: 1, DefaultModel: test.id, Models: []modelLibraryItem{{ID: test.id, ContextWindow: 200000, ReasoningEffort: test.saved, ReasoningCustom: test.useCustom, ReasoningLevels: test.custom}}}
+			options.Catalog = []modelInfo{{ID: test.id, ReasoningEfforts: test.catalog}}
+			plan, err := planSynaraProfiles(options)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var settings map[string]any
+			for _, file := range plan.Files {
+				if file.path == filepath.Join(plan.ClaudeHome, "settings.json") {
+					if err := json.Unmarshal(file.new, &settings); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			applied := stringValue(object(object(settings["modelSettings"])[claudeEffortKey(test.id)])["effortLevel"])
+			if applied != test.expected {
+				t.Fatalf("prepared Claude default = %q, want %q", applied, test.expected)
+			}
+			models, err := synaraDelegationModels(options)
+			if err != nil {
+				t.Fatal(err)
+			}
+			descriptor := models["claudeAgent"].([]any)[0].(map[string]any)
+			if descriptor["slug"] != test.id || stringValue(descriptor["kiloSavedEffort"]) != applied {
+				t.Fatal("delegation changed the gateway ID or advertised another Claude default", descriptor)
+			}
+			effortOptions := descriptor["optionDescriptors"].([]any)[0].(map[string]any)["options"].([]any)
+			if applied == "" {
+				if len(effortOptions) != 0 || descriptor["supportedReasoningEfforts"] != nil {
+					t.Fatal("a model without a prepared override advertised driver fallback levels", descriptor)
+				}
+			} else if len(effortOptions) != 1 || effortOptions[0].(map[string]any)["id"] != applied {
+				t.Fatal("advertised options differ from the prepared native default", descriptor)
+			}
+		})
+	}
+}
+
+// The exact pinned upstream function is exercised in the portable Node fixture
+// and checked against the verified installed server in the opt-in source test.
+const synaraDelegationModelRulesContract = `function modelTargetOptionRules(provider, model) {
+	const rules = providerTargetOptionRules(provider).map(({ key, valueType, allowedValues, allowedValuesSource, allowsCustomValue }) => ({
+		key,
+		valueType,
+		allowedValues,
+		allowedValuesSource,
+		...allowsCustomValue === void 0 ? {} : { allowsCustomValue }
+	}));
+	const replaceAllowedValues = (key, values, allowEmpty = false) => {
+		if (values.length === 0 && !allowEmpty) return;
+		const index = rules.findIndex((rule) => rule.key === key);
+		if (index < 0) return;
+		rules[index] = {
+			...rules[index],
+			allowedValues: values,
+			allowedValuesSource: "model-discovery",
+			...rules[index].allowsCustomValue === true ? { allowsCustomValue: false } : {}
+		};
+	};
+	const discoveredEfforts = model.supportedReasoningEfforts?.map((entry) => entry.value) ?? [];
+	const primaryOptionKey = providerPrimaryOptionKey(provider);
+	if (rules.find((rule) => rule.key === primaryOptionKey)?.allowsCustomValue !== true) replaceAllowedValues(primaryOptionKey, discoveredEfforts);
+	for (const descriptor of model.optionDescriptors ?? []) {
+		const spec = providerOptionRuleSpec(provider, descriptor.id);
+		if (spec?.advertised === "when-discovered") rules.push({
+			key: spec.key,
+			valueType: spec.valueType,
+			allowedValues: [],
+			allowedValuesSource: "model-discovery"
+		});
+		const rule = rules.find((candidate) => candidate.key === descriptor.id);
+		if (!rule) continue;
+		if (descriptor.type === "select") replaceAllowedValues(descriptor.id, descriptor.options.map((option) => convertDiscoveredOptionValue(option.id, rule.valueType)).filter((value) => value !== null), true);
+		else if (descriptor.type === "boolean") replaceAllowedValues(descriptor.id, [true, false]);
+	}
+	return rules;
+}`

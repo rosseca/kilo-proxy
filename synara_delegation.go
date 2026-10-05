@@ -56,13 +56,21 @@ func synaraDelegationModels(options synaraProfileOptions) (map[string]any, error
 		// delegation contract must not advertise a per-turn selector that can
 		// contradict those defaults or switch to the normal account silently.
 		claudeModel := map[string]any{"slug": choice.Model.ID, "name": name, "kiloEffortSource": "Kilo Proxy Models; close and reopen the workspace after changing defaults"}
-		for _, item := range options.Library.Models {
-			if item.ID == choice.Model.ID && item.ReasoningEffort != "" && validClaudeEffort(item.ID, item.ReasoningEffort) {
-				claudeModel["kiloSavedEffort"] = item.ReasoningEffort
-				claudeModel["supportedReasoningEfforts"] = []any{map[string]any{"value": item.ReasoningEffort, "description": "Saved in Kilo Proxy Models"}}
-				break
+		effortOptions := []any{}
+		// Match planT3CodeProfiles, which supplies Synara's private Claude
+		// settings: the saved preference is applied only after resolving the
+		// model's native levels, and that resolution can select another level.
+		if choice.DefaultReasoning != "" && validClaudeEffort(choice.Model.ID, choice.DefaultReasoning) && initial != "" && validClaudeEffort(choice.Model.ID, initial) {
+			if !claudeEffortCompatible(choice.Model.ID, options.ClaudeCaps) {
+				return nil, managedClaudeEffortVersionError(choice.Model.ID, "Synara")
 			}
+			claudeModel["kiloSavedEffort"] = initial
+			claudeModel["supportedReasoningEfforts"] = []any{map[string]any{"value": initial, "description": "Applied private Claude default"}}
+			effortOptions = append(effortOptions, map[string]any{"id": initial, "label": "Applied private Claude default"})
 		}
+		// An empty select is meaningful in the pinned gateway: it suppresses
+		// the driver's fallback effort values when no override was prepared.
+		claudeModel["optionDescriptors"] = []any{map[string]any{"id": "effort", "label": "Reasoning effort", "type": "select", "options": effortOptions}}
 		claude = append(claude, claudeModel)
 	}
 	return map[string]any{"codex": codex, "claudeAgent": claude, "defaultModel": options.Library.DefaultModel}, nil

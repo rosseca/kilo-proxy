@@ -25,6 +25,10 @@ const context = vm.createContext({ Effect, console,
   parseProviderKind: value => value,
   getClaudeContextWindowSuffix: () => null,
   stripClaudeContextWindowSuffix: value => value,
+  providerTargetOptionRules: provider => [{ key: provider === 'claudeAgent' ? 'effort' : 'reasoningEffort', valueType: 'string', allowedValues: ['low', 'medium', 'high'], allowedValuesSource: 'provider' }],
+  providerPrimaryOptionKey: provider => provider === 'claudeAgent' ? 'effort' : 'reasoningEffort',
+  providerOptionRuleSpec: () => ({ advertised: true }),
+  convertDiscoveredOptionValue: value => value,
   validateOptionsWithoutCatalog: () => {},
   validateAdvertisedOption: (target, descriptor) => { if (target.options?.reasoningEffort && descriptor.supportedReasoningEfforts?.length && !descriptor.supportedReasoningEfforts.some(value => value.value === target.options.reasoningEffort)) throw Error('unsupported effort'); },
 });
@@ -34,7 +38,8 @@ ${fixture.catalog}
 ${fixture.resolve}
 ${fixture.schema}
 ${fixture.decode}
-globalThis.gateway = { kiloSynaraAccountAvailabilities, kiloSynaraGatewayCatalogs, resolveAgentGatewayTarget, readModelSelectionArg, schema: MODEL_SELECTION_INPUT_SCHEMA };`, context);
+${fixture.modelRules}
+globalThis.gateway = { kiloSynaraAccountAvailabilities, kiloSynaraGatewayCatalogs, resolveAgentGatewayTarget, readModelSelectionArg, modelTargetOptionRules, schema: MODEL_SELECTION_INPUT_SCHEMA };`, context);
 const { gateway } = context;
 const ids = ['kilo_codex_normal', 'kilo_codex_proxy', 'kilo_claude_normal', 'kilo_claude_proxy'];
 const settings = { providers: { codex: { enabled: true }, claudeAgent: { enabled: true } }, providerInstances: {} };
@@ -82,6 +87,14 @@ const claude = { provider: 'claudeAgent', instanceId: 'kilo_claude_proxy', model
 assert.equal(resolve(claude).instanceId, claude.instanceId);
 assert.throws(() => resolve({ ...claude, options: { effort: 'low' } }), error => error.code === 'model_option_unavailable');
 assert.throws(() => resolve({ ...claude, model: 'chatgpt/gpt-6-astra' }), error => error.code === 'model_option_unavailable');
+const claudeCatalog = catalogs.find(value => value.instanceId === 'kilo_claude_proxy');
+for (const descriptor of fixture.models.claudeAgent) {
+  const rules = gateway.modelTargetOptionRules('claudeAgent', descriptor);
+  assert.deepEqual(Array.from(rules.find(value => value.key === 'effort').allowedValues), descriptor.kiloSavedEffort ? [descriptor.kiloSavedEffort] : [], 'Actual pinned option guidance must advertise only the prepared Claude override');
+}
+const automatic = claudeCatalog.models.find(value => value.slug === 'chatgpt/gpt-6-astra');
+assert.equal(automatic.kiloSavedEffort, undefined);
+assert.equal(resolve({ ...claude, model: automatic.slug, options: {} }).model, automatic.slug, 'Automatic Claude must keep its exact managed gateway model');
 for (const id of ids) {
   const previous = availabilities.get(id);
   availabilities.set(id, { ...previous, enabled: false });

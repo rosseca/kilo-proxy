@@ -78,5 +78,15 @@
     "before": "\"Use synara_capabilities to select canonical provider, model, and option values. Never guess a model slug or silently substitute a provider or model.\",",
     "after": "\"Use synara_capabilities to select an exact account instanceId, provider, model, and option values. Normal and Kilo Proxy are separate accounts; ask the user to choose if their desired account is unclear. Include target.instanceId and never substitute an account, provider, or model. Disabled accounts must fail before creating a thread.\",",
     "count": 1
+  },
+  {
+    "before": "\t\tattachments: attachmentRepository,\n\t\tserverConfig,\n\t\tcreateThreads: runCreateThreads\n\t}) : null;",
+    "after": "\t\tattachments: attachmentRepository,\n\t\tserverConfig,\n\t\tvalidateTarget: resolveAutomationTarget,\n\t\tcreateThreads: runCreateThreads\n\t}) : null;",
+    "count": 1
+  },
+  {
+    "before": "\t\tconst inheritedRuntimeMode = caller.value.runtimeMode === \"auto\" ? \"approval-required\" : caller.value.runtimeMode;\n\t\tconst tasks = [];",
+    "after": "\t\tconst inheritedRuntimeMode = caller.value.runtimeMode === \"auto\" ? \"approval-required\" : caller.value.runtimeMode;\n\t\t// Validate every selected account/model before any Hub task is queued.\n\t\tyield* Effect.forEach(input.threads, (spec) => dependencies.validateTarget({\n\t\t\tprojectId: spec.projectId ?? principal.projectId,\n\t\t\ttarget: spec.target\n\t\t}), { discard: true });\n\t\tconst tasks = [];",
+    "count": 1
   }
 ]

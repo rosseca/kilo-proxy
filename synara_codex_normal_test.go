@@ -24,10 +24,50 @@ func syntheticSynaraNativeHeader(platform string) []byte {
 		copy(data, "MZ")
 		binary.LittleEndian.PutUint32(data[60:64], 64)
 		copy(data[64:], "PE\x00\x00")
+	} else if platform == "darwin" || platform == "macos" {
+		binary.LittleEndian.PutUint32(data[:4], 0xfeedfacf)
 	} else {
 		copy(data, "\x7fELF")
 	}
 	return data
+}
+
+func TestSynaraPreparationFixturesUseTargetNativeBinaries(t *testing.T) {
+	for _, requested := range []string{"macos", "linux", "windows"} {
+		t.Run(requested, func(t *testing.T) {
+			a := synaraTestApp(t, requested)
+			platform := requested
+			if runtime.GOOS == "windows" {
+				platform = "windows"
+			}
+			if a.launcher.platform != platform {
+				t.Fatalf("fixture platform %s, want %s", a.launcher.platform, platform)
+			}
+			cli, err := a.launcher.resolve("codex-cli", "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			source, err := a.synaraAdapterSource()
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, path := range []string{cli, source} {
+				header, err := os.ReadFile(path)
+				if err != nil || !bytes.Equal(header, syntheticSynaraNativeHeader(platform)) {
+					t.Fatalf("fixture binary does not match %s: %s (%v)", platform, path, err)
+				}
+				if err := validateOpenDesignShimBinary(path, platform, true); err != nil {
+					t.Fatalf("fixture rejected by real %s native guard: %v", platform, err)
+				}
+			}
+			prepareSynaraFixture(t, a)
+			saved, err := a.readSynaraPrepared()
+			appBinary, resolveErr := a.launcher.resolve("synara", "")
+			if err != nil || resolveErr != nil || !a.synaraReady(saved, appBinary, *a.launcher) {
+				t.Fatalf("native fixture was not prepared: %v %v", err, resolveErr)
+			}
+		})
+	}
 }
 
 func synaraCodexAdapterFixture(t *testing.T) (root, source, target string) {
