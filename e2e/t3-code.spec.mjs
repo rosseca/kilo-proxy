@@ -24,6 +24,13 @@ test('T3 Code prepares four agents before desktop launch and guards a second ope
  await expect(page.locator('#t3-code-summary')).toContainText(library().defaultModel);
  await expect(page.locator('#t3-code-models li')).toHaveText(['My default model · '+library().defaultModel,'My coding model · vendor/one']);
  await expect(page.locator('#t3-code-agents li')).toHaveCount(4);
+ await expect(page.locator('#t3-code-agents li')).toHaveText([
+  'Codex · Normal · Existing Codex CLI login',
+  'Kilo Proxy · Codex · Shared models through the proxy',
+  'Claude · Normal · Existing Claude Code login',
+  'Kilo Proxy · Claude · Compatible shared models through the proxy',
+ ]);
+ await expect(page.locator('#t3-code-intro')).toContainText('Green KP badges on T3’s provider rail and composer');
  await expect(page.locator('#t3-code-agents')).toContainText('Existing Codex CLI login');
  await expect(page.locator('#t3-code-agents')).toContainText('Existing Claude Code login');
  await expect(page.locator('#client-launch-directory-field')).toBeHidden();
@@ -59,6 +66,9 @@ test('T3 Code prepares four agents before desktop launch and guards a second ope
  await page.locator('#language').selectOption('es');
  await page.setViewportSize({width:390,height:844});
  await expect(page.locator('#t3-code-agents')).toContainText('Sesión existente de Codex CLI');
+ await expect(page.locator('#t3-code-agents li').nth(1)).toContainText('Kilo Proxy · Codex');
+ await expect(page.locator('#t3-code-agents li').nth(3)).toContainText('Kilo Proxy · Claude');
+ await expect(page.locator('#t3-code-intro')).toContainText('marcas KP verdes');
  await expect(page.locator('#t3-code-compatibility')).toContainText('inicia uno nuevo para cambiar entre normal y Kilo');
  await expect(page.locator('#t3-code-compatibility')).toContainText('revisa el modelo elegido antes de continuar');
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);

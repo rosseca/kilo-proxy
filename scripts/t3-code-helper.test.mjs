@@ -53,7 +53,8 @@ test('four agents use an immutable common-library snapshot without exposing cred
  assert.equal(sent.body.library.models[0].displayName,'Friendly');
  assert.equal(calls.filter(call=>call.path==='model-library'&&call.body).length,0);
  assert.deepEqual(nodes.get('t3-code-models').children.map(node=>node.textContent),['vendor/second','Friendly · vendor/first']);
- assert.equal(nodes.get('t3-code-agents').children.length,4);
+ assert.deepEqual(nodes.get('t3-code-agents').children.map(node=>node.textContent.split(' · ').slice(0,2).join(' · ')),['Codex · Normal','Kilo Proxy · Codex','Claude · Normal','Kilo Proxy · Claude']);
+ assert.match(nodes.get('t3-code-intro').textContent,/Green KP badges.*provider rail and composer/);
  assert.match(nodes.get('t3-code-compatibility').textContent,/new chat to switch between normal and Kilo/);
  assert.match(nodes.get('t3-code-requirements').textContent,/not Desktop app logins/);
  assert.match(nodes.get('t3-code-prepared').textContent,/Four agents prepared/);
@@ -83,6 +84,9 @@ test('connection edits invalidate prepared status and disconnect blocks preparat
  helper.render({state:{connectionReady:true,baseURL:'http://127.0.0.1:9999/v1',localKey:'different'},language:'es'});
  assert.match(nodes.get('t3-code-prepared').textContent,/Prepara o abre/);
  assert.equal(nodes.get('t3-code-agents').children.length,4);
+ assert.match(nodes.get('t3-code-intro').textContent,/marcas KP verdes.*selector y el compositor/);
+ assert.match(nodes.get('t3-code-agents').children[1].textContent,/^Kilo Proxy · Codex · /);
+ assert.match(nodes.get('t3-code-agents').children[3].textContent,/^Kilo Proxy · Claude · /);
  helper.render({state:{connectionReady:false},language:'es'});
  await assert.rejects(helper.launchState().prepare(),/Conecta primero/);
  assert.equal(writes.length,0);

@@ -355,7 +355,8 @@ func TestT3CodeInstalledFourAgents(t *testing.T) {
 		"version": version,
 		"baseDir": paths.Data, "home": paths.UIHome, "project": project, "env": env, "expectedResponse": responseText,
 		"verifyModelPicker": os.Getenv("KILO_TEST_T3_PICKER") == "1", "clientSettingsPath": paths.ClientSettings,
-		"libraryModels": libraryIDs, "defaultModel": library.DefaultModel,
+		"artifactsDirectory": os.Getenv("KILO_TEST_T3_ARTIFACTS"),
+		"libraryModels":      libraryIDs, "defaultModel": library.DefaultModel,
 		"instances": []map[string]any{
 			{"id": t3CodeCodexNormalID, "model": codexModel, "options": map[string]any{"reasoningEffort": "high"}},
 			{"id": t3CodeCodexProxyID, "model": codexModel, "options": map[string]any{"reasoningEffort": "high"}},

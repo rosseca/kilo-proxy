@@ -111,11 +111,11 @@ func (u *nativeUI) t3CodeClientPanel(s *nativeClientSelection) layout.Widget {
 	}
 	return u.column(
 		u.section(u.tr("Launch", "Arranque"), u.tr("Starts the proxy and opens a separate T3 Code workspace.", "Arranca el proxy y abre un espacio T3 Code separado."), widgets...),
-		u.section(u.tr("Agents", "Agentes"), u.tr("Choose one of these four options for each new chat.", "Elige una de estas cuatro opciones para cada chat nuevo."),
-			u.note(u.tr("Codex · Existing Codex CLI login", "Codex · Sesión existente de Codex CLI")),
-			u.note(u.tr("Codex · Kilo · Shared models through the proxy", "Codex · Kilo · Modelos compartidos a través del proxy")),
-			u.note(u.tr("Claude · Existing Claude Code login", "Claude · Sesión existente de Claude Code")),
-			u.note(u.tr("Claude · Kilo · Compatible shared models through the proxy", "Claude · Kilo · Modelos compartidos compatibles a través del proxy"))),
+		u.section(u.tr("Agents", "Agentes"), u.tr("Choose one of these four options for each new chat. Kilo agents show a green KP badge on T3's provider rail and composer icons.", "Elige una de estas cuatro opciones para cada chat nuevo. Los agentes Kilo muestran una insignia verde KP en los iconos de la barra de proveedores y del compositor de T3."),
+			u.note(u.tr("Codex · Normal · Existing Codex CLI login", "Codex · Normal · Sesión existente de Codex CLI")),
+			u.note(u.tr("Kilo Proxy · Codex · Shared models through the proxy", "Kilo Proxy · Codex · Modelos compartidos a través del proxy")),
+			u.note(u.tr("Claude · Normal · Existing Claude Code login", "Claude · Normal · Sesión existente de Claude Code")),
+			u.note(u.tr("Kilo Proxy · Claude · Compatible shared models through the proxy", "Kilo Proxy · Claude · Modelos compartidos compatibles a través del proxy"))),
 		u.section(u.tr("Options", "Opciones"), requirements,
 			u.note(u.agentCompatibility(key)),
 			u.note(chatHelp),

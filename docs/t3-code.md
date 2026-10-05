@@ -5,9 +5,11 @@ Kilo Proxy opens **T3 Code · Kilo**, a separate T3 Code workspace with four age
 | Agent | Models and connection | Login |
 | --- | --- | --- |
 | Codex · Normal | Codex's normal model catalog | Your existing Codex CLI login |
-| Codex · Kilo Proxy | Kilo Proxy's shared models, through the local proxy | Private Kilo CLI profile |
+| Kilo Proxy · Codex | Kilo Proxy's shared models, through the local proxy | Private Kilo CLI profile |
 | Claude · Normal | Claude's normal model catalog | Your existing Claude Code login |
-| Claude · Kilo Proxy | Compatible shared models, through the local proxy | Private Kilo CLI profile |
+| Kilo Proxy · Claude | Compatible shared models, through the local proxy | Private Kilo CLI profile |
+
+The Kilo agents have a green **KP** badge on T3's provider rail and composer icons. Normal agents keep their usual icons; small model-row logos retain T3's design, with the **Kilo Proxy** label identifying the Kilo connection.
 
 This integration uses **Codex CLI and Claude Code**, rather than either Desktop application. A Desktop app login alone does not establish a CLI login.
 
@@ -43,17 +45,17 @@ Close **T3 Code · Kilo** before changing shared models or the proxy connection,
 
 Manage the Kilo agents' models in Kilo Proxy's shared **Models** library. The normal agents keep their own model catalogs.
 
-Preparation configures the private Desktop model picker for **Claude · Kilo**: it hides the built-in Claude entries that are not exact IDs in your shared library and orders your prepared models with the shared default first. Choose the model by its saved display name; the request keeps its exact gateway ID, such as `anthropic/claude-opus-5.5`. Normal agents keep their own catalogs and preferences.
+Preparation configures the private Desktop model picker for **Kilo Proxy · Claude**: it hides the built-in Claude entries that are not exact IDs in your shared library and orders your prepared models with the shared default first. Choose the model by its saved display name; the request keeps its exact gateway ID, such as `anthropic/claude-opus-5.5`. Normal agents keep their own catalogs and preferences.
 
 Close **T3 Code · Kilo** and reopen it from Kilo Proxy to apply this picker policy to an older workspace. A chat, project or draft using a hidden built-in model falls back to the shared default shown in the composer; review or change the selected model before continuing. Preparation also includes Claude entries from T3’s private cached manifest. T3 can refresh that manifest independently of its app version; if a new built-in entry appears, close and reopen the Kilo workspace to prepare again. This policy belongs to the Desktop client preferences; independently connected web/mobile clients keep their own picker preferences.
 
-Codex · Kilo exposes the supported reasoning levels for each model. In stable T3, Claude · Kilo exposes only the levels supported by its Claude Code driver and the model; its options can be narrower than Codex's. Model listing does not establish support for generation, tool use or every reasoning level. The selected provider must support the protocol and features used by the agent.
+Kilo Proxy · Codex exposes the supported reasoning levels for each model. In stable T3, Kilo Proxy · Claude exposes only the levels supported by its Claude Code driver and the model; its options can be narrower than Codex's. Model listing does not establish support for generation, tool use or every reasoning level. The selected provider must support the protocol and features used by the agent.
 
 In stable 0.0.45, a chat keeps its agent and native session. To switch between a normal agent and a Kilo agent, create a new chat. Model changes within a compatible agent follow T3 Code's own session and resume behavior.
 
 The validated nightly can switch agents between turns in the same chat. Each normal or Kilo agent keeps its own CLI home and connection. T3 hands off a bounded summary when switching providers; previous reasoning, tool results and attachments are not transferred. Use a new chat when you need to keep work completely separate.
 
-This nightly ignores Claude effort options for custom gateway IDs. For **Claude · Kilo**, choose compatible reasoning defaults in Kilo Proxy’s **Models**, then close and reopen the private T3 workspace. Kilo prepares per-model Claude Code settings and hides the ineffective T3 effort selector. These defaults require Claude Code **2.1.251 or newer**; preparation rejects a configured compatible effort with an older CLI. Automatic and unsupported Claude levels do not receive a native effort override. Saved Claude reasoning defaults also require provider-qualified gateway IDs, such as `anthropic/claude-opus-4-6`: this nightly forces its own builtin effort for unqualified IDs, so preparation rejects that combination. IDs of the same Claude family/version cannot have conflicting prepared efforts, because Claude Code keys its defaults by family/version. Codex’s T3 reasoning selector remains available.
+This nightly ignores Claude effort options for custom gateway IDs. For **Kilo Proxy · Claude**, choose compatible reasoning defaults in Kilo Proxy’s **Models**, then close and reopen the private T3 workspace. Kilo prepares per-model Claude Code settings and hides the ineffective T3 effort selector. These defaults require Claude Code **2.1.251 or newer**; preparation rejects a configured compatible effort with an older CLI. Automatic and unsupported Claude levels do not receive a native effort override. Saved Claude reasoning defaults also require provider-qualified gateway IDs, such as `anthropic/claude-opus-4-6`: this nightly forces its own builtin effort for unqualified IDs, so preparation rejects that combination. IDs of the same Claude family/version cannot have conflicting prepared efforts, because Claude Code keys its defaults by family/version. Codex’s T3 reasoning selector remains available.
 
 ## Troubleshooting
 

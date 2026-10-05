@@ -2,8 +2,9 @@
 // Chromium is headless and disposable. Desktop persistence/bootstrap IPC is
 // injected; the packaged frontend, server and native provider drivers are real.
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
+import { isAbsolute, join } from 'node:path';
 import { chromium } from 'playwright';
 
 export async function verifyT3ModelPicker(input) {
@@ -15,7 +16,16 @@ export async function verifyT3ModelPicker(input) {
   delete baseline.providerModelPreferences.kilo_claude_proxy;
   const proxy = config.providers.find(provider => provider.instanceId === 'kilo_claude_proxy');
   const normal = config.providers.find(provider => provider.instanceId === 'kilo_claude_normal');
-  assert.ok(proxy && normal);
+  const codexProxy = config.providers.find(provider => provider.instanceId === 'kilo_codex_proxy');
+  const codexNormal = config.providers.find(provider => provider.instanceId === 'kilo_codex_normal');
+  assert.ok(proxy && normal && codexProxy && codexNormal);
+  for (const [provider, expectedName] of [[proxy, 'Kilo Proxy · Claude'], [codexProxy, 'Kilo Proxy · Codex']]) {
+    assert.equal(provider.displayName, expectedName, 'Kilo provider name does not produce its native KP badge');
+    assert.equal(provider.accentColor, '#327653', 'Kilo provider lost its brand accent');
+  }
+  assert.equal(normal.displayName, 'Claude · Normal');
+  assert.equal(codexNormal.displayName, 'Codex · Normal');
+  for (const provider of [normal, codexNormal]) assert.ok(!provider.accentColor, 'Normal acquired a Kilo brand accent');
   const builtin = 'claude-opus-5-5';
   assert.ok(proxy.models.some(model => model.slug === builtin), 'Baseline catalog did not contain the old built-in');
   const v2 = fixture.version === '0.0.46-nightly.20261003.2610';
@@ -39,8 +49,44 @@ export async function verifyT3ModelPicker(input) {
   const browser = await chromium.launch({ headless: true });
   let page;
   const browserErrors = [];
+  const capture = async (name, element) => {
+    if (!fixture.artifactsDirectory) return;
+    assert.ok(isAbsolute(fixture.artifactsDirectory), 'T3 screenshot directory must be absolute');
+    const directory = join(fixture.artifactsDirectory, fixture.version);
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    const path = join(directory, `${name}.png`);
+    if (element) await element.screenshot({ path, animations: 'disabled' });
+    else await page.screenshot({ path, fullPage: true, animations: 'disabled' });
+    console.log(`Packaged T3 frontend screenshot: ${path}`);
+  };
+  const assertKiloBadge = async (scope, location) => {
+    const badge = scope.getByText('KP', { exact: true });
+    assert.equal(await badge.count(), 1, `${location} did not show a single native KP badge`);
+    assert.ok(await badge.isVisible(), `${location} KP badge was hidden`);
+    assert.ok(await scope.locator('[data-provider-accent-color="#327653"]').count() > 0,
+      `${location} did not render the Kilo accent on its icon`);
+    const style = await badge.evaluate(element => ({ background: getComputedStyle(element).backgroundColor,
+      color: getComputedStyle(element).color }));
+    assert.equal(style.background, 'rgb(50, 118, 83)', `${location} KP badge did not use Kilo green`);
+    assert.equal(style.color, 'rgb(255, 255, 255)', `${location} KP badge did not use white text`);
+  };
+  const assertProviderRail = async content => {
+    for (const provider of [proxy, codexProxy]) {
+      const button = content.getByRole('button', { name: provider.displayName, exact: true });
+      assert.equal(await button.count(), 1, `Missing distinct proxy rail option ${provider.displayName}`);
+      assert.equal(await button.getAttribute('data-provider-accent-color'), '#327653');
+      await assertKiloBadge(button, `${provider.displayName} picker rail`);
+    }
+    for (const provider of [normal, codexNormal]) {
+      const button = content.getByRole('button', { name: provider.displayName, exact: true });
+      assert.equal(await button.count(), 1, `Missing normal rail option ${provider.displayName}`);
+      assert.equal(await button.getByText('KP', { exact: true }).count(), 0, `${provider.displayName} acquired a KP badge`);
+      assert.equal(await button.getAttribute('data-provider-accent-color'), null,
+        `${provider.displayName} acquired the Kilo accent`);
+    }
+  };
   const contextFor = async (settings, storageState) => {
-    const context = await browser.newContext({ viewport: { width: 1500, height: 1000 },
+    const context = await browser.newContext({ viewport: { width: 1500, height: 1000 }, deviceScaleFactor: 2,
       ...(storageState ? { storageState } : {}) });
     await context.addInitScript(({ settings, base, token, credential }) => {
       let currentSettings = structuredClone(settings);
@@ -126,6 +172,9 @@ export async function verifyT3ModelPicker(input) {
     await page.keyboard.press('Escape');
     const afterSelection = await page.locator('[data-chat-provider-model-picker-label]').first().innerText();
     assert.ok(afterSelection.includes(labelFor(proxy, fixture.defaultModel)), `Old built-in did not resolve to prepared default: ${afterSelection}`);
+    await assertKiloBadge(page.locator('[data-chat-provider-model-picker]').first(), 'Claude composer');
+    await capture('claude-composer');
+    await capture('claude-composer-badge', page.locator('[data-chat-provider-model-picker]').first());
     // Stable correctly locks a chat to its existing provider. Check Normal's
     // independent model list in the owned draft, where switching is supported.
     await page.goto(draftURL, { waitUntil: 'domcontentloaded' });
@@ -141,6 +190,9 @@ export async function verifyT3ModelPicker(input) {
     const normalModels = normal.models.filter(model => !model.isCustom);
     assert.equal(normalModels.length, 12, 'Unexpected built-in contract in pinned T3 version');
     assert.equal(normalRows.filter(text => !text.startsWith('Legacy models')).length, 12, 'Normal Claude lost built-in picker rows');
+    await assertProviderRail(content);
+    await capture('four-provider-picker');
+    await capture('four-provider-picker-detail', content);
     await page.keyboard.press('Escape');
     await page.locator('[data-thread-item] [role="button"]').filter({ hasText: 'Synthetic stale builtin picker acceptance' }).first().click();
     await page.locator('[data-chat-provider-model-picker-label]').first().waitFor();
@@ -169,7 +221,25 @@ export async function verifyT3ModelPicker(input) {
     assert.equal(drafted.modelSelection.model, fixture.defaultModel,
       'Frontend sent the old draft built-in instead of the exact configured gateway ID');
     await stopSession(promotedThread);
+    // Select Codex in a separate unsent draft, preserving the five real Opus
+    // requests already checked by the Go fixture while exercising its badge.
+    await page.getByRole('button', { name: 'New thread', exact: true }).click();
+    await page.locator('[data-chat-provider-model-picker]').first().waitFor();
+    content = await openPicker(codexProxy);
+    const codexModel = fixture.instances.find(instance => instance.id === codexProxy.instanceId).model;
+    await content.getByRole('option').filter({ hasText: labelFor(codexProxy, codexModel) }).click();
+    await assertKiloBadge(page.locator('[data-chat-provider-model-picker]').first(), 'Codex composer');
+    await capture('codex-composer-badge', page.locator('[data-chat-provider-model-picker]').first());
+    content = await openPicker(codexProxy);
+    await assertProviderRail(content);
+    await capture('codex-composer-picker');
+    await capture('codex-picker-detail', content);
+    await page.keyboard.press('Escape');
+    await page.goto(`${base}/#/settings/providers`, { waitUntil: 'domcontentloaded' });
+    await page.getByText('Kilo Proxy · Claude', { exact: true }).first().waitFor();
+    await capture('four-provider-settings');
     await after.close();
+    console.log(`Passed packaged T3 branding ${fixture.version}: Claude/Codex native KP badges with computed Kilo green in composer and four-provider picker; both Normal instances remain distinct and unbranded (injected Desktop IPC).`);
     console.log(`Passed packaged T3 frontend ${fixture.version}: baseline built-in reproduced; Kilo Models only, default first; all 12 Normal built-ins preserved; old chat continued for three UI turns with stop/resume and old draft promoted using exact gateway ID (injected Desktop IPC).`);
   } catch (error) {
     if (page && !page.isClosed()) {
