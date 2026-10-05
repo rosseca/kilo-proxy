@@ -86,15 +86,22 @@ func (a *app) applySynaraLaunch(plan *clientLaunchPlan, rt clientLaunchRuntime) 
 		return errors.New("Prepare Synara again: its private profiles or proxy connection changed.")
 	}
 	{
+		var caps *claudeCapabilities
 		for _, model := range saved.Library.Models {
 			if model.ReasoningEffort == "" || !validClaudeEffort(model.ID, model.ReasoningEffort) {
 				continue
 			}
-			claude, err := rt.resolve("claude", "")
-			if err != nil || !a.synaraClaudeCapabilities(claude, rt).PerModelEffort {
-				return errors.New("Synara requires Claude Code 2.1.251 or newer to apply saved per-model reasoning. Update Claude Code and prepare again.")
+			if caps == nil {
+				claude, err := rt.resolve("claude", "")
+				current := claudeCapabilities{}
+				if err == nil {
+					current = a.synaraClaudeCapabilities(claude, rt)
+				}
+				caps = &current
 			}
-			break
+			if !claudeEffortCompatible(model.ID, *caps) {
+				return managedClaudeEffortVersionError(model.ID, "Synara")
+			}
 		}
 	}
 	paths := synaraPaths(a.dir)

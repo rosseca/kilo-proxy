@@ -133,6 +133,7 @@ func planT3CodeProfiles(options t3CodeProfileOptions) (t3CodeProfiles, error) {
 		// Keep the defaults in the private CLI profile without family aliases,
 		// a replacement picker or a global effort shared by unrelated models.
 		claudeSettingsCaps.PerModelEffort = true
+		claudeSettingsCaps.Version = options.ClaudeCaps.Version
 	}
 	for i, model := range options.Library.Models {
 		context, err := contextPolicyForChoice(choices[i])
@@ -146,8 +147,8 @@ func planT3CodeProfiles(options t3CodeProfileOptions) (t3CodeProfiles, error) {
 			}
 			_, preferred := nativeReasoningFor(choices[i])
 			if preferred != "" && validClaudeEffort(model.ID, preferred) {
-				if !options.ClaudeCaps.PerModelEffort {
-					return t3CodeProfiles{}, errors.New("T3 Code nightly requires Claude Code 2.1.251 or newer to apply saved per-model reasoning. Update Claude Code and prepare again.")
+				if !claudeEffortCompatible(model.ID, options.ClaudeCaps) {
+					return t3CodeProfiles{}, managedClaudeEffortVersionError(model.ID, "T3 Code nightly")
 				}
 				effort = preferred
 			}
@@ -203,6 +204,14 @@ func planT3CodeProfiles(options t3CodeProfileOptions) (t3CodeProfiles, error) {
 	}
 	result.Providers = t3CodeProviderInstances(options, result, choices, selection)
 	return result, nil
+}
+
+func managedClaudeEffortVersionError(id, client string) error {
+	minimum := "2.1.251"
+	if claude55ID.MatchString(id) {
+		minimum = claude55EffortMinVersion
+	}
+	return errors.New(client + " requires Claude Code " + minimum + " or newer to apply saved per-model reasoning. Update Claude Code and prepare again.")
 }
 
 func prepareT3CodeProfiles(options t3CodeProfileOptions) (t3CodeProfiles, error) {
@@ -385,7 +394,7 @@ func t3CodeCustomModels(choices []nativeModelChoice, claude bool, caps claudeCap
 			id = "effort"
 			filtered := []string{}
 			for _, level := range levels {
-				if validClaudeEffort(choice.Model.ID, level) && (level != "xhigh" || caps.PerModelEffort) {
+				if validClaudeEffort(choice.Model.ID, level) && (level != "xhigh" || caps.PerModelEffort) && (!claude55ID.MatchString(choice.Model.ID) || claudeEffortCompatible(choice.Model.ID, caps)) {
 					filtered = append(filtered, level)
 				}
 			}

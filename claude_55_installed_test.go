@@ -43,7 +43,7 @@ func TestClaude55InstalledPerModelDefaults(t *testing.T) {
 	if os.Getenv("KILO_TEST_CLAUDE_EFFORT_HYPHEN") == "1" {
 		opus, sonnet = "anthropic/claude-opus-5-5", "anthropic/claude-sonnet-5-5"
 	}
-	opusKey, sonnetKey := "claude-opus-5-5", "claude-sonnet-5-5"
+	opusKey, sonnetKey := claudeEffortKey(opus), claudeEffortKey(sonnet)
 	if os.Getenv("KILO_TEST_CLAUDE_EFFORT_RAW_KEYS") == "1" {
 		opusKey, sonnetKey = opus, sonnet
 	}

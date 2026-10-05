@@ -4,15 +4,22 @@ export function claudeCapabilities(version='') {
  const match=String(version).match(/^(\d+)\.(\d+)\.(\d+)(?:\s|$)/);
  const parts=match?.slice(1,4).map(Number);
  const atLeast=patch=>!!parts && (parts[0]>2 || parts[0]===2 && (parts[1]>1 || parts[1]===1 && parts[2]>=patch));
- return {version:match?.slice(1,4).join('.') || '',picker:atLeast(242),perModelEffort:atLeast(251)};
+ return {version:match?.slice(1,4).join('.') || '',picker:atLeast(242),perModelEffort:atLeast(251),perModelEffort55:atLeast(267)};
 }
-export function claudeEffortKey(id) {
+const claude55ID=/^(?:anthropic\/)?claude-(?:opus|sonnet)-5[.-]5(?:-\d{8})?$/i;
+const has55Defaults=caps=>caps.perModelEffort && claudeCapabilities(caps.version).perModelEffort55;
+export function claudePickerKey(id) {
  const match=String(id).match(/^(?:anthropic\/)?(claude-(?:fable-5(?:[.-]1)?|opus-(?:5|4[.-][678])|sonnet-(?:5|4[.-]6)))(?:-\d{8})?$/i);
  return match?.[1].toLowerCase().replaceAll('.','-') || '';
 }
+export function claudeEffortKey(id) {
+ const match=String(id).match(/^(?:anthropic\/)?(claude-(?:fable-5(?:[.-]1)?|opus-(?:5(?:[.-]5)?|4[.-][678])|sonnet-(?:5(?:[.-]5)?|4[.-]6)))(?:-\d{8})?$/i);
+ const family=match?.[1].toLowerCase() || '';
+ return family.endsWith('-5.5') ? family.slice(0,-2) : family.replaceAll('.','-');
+}
 export function claudeEfforts(id,caps={}) {
  const key=claudeEffortKey(id);
- if(!key)return [];
+ if(!key || claude55ID.test(id) && !has55Defaults(caps))return [];
  return ['low','medium','high',...(caps.perModelEffort && !['claude-opus-4-6','claude-sonnet-4-6'].includes(key) ? ['xhigh'] : [])];
 }
 export function claudeSelection(models,initial,aliases={},mode='installed') {
@@ -22,7 +29,16 @@ export function claudeSelection(models,initial,aliases={},mode='installed') {
 }
 export function claudeSettings(selection,caps,baseURL,key) {
  const {models,initial,aliases}=selection;
- const nativeID=id=>caps.picker ? claudeEffortKey(id) || id : id;
+ const nativeID=id=>caps.picker ? claudePickerKey(id) || id : id;
+ const efforts=new Map();
+ for(const model of models){
+  if(model.effort && claude55ID.test(model.id) && !has55Defaults(caps))throw new Error('Claude Code 2.1.267 or newer is required to apply saved per-model reasoning for Claude 5.5. Update Claude Code and prepare again.');
+  const native=claudeEffortKey(model.id);
+  if(native){
+   if(efforts.has(native) && efforts.get(native)!==(model.effort || ''))throw new Error('Choose compatible reasoning defaults for gateway IDs that share a native Claude effort key');
+   efforts.set(native,model.effort || '');
+  }
+ }
  const env={ANTHROPIC_BASE_URL:baseURL.replace(/\/v1\/?$/,''),ANTHROPIC_AUTH_TOKEN:key,ANTHROPIC_MODEL:nativeID(initial)};
  for(const alias of ['sonnet','opus','haiku']){
   const id=aliases[alias] || initial,prefix='ANTHROPIC_DEFAULT_'+alias.toUpperCase()+'_MODEL';

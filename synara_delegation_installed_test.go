@@ -34,15 +34,20 @@ func TestSynaraInstalledMCPAccountDelegation(t *testing.T) {
 	if version, err := synaraVersion(installed, runtime.GOOS); err != nil || version != synaraSupportedVersion {
 		t.Fatalf("official beta identity: %q %v", version, err)
 	}
+	// The installed provider owns and tears down native child process trees.
+	// Fail before launching anything if the sandbox cannot query even our PID.
+	ps, err := exec.LookPath("ps")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command(ps, "-p", strconv.Itoa(os.Getpid()), "-o", "pid=").CombinedOutput(); err != nil {
+		t.Fatalf("native Synara acceptance requires process inspection for owned cleanup: %v %s", err, output)
+	}
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Fatal(err)
 	}
-	realHome, err := os.UserHomeDir()
-	if err != nil {
-		t.Fatal(err)
-	}
-	claude, err := resolveOpenDesignCLI("claude-code", clientLaunchRuntime{platform: runtime.GOOS, home: realHome, resolve: resolveLaunchClient})
+	claude, err := resolveLaunchClient("claude", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,6 +139,10 @@ func TestSynaraInstalledMCPAccountDelegation(t *testing.T) {
 		t.Fatal(err)
 	}
 	private := t.TempDir()
+	uiHome := filepath.Join(private, "ui-home")
+	if err := os.Mkdir(uiHome, 0700); err != nil {
+		t.Fatal(err)
+	}
 	patchedPath := filepath.Join(private, "server.mjs")
 	hookPath := filepath.Join(private, "backend-hook.mjs")
 	if err := os.WriteFile(patchedPath, patched, 0600); err != nil {
@@ -143,7 +152,7 @@ func TestSynaraInstalledMCPAccountDelegation(t *testing.T) {
 		t.Fatal(err)
 	}
 	env := map[string]string{}
-	for _, entry := range cgClientEnv(filepath.Join(private, "ui-home")) {
+	for _, entry := range cgClientEnv(uiHome) {
 		name, value, _ := strings.Cut(entry, "=")
 		env[name] = value
 	}

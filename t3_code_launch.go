@@ -285,15 +285,22 @@ func (a *app) applyT3CodeLaunch(plan *clientLaunchPlan, rt clientLaunchRuntime) 
 		return errors.New("Prepare T3 Code again: its private profiles or proxy connection changed.")
 	}
 	if saved.Version == t3CodeNightlyVersion {
+		var caps *claudeCapabilities
 		for _, model := range saved.Library.Models {
 			if model.ReasoningEffort == "" || !validClaudeEffort(model.ID, model.ReasoningEffort) {
 				continue
 			}
-			claude, err := rt.resolve("claude", "")
-			if err != nil || !a.t3CodeClaudeCapabilities(claude, rt).PerModelEffort {
-				return errors.New("T3 Code nightly requires Claude Code 2.1.251 or newer to apply saved per-model reasoning. Update Claude Code and prepare again.")
+			if caps == nil {
+				claude, err := rt.resolve("claude", "")
+				current := claudeCapabilities{}
+				if err == nil {
+					current = a.t3CodeClaudeCapabilities(claude, rt)
+				}
+				caps = &current
 			}
-			break
+			if !claudeEffortCompatible(model.ID, *caps) {
+				return managedClaudeEffortVersionError(model.ID, "T3 Code nightly")
+			}
 		}
 	}
 	paths := t3CodePaths(a.dir)

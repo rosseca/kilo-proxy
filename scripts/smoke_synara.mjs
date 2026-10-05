@@ -160,6 +160,7 @@ try {
     assert.ok(provider?.enabled && provider?.available, `Agent unavailable: ${id}: ${JSON.stringify(provider)}`);
     assert.equal(provider.status, 'ready', `Prepared Synara account is not ready: ${id}: ${JSON.stringify(provider)}`);
     assert.notEqual(provider.authStatus, 'unauthenticated', `Prepared Synara account is blocked by auth: ${id}`);
+    console.log(`Checking installed Synara model discovery: ${id}`);
     const catalog = await rpc('provider.listModels', {
       provider: id.includes('claude') ? 'claudeAgent' : 'codex', instanceId: id,
     });
@@ -213,7 +214,7 @@ try {
     ws.send(JSON.stringify({ _tag: 'Interrupt', requestId: streamId }));
     streams.delete(streamId);
     console.log(`Passed installed Synara: ${id}, exact model, streaming, second turn, stop and resume`);
-    if (id === 'kilo_claude_proxy') console.log('Passed installed Synara: Claude prepared High and Low models across turns');
+    if (id === 'kilo_claude_proxy') console.log(`Passed installed Synara: ${model} High → ${alternateModel} Low → ${model} High after resume`);
   }
   assert.ok(approved.size > 0, 'No real provider permission request was approved');
   if (fixture.verifyModelPicker) {

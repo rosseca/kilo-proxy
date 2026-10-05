@@ -162,11 +162,17 @@ try {
   for (const account of accounts) {
     assert.equal(typeof account.displayName, 'string');
     assert.equal(account.enabled, true, `Fixture account disabled: ${account.instanceId}`);
-    assert.ok(account.models.length > 0, `Account model discovery empty: ${account.instanceId}`);
+    assert.equal(account.available, true, `Fixture account unavailable: ${JSON.stringify(account)}`);
+    if (account.instanceId.endsWith('_proxy')) assert.ok(account.models.length > 0, `Managed model discovery empty: ${JSON.stringify(account)}`);
+    // The native SDK may omit its catalog for an owned custom loopback URL.
+    // Its unchanged, guarded default is the only safe native fallback; do not
+    // invent a model or advertised capability for the normal account.
+    else assert.ok(account.models.length > 0 || account.defaultModel, `Normal account has no discovered model or native default: ${JSON.stringify(account)}`);
   }
   assert.ok(accounts.find(value => value.instanceId === 'kilo_codex_proxy').models.some(value => value.slug === fixture.codexModel));
   assert.ok(!accounts.find(value => value.instanceId === 'kilo_codex_proxy').models.some(value => value.slug === 'gpt-6-astra'));
-  const normalClaude = accounts.find(value => value.instanceId === 'kilo_claude_normal').models.find(value => value.slug === 'opus') ?? accounts.find(value => value.instanceId === 'kilo_claude_normal').models[0];
+  const normalClaudeAccount = accounts.find(value => value.instanceId === 'kilo_claude_normal');
+  const normalClaude = normalClaudeAccount.models.find(value => value.slug === 'opus') ?? normalClaudeAccount.models[0] ?? { slug: normalClaudeAccount.defaultModel };
   const selections = [
     { provider: 'codex', instanceId: 'kilo_codex_normal', model: 'gpt-6-astra', options: { reasoningEffort: 'low' } },
     { provider: 'codex', instanceId: 'kilo_codex_proxy', model: fixture.codexModel, options: { reasoningEffort: 'low' } },

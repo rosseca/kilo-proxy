@@ -73,6 +73,7 @@ for (const id of ids) {
   assert.equal(selected.instanceId, id, 'An explicit Normal/Kilo account must not be substituted');
 }
 assert.throws(() => resolve({ provider: 'codex', model: target.model }), error => error.code === 'account_required');
+assert.throws(() => resolve({ provider: 'codex', instanceId: 'codex', model: target.model }), error => error.code === 'account_required', 'The shipped ModelSelection decoder fills missing account with its legacy provider ID');
 assert.throws(() => resolve({ ...target, instanceId: 'missing_account' }), error => error.code === 'account_unavailable');
 assert.throws(() => resolve({ ...target, instanceId: 'kilo_claude_proxy' }), error => error.code === 'account_provider_mismatch');
 assert.throws(() => resolve({ ...target, model: 'vendor/not-prepared' }), error => error.code === 'model_unavailable');

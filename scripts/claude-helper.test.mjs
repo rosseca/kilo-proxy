@@ -1,6 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import {mkdtempSync,mkdirSync,writeFileSync,rmSync} from 'node:fs';import {tmpdir} from 'node:os';import {join} from 'node:path';import {spawnSync} from 'node:child_process';
-import {claudeCapabilities,claudeSelection,claudeSettings,claudeEfforts,claudeEffortKey,claudeLaunch} from '../ui/claude-helper.mjs';
+import {claudeCapabilities,claudeSelection,claudeSettings,claudeEfforts,claudeEffortKey,claudePickerKey,claudeLaunch} from '../ui/claude-helper.mjs';
 const models=[{id:'anthropic/claude-fable-5.1',displayName:'Fable',effort:'low'},{id:'anthropic/claude-opus-4.6',displayName:'Opus',effort:'medium'}];
 test('Claude picker and per-model settings use versioned native capabilities',()=>{
  const selection=claudeSelection(models,models[0].id,{haiku:models[1].id},'modern');
@@ -16,6 +16,27 @@ test('Claude picker and per-model settings use versioned native capabilities',()
  assert.deepEqual(claudeEfforts('z-ai/glm-5.3',claudeCapabilities('2.1.263')),[]);
  assert.deepEqual(claudeEfforts(models[0].id,claudeCapabilities('2.1.263')),['low','medium','high','xhigh']);
  assert.equal(claudeCapabilities('2.1.242').perModelEffort,false);
+});
+test('Claude 5.5 native defaults use verified keys without changing exact picker identities',()=>{
+ const selected=[{id:'anthropic/claude-opus-5.5',effort:'high'},{id:'anthropic/claude-sonnet-5.5',effort:'low'}];
+ const selection=claudeSelection(selected,selected[0].id);
+ const config=claudeSettings(selection,claudeCapabilities('2.1.288'),'http://127.0.0.1:8877','fixture');
+ assert.equal(config.model,selected[0].id);
+ assert.deepEqual(config.modelPicker.options.map(m=>m.model),selected.map(m=>m.id));
+ assert.equal(config.modelOverrides,undefined);
+ assert.equal(config.effortLevel,undefined);
+ assert.deepEqual(config.modelSettings,{'claude-opus-5':{effortLevel:'high'},'claude-sonnet-5':{effortLevel:'low'}});
+ for(const [id,key] of [['anthropic/claude-opus-5.5','claude-opus-5'],['anthropic/claude-sonnet-5.5-20261005','claude-sonnet-5'],['anthropic/claude-opus-5-5','claude-opus-5-5']]){
+  assert.equal(claudeEffortKey(id),key);assert.equal(claudePickerKey(id),'');
+ }
+ for(const version of ['', '2.1.251', '2.1.266']){
+  assert.deepEqual(claudeEfforts(selected[0].id,claudeCapabilities(version)),[]);
+  assert.throws(()=>claudeSettings(selection,claudeCapabilities(version),'http://127.0.0.1:8877','fixture'),/2\.1\.267/);
+ }
+ assert.deepEqual(claudeEfforts(selected[0].id,{version:'2.1.267',picker:true,perModelEffort:true}),['low','medium','high','xhigh']);
+ assert.deepEqual(claudeEfforts(selected[0].id,claudeCapabilities('2.1.288')),['low','medium','high','xhigh']);
+ const conflicting=claudeSelection([selected[0],{id:'anthropic/claude-opus-5',effort:'low'}],selected[0].id);
+ assert.throws(()=>claudeSettings(conflicting,claudeCapabilities('2.1.288'),'http://127.0.0.1:8877','fixture'),/share a native Claude effort key/);
 });
 test('Claude launcher requires setup, isolates settings, clears conflicting auth and leaves the parent unchanged',{skip:process.platform==='win32'},()=>{
  const dir=mkdtempSync(join(tmpdir(),'claude-launch-'));

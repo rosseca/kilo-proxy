@@ -30,7 +30,10 @@ function kiloSynaraAccountAvailabilities(settings, statuses) {
 function kiloSynaraGatewayAccount(input) {
 	const target = input.target;
 	const account = input.availability;
-	if (!target.instanceId && account?.accountRequired) throw new AgentGatewayTargetError("account_required", `Choose an exact ${target.provider} account from synara_capabilities providers[].instanceId and include target.instanceId. Normal and Kilo Proxy accounts are separate.`);
+	// The shipped ModelSelection decoder fills a missing instanceId with the
+	// provider's legacy default ID. That implicit legacy account is ambiguous
+	// as soon as custom Normal/Kilo accounts are present, too.
+	if ((!target.instanceId || target.instanceId === target.provider) && account?.accountRequired) throw new AgentGatewayTargetError("account_required", `Choose an exact ${target.provider} account from synara_capabilities providers[].instanceId and include target.instanceId. Normal and Kilo Proxy accounts are separate.`);
 	if (target.instanceId && (!account || account.instanceId !== target.instanceId)) throw new AgentGatewayTargetError("account_unavailable", `Account "${target.instanceId}" is not configured. Choose an exact account from synara_capabilities.`);
 	if (account?.provider && account.provider !== target.provider) throw new AgentGatewayTargetError("account_provider_mismatch", `Account "${account.instanceId}" belongs to ${account.provider}, not ${target.provider}.`);
 	// The ordinary account preflight supplies its disabled/auth message first.
