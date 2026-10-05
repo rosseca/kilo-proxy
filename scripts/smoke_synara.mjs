@@ -1,4 +1,4 @@
-// Optional acceptance check against an installed, unmodified Synara desktop server.
+// Optional acceptance check against the version-checked private Synara server.
 // The Go fixture supplies disposable homes and synthetic loopback upstreams.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -15,7 +15,7 @@ await new Promise(resolve => listener.listen(0, '127.0.0.1', resolve));
 const port = listener.address().port;
 await new Promise(resolve => listener.close(resolve));
 const credential = randomBytes(32).toString('hex');
-const child = spawn(fixture.binary, [fixture.entry, '--mode', 'desktop', '--port', String(port),
+const child = spawn(fixture.binary, [...(fixture.backendHook ? ['--import', fixture.backendHook] : []), fixture.entry, '--mode', 'desktop', '--port', String(port),
   '--host', '127.0.0.1', '--home-dir', fixture.baseDir, '--no-browser'], {
   cwd: fixture.project,
   env: { ...fixture.env, ELECTRON_RUN_AS_NODE: '1', NODE_USE_ENV_PROXY: '0',
@@ -160,6 +160,7 @@ try {
     assert.ok(provider?.enabled && provider?.available, `Agent unavailable: ${id}: ${JSON.stringify(provider)}`);
     assert.equal(provider.status, 'ready', `Prepared Synara account is not ready: ${id}: ${JSON.stringify(provider)}`);
     assert.notEqual(provider.authStatus, 'unauthenticated', `Prepared Synara account is blocked by auth: ${id}`);
+    console.log(`Checking installed Synara model discovery: ${id}`);
     const catalog = await rpc('provider.listModels', {
       provider: id.includes('claude') ? 'claudeAgent' : 'codex', instanceId: id,
     });
@@ -213,7 +214,7 @@ try {
     ws.send(JSON.stringify({ _tag: 'Interrupt', requestId: streamId }));
     streams.delete(streamId);
     console.log(`Passed installed Synara: ${id}, exact model, streaming, second turn, stop and resume`);
-    if (id === 'kilo_claude_proxy') console.log('Passed installed Synara: Claude prepared High and Low models across turns');
+    if (id === 'kilo_claude_proxy') console.log(`Passed installed Synara: ${model} High → ${alternateModel} Low → ${model} High after resume`);
   }
   assert.ok(approved.size > 0, 'No real provider permission request was approved');
   if (fixture.verifyModelPicker) {

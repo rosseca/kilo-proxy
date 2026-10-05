@@ -945,7 +945,7 @@ func (u *nativeUI) clientPicker(key string, s *nativeClientSelection) layout.Wid
 				caps := u.clientCaps(key)
 				efforts := []string{""}
 				for _, effort := range []string{"low", "medium", "high", "xhigh"} {
-					if validClaudeEffort(id, effort) && (caps.PerModelEffort || effort != "xhigh") {
+					if validClaudeEffort(id, effort) && (caps.PerModelEffort || effort != "xhigh") && (!claude55ID.MatchString(id) || claudeEffortCompatible(id, caps)) {
 						efforts = append(efforts, effort)
 					}
 				}

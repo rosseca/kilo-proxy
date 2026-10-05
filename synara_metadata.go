@@ -81,7 +81,7 @@ func (a *app) synaraProfileOptions(rt clientLaunchRuntime, library modelLibrary)
 	paths := synaraPaths(a.dir)
 	codex, _ := resolveOpenDesignCLI("codex-cli", rt)
 	claude, _ := rt.resolve("claude", "")
-	return synaraProfileOptions{RootDir: paths.Root, DataDir: paths.Data, UserDataDir: paths.Electron, NormalHome: rt.home, CodexBinary: codex, ClaudeBinary: claude, NormalEnvironment: synaraNormalEnvironment(rt.home, os.Environ(), rt.platform), Library: library, Catalog: readNativeCatalogCache(a.dir, a.catalogScopeLocked()), Port: a.config.Port, LocalKey: a.config.LocalKey, Images: a.clientImageSettingsLocked()}
+	return synaraProfileOptions{RootDir: paths.Root, DataDir: paths.Data, UserDataDir: paths.Electron, NormalHome: rt.home, CodexBinary: codex, NormalCodexBinary: synaraCodexNormalShimPath(paths.Root, rt.platform), ClaudeBinary: claude, NormalEnvironment: synaraNormalEnvironment(rt.home, os.Environ(), rt.platform), Library: library, Catalog: readNativeCatalogCache(a.dir, a.catalogScopeLocked()), Port: a.config.Port, LocalKey: a.config.LocalKey, Images: a.clientImageSettingsLocked()}
 }
 
 func (a *app) synaraClaudeCapabilities(binary string, rt clientLaunchRuntime) claudeCapabilities {

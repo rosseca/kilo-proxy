@@ -10,10 +10,34 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 )
+
+func synaraTestPlatform(platform string) string {
+	// Windows cannot represent Unix executable mode bits. Preparation fixtures
+	// must exercise its real native-binary contract rather than simulate macOS
+	// with a PE test executable and non-executable regular files.
+	if runtime.GOOS == "windows" {
+		return "windows"
+	}
+	return platform
+}
+
+func synaraTestAdapterSource(t *testing.T, a *app, root, platform string) {
+	t.Helper()
+	source := filepath.Join(root, "kilo-proxy-native")
+	if platform == "windows" {
+		source += ".exe"
+	}
+	// Synthetic native fixtures are only copied and inspected; never started.
+	if err := os.WriteFile(source, syntheticSynaraNativeHeader(platform), 0700); err != nil {
+		t.Fatal(err)
+	}
+	a.synaraAdapterSource = func() (string, error) { return source, nil }
+}
 
 func syntheticSynaraExecutable(t *testing.T, root, platform string, versions ...string) string {
 	t.Helper()
@@ -72,19 +96,29 @@ func syntheticSynaraVersionExecutable(t *testing.T, root, platform, version stri
 
 func synaraTestApp(t *testing.T, platform string, versions ...string) *app {
 	t.Helper()
+	platform = synaraTestPlatform(platform)
 	a := launchTestApp(t)
+	a.synaraRuntimeDisabled = true
 	t.Setenv("CODEX_HOME", filepath.Join(a.launcher.home, ".codex"))
 	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(a.launcher.home, ".claude"))
 	a.config.Port = 9988
 	a.config.Language = "en"
 	binary := syntheticSynaraExecutable(t, a.launcher.home, platform, versions...)
 	cli := filepath.Join(a.launcher.home, "codex-native")
+	if platform == "windows" {
+		cli += ".exe"
+	}
 	claude := filepath.Join(a.launcher.home, "claude-native")
 	for _, path := range []string{cli, claude} {
 		if err := os.WriteFile(path, []byte("synthetic native CLI"), 0700); err != nil {
 			t.Fatal(err)
 		}
 	}
+	cliData := syntheticSynaraNativeHeader(platform)
+	if err := os.WriteFile(cli, cliData, 0700); err != nil {
+		t.Fatal(err)
+	}
+	synaraTestAdapterSource(t, a, a.launcher.home, platform)
 	a.launcher.platform = platform
 	a.launcher.resolve = func(id, custom string) (string, error) {
 		switch id {
@@ -127,7 +161,11 @@ func TestSynaraPrepareLaunchAndRuntimeGuards(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan.Env["HOME"] != paths.UIHome || plan.Env["SYNARA_BETA_HOME"] != paths.Data || plan.Env["SYNARA_DESKTOP_SMOKE_USER_DATA"] != paths.Electron || len(plan.Args) != 1 || plan.Args[0] != synaraMarker+paths.Root || plan.Executable != t3CodeBundleExecutable(binary) {
+	executable := binary
+	if rt.platform == "macos" || rt.platform == "darwin" {
+		executable = t3CodeBundleExecutable(binary)
+	}
+	if plan.Env["HOME"] != paths.UIHome || plan.Env["SYNARA_BETA_HOME"] != paths.Data || plan.Env["SYNARA_DESKTOP_SMOKE_USER_DATA"] != paths.Electron || len(plan.Args) != 1 || plan.Args[0] != synaraMarker+paths.Root || plan.Executable != executable {
 		t.Fatalf("unsafe launch: %#v", plan)
 	}
 	a.synaraCheckRunning = func(string) (bool, error) { return true, nil }

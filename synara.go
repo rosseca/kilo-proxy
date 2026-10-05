@@ -12,7 +12,7 @@ import (
 )
 
 const synaraProfileEndpoint = "/api/clients/synara"
-const synaraProfileRevision = 1
+const synaraProfileRevision = 3
 
 type synaraManagedPaths struct{ Root, Data, UIHome, Electron, Settings, Secrets, Selection string }
 
@@ -23,11 +23,16 @@ func synaraPaths(appDir string) synaraManagedPaths {
 }
 
 type synaraPrepared struct {
-	Library     modelLibrary      `json:"library"`
-	Version     string            `json:"version"`
-	Fingerprint string            `json:"fingerprint"`
-	Providers   map[string]any    `json:"providers"`
-	Files       map[string]string `json:"files"`
+	Library     modelLibrary          `json:"library"`
+	Version     string                `json:"version"`
+	Fingerprint string                `json:"fingerprint"`
+	Providers   map[string]any        `json:"providers"`
+	Files       map[string]string     `json:"files"`
+	Runtime     *synaraPrivateRuntime `json:"runtime,omitempty"`
+}
+
+func (a *app) synaraUsesPrivateRuntime(rt clientLaunchRuntime) bool {
+	return !a.synaraRuntimeDisabled && (rt.platform == "macos" || rt.platform == "darwin")
 }
 
 type synaraModelSummary struct {
@@ -63,9 +68,13 @@ func (a *app) synaraFingerprint(binary, version string, library modelLibrary, rt
 	if err != nil {
 		return ""
 	}
+	adapterSourceHash, err := a.synaraAdapterSourceHash()
+	if err != nil {
+		return ""
+	}
 	// A retained symlink spelling can resolve to a different provider home
 	// after preparation. Record its resolved directory identity as well.
-	data, _ := json.Marshal([]any{binary, version, codex, claude, library, a.config.Port, a.config.LocalKey, a.config.OrgID, a.catalogScopeLocked(), a.clientImageSettingsLocked(), rt.home, normalEnvironment, canonicalCodex, canonicalClaude, canonicalSecure, synaraProfileRevision})
+	data, _ := json.Marshal([]any{binary, version, codex, claude, library, a.config.Port, a.config.LocalKey, a.config.OrgID, a.catalogScopeLocked(), a.clientImageSettingsLocked(), rt.home, normalEnvironment, canonicalCodex, canonicalClaude, canonicalSecure, synaraProfileRevision, adapterSourceHash})
 	return openDesignHash(data)
 }
 
@@ -95,6 +104,37 @@ func (a *app) synaraReady(saved synaraPrepared, binary string, rt clientLaunchRu
 	if !safeLaunchDir(paths.Root, a.dir) {
 		return false
 	}
+	if a.synaraUsesPrivateRuntime(rt) {
+		if saved.Runtime == nil || !synaraPrivateRuntimeReady(a.synaraProfileOptions(rt, saved.Library), binary, rt.platform, *saved.Runtime) {
+			return false
+		}
+	} else if saved.Runtime != nil {
+		return false
+	}
+	shim := synaraCodexNormalShimPath(paths.Root, rt.platform)
+	shimRelative, _ := filepath.Rel(paths.Root, shim)
+	descriptorRelative := filepath.Join("adapters", synaraCodexNormalDescriptorName)
+	sourceHash, sourceErr := a.synaraAdapterSourceHash()
+	if sourceErr != nil || sourceHash == "" || saved.Files[shimRelative] != sourceHash || saved.Files[descriptorRelative] == "" {
+		return false
+	}
+	normal, ok := saved.Providers[synaraCodexNormalID].(map[string]any)
+	if !ok {
+		return false
+	}
+	normalConfig, ok := normal["config"].(map[string]any)
+	if !ok || normalConfig["binaryPath"] != shim {
+		return false
+	}
+	target, err := synaraCodexNormalShimTarget(shim, rt.platform)
+	codex, resolveErr := resolveOpenDesignCLI("codex-cli", rt)
+	canonicalCodex, canonicalErr := filepath.EvalSymlinks(codex)
+	if err != nil || resolveErr != nil || canonicalErr != nil || target != canonicalCodex {
+		return false
+	}
+	if info, err := os.Lstat(shim); err != nil || rt.platform != "windows" && info.Mode().Perm() != 0700 {
+		return false
+	}
 	for relative, expected := range saved.Files {
 		if filepath.IsAbs(relative) || filepath.Clean(relative) != relative || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
 			return false
@@ -103,7 +143,7 @@ func (a *app) synaraReady(saved synaraPrepared, binary string, rt clientLaunchRu
 		if !safeLaunchDir(filepath.Dir(path), a.dir) {
 			return false
 		}
-		digest, err := openDesignFileHash(path, catalogLimit)
+		digest, err := openDesignFileHash(path, synaraCodexNormalFileLimit(relative, rt.platform))
 		if err != nil || digest != expected {
 			return false
 		}
@@ -131,8 +171,36 @@ func (a *app) prepareSynara(library modelLibrary, rt clientLaunchRuntime, binary
 	}
 	planned.Providers = normalizeT3CodeProviders(planned.Providers)
 	files := planned.Files
+	adapterSource := a.synaraAdapterSource
+	if adapterSource == nil {
+		adapterSource = os.Executable
+	}
+	source, err := adapterSource()
+	if err != nil {
+		return errors.New("Cannot locate Kilo Proxy's native Synara Codex adapter.")
+	}
+	adapterFiles, err := planSynaraCodexNormalShim(paths.Root, options.CodexBinary, source, rt.platform)
+	if err != nil {
+		return err
+	}
+	files = append(files, adapterFiles...)
 
-	saved := synaraPrepared{Library: library, Version: version, Fingerprint: a.synaraFingerprint(binary, version, library, rt), Providers: planned.Providers, Files: map[string]string{}}
+	adapterHash, err := a.synaraAdapterSourceHash()
+	if err != nil || adapterHash != openDesignHash(adapterFiles[0].new) {
+		return errors.New("Kilo Proxy's native Synara adapter changed during preparation. Restart Kilo Proxy and prepare again.")
+	}
+	fingerprint := a.synaraFingerprint(binary, version, library, rt)
+	if fingerprint == "" {
+		return errors.New("Cannot safely identify the private Synara configuration; no profile changes saved.")
+	}
+	saved := synaraPrepared{Library: library, Version: version, Fingerprint: fingerprint, Providers: planned.Providers, Files: map[string]string{}}
+	if a.synaraUsesPrivateRuntime(rt) {
+		privateRuntime, err := prepareSynaraPrivateRuntime(options, binary, rt.platform)
+		if err != nil {
+			return err
+		}
+		saved.Runtime = &privateRuntime
+	}
 	for _, file := range files {
 		if file.path == paths.Settings || file.path == filepath.Join(paths.Electron, "synara-storage-origin-v1.json") {
 			continue

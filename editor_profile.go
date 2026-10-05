@@ -230,13 +230,13 @@ func saveEditorFiles(files []profileFile) (bool, error) {
 		if !f.changed {
 			continue
 		}
-		if err := atomicCatalogFile(f.path, f.new); err != nil {
+		if err := atomicProfileFile(f.path, f.new, f.mode); err != nil {
 			restored := true
 			for _, prior := range files[:i] {
 				if prior.changed {
 					var e error
 					if prior.exists {
-						e = atomicCatalogFile(prior.path, prior.old)
+						e = atomicProfileFile(prior.path, prior.old, prior.oldMode)
 					} else {
 						e = os.Remove(prior.path)
 					}

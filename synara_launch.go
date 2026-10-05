@@ -86,15 +86,22 @@ func (a *app) applySynaraLaunch(plan *clientLaunchPlan, rt clientLaunchRuntime) 
 		return errors.New("Prepare Synara again: its private profiles or proxy connection changed.")
 	}
 	{
+		var caps *claudeCapabilities
 		for _, model := range saved.Library.Models {
 			if model.ReasoningEffort == "" || !validClaudeEffort(model.ID, model.ReasoningEffort) {
 				continue
 			}
-			claude, err := rt.resolve("claude", "")
-			if err != nil || !a.synaraClaudeCapabilities(claude, rt).PerModelEffort {
-				return errors.New("Synara requires Claude Code 2.1.251 or newer to apply saved per-model reasoning. Update Claude Code and prepare again.")
+			if caps == nil {
+				claude, err := rt.resolve("claude", "")
+				current := claudeCapabilities{}
+				if err == nil {
+					current = a.synaraClaudeCapabilities(claude, rt)
+				}
+				caps = &current
 			}
-			break
+			if !claudeEffortCompatible(model.ID, *caps) {
+				return managedClaudeEffortVersionError(model.ID, "Synara")
+			}
 		}
 	}
 	paths := synaraPaths(a.dir)
@@ -108,6 +115,11 @@ func (a *app) applySynaraLaunch(plan *clientLaunchPlan, rt clientLaunchRuntime) 
 	}
 	if running || time.Now().Before(a.synaraLaunchUntil) {
 		return errors.New("Quit the Synara Kilo window before opening it again. Your regular Synara window can stay open.")
+	}
+	if saved.Runtime != nil {
+		if err := validateSynaraPrivateRuntimeLaunch(*saved.Runtime); err != nil {
+			return err
+		}
 	}
 	for _, dir := range []string{paths.UIHome, paths.Data, paths.Electron} {
 		if err := safeEditorDir(a.dir, dir); err != nil {
@@ -132,6 +144,9 @@ func (a *app) applySynaraLaunch(plan *clientLaunchPlan, rt clientLaunchRuntime) 
 		plan.Env["XDG_STATE_HOME"] = filepath.Join(paths.UIHome, ".local", "state")
 		if rt.platform == "macos" || rt.platform == "darwin" {
 			binary := t3CodeBundleExecutable(plan.Executable)
+			if saved.Runtime != nil {
+				binary = saved.Runtime.Executable
+			}
 			if binary == "" {
 				return errors.New("The Synara desktop application bundle is invalid.")
 			}

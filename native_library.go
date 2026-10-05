@@ -215,9 +215,10 @@ func (u *nativeUI) sharedClientSelection(key string) *nativeClientSelection {
 		m := value
 		m.ReasoningLevels = slices.Clone(value.ReasoningLevels)
 		if key == "claude" || key == "xcode-claude" {
-			if validClaudeEffort(m.Model.ID, m.DefaultReasoning) && (u.clientCaps(key).PerModelEffort || m.Model.ID == source.Initial) {
+			caps := u.clientCaps(key)
+			if validClaudeEffort(m.Model.ID, m.DefaultReasoning) && (caps.PerModelEffort || m.Model.ID == source.Initial) && (!claude55ID.MatchString(m.Model.ID) || claudeEffortCompatible(m.Model.ID, caps)) {
 				m.ClaudeEffort = m.DefaultReasoning
-				if m.ClaudeEffort == "xhigh" && !u.clientCaps(key).PerModelEffort {
+				if m.ClaudeEffort == "xhigh" && !caps.PerModelEffort {
 					m.ClaudeEffort = ""
 				}
 			} else {

@@ -31,6 +31,7 @@ func TestSynaraInstalledFourAgents(t *testing.T) {
 	if runtime.GOOS != "darwin" || !filepath.IsAbs(installed) {
 		t.Fatal("the installed Synara acceptance currently requires an absolute macOS app bundle")
 	}
+	synaraInstalledProcessObservationPreflight(t)
 	const version = synaraSupportedVersion
 	realHome, err := os.UserHomeDir()
 	if err != nil {
@@ -50,6 +51,11 @@ func TestSynaraInstalledFourAgents(t *testing.T) {
 		t.Fatal("Node is required for the installed Synara acceptance check")
 	}
 	a := launchTestApp(t)
+	adapterSource := os.Getenv("KILO_TEST_SYNARA_ADAPTER_SOURCE")
+	if adapterSource == "" || validateOpenDesignShimBinary(adapterSource, runtime.GOOS, true) != nil {
+		t.Fatal("set KILO_TEST_SYNARA_ADAPTER_SOURCE to a compiled native Kilo Proxy binary for the installed Synara acceptance")
+	}
+	a.synaraAdapterSource = func() (string, error) { return adapterSource, nil }
 	a.config.Language = "en"
 	a.config.LocalKey = "synthetic-synara-local"
 	a.chatgpt.creds = chatGPTCredentials{Access: "synthetic-synara-chatgpt-access", Refresh: "synthetic-refresh", Account: "synthetic-synara-account", Expires: time.Now().Add(time.Hour).Unix()}
@@ -83,25 +89,23 @@ func TestSynaraInstalledFourAgents(t *testing.T) {
 	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(a.launcher.home, ".claude"))
 	t.Setenv("CLAUDE_SECURESTORAGE_CONFIG_DIR", filepath.Join(a.launcher.home, ".claude"))
 	const codexModel = "vendor/synara-codex"
-	const claudeModel = "anthropic/claude-opus-4-6"
-	const claudePickerModel = "anthropic/claude-opus-5.5"
-	const claudeLowModel = "anthropic/claude-sonnet-4-6"
+	const claudeModel = "anthropic/claude-opus-5.5"
+	const claudeLowModel = "anthropic/claude-sonnet-5.5"
+	const pickerPrompt = "Reply with the synthetic fixture response from the exact shared default."
 	const chatgptModel = "chatgpt/gpt-synthetic-high"
 	const responseText = "SYNTHETIC_SYNARA_OK"
 	// Put the shared default after index zero so the picker acceptance can prove
 	// that a stale built-in selection falls back to our configured default.
-	library := modelLibrary{SchemaVersion: 1, DefaultModel: claudePickerModel, Models: []modelLibraryItem{
+	library := modelLibrary{SchemaVersion: 1, DefaultModel: claudeModel, Models: []modelLibraryItem{
 		{ID: codexModel, ReasoningEffort: "high", ReasoningCustom: true, ReasoningLevels: []string{"low", "high"}, ContextWindow: 128000, MaxOutputTokens: 4096},
-		// This gateway ID reproduces the reported 5.5 picker mismatch. It has
-		// no invented reasoning capabilities or effort default in the fixture.
-		{ID: claudePickerModel, ContextWindow: 128000, MaxOutputTokens: 4096},
+		// These synthetic catalog capabilities exercise the exact 5.5 IDs and
+		// the saved High/Low defaults used by the reported workspace.
 		{ID: claudeModel, ReasoningEffort: "high", ReasoningCustom: true, ReasoningLevels: []string{"low", "medium", "high"}, ContextWindow: 128000, MaxOutputTokens: 4096},
 		{ID: chatgptModel, ReasoningEffort: "high", ReasoningCustom: true, ReasoningLevels: []string{"low", "high"}, ContextWindow: 128000, MaxOutputTokens: 4096},
 	}}
 	catalog := []modelInfo{
 		{ID: codexModel, Name: "Synthetic Codex", ContextWindow: 128000, MaxOutputTokens: 4096, ReasoningEfforts: []string{"low", "high"}},
-		{ID: claudePickerModel, Name: "Synthetic Gateway Opus 5.5", ContextWindow: 128000, MaxOutputTokens: 4096},
-		{ID: claudeModel, Name: "Synthetic Claude", ContextWindow: 128000, MaxOutputTokens: 4096, ReasoningEfforts: []string{"low", "medium", "high"}},
+		{ID: claudeModel, Name: "Synthetic Gateway Opus 5.5", ContextWindow: 128000, MaxOutputTokens: 4096, ReasoningEfforts: []string{"low", "medium", "high"}},
 		{ID: chatgptModel, Name: "Synthetic ChatGPT", ContextWindow: 128000, MaxOutputTokens: 4096, ReasoningEfforts: []string{"low", "high"}},
 	}
 	{
@@ -210,25 +214,28 @@ func TestSynaraInstalledFourAgents(t *testing.T) {
 			}
 			respond(w, r, body, synaraCodexProxyID)
 		case "/api/gateway/messages", "/api/gateway/messages/count_tokens":
-			if body["model"] == claudePickerModel {
-				// Routing and auth are asserted for 5.5; effort is deliberately
-				// unspecified, unlike the separate known High/Low regressions.
-				messages, _ := body["messages"].([]any)
+			messages, _ := body["messages"].([]any)
+			if body["model"] == claudeModel {
 				if len(messages) > 0 && strings.HasPrefix(stringValue(object(messages[0])["content"]), "You generate concise chat thread titles.") {
 					// The real UI also generates a preview and final title with
 					// its chosen agent/model. Keep those distinct from inference
 					// for the persisted conversation, without bypassing routing
 					// or credential checks above.
-					t3CodeFixtureMessagesSSE(w, claudePickerModel, `{"title":"Synthetic Synara UI"}`, "msg_synara_ui_title")
+					t3CodeFixtureMessagesSSE(w, claudeModel, `{"title":"Synthetic Synara UI"}`, "msg_synara_ui_title")
 					return
 				}
-				if r.URL.Path == "/api/gateway/messages" && body["stream"] == true {
+				// The picker uses the same exact model as the three-turn account
+				// check. Identify its request by its real prompt, not by model ID.
+				if r.URL.Path == "/api/gateway/messages" && body["stream"] == true && synaraInstalledRequestContainsText(messages, pickerPrompt) {
+					if object(body["output_config"])["effort"] != "high" {
+						t.Error("Synara picker lost the prepared Opus 5.5 High default")
+					}
 					mu.Lock()
 					pickerRequests++
 					mu.Unlock()
+					t3CodeFixtureMessagesSSE(w, claudeModel, responseText, "msg_synara_ui_reply")
+					return
 				}
-				respond(w, r, body, synaraClaudeProxyID)
-				return
 			}
 			expectedEffort := "high"
 			expectedModel := claudeModel
@@ -311,6 +318,10 @@ func TestSynaraInstalledFourAgents(t *testing.T) {
 	defer proxy.Close()
 	normalFiles := t3CodeFixtureNormalProfiles(t, a.launcher.home, library, catalog, normalCodex.URL, normalClaude.URL)
 	prepareSynaraFixture(t, a)
+	saved, err := a.readSynaraPrepared()
+	if err != nil {
+		t.Fatal(err)
+	}
 	plan, err := a.planClientLaunch(clientLaunchRequest{Client: "synara"}, a.launchRuntime())
 	if err != nil {
 		t.Fatal(err)
@@ -372,6 +383,10 @@ func TestSynaraInstalledFourAgents(t *testing.T) {
 			{"id": synaraCodexProxyID, "model": chatgptModel, "options": map[string]any{"reasoningEffort": "high"}},
 		},
 	}
+	if saved.Runtime == nil {
+		t.Fatal("installed acceptance did not prepare its private account-aware runtime")
+	}
+	fixture["backendHook"] = filepath.Join(saved.Runtime.Root, synaraRuntimeHookName)
 	data, _ := json.Marshal(fixture)
 	manifest := filepath.Join(t.TempDir(), "fixture.json")
 	if err := os.WriteFile(manifest, data, 0600); err != nil {
@@ -421,6 +436,49 @@ func TestSynaraInstalledFourAgents(t *testing.T) {
 		t.Fatalf("Synara settings roundtrip invalidated prepared state: %d %s", metadata.Code, metadata.Body.String())
 	}
 	t.Log(strings.TrimSpace(string(output)))
+}
+
+// Synara's real teardown verifies owned descendants with ps. A denied host
+// process-observation permission prevents this acceptance check from proving
+// cleanup; it is not a reason to relax the shipped process-tree guard.
+func synaraInstalledProcessObservationPreflight(t *testing.T) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, "/bin/ps", "-eo", "pid=,ppid=,lstart=,command=")
+	command.Env = append(cgClientEnv(t.TempDir()), "LC_ALL=C")
+	_, err := command.Output() // Discard the process inventory; never log it.
+	if err == nil {
+		return
+	}
+	var exitError *exec.ExitError
+	diagnostic := strings.ToLower(err.Error())
+	if errors.As(err, &exitError) {
+		diagnostic += " " + strings.ToLower(string(exitError.Stderr))
+	}
+	if strings.Contains(diagnostic, "operation not permitted") || strings.Contains(diagnostic, "permission denied") {
+		t.Skip("installed Synara acceptance requires host process-observation permission; ps is denied by the sandbox")
+	}
+	t.Fatalf("installed Synara process-observation preflight failed: %v", err)
+}
+
+func synaraInstalledRequestContainsText(messages []any, expected string) bool {
+	for _, raw := range messages {
+		message := object(raw)
+		if message["role"] != "user" {
+			continue
+		}
+		if text, ok := message["content"].(string); ok && strings.Contains(text, expected) {
+			return true
+		}
+		content, _ := message["content"].([]any)
+		for _, block := range content {
+			if part := object(block); part["type"] == "text" && strings.Contains(stringValue(part["text"]), expected) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // This optional check launches a second, isolated Electron process with the
