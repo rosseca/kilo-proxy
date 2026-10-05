@@ -14,11 +14,22 @@ import (
 )
 
 const (
-	t3CodeCodexNormalID  = "kilo_codex_normal"
-	t3CodeCodexProxyID   = "kilo_codex_proxy"
-	t3CodeClaudeNormalID = "kilo_claude_normal"
-	t3CodeClaudeProxyID  = "kilo_claude_proxy"
+	t3CodeCustomModelLimit = 32
+	t3CodeCodexNormalID    = "kilo_codex_normal"
+	t3CodeCodexProxyID     = "kilo_codex_proxy"
+	t3CodeClaudeNormalID   = "kilo_claude_normal"
+	t3CodeClaudeProxyID    = "kilo_claude_proxy"
 )
+
+func validateT3CodeLibrary(library modelLibrary) error {
+	if err := validateModelLibrary(library); err != nil {
+		return err
+	}
+	if len(library.Models) > t3CodeCustomModelLimit {
+		return errors.New("T3 Code supports up to 32 shared models. Reduce your selection in Models and prepare again.")
+	}
+	return nil
+}
 
 type t3CodeProfileOptions struct {
 	RootDir, NormalHome, CodexBinary, ClaudeBinary string
@@ -51,7 +62,7 @@ func planT3CodeProfiles(options t3CodeProfileOptions) (t3CodeProfiles, error) {
 	if options.Port < 1024 || options.Port > 65535 || options.LocalKey == "" || strings.ContainsAny(options.LocalKey, "\x00\r\n") {
 		return result, errors.New("T3 Code requires a valid local proxy port and key.")
 	}
-	if err := validateModelLibrary(options.Library); err != nil {
+	if err := validateT3CodeLibrary(options.Library); err != nil {
 		return result, err
 	}
 	if len(options.Library.Models) == 0 {

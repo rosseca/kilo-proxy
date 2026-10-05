@@ -247,6 +247,11 @@ try {
     await stopSession(threadId);
     console.log('Passed installed T3 V2: Normal to Kilo provider handoff in the same conversation');
   }
+  if (fixture.verifyModelPicker) {
+    const { verifyT3ModelPicker } = await import('./verify_t3_model_picker.mjs');
+    await verifyT3ModelPicker({ fixture, base, token, credential, config, projectId,
+      dispatch, creation, snapshot, awaitReply, stopSession });
+  }
   console.log('Installed T3 four-agent acceptance passed');
 } catch (error) {
   console.error(error.stack);

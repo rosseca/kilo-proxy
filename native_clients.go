@@ -151,6 +151,9 @@ func nativeClientPayload(key string, s *nativeClientSelection) (any, error) {
 		for _, m := range s.Models {
 			library.Models = append(library.Models, nativeLibraryItem(m))
 		}
+		if key == "t3-code" {
+			return map[string]any{"library": library}, validateT3CodeLibrary(library)
+		}
 		return map[string]any{"library": library}, validateModelLibrary(library)
 	}
 	if key == "omp" {

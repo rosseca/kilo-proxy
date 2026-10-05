@@ -22,6 +22,23 @@ test('prepared status requires the current complete shared library',()=>{
  assert.equal(t3CodePrepared({...source,recoveryRequired:true},profile),false);
 });
 
+test('T3 refuses a library exceeding its 32 custom-model limit before writing', async t => {
+ const source = saved(), writes = [];
+ source.library.models = Array.from({length:33}, (_, i) => ({id:'vendor/model-'+i}));
+ source.library.defaultModel = 'vendor/model-32';
+ const {helper} = fixture(t, async (path, body) => {
+  if (body) writes.push(body);
+  return path === 'model-library' ? source : {};
+ });
+ await tick();
+ assert.equal(helper.launchState().valid, false);
+ assert.match(helper.launchState().reason, /32 shared models/);
+ await assert.rejects(helper.launchState().prepare(), /32 shared models/);
+ assert.equal(writes.length, 0);
+ helper.render({state:{connectionReady:true},language:'es'});
+ assert.match(helper.launchState().reason, /32 modelos compartidos/);
+});
+
 test('four agents use an immutable common-library snapshot without exposing credentials or profile paths',async t=>{
  const source=saved(),calls=[];
  const {helper,nodes}=fixture(t,async(path,body)=>{calls.push({path,body});return path==='model-library'?source:{prepared:true,library:structuredClone(source.library),profileDir:'/private/profile/secret',version:'0.0.45'};});

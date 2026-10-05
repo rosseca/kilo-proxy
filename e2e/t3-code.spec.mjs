@@ -48,6 +48,8 @@ test('T3 Code prepares four agents before desktop launch and guards a second ope
  await page.locator('#t3-code-options').click();
  await expect(page.locator('#t3-code-prepared')).toContainText('Four agents prepared');
  await expect(page.locator('#t3-code-compatibility')).toContainText('new chat to switch between normal and Kilo');
+ await expect(page.locator('#t3-code-compatibility')).toContainText('Preparation hides the built-in Claude entries');
+ await expect(page.locator('#t3-code-compatibility')).toContainText('check the selected model before continuing');
  await expect(page.locator('#t3-code-privacy')).toContainText('regular T3 Code workspace and chats stay separate');
  await expect(page.locator('#t3-code-requirements')).toContainText('not Desktop app logins');
  await expect(page.locator('#t3-code-install')).toHaveAttribute('href','https://github.com/pingdotgg/t3code/releases/tag/v0.0.46-nightly.20261003.2610');
@@ -58,6 +60,7 @@ test('T3 Code prepares four agents before desktop launch and guards a second ope
  await page.setViewportSize({width:390,height:844});
  await expect(page.locator('#t3-code-agents')).toContainText('Sesión existente de Codex CLI');
  await expect(page.locator('#t3-code-compatibility')).toContainText('inicia uno nuevo para cambiar entre normal y Kilo');
+ await expect(page.locator('#t3-code-compatibility')).toContainText('revisa el modelo elegido antes de continuar');
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
  await page.locator('#t3-code-helper').screenshot({path:testInfo.outputPath('t3-code-es-mobile.png')});
  expect(await page.evaluate(()=>window.__copied)).toEqual([]);
@@ -120,6 +123,7 @@ test('T3 nightly prepares its actual version and explains V2 handoff in EN/ES',a
  await expect(page.locator('#t3-code-requirements')).toContainText('Detected: '+version);
  await expect(page.locator('#t3-code-compatibility')).toContainText('change agents between turns');
  await expect(page.locator('#t3-code-compatibility')).toContainText('attachments are not transferred');
+ await expect(page.locator('#t3-code-compatibility')).toContainText('built-in Claude entries are hidden during preparation');
  await page.locator('#t3-code-prepare').click();
  await expect(page.locator('#t3-code-prepared')).toContainText('Four agents prepared');
  const profile=await getAPI(request,gateway,'clients/t3-code');
@@ -130,6 +134,7 @@ test('T3 nightly prepares its actual version and explains V2 handoff in EN/ES',a
  await page.locator('#language').selectOption('es');await page.setViewportSize({width:390,height:844});
  await expect(page.locator('#t3-code-requirements')).toContainText('Detectado: '+version);
  await expect(page.locator('#t3-code-compatibility')).toContainText('cambiar de agente entre turnos');
+ await expect(page.locator('#t3-code-compatibility')).toContainText('Revisa el modelo elegido antes de continuar un chat antiguo');
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
  await page.locator('#t3-code-helper').screenshot({path:testInfo.outputPath('t3-nightly-es-mobile.png')});
 });

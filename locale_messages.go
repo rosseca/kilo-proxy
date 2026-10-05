@@ -37,6 +37,10 @@ func nativeMessage(message, language string) string {
 
 // Canonical backend translations shared with ui/i18n.mjs.
 var nativeBackendMessages = map[string]string{
+	"Los ajustes de cliente privados de T3 Code no son válidos; no se guardaron cambios.":             "Private T3 Code client settings are invalid; no setup changes saved.",
+	"No se pudieron leer con seguridad los ajustes de cliente privados de T3 Code.":                   "Cannot safely read the private T3 Code client settings.",
+	"T3 Code admite hasta 32 modelos compartidos. Reduce la selección en Modelos y prepara de nuevo.": "T3 Code supports up to 32 shared models. Reduce your selection in Models and prepare again.",
+
 	"Elige un solo ID de gateway por familia/versión de Claude para el razonamiento nativo":                                                                                                      "Choose one gateway ID per Claude family/version for native reasoning",
 	"T3 Code nightly requiere IDs de modelos Claude con proveedor (por ejemplo anthropic/claude-opus-4-6) para los niveles guardados. Usa el ID exacto del gateway en Modelos.":                  "T3 Code nightly requires provider-qualified Claude model IDs (for example anthropic/claude-opus-4-6) for saved reasoning defaults. Use the exact gateway ID in Models.",
 	"T3 Code nightly requiere Claude Code 2.1.251 o posterior para aplicar el razonamiento guardado por modelo. Actualiza Claude Code y prepara de nuevo.":                                       "T3 Code nightly requires Claude Code 2.1.251 or newer to apply saved per-model reasoning. Update Claude Code and prepare again.",

@@ -90,16 +90,23 @@ func TestT3CodeInstalledFourAgents(t *testing.T) {
 	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(a.launcher.home, ".claude"))
 	const codexModel = "vendor/t3-codex"
 	const claudeModel = "anthropic/claude-opus-4-6"
+	const claudePickerModel = "anthropic/claude-opus-5.5"
 	const claudeLowModel = "anthropic/claude-sonnet-4-6"
 	const chatgptModel = "chatgpt/gpt-synthetic-high"
 	const responseText = "SYNTHETIC_T3_OK"
-	library := modelLibrary{SchemaVersion: 1, DefaultModel: codexModel, Models: []modelLibraryItem{
+	// Put the shared default after index zero so the picker acceptance can prove
+	// that a stale built-in selection falls back to our configured default.
+	library := modelLibrary{SchemaVersion: 1, DefaultModel: claudePickerModel, Models: []modelLibraryItem{
 		{ID: codexModel, ReasoningEffort: "high", ReasoningCustom: true, ReasoningLevels: []string{"low", "high"}, ContextWindow: 128000, MaxOutputTokens: 4096},
+		// This gateway ID reproduces the reported 5.5 picker mismatch. It has
+		// no invented reasoning capabilities or effort default in the fixture.
+		{ID: claudePickerModel, ContextWindow: 128000, MaxOutputTokens: 4096},
 		{ID: claudeModel, ReasoningEffort: "high", ReasoningCustom: true, ReasoningLevels: []string{"low", "medium", "high"}, ContextWindow: 128000, MaxOutputTokens: 4096},
 		{ID: chatgptModel, ReasoningEffort: "high", ReasoningCustom: true, ReasoningLevels: []string{"low", "high"}, ContextWindow: 128000, MaxOutputTokens: 4096},
 	}}
 	catalog := []modelInfo{
 		{ID: codexModel, Name: "Synthetic Codex", ContextWindow: 128000, MaxOutputTokens: 4096, ReasoningEfforts: []string{"low", "high"}},
+		{ID: claudePickerModel, Name: "Synthetic Gateway Opus 5.5", ContextWindow: 128000, MaxOutputTokens: 4096},
 		{ID: claudeModel, Name: "Synthetic Claude", ContextWindow: 128000, MaxOutputTokens: 4096, ReasoningEfforts: []string{"low", "medium", "high"}},
 		{ID: chatgptModel, Name: "Synthetic ChatGPT", ContextWindow: 128000, MaxOutputTokens: 4096, ReasoningEfforts: []string{"low", "high"}},
 	}
@@ -123,6 +130,7 @@ func TestT3CodeInstalledFourAgents(t *testing.T) {
 	var mu sync.Mutex
 	counts := map[string]int{}
 	toolResults := map[string]bool{}
+	pickerRequests := 0
 	count := func(route string) int {
 		mu.Lock()
 		defer mu.Unlock()
@@ -202,6 +210,17 @@ func TestT3CodeInstalledFourAgents(t *testing.T) {
 			}
 			respond(w, r, body, t3CodeCodexProxyID)
 		case "/api/gateway/messages", "/api/gateway/messages/count_tokens":
+			if body["model"] == claudePickerModel {
+				// Routing and auth are asserted for 5.5; effort is deliberately
+				// unspecified, unlike the separate known High/Low regressions.
+				if r.URL.Path == "/api/gateway/messages" {
+					mu.Lock()
+					pickerRequests++
+					mu.Unlock()
+				}
+				respond(w, r, body, t3CodeClaudeProxyID)
+				return
+			}
 			expectedEffort := "high"
 			expectedModel := claudeModel
 			mu.Lock()
@@ -327,10 +346,16 @@ func TestT3CodeInstalledFourAgents(t *testing.T) {
 	if version == t3CodeNightlyVersion {
 		claudeOptions = nil
 	}
+	libraryIDs := make([]string, 0, len(library.Models))
+	for _, model := range library.Models {
+		libraryIDs = append(libraryIDs, model.ID)
+	}
 	fixture := map[string]any{
 		"binary": plan.Executable, "entry": filepath.Join(installed, "Contents", "Resources", "app.asar", "apps", "server", "dist", "bin.mjs"),
 		"version": version,
 		"baseDir": paths.Data, "home": paths.UIHome, "project": project, "env": env, "expectedResponse": responseText,
+		"verifyModelPicker": os.Getenv("KILO_TEST_T3_PICKER") == "1", "clientSettingsPath": paths.ClientSettings,
+		"libraryModels": libraryIDs, "defaultModel": library.DefaultModel,
 		"instances": []map[string]any{
 			{"id": t3CodeCodexNormalID, "model": codexModel, "options": map[string]any{"reasoningEffort": "high"}},
 			{"id": t3CodeCodexProxyID, "model": codexModel, "options": map[string]any{"reasoningEffort": "high"}},
@@ -348,6 +373,13 @@ func TestT3CodeInstalledFourAgents(t *testing.T) {
 	defer cancel()
 	command := exec.CommandContext(ctx, node, "scripts/smoke_t3_code.mjs", "--manifest", manifest)
 	command.Env = cgClientEnv(t.TempDir())
+	if os.Getenv("KILO_TEST_T3_PICKER") == "1" {
+		browsers := os.Getenv("PLAYWRIGHT_BROWSERS_PATH")
+		if browsers == "" {
+			browsers = filepath.Join(realHome, "Library", "Caches", "ms-playwright")
+		}
+		command.Env = append(command.Env, "PLAYWRIGHT_BROWSERS_PATH="+browsers)
+	}
 	command.WaitDelay = 3 * time.Second
 	output, err := command.CombinedOutput()
 	if err != nil || !strings.Contains(string(output), "Installed T3 four-agent acceptance passed") {
@@ -363,6 +395,9 @@ func TestT3CodeInstalledFourAgents(t *testing.T) {
 		if !toolResults[id] {
 			t.Errorf("%s did not complete its safe file-read roundtrip", id)
 		}
+	}
+	if os.Getenv("KILO_TEST_T3_PICKER") == "1" && pickerRequests != 5 {
+		t.Errorf("Opus 5.5 exact gateway requests = %d, want history + three UI continuations + promoted draft (5)", pickerRequests)
 	}
 	mu.Unlock()
 	for path, before := range normalFiles {

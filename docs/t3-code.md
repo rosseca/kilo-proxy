@@ -17,7 +17,7 @@ This integration uses **Codex CLI and Claude Code**, rather than either Desktop 
 - On Linux, use an extracted AppImage installation so the executable and its package metadata are accessible to the launcher.
 - Install Codex CLI and Claude Code so Kilo Proxy can find their executables.
 - Sign in to the CLIs normally to use the normal agent options.
-- Connect Kilo Proxy to your provider and save at least one model in **Models**.
+- Connect Kilo Proxy to your provider and save 1–32 shared models in **Models**. T3 accepts at most 32 custom models per agent; preparation rejects larger libraries so the initial model cannot silently disappear.
 
 The preparation step checks the installed T3 Code contract before writing its private settings. An unsupported or incomplete installation produces an error instead of modifying your usual T3 Code workspace.
 
@@ -43,7 +43,9 @@ Close **T3 Code · Kilo** before changing shared models or the proxy connection,
 
 Manage the Kilo agents' models in Kilo Proxy's shared **Models** library. The normal agents keep their own model catalogs.
 
-In **Claude · Kilo**, choose a prepared model by its exact gateway ID. T3 Code 0.0.45 also lists its built-in Claude models alongside the prepared models. Those extra entries are not mapped to your shared library and may not be available through your provider.
+Preparation configures the private Desktop model picker for **Claude · Kilo**: it hides the built-in Claude entries that are not exact IDs in your shared library and orders your prepared models with the shared default first. Choose the model by its saved display name; the request keeps its exact gateway ID, such as `anthropic/claude-opus-5.5`. Normal agents keep their own catalogs and preferences.
+
+Close **T3 Code · Kilo** and reopen it from Kilo Proxy to apply this picker policy to an older workspace. A chat, project or draft using a hidden built-in model falls back to the shared default shown in the composer; review or change the selected model before continuing. Preparation also includes Claude entries from T3’s private cached manifest. T3 can refresh that manifest independently of its app version; if a new built-in entry appears, close and reopen the Kilo workspace to prepare again. This policy belongs to the Desktop client preferences; independently connected web/mobile clients keep their own picker preferences.
 
 Codex · Kilo exposes the supported reasoning levels for each model. In stable T3, Claude · Kilo exposes only the levels supported by its Claude Code driver and the model; its options can be narrower than Codex's. Model listing does not establish support for generation, tool use or every reasoning level. The selected provider must support the protocol and features used by the agent.
 
