@@ -25,7 +25,7 @@ KILO_TEST_T3_APP='/absolute/path/to/T3 Code.app' KILO_TEST_T3_PICKER=1 go test -
 
 This macOS opt-in check requires installed Codex CLI, Claude Code and Playwright Chromium. It uses disposable homes and synthetic local upstreams, reproduces an old built-in Claude selection, and verifies the exact gateway ID through the packaged frontend and native drivers. Desktop persistence/bootstrap IPC is injected into headless Chromium; this is not a native Electron IPC acceptance test. Existing application windows and account profiles are not used.
 
-When changing Synara profiles or account/model selection, run the installed-client acceptance against the supported Beta release:
+When changing Synara profiles or account/model selection, run the installed-client acceptance against the Beta build being validated:
 
 ```sh
 go build -o /private/tmp/kilo-synara-adapter .
@@ -34,9 +34,9 @@ KILO_TEST_SYNARA_APP='/absolute/path/to/Synara Beta.app' KILO_TEST_SYNARA_ADAPTE
 
 This macOS opt-in check requires installed Codex CLI, Claude Code and Playwright Chromium. It uses disposable homes and synthetic local upstreams to exercise the four accounts, the packaged account/model picker and native CLI drivers. Desktop persistence/bootstrap IPC is injected into headless Chromium; this does not verify the native Electron GUI or its IPC. Existing application windows and account profiles are not used.
 
-Use the same app and compiled-adapter variables with `-run '^TestSynaraInstalledCodexVoiceHealth$'` to check real CLI login-status parsing with synthetic ChatGPT, API-key and unsigned-in profiles. It records no microphone audio and requests no inference. The private backend snapshot is checked against the exact official Beta server source before applying the account-aware delegation correction.
+Use the same app and compiled-adapter variables with `-run '^TestSynaraInstalledCodexVoiceHealth$'` to check real CLI login-status parsing with synthetic ChatGPT, API-key and unsigned-in profiles. It records no microphone audio and requests no inference. The private backend integration points are checked before applying the account-aware delegation correction. Synara Beta versions are not restricted to an allowlist; installed-client acceptance establishes evidence for the tested build.
 
-Add `KILO_TEST_SYNARA_DESKTOP=1` to the same command for a separate native Electron startup check. It uses the production launch plan with disposable storage, verifies the private backend and native snapshot import, then sends SIGTERM only to its own process and checks graceful shutdown. It does not drive the native window or establish native GUI inference coverage.
+Add `KILO_TEST_SYNARA_DESKTOP=1` to the same command for a separate native Electron startup check. It uses the production launch plan with disposable storage, verifies the private backend and native snapshot import, then sends SIGTERM only to its own process, confirms a quit dialog if present and checks graceful shutdown. A temporary loopback debugging connection controls only that owned window's quit button; this does not establish native GUI inference coverage.
 
 When changing Codex context presets, also check the installed client's actual model switching and auto-compaction against a disposable synthetic gateway:
 

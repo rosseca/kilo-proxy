@@ -1,17 +1,15 @@
 package main
 
 import (
-	"crypto/sha256"
 	_ "embed"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"strings"
 )
 
-// The private gateway correction applies only to the exact official beta server
-// that was validated. Installed application files are never rewritten.
-const synaraDelegationServerSHA256 = "0b825f9561cf1acd43efc78b589183ccaed932932913f3fa7fcbf7b9b9fac157"
+// The private gateway correction is selected by its account and model contract,
+// independently of upstream version labels or release hashes. Installed
+// application files are never rewritten.
 const synaraDelegationRevision = 1
 
 //go:embed synara_delegation_helpers.js
@@ -68,7 +66,7 @@ func synaraDelegationModels(options synaraProfileOptions) (map[string]any, error
 			claudeModel["supportedReasoningEfforts"] = []any{map[string]any{"value": initial, "description": "Applied private Claude default"}}
 			effortOptions = append(effortOptions, map[string]any{"id": initial, "label": "Applied private Claude default"})
 		}
-		// An empty select is meaningful in the pinned gateway: it suppresses
+		// An empty select is meaningful in the managed gateway: it suppresses
 		// the driver's fallback effort values when no override was prepared.
 		claudeModel["optionDescriptors"] = []any{map[string]any{"id": "effort", "label": "Reasoning effort", "type": "select", "options": effortOptions}}
 		claude = append(claude, claudeModel)
@@ -77,9 +75,8 @@ func synaraDelegationModels(options synaraProfileOptions) (map[string]any, error
 }
 
 func patchSynaraDelegationServer(source []byte, options synaraProfileOptions) ([]byte, error) {
-	sum := sha256.Sum256(source)
-	if hex.EncodeToString(sum[:]) != synaraDelegationServerSHA256 {
-		return nil, errors.New("This Synara server build has not been validated for account-aware delegation. Install the official Synara Beta 1.0.0-beta.1 and prepare again.")
+	if len(source) == 0 || len(source) > synaraRuntimeSourceLimit {
+		return nil, errors.New("Invalid Synara server source size.")
 	}
 	return applySynaraDelegationPatches(source, options)
 }

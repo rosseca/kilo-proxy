@@ -31,8 +31,9 @@ func TestSynaraInstalledMCPAccountDelegation(t *testing.T) {
 	if runtime.GOOS != "darwin" || !filepath.IsAbs(installed) {
 		t.Fatal("installed MCP acceptance currently requires an absolute macOS Synara bundle")
 	}
-	if version, err := synaraVersion(installed, runtime.GOOS); err != nil || version != synaraSupportedVersion {
-		t.Fatalf("official beta identity: %q %v", version, err)
+	metadata, err := synaraPackageMetadata(installed, runtime.GOOS)
+	if err != nil {
+		t.Fatalf("official beta identity: %v", err)
 	}
 	// The installed provider owns and tears down native child process trees.
 	// Fail before launching anything if the sandbox cannot query even our PID.
@@ -148,7 +149,7 @@ func TestSynaraInstalledMCPAccountDelegation(t *testing.T) {
 	if err := os.WriteFile(patchedPath, patched, 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(hookPath, synaraRuntimeBackendHook(archive, patchedPath, openDesignHash(patched)), 0600); err != nil {
+	if err := os.WriteFile(hookPath, synaraRuntimeBackendHook(archive, patchedPath, openDesignHash(source), openDesignHash(patched)), 0600); err != nil {
 		t.Fatal(err)
 	}
 	env := map[string]string{}
@@ -159,7 +160,7 @@ func TestSynaraInstalledMCPAccountDelegation(t *testing.T) {
 	env["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1"
 	env["DISABLE_TELEMETRY"] = "1"
 	env["DISABLE_ERROR_REPORTING"] = "1"
-	fixture := map[string]any{"binary": t3CodeBundleExecutable(installed), "entry": filepath.Join(archive, "apps", "server", "dist", "index.mjs"), "hook": hookPath, "version": synaraSupportedVersion, "baseDir": options.DataDir, "project": project, "env": env, "records": privateRecords, "codexModel": "chatgpt/gpt-6-astra", "claudeModel": "anthropic/claude-opus-5"}
+	fixture := map[string]any{"binary": t3CodeBundleExecutable(installed), "entry": filepath.Join(archive, "apps", "server", "dist", "index.mjs"), "hook": hookPath, "version": metadata.Version, "baseDir": options.DataDir, "project": project, "env": env, "records": privateRecords, "codexModel": "chatgpt/gpt-6-astra", "claudeModel": "anthropic/claude-opus-5"}
 	data, _ := json.Marshal(fixture)
 	manifest := filepath.Join(private, "fixture.json")
 	if err := os.WriteFile(manifest, data, 0600); err != nil {

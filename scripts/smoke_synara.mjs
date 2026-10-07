@@ -1,4 +1,4 @@
-// Optional acceptance check against the version-checked private Synara server.
+// Optional acceptance check against the installed Beta's private Synara server.
 // The Go fixture supplies disposable homes and synthetic loopback upstreams.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -9,7 +9,7 @@ import { join } from 'node:path';
 
 const fixturePath = process.argv[2] === '--manifest' ? process.argv[3] : process.argv[2];
 const fixture = JSON.parse(await readFile(fixturePath, 'utf8'));
-assert.equal(fixture.version, '1.0.0-beta.1', 'Unsupported Synara acceptance fixture');
+assert.equal(typeof fixture.version, 'string', 'The installed Synara build label is required');
 const listener = createServer();
 await new Promise(resolve => listener.listen(0, '127.0.0.1', resolve));
 const port = listener.address().port;

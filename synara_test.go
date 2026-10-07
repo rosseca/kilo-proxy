@@ -16,6 +16,9 @@ import (
 	"time"
 )
 
+const synaraTestVersion = "1.0.0-beta.1"
+const synaraTestCommit = "37439ec5063892583239638deaab4ed5b1d16d56"
+
 func synaraTestPlatform(platform string) string {
 	// Windows cannot represent Unix executable mode bits. Preparation fixtures
 	// must exercise its real native-binary contract rather than simulate macOS
@@ -41,7 +44,7 @@ func synaraTestAdapterSource(t *testing.T, a *app, root, platform string) {
 
 func syntheticSynaraExecutable(t *testing.T, root, platform string, versions ...string) string {
 	t.Helper()
-	version := synaraSupportedVersion
+	version := synaraTestVersion
 	if len(versions) > 0 {
 		version = versions[0]
 	}
@@ -49,6 +52,11 @@ func syntheticSynaraExecutable(t *testing.T, root, platform string, versions ...
 }
 
 func syntheticSynaraVersionExecutable(t *testing.T, root, platform, version string) string {
+	t.Helper()
+	return syntheticSynaraPackageExecutable(t, root, platform, map[string]string{"name": "synara-desktop-beta", "version": version, "synaraDesktopFlavor": "beta", "synaraCommitHash": synaraTestCommit})
+}
+
+func syntheticSynaraPackageExecutable(t *testing.T, root, platform string, metadata map[string]string) string {
 	t.Helper()
 	appName := "Synara Beta"
 
@@ -71,7 +79,7 @@ func syntheticSynaraVersionExecutable(t *testing.T, root, platform, version stri
 	if err := os.WriteFile(executable, []byte("synthetic native executable; never executed"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	packageData, err := json.Marshal(map[string]string{"name": "synara-desktop-beta", "version": version, "synaraDesktopFlavor": "beta", "synaraCommitHash": synaraSupportedCommit})
+	packageData, err := json.Marshal(metadata)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +207,7 @@ func TestSynaraPrepareLaunchAndRuntimeGuards(t *testing.T) {
 	}
 }
 
-func TestSynaraPrepareSerializesAndRejectsUnsupportedPackage(t *testing.T) {
+func TestSynaraPrepareSerializesAndAcceptsBetaVersions(t *testing.T) {
 	a := synaraTestApp(t, "macos")
 	a.launchMu.Lock()
 	w := adminRequest(a, "clients/synara", `{}`)
@@ -207,11 +215,62 @@ func TestSynaraPrepareSerializesAndRejectsUnsupportedPackage(t *testing.T) {
 	if w.Code != 409 {
 		t.Fatalf("concurrent launch/prepare accepted: %d", w.Code)
 	}
-	for _, version := range []string{"1.0.0", "1.0.0-beta.2", "0.0.45"} {
+	for _, version := range []string{"1.0.0", "1.0.0-beta.2", "1.0.1-beta.2", "2.8.0-beta.45", "0.0.45", "", "future-beta-build"} {
 		binary := syntheticSynaraExecutable(t, t.TempDir(), "linux", version)
-		if err := a.synaraAvailability(binary, clientLaunchRuntime{platform: "linux", resolve: a.launcher.resolve}); err == nil {
-			t.Fatalf("unvalidated version %s accepted", version)
+		if err := a.synaraAvailability(binary, clientLaunchRuntime{platform: "linux", resolve: a.launcher.resolve}); err != nil {
+			t.Fatalf("Beta version %q was rejected: %v", version, err)
 		}
+	}
+}
+
+func TestSynaraBetaPackageIdentityIsIndependentOfVersionAndCommit(t *testing.T) {
+	a := synaraTestApp(t, "linux")
+	for _, metadata := range []map[string]string{
+		{"name": "synara-desktop-beta", "synaraDesktopFlavor": "beta", "version": "1.0.1-beta.2", "synaraCommitHash": "new-upstream-commit"},
+		{"name": "synara-desktop-beta", "synaraDesktopFlavor": "beta"},
+		{"name": "synara-desktop-beta", "synaraDesktopFlavor": "beta", "version": strings.Repeat("future-build", 20)},
+	} {
+		binary := syntheticSynaraPackageExecutable(t, t.TempDir(), "linux", metadata)
+		if err := a.synaraAvailability(binary, clientLaunchRuntime{platform: "linux", resolve: a.launcher.resolve}); err != nil {
+			t.Fatalf("Beta metadata was rejected: %v", err)
+		}
+	}
+	for _, metadata := range []map[string]string{
+		{"name": "synara-desktop", "synaraDesktopFlavor": "stable", "version": synaraTestVersion},
+		{"name": "other-desktop", "synaraDesktopFlavor": "beta", "version": synaraTestVersion},
+		{"name": "synara-desktop-beta", "synaraDesktopFlavor": "stable", "version": synaraTestVersion},
+	} {
+		binary := syntheticSynaraPackageExecutable(t, t.TempDir(), "linux", metadata)
+		if err := a.synaraAvailability(binary, clientLaunchRuntime{platform: "linux", resolve: a.launcher.resolve}); err == nil {
+			t.Fatalf("non-Beta package accepted: %#v", metadata)
+		}
+	}
+}
+
+func TestSynaraBetaPrepareLaunchAndUpdatesDoNotUseVersionAllowlist(t *testing.T) {
+	for _, version := range []string{"1.0.1-beta.2", "9.9.9-beta.100", ""} {
+		t.Run(version, func(t *testing.T) {
+			a := synaraTestApp(t, "linux", version)
+			prepareSynaraFixture(t, a)
+			rt := a.launchRuntime()
+			binary, _ := rt.resolve("synara", "")
+			saved, err := a.readSynaraPrepared()
+			if err != nil || saved.Version != version || !a.synaraReady(saved, binary, rt) {
+				t.Fatalf("Beta preparation failed: %v", err)
+			}
+			if _, err := a.planClientLaunch(clientLaunchRequest{Client: "synara"}, rt); err != nil {
+				t.Fatalf("Beta launch failed: %v", err)
+			}
+			// Windows/Linux use the installed runtime directly: metadata changes
+			// alone do not invalidate the four prepared accounts or proxy access.
+			updated := syntheticSynaraPackageExecutable(t, filepath.Dir(filepath.Dir(binary)), rt.platform, map[string]string{"name": "synara-desktop-beta", "synaraDesktopFlavor": "beta", "version": "10.0.0-beta.2", "synaraCommitHash": "different"})
+			if updated != binary || !a.synaraReady(saved, binary, rt) {
+				t.Fatal("Beta update required preparation solely for version or commit")
+			}
+			if _, err := a.planClientLaunch(clientLaunchRequest{Client: "synara"}, rt); err != nil {
+				t.Fatalf("Updated Beta launch failed: %v", err)
+			}
+		})
 	}
 }
 

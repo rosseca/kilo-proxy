@@ -12,7 +12,7 @@ import (
 )
 
 const synaraProfileEndpoint = "/api/clients/synara"
-const synaraProfileRevision = 3
+const synaraProfileRevision = 4
 
 type synaraManagedPaths struct{ Root, Data, UIHome, Electron, Settings, Secrets, Selection string }
 
@@ -41,7 +41,7 @@ type synaraModelSummary struct {
 	ReasoningEffort string `json:"reasoningEffort,omitempty"`
 }
 
-func (a *app) synaraFingerprint(binary, version string, library modelLibrary, rt clientLaunchRuntime) string {
+func (a *app) synaraFingerprint(binary string, library modelLibrary, rt clientLaunchRuntime) string {
 	codex, _ := resolveOpenDesignCLI("codex-cli", rt)
 	claude, _ := rt.resolve("claude", "")
 	normalEnvironment := synaraNormalEnvironment(rt.home, os.Environ(), rt.platform)
@@ -74,7 +74,7 @@ func (a *app) synaraFingerprint(binary, version string, library modelLibrary, rt
 	}
 	// A retained symlink spelling can resolve to a different provider home
 	// after preparation. Record its resolved directory identity as well.
-	data, _ := json.Marshal([]any{binary, version, codex, claude, library, a.config.Port, a.config.LocalKey, a.config.OrgID, a.catalogScopeLocked(), a.clientImageSettingsLocked(), rt.home, normalEnvironment, canonicalCodex, canonicalClaude, canonicalSecure, synaraProfileRevision, adapterSourceHash})
+	data, _ := json.Marshal([]any{binary, codex, claude, library, a.config.Port, a.config.LocalKey, a.config.OrgID, a.catalogScopeLocked(), a.clientImageSettingsLocked(), rt.home, normalEnvironment, canonicalCodex, canonicalClaude, canonicalSecure, synaraProfileRevision, adapterSourceHash})
 	return openDesignHash(data)
 }
 
@@ -84,7 +84,7 @@ func (a *app) readSynaraPrepared() (synaraPrepared, error) {
 		return saved, errors.New("Prepare the private Synara profiles first.")
 	}
 	data, err := readCatalogFile(synaraPaths(a.dir).Selection)
-	if err != nil || json.Unmarshal(data, &saved) != nil || !synaraVersionSupported(saved.Version) || saved.Fingerprint == "" || len(saved.Library.Models) == 0 || validateSynaraLibrary(saved.Library) != nil || len(saved.Providers) != 4 || len(saved.Files) < 4 || len(saved.Files) > 32 {
+	if err != nil || json.Unmarshal(data, &saved) != nil || saved.Fingerprint == "" || len(saved.Library.Models) == 0 || validateSynaraLibrary(saved.Library) != nil || len(saved.Providers) != 4 || len(saved.Files) < 4 || len(saved.Files) > 32 {
 		return synaraPrepared{}, errors.New("Prepare the private Synara profiles first.")
 	}
 	for _, id := range []string{synaraCodexNormalID, synaraCodexProxyID, synaraClaudeNormalID, synaraClaudeProxyID} {
@@ -96,8 +96,8 @@ func (a *app) readSynaraPrepared() (synaraPrepared, error) {
 }
 
 func (a *app) synaraReady(saved synaraPrepared, binary string, rt clientLaunchRuntime) bool {
-	version, err := synaraVersion(binary, rt.platform)
-	if err != nil || !synaraVersionSupported(version) || saved.Version != version || saved.Fingerprint != a.synaraFingerprint(binary, version, saved.Library, rt) {
+	_, err := synaraPackageMetadata(binary, rt.platform)
+	if err != nil || saved.Fingerprint != a.synaraFingerprint(binary, saved.Library, rt) {
 		return false
 	}
 	paths := synaraPaths(a.dir)
@@ -189,7 +189,7 @@ func (a *app) prepareSynara(library modelLibrary, rt clientLaunchRuntime, binary
 	if err != nil || adapterHash != openDesignHash(adapterFiles[0].new) {
 		return errors.New("Kilo Proxy's native Synara adapter changed during preparation. Restart Kilo Proxy and prepare again.")
 	}
-	fingerprint := a.synaraFingerprint(binary, version, library, rt)
+	fingerprint := a.synaraFingerprint(binary, library, rt)
 	if fingerprint == "" {
 		return errors.New("Cannot safely identify the private Synara configuration; no profile changes saved.")
 	}

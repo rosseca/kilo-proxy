@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -33,24 +34,26 @@ func synaraDelegationContractFixture(t *testing.T) []byte {
 	return []byte(text)
 }
 
-func TestSynaraDelegationRejectsUnvalidatedServerAndChangedContracts(t *testing.T) {
+func TestSynaraDelegationAcceptsCompatibleBuildsAndRejectsChangedContracts(t *testing.T) {
 	options := synaraProfileTestOptions(t)
 	source := synaraDelegationContractFixture(t)
-	if _, err := patchSynaraDelegationServer(source, options); err == nil {
-		t.Fatal("an unverified server was patched")
-	}
-	patched, err := applySynaraDelegationPatches(source, options)
+	patched, err := patchSynaraDelegationServer(source, options)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(string(patched), "__KILO_SYNARA_") {
 		t.Fatal("an unresolved private runtime template remained")
 	}
+	for _, extra := range []string{"// new compatible Beta release\n", "const unrelatedFutureCapability = true;\n"} {
+		if result, err := patchSynaraDelegationServer(append([]byte(extra), source...), options); err != nil || !bytes.HasPrefix(result, []byte(extra)) {
+			t.Fatal("a compatible source with another digest was rejected or rewritten outside its contracts", err)
+		}
+	}
 	for _, changed := range []string{
 		strings.Replace(string(source), "function loadAgentGatewayProviderCatalog(input)", "function loadAgentGatewayProviderCatalog(other)", 1),
 		string(source) + "\nfunction loadAgentGatewayProviderCatalog(input) {",
 	} {
-		if result, err := applySynaraDelegationPatches([]byte(changed), options); err == nil || result != nil {
+		if result, err := patchSynaraDelegationServer([]byte(changed), options); err == nil || result != nil {
 			t.Fatal("a changed or ambiguous upstream contract was partly accepted")
 		}
 	}
@@ -130,7 +133,7 @@ func TestSynaraDelegationInstalledSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	if strings.Count(string(source), synaraDelegationModelRulesContract) != 1 {
-		t.Fatal("the installed model option guidance no longer matches the pinned contract")
+		t.Fatal("the installed model option guidance no longer matches the required capability contract")
 	}
 	options := synaraProfileTestOptions(t)
 	patched, err := patchSynaraDelegationServer(source, options)
@@ -210,8 +213,8 @@ func TestSynaraDelegationClaudeEffortMatchesPreparedProfile(t *testing.T) {
 	}
 }
 
-// The exact pinned upstream function is exercised in the portable Node fixture
-// and checked against the verified installed server in the opt-in source test.
+// The upstream capability function is exercised in the portable Node fixture
+// and checked against the installed server in the opt-in source test.
 const synaraDelegationModelRulesContract = `function modelTargetOptionRules(provider, model) {
 	const rules = providerTargetOptionRules(provider).map(({ key, valueType, allowedValues, allowedValuesSource, allowsCustomValue }) => ({
 		key,

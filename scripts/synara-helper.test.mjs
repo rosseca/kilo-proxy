@@ -41,7 +41,7 @@ test('Synara refuses a library exceeding its 32 custom-model limit before writin
 
 test('four agents use an immutable common-library snapshot without exposing credentials or profile paths',async t=>{
  const source=saved(),calls=[];
- const {helper,nodes}=fixture(t,async(path,body)=>{calls.push({path,body});return path==='model-library'?source:{prepared:true,library:structuredClone(source.library),profileDir:'/private/profile/secret',version:'1.0.0-beta.1'};});
+ const {helper,nodes}=fixture(t,async(path,body)=>{calls.push({path,body});return path==='model-library'?source:{prepared:true,library:structuredClone(source.library),profileDir:'/private/profile/secret',version:'9.4.2-beta.8'};});
  await tick();
  assert.equal(helper.launchState().valid,true);
  assert.equal(helper.launchState().ready,false);
@@ -63,9 +63,13 @@ test('four agents use an immutable common-library snapshot without exposing cred
  assert.match(nodes.get('synara-compatibility').textContent,/reasoning defaults come from Kilo Models/);
  assert.doesNotMatch(nodes.get('synara-compatibility').textContent,/hides|hidden|summary handoff/);
  assert.match(nodes.get('synara-requirements').textContent,/file-based CLI authentication/);
- assert.match(nodes.get('synara-requirements').textContent,/Detected: 1\.0\.0-beta\.1/);
+ assert.match(nodes.get('synara-requirements').textContent,/^Supports Synara Beta\. Requires native Codex CLI and Claude Code\./);
+ assert.match(nodes.get('synara-requirements').textContent,/Detected: 9\.4\.2-beta\.8/);
  assert.match(nodes.get('synara-requirements').textContent,/not Desktop app logins/);
  assert.match(nodes.get('synara-prepared').textContent,/Four agents prepared/);
+ helper.render({state:{connectionReady:true,baseURL:'http://127.0.0.1:8877/v1',localKey:'private-local-secret'},language:'es'});
+ assert.match(nodes.get('synara-requirements').textContent,/^Admite Synara Beta\. Requiere Codex CLI nativo y Claude Code\./);
+ assert.match(nodes.get('synara-requirements').textContent,/Detectado: 9\.4\.2-beta\.8/);
  assert.doesNotMatch([...nodes.values()].map(node=>node.textContent).join(' '),/private-local-secret|\/private\/profile\/secret/);
 });
 

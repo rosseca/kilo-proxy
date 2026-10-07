@@ -7,7 +7,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { createServer } from 'node:net';
 
 const fixture = JSON.parse(await readFile(process.argv[2], 'utf8'));
-assert.equal(fixture.version, '1.0.0-beta.1');
+assert.equal(typeof fixture.version, 'string');
 const listener = createServer();
 await new Promise(resolve => listener.listen(0, '127.0.0.1', resolve));
 const port = listener.address().port;

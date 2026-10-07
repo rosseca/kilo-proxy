@@ -11,10 +11,14 @@ import (
 	"time"
 )
 
-const synaraSupportedCommit = "37439ec5063892583239638deaab4ed5b1d16d56"
+type synaraPackageInfo struct {
+	Name, Version, Main, SynaraDesktopFlavor, SynaraCommitHash string
+}
 
 // Read bounded package metadata; never start the application during discovery.
-func synaraVersion(executable, platform string) (string, error) {
+// Package identity selects the Beta channel. Version and commit are descriptive
+// metadata, not a compatibility allowlist.
+func synaraPackageMetadata(executable, platform string) (synaraPackageInfo, error) {
 	if resolved, err := filepath.EvalSymlinks(executable); err == nil {
 		executable = resolved
 	}
@@ -27,22 +31,32 @@ func synaraVersion(executable, platform string) (string, error) {
 		if err != nil {
 			continue
 		}
-		var meta struct{ Name, Version, SynaraDesktopFlavor, SynaraCommitHash string }
-		if json.Unmarshal(data, &meta) != nil || meta.Name != "synara-desktop-beta" || meta.SynaraDesktopFlavor != "beta" || meta.SynaraCommitHash != synaraSupportedCommit || len(meta.Version) > 80 {
-			return "", errors.New("Cannot verify this Synara Beta package. Install the official 1.0.0-beta.1 release.")
+		var meta synaraPackageInfo
+		if json.Unmarshal(data, &meta) != nil || meta.Name != "synara-desktop-beta" || meta.SynaraDesktopFlavor != "beta" {
+			return synaraPackageInfo{}, errors.New("Cannot verify this Synara Beta package. Install an official Synara Beta release.")
 		}
-		return meta.Version, nil
+		return meta, nil
 	}
-	return "", errors.New("Cannot verify this Synara Beta installation. Install the official 1.0.0-beta.1 release and refresh detection. Extract an AppImage before using it on Linux.")
+	return synaraPackageInfo{}, errors.New("Cannot verify this Synara Beta installation. Install an official Synara Beta release and refresh detection. Extract an AppImage before using it on Linux.")
+}
+
+func synaraVersion(executable, platform string) (string, error) {
+	meta, err := synaraPackageMetadata(executable, platform)
+	if err != nil {
+		return "", err
+	}
+	// An absent or unsuitable display label does not make a Beta incompatible.
+	version := strings.TrimSpace(meta.Version)
+	if len(version) > 80 || strings.ContainsAny(version, "\x00\r\n") {
+		version = ""
+	}
+	return version, nil
 }
 
 func (a *app) synaraAvailability(binary string, rt clientLaunchRuntime) error {
-	version, err := synaraVersion(binary, rt.platform)
+	_, err := synaraPackageMetadata(binary, rt.platform)
 	if err != nil {
 		return err
-	}
-	if !synaraVersionSupported(version) {
-		return errors.New("This integration supports Synara Beta 1.0.0-beta.1. Other versions must be validated before preparing their private configuration.")
 	}
 	if _, err := resolveOpenDesignCLI("codex-cli", rt); err != nil {
 		return errors.New("Install a native Codex CLI executable before preparing Synara.")

@@ -9,8 +9,8 @@ import (
 	"testing"
 )
 
-// Exact official Beta 1.0.0-beta.1 closures. The opt-in source check below
-// compares them with the SHA-pinned installed server before executing them
+// Required official Beta closures. The opt-in source check below compares
+// their structural contracts with the installed server before executing them
 // with synthetic dependencies; it never creates real threads or Hub tasks.
 const synaraHubSubmitContract = `	const submit = (input, context) => Effect.gen(function* () {
 		if (!isServerGroupsEnabled()) return null;

@@ -11,6 +11,9 @@ import (
 func TestNativeMessagesTranslateBackendWithoutChangingDetails(t *testing.T) {
 	for _, test := range []struct{ source, language, want string }{
 		{"Introduce tu API key personal de Kilo.", "en", "Enter your personal Kilo API key."},
+		{"Instala Synara Beta, Codex CLI y Claude Code y actualiza las aplicaciones instaladas. Extrae la AppImage antes de usarla en Linux.", "en", "Install Synara Beta, Codex CLI and Claude Code, then refresh installed apps. Extract an AppImage before using it on Linux."},
+		{"Cannot verify this Synara Beta package. Install an official Synara Beta release.", "es", "No se pudo verificar este paquete Synara Beta. Instala una versión oficial de Synara Beta."},
+		{"No se pudo verificar esta instalación de Synara Beta. Instala una versión oficial de Synara Beta y actualiza la detección. Extrae la AppImage antes de usarla en Linux.", "en", "Cannot verify this Synara Beta installation. Install an official Synara Beta release and refresh detection. Extract an AppImage before using it on Linux."},
 		{"El código ha caducado. Vuelve a conectar con Kilo.", "en", "The code has expired. Connect with Kilo again."},
 		{"Sesión conectada. Hemos seleccionado tu único equipo; pulsa Guardar y arrancar.", "en", "Signed in. Your only team has been selected; click Save and start."},
 		{"No se pudo leer el almacén de credenciales. Introduce tu API key de nuevo.", "en", "Could not read the credential store. Enter your API key again."},
