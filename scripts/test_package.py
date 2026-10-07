@@ -1,21 +1,66 @@
 """Guard macOS bundle signing and release archive verification without native tools."""
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 import json
 import os
 import plistlib
+import select
 import subprocess
 import struct
 import sys
 import tempfile
 import tarfile
-import time
 import unittest
 from unittest.mock import patch
 import zipfile
 
 import package
 import smoke_desktop
+
+
+@contextmanager
+def owned_descendant_exit(pid):
+    """Observe our gated fixture's kernel process object, never a reused PID."""
+    if os.name == 'nt':
+        import ctypes
+        from ctypes import wintypes
+        kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+        kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+        kernel32.WaitForSingleObject.restype = wintypes.DWORD
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel32.CloseHandle.restype = wintypes.BOOL
+        handle = kernel32.OpenProcess(0x00100000, False, pid)  # SYNCHRONIZE only.
+        if not handle:
+            raise ctypes.WinError(ctypes.get_last_error())
+        try:
+            def exited(timeout):
+                result = kernel32.WaitForSingleObject(handle, int(timeout * 1000))
+                if result == 0xffffffff:
+                    raise ctypes.WinError(ctypes.get_last_error())
+                return result == 0  # WAIT_OBJECT_0; WAIT_TIMEOUT remains a failure.
+            yield exited
+        finally:
+            kernel32.CloseHandle(handle)
+    elif hasattr(os, 'pidfd_open'):
+        descriptor = os.pidfd_open(pid)
+        try:
+            yield lambda timeout: bool(select.select([descriptor], [], [], timeout)[0])
+        finally:
+            os.close(descriptor)
+    else:
+        # macOS provides process exit events for non-child descendants. waitpid
+        # cannot reap this fixture after its desktop parent has already exited.
+        queue = select.kqueue()
+        try:
+            queue.control([select.kevent(pid, filter=select.KQ_FILTER_PROC,
+                                         flags=select.KQ_EV_ADD | select.KQ_EV_ONESHOT,
+                                         fflags=select.KQ_NOTE_EXIT)], 0, 0)
+            yield lambda timeout: bool(queue.control(None, 1, timeout))
+        finally:
+            queue.close()
 
 
 class PackageTests(unittest.TestCase):
@@ -399,7 +444,8 @@ class PackageTests(unittest.TestCase):
     def test_native_smoke_waits_for_desktop_without_descendant_capture_pipes(self):
         report = {'passed': True, 'checks': sorted(smoke_desktop.REQUIRED),
                   'os': 'linux', 'arch': 'amd64', 'version': '0.23.0-alpha.1'}
-        gate, ready, done = (self.root / name for name in ('release-child', 'child-ready', 'child-done'))
+        gate, ready, done, pid = (self.root / name for name in
+                                 ('release-child', 'child-ready', 'child-done', 'child-pid'))
         child = '''from pathlib import Path
 import sys, time
 gate, ready, done = map(Path, sys.argv[1:])
@@ -413,8 +459,9 @@ done.write_text('closed inherited output handles')
 '''
         parent = '''from pathlib import Path
 import subprocess, sys, time
-subprocess.Popen([sys.executable, '-c', sys.argv[1], *sys.argv[2:5]],
-                 stdout=sys.stdout, stderr=sys.stderr)
+child = subprocess.Popen([sys.executable, '-c', sys.argv[1], *sys.argv[2:5]],
+                         stdout=sys.stdout, stderr=sys.stderr)
+Path(sys.argv[7]).write_text(str(child.pid))
 deadline = time.monotonic() + 5
 while not Path(sys.argv[3]).exists():
     if time.monotonic() >= deadline:
@@ -426,7 +473,7 @@ Path(sys.argv[5]).write_text(sys.argv[6])
 
         def execute(command, **kwargs):
             return real_run([sys.executable, '-c', parent, child, str(gate), str(ready),
-                             str(done), command[-1], json.dumps(report)], **kwargs)
+                             str(done), command[-1], json.dumps(report), str(pid)], **kwargs)
 
         with ThreadPoolExecutor(max_workers=1) as executor, \
              patch.object(smoke_desktop.platform, 'system', return_value='Linux'), \
@@ -440,11 +487,18 @@ Path(sys.argv[5]).write_text(sys.argv[6])
                 self.assertTrue(ready.exists())
                 self.assertFalse(done.exists())
             finally:
-                gate.write_text('release only our temporary descendant')
-                deadline = time.monotonic() + 5
-                while not done.exists() and time.monotonic() < deadline:
-                    time.sleep(.02)
-                self.assertTrue(done.exists(), 'owned descendant did not close its handles')
+                try:
+                    # Acquire while the gate keeps our exact process alive.
+                    # Its done marker precedes interpreter exit and cannot
+                    # prove that Windows released inherited log handles.
+                    with owned_descendant_exit(int(pid.read_text())) as exited:
+                        self.assertFalse(exited(0), 'owned descendant exited before release')
+                        gate.write_text('release only our temporary descendant')
+                        self.assertTrue(exited(5), 'owned descendant process did not exit')
+                        self.assertTrue(done.exists(), 'owned descendant did not finish its fixture')
+                finally:
+                    # Release even when acquiring the observer or an assert fails.
+                    gate.write_text('release only our temporary descendant')
 
     def test_post_extraction_can_verify_one_matrix_target(self):
         self.build('--target', 'darwin/arm64')
