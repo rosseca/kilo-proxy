@@ -15,7 +15,7 @@ You can disable accounts you do not use in Synara's provider settings. Disabling
 
 ## Requirements
 
-- Install [Synara Beta](https://github.com/Emanuele-web04/synara/releases). Kilo Proxy does not restrict the installed Beta version; the detected version is shown for information. See Synara's requirements for [Codex](https://www.trysynara.com/docs/providers/codex) and [Claude Code](https://www.trysynara.com/docs/providers/claude-code).
+- Install [Synara Beta](https://github.com/Emanuele-web04/synara/releases). From Kilo Proxy **0.56.2**, the installed Beta version is not restricted; the detected version is shown for information. See Synara's requirements for [Codex](https://www.trysynara.com/docs/providers/codex) and [Claude Code](https://www.trysynara.com/docs/providers/claude-code).
 - Install native **Codex CLI** and **Claude Code CLI**. Desktop app login is separate from CLI login. The normal agents require an existing CLI session.
 - **Codex · Normal** requires file-based Codex authentication: Synara does not support Codex's `keyring` or `auto` credential-store modes. Kilo Proxy does not convert or copy your credentials.
 - Connect Kilo Proxy and save 1–32 shared models in **Models**. Choose the initial model and any compatible reasoning defaults there.

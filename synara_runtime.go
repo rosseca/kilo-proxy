@@ -255,7 +255,9 @@ func synaraRuntimePackageData(source []byte) ([]byte, string, error) {
 		return nil, "", errors.New("Cannot verify the Synara Beta runtime package.")
 	}
 	main := metadata.Main
-	if main == "" || main == "." || main == ".." || filepath.IsAbs(main) || filepath.ToSlash(filepath.Clean(main)) != main || strings.HasPrefix(main, "../") || strings.ContainsAny(main, "\\\x00") {
+	// ASAR entries use relative slash paths on every host. On Windows a leading
+	// slash is rooted but filepath.IsAbs alone does not classify it as absolute.
+	if main == "" || main == "." || main == ".." || filepath.IsAbs(main) || strings.HasPrefix(main, "/") || filepath.ToSlash(filepath.Clean(main)) != main || strings.HasPrefix(main, "../") || strings.ContainsAny(main, "\\:\x00") {
 		return nil, "", errors.New("Invalid Synara desktop source entry.")
 	}
 	// Keep the installed release's identity, including its real version, commit,

@@ -96,7 +96,7 @@ func TestSynaraPrivateRuntimePreservesActualPackageMetadata(t *testing.T) {
 			}
 		})
 	}
-	for _, main := range []string{"", ".", "..", "../main.js", "/main.js", "apps/../main.js", `apps\main.js`, "apps/main.js\x00"} {
+	for _, main := range []string{"", ".", "..", "../main.js", "/main.js", "//host/share/main.js", "C:/main.js", "C:main.js", "file:///main.js", "apps/../main.js", `apps\main.js`, "apps/main.js\x00"} {
 		source, _ := json.Marshal(map[string]any{"name": "synara-desktop-beta", "synaraDesktopFlavor": "beta", "main": main})
 		if data, _, err := synaraRuntimePackageData(source); err == nil || data != nil {
 			t.Fatalf("unsafe source entry accepted: %q", main)
@@ -173,6 +173,12 @@ func TestSynaraPrivateRuntimeBackendBindsPreparedSources(t *testing.T) {
 	if err := os.WriteFile(hook, synaraRuntimeBackendHook(archive, private, openDesignHash(original), openDesignHash(patched)), 0600); err != nil {
 		t.Fatal(err)
 	}
+	// --import takes a module specifier. A Windows drive path is interpreted as
+	// a URL scheme, so let Node encode its own native path as a file URL.
+	hookURL, err := exec.Command(node, "-p", `require('node:url').pathToFileURL(process.argv[1]).href`, hook).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, test := range []struct {
 		name, errorText string
 		original, patch []byte
@@ -188,7 +194,7 @@ func TestSynaraPrivateRuntimeBackendBindsPreparedSources(t *testing.T) {
 			if err := os.WriteFile(private, test.patch, 0600); err != nil {
 				t.Fatal(err)
 			}
-			output, err := exec.Command(node, "--import", hook, entry).CombinedOutput()
+			output, err := exec.Command(node, "--import", strings.TrimSpace(string(hookURL)), entry).CombinedOutput()
 			if test.errorText == "" && (err != nil || strings.TrimSpace(string(output)) != "patched") || test.errorText != "" && (err == nil || !strings.Contains(string(output), test.errorText)) {
 				t.Fatalf("prepared backend guard: %v %s", err, output)
 			}
