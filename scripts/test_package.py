@@ -1,12 +1,15 @@
 """Guard macOS bundle signing and release archive verification without native tools."""
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 import plistlib
 import subprocess
 import struct
+import sys
 import tempfile
 import tarfile
+import time
 import unittest
 from unittest.mock import patch
 import zipfile
@@ -343,6 +346,105 @@ class PackageTests(unittest.TestCase):
             report['checks'] = []
             with self.assertRaisesRegex(RuntimeError, 'Native desktop check failed'):
                 smoke_desktop.smoke(self.root / 'preview', self.root, '0.23.0-alpha.1')
+
+    def test_native_smoke_nonzero_keeps_fatal_header_and_redacts_private_diagnostics(self):
+        token = 'synthetic-admin-token-that-must-not-leak'
+        address = 'http://127.0.0.1:12345/#' + token
+        report = {'passed': True, 'checks': sorted(smoke_desktop.REQUIRED),
+                  'os': 'linux', 'arch': 'amd64', 'version': '0.23.0-alpha.1',
+                  'error': address + ' repeated token ' + token,
+                  'admin_token': 'another-private-admin-token'}
+
+        def execute(command, **kwargs):
+            Path(command[-1]).write_text(json.dumps(report))
+            kwargs['stdout'].write(('Control panel: ' + address + '\n').encode())
+            kwargs['stderr'].write(('Native check passed: proxy-start-via-ui\n'
+                                    'Exception 0xc000000d\nPC=0x1234\n'
+                                    'goroutine 1 [syscall]:\ncausal-native-frame\n'
+                                    + 'irrelevant frame\n' * 2000 + 'final-native-frame\n'
+                                    + 'upstream: wss://private.invalid/socket\n').encode())
+            return subprocess.CompletedProcess(command, 2)
+
+        with patch.object(smoke_desktop.platform, 'system', return_value='Linux'), \
+             patch.object(smoke_desktop.subprocess, 'run', side_effect=execute), \
+             self.assertRaises(RuntimeError) as failure:
+            smoke_desktop.smoke(self.root / 'preview', self.root, '0.23.0-alpha.1')
+        message = str(failure.exception)
+        for required in ['exit 2', 'Exception 0xc000000d', 'PC=0x1234',
+                         'causal-native-frame', 'final-native-frame', 'proxy-start-via-ui',
+                         'report:', 'tray-stop', 'diagnostic truncated']:
+            self.assertIn(required, message)
+        for private in [address, token, '127.0.0.1', 'private.invalid', 'another-private-admin-token']:
+            self.assertNotIn(private, message)
+        self.assertLess(len(message), 22000)
+
+    def test_native_smoke_timeout_preserves_progress_and_missing_report_failure(self):
+        def execute(command, **kwargs):
+            kwargs['stdout'].write(b'Control panel: http://127.0.0.1:43210/#private-token\n')
+            kwargs['stderr'].write(b'Native check passed: rendered-ui-and-authenticated-backend\n'
+                                    b'Exception 0xc000000d\ngoroutine 1 [syscall]:\n')
+            raise subprocess.TimeoutExpired(command, kwargs['timeout'])
+
+        with patch.object(smoke_desktop.platform, 'system', return_value='Linux'), \
+             patch.object(smoke_desktop.subprocess, 'run', side_effect=execute), \
+             self.assertRaises(RuntimeError) as failure:
+            smoke_desktop.smoke(self.root / 'preview', self.root)
+        message = str(failure.exception)
+        self.assertIn('process did not exit within 150 seconds', message)
+        self.assertIn('rendered-ui-and-authenticated-backend', message)
+        self.assertIn('Exception 0xc000000d', message)
+        self.assertNotIn('127.0.0.1', message)
+        self.assertNotIn('private-token', message)
+
+    def test_native_smoke_waits_for_desktop_without_descendant_capture_pipes(self):
+        report = {'passed': True, 'checks': sorted(smoke_desktop.REQUIRED),
+                  'os': 'linux', 'arch': 'amd64', 'version': '0.23.0-alpha.1'}
+        gate, ready, done = (self.root / name for name in ('release-child', 'child-ready', 'child-done'))
+        child = '''from pathlib import Path
+import sys, time
+gate, ready, done = map(Path, sys.argv[1:])
+ready.write_text('holding inherited output handles')
+deadline = time.monotonic() + 10
+while not gate.exists() and time.monotonic() < deadline:
+    time.sleep(.02)
+sys.stdout.close()
+sys.stderr.close()
+done.write_text('closed inherited output handles')
+'''
+        parent = '''from pathlib import Path
+import subprocess, sys, time
+subprocess.Popen([sys.executable, '-c', sys.argv[1], *sys.argv[2:5]],
+                 stdout=sys.stdout, stderr=sys.stderr)
+deadline = time.monotonic() + 5
+while not Path(sys.argv[3]).exists():
+    if time.monotonic() >= deadline:
+        raise RuntimeError('owned descendant did not start')
+    time.sleep(.02)
+Path(sys.argv[5]).write_text(sys.argv[6])
+'''
+        real_run = subprocess.run
+
+        def execute(command, **kwargs):
+            return real_run([sys.executable, '-c', parent, child, str(gate), str(ready),
+                             str(done), command[-1], json.dumps(report)], **kwargs)
+
+        with ThreadPoolExecutor(max_workers=1) as executor, \
+             patch.object(smoke_desktop.platform, 'system', return_value='Linux'), \
+             patch.object(smoke_desktop.platform, 'machine', return_value='x86_64'), \
+             patch.object(smoke_desktop.subprocess, 'run', side_effect=execute):
+            future = executor.submit(smoke_desktop.smoke, self.root / 'preview', self.root, '0.23.0-alpha.1')
+            try:
+                # The real parent exits while its own descendant still holds
+                # stdout/stderr. Capturing pipes would wait until gate is set.
+                future.result(timeout=5)
+                self.assertTrue(ready.exists())
+                self.assertFalse(done.exists())
+            finally:
+                gate.write_text('release only our temporary descendant')
+                deadline = time.monotonic() + 5
+                while not done.exists() and time.monotonic() < deadline:
+                    time.sleep(.02)
+                self.assertTrue(done.exists(), 'owned descendant did not close its handles')
 
     def test_post_extraction_can_verify_one_matrix_target(self):
         self.build('--target', 'darwin/arm64')
