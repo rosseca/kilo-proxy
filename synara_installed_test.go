@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -32,7 +33,10 @@ func TestSynaraInstalledFourAgents(t *testing.T) {
 		t.Fatal("the installed Synara acceptance currently requires an absolute macOS app bundle")
 	}
 	synaraInstalledProcessObservationPreflight(t)
-	const version = synaraSupportedVersion
+	version, err := synaraVersion(installed, runtime.GOOS)
+	if err != nil {
+		t.Fatal(err)
+	}
 	realHome, err := os.UserHomeDir()
 	if err != nil {
 		t.Fatal(err)
@@ -409,7 +413,7 @@ func TestSynaraInstalledFourAgents(t *testing.T) {
 		t.Fatalf("installed Synara acceptance failed: %v\n%s", err, output)
 	}
 	if os.Getenv("KILO_TEST_SYNARA_DESKTOP") == "1" {
-		synaraInstalledDesktopStartup(t, plan, paths, env)
+		synaraInstalledDesktopStartup(t, plan, paths, env, version)
 	}
 	mu.Lock()
 	for _, id := range []string{synaraCodexNormalID, synaraCodexProxyID, synaraClaudeNormalID, synaraClaudeProxyID, synaraCodexProxyID + ":chatgpt"} {
@@ -482,9 +486,10 @@ func synaraInstalledRequestContainsText(messages []any, expected string) bool {
 }
 
 // This optional check launches a second, isolated Electron process with the
-// production plan. It exercises real IPC snapshot import and graceful shutdown;
-// it does not drive the window or claim native GUI inference coverage.
-func synaraInstalledDesktopStartup(t *testing.T, plan clientLaunchPlan, paths synaraManagedPaths, env map[string]string) {
+// production plan. It exercises real IPC snapshot import and graceful shutdown,
+// confirming an optional quit dialog in this owned window. It does not perform
+// native GUI inference.
+func synaraInstalledDesktopStartup(t *testing.T, plan clientLaunchPlan, paths synaraManagedPaths, env map[string]string, version string) {
 	t.Helper()
 	// cgClientEnv normally uses the fixture HOME as TMPDIR. Native Synara
 	// creates Unix sockets there, whose path limit is shorter than Go's test
@@ -500,7 +505,9 @@ func synaraInstalledDesktopStartup(t *testing.T, plan clientLaunchPlan, paths sy
 	if _, err := os.Stat(seed); err != nil {
 		t.Fatalf("native Electron smoke requires the unconsumed Prepare snapshot: %v", err)
 	}
-	command := exec.Command(plan.Executable, plan.Args...)
+	args := append([]string{}, plan.Args...)
+	args = append(args, "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0")
+	command := exec.Command(plan.Executable, args...)
 	command.Dir = paths.UIHome
 	for name, value := range env {
 		if name != "SYNARA_BETA_DIAGNOSTICS_URL" && name != "TMPDIR" {
@@ -518,6 +525,21 @@ func synaraInstalledDesktopStartup(t *testing.T, plan clientLaunchPlan, paths sy
 	runtimePath := filepath.Join(paths.Data, "userdata", "server-runtime.json")
 	logPath := filepath.Join(paths.Data, "userdata", "logs", "desktop-main.log")
 	backendPID, closed := 0, false
+	defer func() {
+		if artifacts := os.Getenv("KILO_TEST_SYNARA_ARTIFACTS"); filepath.IsAbs(artifacts) {
+			log, readErr := os.ReadFile(logPath)
+			if readErr == nil {
+				path := filepath.Join(artifacts, version, "electron-startup.log")
+				if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+					t.Error(err)
+				} else if err := os.WriteFile(path, log, 0600); err != nil {
+					t.Error(err)
+				} else {
+					t.Logf("Owned Electron startup log: %s", path)
+				}
+			}
+		}
+	}()
 	defer func() {
 		if !closed {
 			_ = command.Process.Signal(syscall.SIGTERM)
@@ -583,6 +605,56 @@ func synaraInstalledDesktopStartup(t *testing.T, plan clientLaunchPlan, paths sy
 		log, _ := os.ReadFile(logPath)
 		t.Fatalf("native Electron did not import its prepared snapshot: %s\n%s", log, output.String())
 	}
+	endpointPattern := regexp.MustCompile(`DevTools listening on (ws://127\.0\.0\.1:[0-9]+/devtools/browser/[\w-]+)`)
+	match := endpointPattern.FindStringSubmatch(output.String())
+	if len(match) != 2 {
+		t.Fatalf("owned Electron did not expose its temporary loopback test endpoint: %s", output.String())
+	}
+	quitReady := filepath.Join(tmp, "quit-helper-ready")
+	fixture := map[string]string{"endpoint": match[1], "readyFile": quitReady}
+	if artifacts := os.Getenv("KILO_TEST_SYNARA_ARTIFACTS"); filepath.IsAbs(artifacts) {
+		directory := filepath.Join(artifacts, version)
+		if err := os.MkdirAll(directory, 0700); err != nil {
+			t.Fatal(err)
+		}
+		fixture["screenshot"] = filepath.Join(directory, "electron-quit-confirmation.png")
+	}
+	encoded, _ := json.Marshal(fixture)
+	quitFixture := filepath.Join(tmp, "quit-helper.json")
+	if err := os.WriteFile(quitFixture, encoded, 0600); err != nil {
+		t.Fatal(err)
+	}
+	helper := exec.Command("node", "scripts/confirm_synara_desktop_quit.mjs", quitFixture)
+	var helperOutput synaraSmokeOutput
+	helper.Stdout, helper.Stderr = &helperOutput, &helperOutput
+	if err := helper.Start(); err != nil {
+		t.Fatal(err)
+	}
+	helperExited := make(chan error, 1)
+	go func() { helperExited <- helper.Wait() }()
+	helperClosed := false
+	defer func() {
+		if !helperClosed {
+			_ = helper.Process.Kill()
+			<-helperExited
+		}
+	}()
+	deadline = time.Now().Add(20 * time.Second)
+	for {
+		if _, err := os.Stat(quitReady); err == nil {
+			break
+		}
+		select {
+		case err := <-helperExited:
+			helperClosed = true
+			t.Fatalf("owned Electron quit helper did not connect: %v\n%s", err, helperOutput.String())
+		default:
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("owned Electron quit helper was not ready: %s", helperOutput.String())
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 	if err := command.Process.Signal(syscall.SIGTERM); err != nil {
 		t.Fatal(err)
 	}
@@ -593,20 +665,25 @@ func synaraInstalledDesktopStartup(t *testing.T, plan clientLaunchPlan, paths sy
 			t.Fatalf("owned Electron did not quit cleanly: %v\n%s", err, output.String())
 		}
 	case <-time.After(20 * time.Second):
-		t.Fatal("owned Electron did not drain and quit")
+		log, _ := os.ReadFile(logPath)
+		t.Fatalf("owned Electron did not drain and quit: %s\n%s\n%s", log, output.String(), helperOutput.String())
+	}
+	select {
+	case err := <-helperExited:
+		helperClosed = true
+		if err != nil {
+			t.Fatalf("owned Electron quit helper failed: %v\n%s", err, helperOutput.String())
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatalf("owned Electron quit helper did not finish: %s", helperOutput.String())
+	}
+	if strings.Contains(helperOutput.String(), "quit confirmation clicked") {
+		t.Log("Installed Synara's owned window confirmed its native quit dialog")
 	}
 	if _, err := os.Stat(runtimePath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("owned Electron runtime was not cleared: %v", err)
 	}
 	log, _ := os.ReadFile(logPath)
-	if artifacts := os.Getenv("KILO_TEST_SYNARA_ARTIFACTS"); filepath.IsAbs(artifacts) {
-		path := filepath.Join(artifacts, synaraSupportedVersion, "electron-startup.log")
-		if err := os.WriteFile(path, log, 0600); err != nil {
-			t.Error(err)
-		} else {
-			t.Logf("Owned Electron startup log: %s", path)
-		}
-	}
 	// On macOS Electron can route SIGTERM through its native before-quit event
 	// before Node's signal handler runs. Both paths use the same runtime drain.
 	graceful := false

@@ -9,12 +9,7 @@ import (
 	"time"
 )
 
-const synaraSupportedVersion = "1.0.0-beta.1"
 const synaraMarker = "--kilo-proxy-synara-root="
-
-func synaraVersionSupported(version string) bool {
-	return version == synaraSupportedVersion
-}
 
 func synaraInstallationCandidates(platform, home, localAppData string) []string {
 	candidates := []string{}
@@ -68,7 +63,7 @@ func resolveSynaraCandidates(candidates []string) (string, error) {
 			return path, nil
 		}
 	}
-	return "", errors.New("Install Synara Beta 1.0.0-beta.1, Codex CLI and Claude Code, then refresh installed apps. Extract an AppImage before using it on Linux.")
+	return "", errors.New("Install Synara Beta, Codex CLI and Claude Code, then refresh installed apps. Extract an AppImage before using it on Linux.")
 }
 
 func (a *app) applySynaraLaunch(plan *clientLaunchPlan, rt clientLaunchRuntime) error {

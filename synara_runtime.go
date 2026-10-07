@@ -17,8 +17,7 @@ import (
 )
 
 const (
-	synaraPrivateRuntimeRevision = 1
-	synaraDesktopMainSHA256      = "8177b818ad13c1a71a72877b3c0967909daf270dd0c8ed18a4d73d2588dbfcaa"
+	synaraPrivateRuntimeRevision = 2
 	synaraRuntimeSourceLimit     = 16 << 20
 	synaraRuntimeManifestName    = "runtime.json"
 	synaraRuntimeServerName      = "server.mjs"
@@ -35,6 +34,9 @@ type synaraPrivateRuntime struct {
 	Executable          string            `json:"executable"`
 	SourceApp           string            `json:"sourceApp"`
 	SourceArchive       string            `json:"sourceArchive"`
+	SourceMainEntry     string            `json:"sourceMainEntry"`
+	SourceMainSHA256    string            `json:"sourceMainSHA256"`
+	SourceServerSHA256  string            `json:"sourceServerSHA256"`
 	ArchiveHeaderSHA256 string            `json:"archiveHeaderSHA256"`
 	Files               map[string]string `json:"files"`
 }
@@ -43,13 +45,13 @@ func synaraRuntimeFileNames(exeName string) []string {
 	return []string{synaraRuntimeHookName, synaraRuntimeServerName, filepath.Join(synaraRuntimeBundleName, "Contents", "Info.plist"), filepath.Join(synaraRuntimeBundleName, "Contents", "Resources", "app.asar"), filepath.Join(synaraRuntimeBundleName, "Contents", "MacOS", exeName), filepath.Join(synaraRuntimeBundleName, "Contents", "_CodeSignature", "CodeResources")}
 }
 
-func synaraRuntimeIdentity(binary, header, privateRoot, serverDigest string) []byte {
+func synaraRuntimeIdentity(binary, header, privateRoot, mainEntry, mainDigest, sourceServerDigest, serverDigest string) []byte {
 	archive := filepath.Join(binary, "Contents", "Resources", "app.asar")
 	// Use fixed path placeholders to bind the generator without a circular
 	// dependency on the cache directory that the generated code will contain.
-	bootstrap := synaraRuntimeBootstrap(archive, "__KILO_SYNARA_RUNTIME_HOOK__")
-	hook := synaraRuntimeBackendHook(archive, "__KILO_SYNARA_RUNTIME_SERVER__", serverDigest)
-	identity, _ := json.Marshal([]any{synaraPrivateRuntimeRevision, binary, header, privateRoot, serverDigest, openDesignHash(bootstrap), openDesignHash(hook)})
+	bootstrap := synaraRuntimeBootstrap(archive, mainEntry, "__KILO_SYNARA_RUNTIME_HOOK__", mainDigest)
+	hook := synaraRuntimeBackendHook(archive, "__KILO_SYNARA_RUNTIME_SERVER__", sourceServerDigest, serverDigest)
+	identity, _ := json.Marshal([]any{synaraPrivateRuntimeRevision, binary, header, privateRoot, mainEntry, mainDigest, sourceServerDigest, serverDigest, openDesignHash(bootstrap), openDesignHash(hook)})
 	return identity
 }
 
@@ -133,25 +135,25 @@ func synaraRuntimeASAR(files map[string][]byte) ([]byte, string, error) {
 	return data, openDesignHash(header), nil
 }
 
-func synaraRuntimeBootstrap(sourceArchive, hook string) []byte {
+func synaraRuntimeBootstrap(sourceArchive, mainEntry, hook, mainDigest string) []byte {
 	encode := func(value string) string { b, _ := json.Marshal(value); return string(b) }
-	main := filepath.Join(sourceArchive, filepath.FromSlash("apps/desktop/dist-electron/main.js"))
+	main := filepath.Join(sourceArchive, filepath.FromSlash(mainEntry))
 	replacement := "const child = node_child_process.spawn(process.execPath, [...backendNodeArgs(), \"--import\", " + encode(hook) + ", backendEntry], {"
 	return []byte("'use strict';\nconst fs=require('node:fs'),crypto=require('node:crypto'),Module=require('node:module'),path=require('node:path'),{app}=require('electron');\n" +
 		"const originalMain=" + encode(main) + ", originalRoot=" + encode(sourceArchive) + ";\n" +
 		"let source=fs.readFileSync(originalMain,'utf8');\n" +
-		"if(Buffer.byteLength(source)>16777216||crypto.createHash('sha256').update(source).digest('hex')!==" + encode(synaraDesktopMainSHA256) + ")throw Error('Synara desktop source changed; prepare again.');\n" +
+		"if(Buffer.byteLength(source)>16777216||crypto.createHash('sha256').update(source).digest('hex')!==" + encode(mainDigest) + ")throw Error('Synara desktop source changed; prepare again.');\n" +
 		"const anchor=" + encode(synaraDesktopSpawnAnchor) + ";if(source.split(anchor).length!==2)throw Error('Synara backend startup changed; prepare again.');\n" +
 		"source=source.replace(anchor," + encode(replacement) + ");app.getAppPath=()=>originalRoot;\n" +
 		"const originalModule=new Module(originalMain,module);originalModule.filename=originalMain;originalModule.paths=Module._nodeModulePaths(path.dirname(originalMain));originalModule._compile(source,originalMain);\n")
 }
 
-func synaraRuntimeBackendHook(sourceArchive, server, digest string) []byte {
+func synaraRuntimeBackendHook(sourceArchive, server, sourceDigest, digest string) []byte {
 	encode := func(value string) string { b, _ := json.Marshal(value); return string(b) }
 	entry := filepath.Join(sourceArchive, filepath.FromSlash("apps/server/dist/index.mjs"))
 	return []byte("import fs from 'node:fs';import crypto from 'node:crypto';import {registerHooks} from 'node:module';import {pathToFileURL} from 'node:url';\n" +
 		"const entry=pathToFileURL(" + encode(entry) + ").href,patched=" + encode(server) + ";\n" +
-		"registerHooks({load(url,context,nextLoad){const loaded=nextLoad(url,context);if(url!==entry)return loaded;const original=loaded.source;if(original==null||Buffer.byteLength(original)>16777216||crypto.createHash('sha256').update(original).digest('hex')!==" + encode(synaraDelegationServerSHA256) + ")throw Error('Synara server source changed; prepare again.');\n" +
+		"registerHooks({load(url,context,nextLoad){const loaded=nextLoad(url,context);if(url!==entry)return loaded;const original=loaded.source;if(original==null||Buffer.byteLength(original)>16777216||crypto.createHash('sha256').update(original).digest('hex')!==" + encode(sourceDigest) + ")throw Error('Synara server source changed; prepare again.');\n" +
 		"const stat=fs.lstatSync(patched);if(!stat.isFile()||stat.isSymbolicLink()||stat.size>16777216)throw Error('Invalid private Synara server.');const source=fs.readFileSync(patched);if(crypto.createHash('sha256').update(source).digest('hex')!==" + encode(digest) + ")throw Error('Private Synara server changed; prepare again.');return {...loaded,source};}});\n")
 }
 
@@ -246,6 +248,37 @@ func synaraRuntimeInfoPlist(original []byte, originalHash, bootstrapHash string)
 	return bytes.Replace(data, oldID, []byte("<string>ai.kilo.synara-private-runtime</string>"), 1), nil
 }
 
+func synaraRuntimePackageData(source []byte) ([]byte, string, error) {
+	var fields map[string]json.RawMessage
+	var metadata synaraPackageInfo
+	if len(source) == 0 || len(source) > 64<<10 || json.Unmarshal(source, &fields) != nil || json.Unmarshal(source, &metadata) != nil || metadata.Name != "synara-desktop-beta" || metadata.SynaraDesktopFlavor != "beta" {
+		return nil, "", errors.New("Cannot verify the Synara Beta runtime package.")
+	}
+	main := metadata.Main
+	// ASAR entries use relative slash paths on every host. On Windows a leading
+	// slash is rooted but filepath.IsAbs alone does not classify it as absolute.
+	if main == "" || main == "." || main == ".." || filepath.IsAbs(main) || strings.HasPrefix(main, "/") || filepath.ToSlash(filepath.Clean(main)) != main || strings.HasPrefix(main, "../") || strings.ContainsAny(main, "\\:\x00") {
+		return nil, "", errors.New("Invalid Synara desktop source entry.")
+	}
+	// Keep the installed release's identity, including its real version, commit,
+	// dependencies and future metadata. Only the private bootstrap entry changes.
+	fields["main"] = json.RawMessage(`"bootstrap.cjs"`)
+	data, err := json.Marshal(fields)
+	return data, main, err
+}
+
+func synaraSourceDigestValid(digest string) bool {
+	if len(digest) != 64 {
+		return false
+	}
+	for _, c := range digest {
+		if !strings.ContainsRune("0123456789abcdef", c) {
+			return false
+		}
+	}
+	return true
+}
+
 func prepareSynaraPrivateRuntime(options synaraProfileOptions, binary, platform string) (synaraPrivateRuntime, error) {
 	// This beta's embedded archive validation differs across operating systems.
 	// Preserve the existing integration on other platforms until their private
@@ -257,13 +290,18 @@ func prepareSynaraPrivateRuntime(options synaraProfileOptions, binary, platform 
 	if !strings.HasSuffix(binary, ".app") || t3CodeBundleExecutable(binary) == "" {
 		return empty, errors.New("Invalid Synara desktop bundle.")
 	}
-	if version, err := synaraVersion(binary, platform); err != nil || !synaraVersionSupported(version) {
-		return empty, errors.New("Install the official Synara Beta 1.0.0-beta.1 before preparing its private runtime.")
-	}
 	archive := filepath.Join(binary, "Contents", "Resources", "app.asar")
-	main, header, err := synaraReadASARSource(archive, "apps/desktop/dist-electron/main.js", synaraRuntimeSourceLimit)
-	if err != nil || openDesignHash(main) != synaraDesktopMainSHA256 || strings.Count(string(main), synaraDesktopSpawnAnchor) != 1 {
-		return empty, errors.New("This Synara desktop source has not been validated for private delegation.")
+	packageSource, header, err := synaraReadASARSource(archive, "package.json", 64<<10)
+	if err != nil {
+		return empty, errors.New("Cannot read the Synara Beta runtime package.")
+	}
+	packageData, mainEntry, err := synaraRuntimePackageData(packageSource)
+	if err != nil {
+		return empty, err
+	}
+	main, mainHeader, err := synaraReadASARSource(archive, mainEntry, synaraRuntimeSourceLimit)
+	if err != nil || mainHeader != header || strings.Count(string(main), synaraDesktopSpawnAnchor) != 1 {
+		return empty, errors.New("This Synara desktop does not expose the private backend startup contract; no private changes saved.")
 	}
 	server, serverHeader, err := synaraReadASARSource(archive, "apps/server/dist/index.mjs", synaraRuntimeSourceLimit)
 	if err != nil || serverHeader != header {
@@ -273,7 +311,8 @@ func prepareSynaraPrivateRuntime(options synaraProfileOptions, binary, platform 
 	if err != nil {
 		return empty, err
 	}
-	identity := synaraRuntimeIdentity(binary, header, options.RootDir, openDesignHash(patched))
+	mainDigest, serverDigest := openDesignHash(main), openDesignHash(server)
+	identity := synaraRuntimeIdentity(binary, header, options.RootDir, mainEntry, mainDigest, serverDigest, openDesignHash(patched))
 	cache := filepath.Join(options.RootDir, "runtime")
 	if err = safeEditorDir(options.RootDir, cache); err != nil {
 		return empty, err
@@ -324,8 +363,7 @@ func prepareSynaraPrivateRuntime(options synaraProfileOptions, binary, platform 
 			return empty, err
 		}
 	}
-	bootstrap := synaraRuntimeBootstrap(archive, filepath.Join(root, synaraRuntimeHookName))
-	packageData, _ := json.Marshal(map[string]any{"name": "synara-desktop-beta", "version": synaraSupportedVersion, "main": "bootstrap.cjs", "productName": "Synara Beta", "synaraDesktopFlavor": "beta", "synaraCommitHash": synaraSupportedCommit})
+	bootstrap := synaraRuntimeBootstrap(archive, mainEntry, filepath.Join(root, synaraRuntimeHookName), mainDigest)
 	bootstrapASAR, bootstrapHeader, err := synaraRuntimeASAR(map[string][]byte{"package.json": packageData, "bootstrap.cjs": bootstrap})
 	if err != nil {
 		return empty, err
@@ -338,7 +376,7 @@ func prepareSynaraPrivateRuntime(options synaraProfileOptions, binary, platform 
 	if err != nil {
 		return empty, err
 	}
-	for path, data := range map[string][]byte{filepath.Join(contents, "Info.plist"): info, filepath.Join(contents, "Resources", "app.asar"): bootstrapASAR, filepath.Join(stage, synaraRuntimeServerName): patched, filepath.Join(stage, synaraRuntimeHookName): synaraRuntimeBackendHook(archive, filepath.Join(root, synaraRuntimeServerName), openDesignHash(patched))} {
+	for path, data := range map[string][]byte{filepath.Join(contents, "Info.plist"): info, filepath.Join(contents, "Resources", "app.asar"): bootstrapASAR, filepath.Join(stage, synaraRuntimeServerName): patched, filepath.Join(stage, synaraRuntimeHookName): synaraRuntimeBackendHook(archive, filepath.Join(root, synaraRuntimeServerName), serverDigest, openDesignHash(patched))} {
 		if err = os.WriteFile(path, data, 0600); err != nil {
 			return empty, err
 		}
@@ -356,7 +394,7 @@ func prepareSynaraPrivateRuntime(options synaraProfileOptions, binary, platform 
 	if exec.CommandContext(ctx, "/usr/bin/codesign", "--force", "--deep", "--sign", "-", bundle).Run() != nil || exec.CommandContext(ctx, "/usr/bin/codesign", "--verify", "--deep", "--strict", bundle).Run() != nil {
 		return empty, errors.New("Could not sign and verify the owned private Synara runtime.")
 	}
-	result := synaraPrivateRuntime{Revision: synaraPrivateRuntimeRevision, Root: root, Executable: filepath.Join(root, synaraRuntimeBundleName, "Contents", "MacOS", exeName), SourceApp: binary, SourceArchive: archive, ArchiveHeaderSHA256: header, Files: map[string]string{}}
+	result := synaraPrivateRuntime{Revision: synaraPrivateRuntimeRevision, Root: root, Executable: filepath.Join(root, synaraRuntimeBundleName, "Contents", "MacOS", exeName), SourceApp: binary, SourceArchive: archive, SourceMainEntry: mainEntry, SourceMainSHA256: mainDigest, SourceServerSHA256: serverDigest, ArchiveHeaderSHA256: header, Files: map[string]string{}}
 	for _, relative := range synaraRuntimeFileNames(exeName) {
 		digest, err := openDesignFileHash(filepath.Join(stage, relative), synaraRuntimeSourceLimit)
 		if err != nil {
@@ -379,9 +417,9 @@ func prepareSynaraPrivateRuntime(options synaraProfileOptions, binary, platform 
 
 func synaraPrivateRuntimeReady(options synaraProfileOptions, binary, platform string, saved synaraPrivateRuntime) bool {
 	if platform != "macos" && platform != "darwin" {
-		return saved.Revision == 0 && saved.Root == "" && saved.Executable == "" && saved.SourceApp == "" && saved.SourceArchive == "" && saved.ArchiveHeaderSHA256 == "" && len(saved.Files) == 0
+		return saved.Revision == 0 && saved.Root == "" && saved.Executable == "" && saved.SourceApp == "" && saved.SourceArchive == "" && saved.SourceMainEntry == "" && saved.SourceMainSHA256 == "" && saved.SourceServerSHA256 == "" && saved.ArchiveHeaderSHA256 == "" && len(saved.Files) == 0
 	}
-	if saved.Revision != synaraPrivateRuntimeRevision || saved.SourceApp != binary || saved.SourceArchive != filepath.Join(binary, "Contents", "Resources", "app.asar") || !safeLaunchDir(saved.Root, options.RootDir) || !withinT3CodePath(filepath.Join(options.RootDir, "runtime"), saved.Root) || len(saved.Files) != 6 {
+	if saved.Revision != synaraPrivateRuntimeRevision || saved.SourceApp != binary || saved.SourceArchive != filepath.Join(binary, "Contents", "Resources", "app.asar") || !synaraSourceDigestValid(saved.SourceMainSHA256) || !synaraSourceDigestValid(saved.SourceServerSHA256) || !safeLaunchDir(saved.Root, options.RootDir) || !withinT3CodePath(filepath.Join(options.RootDir, "runtime"), saved.Root) || len(saved.Files) != 6 {
 		return false
 	}
 	exeName := filepath.Base(t3CodeBundleExecutable(binary))
@@ -390,14 +428,18 @@ func synaraPrivateRuntimeReady(options synaraProfileOptions, binary, platform st
 			return false
 		}
 	}
-	expectedRoot := filepath.Join(options.RootDir, "runtime", openDesignHash(synaraRuntimeIdentity(binary, saved.ArchiveHeaderSHA256, options.RootDir, saved.Files[synaraRuntimeServerName])))
+	expectedRoot := filepath.Join(options.RootDir, "runtime", openDesignHash(synaraRuntimeIdentity(binary, saved.ArchiveHeaderSHA256, options.RootDir, saved.SourceMainEntry, saved.SourceMainSHA256, saved.SourceServerSHA256, saved.Files[synaraRuntimeServerName])))
 	if saved.Root != expectedRoot || saved.Executable != filepath.Join(saved.Root, synaraRuntimeBundleName, "Contents", "MacOS", exeName) {
 		return false
 	}
 	// Reading the bounded archive index and metadata entry detects installation
 	// replacement without hashing its entire 191 MB contents per request.
-	_, header, err := synaraReadASARSource(saved.SourceArchive, "package.json", 64<<10)
+	packageSource, header, err := synaraReadASARSource(saved.SourceArchive, "package.json", 64<<10)
 	if err != nil || header != saved.ArchiveHeaderSHA256 {
+		return false
+	}
+	_, mainEntry, err := synaraRuntimePackageData(packageSource)
+	if err != nil || mainEntry != saved.SourceMainEntry {
 		return false
 	}
 	for relative, digest := range saved.Files {

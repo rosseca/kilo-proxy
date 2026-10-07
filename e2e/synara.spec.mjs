@@ -61,8 +61,10 @@ test('Synara prepares four agents before desktop launch and guards a second open
  await expect(page.locator('#synara-compatibility')).not.toContainText('hides');
  await expect(page.locator('#synara-compatibility')).toContainText('check the selected model before continuing');
  await expect(page.locator('#synara-privacy')).toContainText('regular Synara workspace and chats stay separate');
+ await expect(page.locator('#synara-requirements')).toContainText('Supports Synara Beta. Requires native Codex CLI and Claude Code.');
+ await expect(page.locator('#synara-requirements')).toContainText('Detected: '+profile.version);
  await expect(page.locator('#synara-requirements')).toContainText('not Desktop app logins');
- await expect(page.locator('#synara-install')).toHaveAttribute('href','https://github.com/Emanuele-web04/synara/releases/tag/v1.0.0-beta.1');
+ await expect(page.locator('#synara-install')).toHaveAttribute('href','https://github.com/Emanuele-web04/synara/releases');
  await expect(page.locator('#synara-helper')).not.toContainText('synthetic-kilo-personal-key');
  await expect(page.locator('#synara-helper')).not.toContainText(profile.profileDir);
  await expect(page.locator('#toast')).toBeHidden();
@@ -73,6 +75,8 @@ test('Synara prepares four agents before desktop launch and guards a second open
  await expect(page.locator('#synara-agents li').nth(1)).toContainText('Kilo Proxy · Codex');
  await expect(page.locator('#synara-agents li').nth(3)).toContainText('Kilo Proxy · Claude');
  await expect(page.locator('#synara-intro')).toContainText('indicadores verdes de cuenta');
+ await expect(page.locator('#synara-requirements')).toContainText('Admite Synara Beta. Requiere Codex CLI nativo y Claude Code.');
+ await expect(page.locator('#synara-requirements')).toContainText('Detectado: '+profile.version);
  await expect(page.locator('#synara-compatibility')).toContainText('inicia uno nuevo para cambiar entre normal y Kilo');
  await expect(page.locator('#synara-compatibility')).toContainText('revisa el modelo elegido antes de continuar');
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);

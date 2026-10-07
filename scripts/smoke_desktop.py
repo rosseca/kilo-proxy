@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import subprocess
 import stat
 import tarfile
@@ -71,22 +72,24 @@ def extract(archive, directory):
 def smoke(binary, root, expected_version=None):
     report = root / 'desktop-report.json'
     command = [str(binary.resolve()), '--desktop-self-test', str(report)]
+    stdout_path, stderr_path = root / 'desktop-stdout.log', root / 'desktop-stderr.log'
     if platform.system() == 'Windows':
         print('Windows graphical session: ' + json.dumps(windows_desktop_context()), flush=True)
     try:
-        result = subprocess.run(command, capture_output=True, text=True, timeout=150)
+        # Wait for the actual desktop process. A descendant retaining a capture
+        # pipe must not make communicate() look like a desktop that never quit.
+        with stdout_path.open('wb') as stdout, stderr_path.open('wb') as stderr:
+            result = subprocess.run(command, stdout=stdout, stderr=stderr, timeout=150)
     except subprocess.TimeoutExpired as error:
-        stderr = error.stderr or b''
-        if isinstance(stderr, bytes):
-            stderr = stderr.decode('utf-8', errors='replace')
-        raise RuntimeError('Native desktop did not quit within 150 seconds. ' + stderr[-2500:]) from error
+        raise RuntimeError('Native desktop process did not exit within 150 seconds. '
+                           + failure_diagnostic(stdout_path, stderr_path, report)) from error
     if not report.exists():
-        # Startup logs may contain the synthetic admin URL; do not publish it.
         raise RuntimeError(f'Desktop did not produce a report (exit {result.returncode}). '
-                           + result.stderr[-2500:])
+                           + failure_diagnostic(stdout_path, stderr_path, report))
     data = json.loads(report.read_text())
     if result.returncode != 0 or not data.get('passed') or not REQUIRED.issubset(data.get('checks', [])):
-        raise RuntimeError('Native desktop check failed: ' + json.dumps(data) + '\n' + result.stderr[-2500:])
+        raise RuntimeError(f'Native desktop check failed (exit {result.returncode}). '
+                           + failure_diagnostic(stdout_path, stderr_path, report))
     if platform.system() == 'Darwin' and not {
             'cocoa-tray-title-and-image-icon', 'cocoa-tray-title-and-image-spend',
             'cocoa-tray-title-and-image-icon-restored'}.issubset(data.get('checks', [])):
@@ -101,6 +104,36 @@ def smoke(binary, root, expected_version=None):
         raise RuntimeError('Native smoke ran a stale executable version')
     print(f'Passed native {data["os"]}/{data["arch"]} desktop {data["version"]}: '
           + ', '.join(data['checks']) + ', process-exited-cleanly')
+
+
+def log_excerpt(path, head=12000, tail=4000):
+    """Keep the failure header and causal stack as well as the final frames."""
+    with path.open('rb') as stream:
+        prefix = stream.read(head)
+        size = stream.seek(0, os.SEEK_END)
+        if size <= head:
+            data = prefix
+        else:
+            stream.seek(max(head, size - tail))
+            data = prefix + b'\n[... diagnostic truncated ...]\n' + stream.read(tail)
+    return data.decode('utf-8', errors='replace')
+
+
+def failure_diagnostic(stdout_path, stderr_path, report):
+    # stdout starts with the synthetic admin URL. Read it only to remove its
+    # token if another diagnostic repeats the token without the URL.
+    startup = log_excerpt(stdout_path, head=2048, tail=0)
+    detail = 'stderr:\n' + log_excerpt(stderr_path)
+    if report.exists():
+        detail += '\nreport:\n' + log_excerpt(report, head=4000, tail=1000)
+    else:
+        detail += '\nreport: not produced'
+    tokens = re.findall(r'https?://[^\s\'"<>]*[?#]([A-Za-z0-9_-]{16,})', startup + detail)
+    detail = re.sub(r'(?i)\b[a-z][a-z0-9+.-]*://[^\s\'"<>]+', '[redacted URL]', detail)
+    for token in tokens:
+        detail = detail.replace(token, '[redacted token]')
+    return re.sub(r'(?i)(admin[ _-]?token[\'"\s]*[:=][\'"\s]*)[^\s,\'"<>]+',
+                  r'\1[redacted token]', detail)
 
 
 def main():

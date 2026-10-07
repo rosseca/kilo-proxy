@@ -8,7 +8,7 @@ import (
 	"gioui.org/layout"
 )
 
-const synaraDownloadURL = "https://github.com/Emanuele-web04/synara/releases/tag/v1.0.0-beta.1"
+const synaraDownloadURL = "https://github.com/Emanuele-web04/synara/releases"
 
 type nativeSynaraInfo struct {
 	Prepared bool          `json:"prepared"`
@@ -102,7 +102,7 @@ func (u *nativeUI) synaraClientPanel(s *nativeClientSelection) layout.Widget {
 		widgets = append(widgets, u.note(nativeMessage(state.Info.Message, u.language)))
 	}
 	chatHelp := u.tr("Existing chats keep their account; start a new chat to switch between normal and Kilo. For custom Claude gateway IDs, compatible reasoning defaults come from Kilo Models. Close and reopen Synara · Kilo after changing them; saved levels require Claude Code 2.1.251 or newer (2.1.267 or newer for Opus/Sonnet 5.5).", "Los chats existentes conservan su cuenta; inicia uno nuevo para cambiar entre normal y Kilo. Para IDs Claude personalizados del gateway, el razonamiento compatible inicial viene de Modelos de Kilo. Cierra y reabre Synara · Kilo tras cambiarlos; los niveles guardados requieren Claude Code 2.1.251 o posterior (2.1.267 o posterior para Opus/Sonnet 5.5).")
-	requirements := u.tr("Supports Synara Beta 1.0.0-beta.1. Requires native Codex CLI and Claude Code.", "Admite Synara Beta 1.0.0-beta.1. Requiere Codex CLI nativo y Claude Code.")
+	requirements := u.tr("Supports Synara Beta. Requires native Codex CLI and Claude Code.", "Admite Synara Beta. Requiere Codex CLI nativo y Claude Code.")
 	if state.Info.Version != "" {
 		requirements += u.tr(" Detected: ", " Detectado: ") + state.Info.Version + "."
 	}

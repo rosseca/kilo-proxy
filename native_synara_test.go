@@ -77,6 +77,7 @@ func TestNativeSynaraWideCardAndIntegrationSettings(t *testing.T) {
 			if u.agentsState().Preferences.Projects["synara"] != "" {
 				t.Fatal("Synara remembered an unsupported project")
 			}
+			u.agentsState().Synara.Info.Version = "9.4.2-beta.8"
 			u.agentSetup("synara")
 			h.size = image.Pt(720, 2200)
 			h.frame()
@@ -85,7 +86,7 @@ func TestNativeSynaraWideCardAndIntegrationSettings(t *testing.T) {
 			for _, node := range h.nodes() {
 				labels += node.Desc.Label + "\n"
 			}
-			for _, expected := range []string{u.tr("Codex · Normal · Existing Codex CLI login", "Codex · Normal · Sesión existente de Codex CLI"), u.tr("Claude · Normal · Existing Claude Code login", "Claude · Normal · Sesión existente de Claude Code"), "Kilo Proxy · Codex", "Kilo Proxy · Claude", u.tr("green account indicators", "indicadores verdes de cuenta"), u.tr("Choose one of these four options for each new chat.", "Elige una de estas cuatro opciones para cada chat nuevo."), u.tr("exact gateway ID", "ID exacto del gateway"), u.tr("check the selected model before continuing", "revisa el modelo elegido antes de continuar"), "1.0.0-beta.1", "Claude Code 2.1.251", "keyring/auto"} {
+			for _, expected := range []string{u.tr("Codex · Normal · Existing Codex CLI login", "Codex · Normal · Sesión existente de Codex CLI"), u.tr("Claude · Normal · Existing Claude Code login", "Claude · Normal · Sesión existente de Claude Code"), "Kilo Proxy · Codex", "Kilo Proxy · Claude", u.tr("green account indicators", "indicadores verdes de cuenta"), u.tr("Choose one of these four options for each new chat.", "Elige una de estas cuatro opciones para cada chat nuevo."), u.tr("exact gateway ID", "ID exacto del gateway"), u.tr("check the selected model before continuing", "revisa el modelo elegido antes de continuar"), u.tr("Supports Synara Beta. Requires native Codex CLI and Claude Code.", "Admite Synara Beta. Requiere Codex CLI nativo y Claude Code."), u.tr("Detected: 9.4.2-beta.8", "Detectado: 9.4.2-beta.8"), "Claude Code 2.1.251", "keyring/auto"} {
 				if !strings.Contains(labels, expected) {
 					t.Fatalf("missing agent guidance: %q", expected)
 				}
@@ -134,7 +135,7 @@ func TestNativeSynaraPreparedStatusIsFresh(t *testing.T) {
 	s := u.sharedClientSelection("synara")
 	payload, _ := nativeClientPayload("synara", s)
 	library := payload.(map[string]any)["library"].(modelLibrary)
-	data, _ := json.Marshal(map[string]any{"prepared": true, "library": library, "version": "1.0.0-beta.1"})
+	data, _ := json.Marshal(map[string]any{"prepared": true, "library": library, "version": "9.4.2-beta.8"})
 	u.acceptSynaraProfile(data, u.launchConnectionFingerprint())
 	if !u.synaraPrepared(s) {
 		t.Fatal("valid prepared metadata was not accepted")

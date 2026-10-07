@@ -24,8 +24,8 @@ func TestSynaraInstalledCodexVoiceHealth(t *testing.T) {
 	if runtime.GOOS != "darwin" || !filepath.IsAbs(installed) || !filepath.IsAbs(source) {
 		t.Fatal("the installed voice contract currently requires an absolute macOS Synara bundle and compiled Kilo binary")
 	}
-	if version, err := synaraVersion(installed, runtime.GOOS); err != nil || version != synaraSupportedVersion {
-		t.Fatalf("official beta identity: %q %v", version, err)
+	if _, err := synaraPackageMetadata(installed, runtime.GOOS); err != nil {
+		t.Fatalf("official beta identity: %v", err)
 	}
 	userHome, err := os.UserHomeDir()
 	if err != nil {
@@ -90,7 +90,12 @@ func TestSynaraInstalledCodexVoiceHealth(t *testing.T) {
 	}
 	// Electron's node mode reads ASAR through its native filesystem support; it
 	// opens no window and only evaluates the small health-parser functions.
-	fixture := map[string]any{"entry": filepath.Join(installed, "Contents", "Resources", "app.asar", "apps", "server", "dist", "index.mjs"), "digest": synaraDelegationServerSHA256, "results": results}
+	archive := filepath.Join(installed, "Contents", "Resources", "app.asar")
+	serverSource, _, err := synaraReadASARSource(archive, "apps/server/dist/index.mjs", synaraRuntimeSourceLimit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture := map[string]any{"entry": filepath.Join(archive, "apps", "server", "dist", "index.mjs"), "digest": openDesignHash(serverSource), "results": results}
 	data, _ := json.Marshal(fixture)
 	manifest := filepath.Join(t.TempDir(), "voice-health.json")
 	if err := os.WriteFile(manifest, data, 0600); err != nil {
