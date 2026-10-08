@@ -237,7 +237,7 @@ func nativeClientPayload(key string, s *nativeClientSelection) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		selection.Models = append(selection.Models, claudeModel{ID: m.Model.ID, DisplayName: m.DisplayName, Effort: effort, Context: limits.ContextWindow, Output: limits.MaxOutputTokens})
+		selection.Models = append(selection.Models, claudeModel{ID: m.Model.ID, DisplayName: m.DisplayName, Effort: effort, Context: limits.ContextWindow, Output: limits.MaxOutputTokens, Maximum: m.Model.ContextWindow})
 	}
 	if strings.HasPrefix(key, "xcode-") {
 		selection.Mode = "installed"

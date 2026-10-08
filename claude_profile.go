@@ -23,6 +23,9 @@ type claudeModel struct {
 	Effort      string `json:"effort,omitempty"`
 	Context     int    `json:"contextWindow,omitempty"`
 	Output      int    `json:"maxOutputTokens,omitempty"`
+	// Maximum is the catalog's published capacity, kept separate from Context so
+	// a working preset never hides a model's real ceiling from the 1M tag.
+	Maximum int `json:"contextMaximum,omitempty"`
 }
 type claudeSelection struct {
 	Models  []claudeModel     `json:"models"`
@@ -154,7 +157,7 @@ func validateClaudeSelection(s claudeSelection) error {
 	ids := map[string]bool{}
 	nativeIDs := map[string]bool{}
 	for _, m := range s.Models {
-		if m.Context < 0 || m.Context > 100000000 || m.Context > 0 && m.Context < 1024 || m.Output < 0 || m.Output > 100000000 || m.Context > 0 && m.Output > m.Context {
+		if m.Context < 0 || m.Context > 100000000 || m.Context > 0 && m.Context < 1024 || m.Output < 0 || m.Output > 100000000 || m.Context > 0 && m.Output > m.Context || m.Maximum < 0 || m.Maximum > 100000000 {
 			return errors.New("Invalid Claude context or output limit")
 		}
 		if !catalogID.MatchString(m.ID) || ids[m.ID] || len([]rune(m.DisplayName)) > 80 || strings.IndexFunc(m.DisplayName, func(r rune) bool { return r < 32 || r == 127 }) >= 0 || !validClaudeEffort(m.ID, m.Effort) {
@@ -194,8 +197,29 @@ func claudeContextBudget(s claudeSelection) (context, output int) {
 	return min(context, 1000000), output
 }
 
+// Claude Code never reads a gateway model's published capacity: it assumes
+// roughly 200K for a model it does not recognize and 1M for one carrying the
+// [1m] tag, so a ceiling the catalog already reports is otherwise invisible to
+// the session. Tag the models whose catalog maximum reaches Claude's 1M ceiling;
+// autoCompactWindow still bounds the working budget below it, and the tag is
+// Claude's own notation, which it strips before sending the requested model.
+const claudeLargeContextTokens = 1000000
+
+func claudeContextTag(id string, maximum int) string {
+	if maximum >= claudeLargeContextTokens {
+		return id + "[1m]"
+	}
+	return id
+}
+
 func claudeManagedSettings(s claudeSelection, caps claudeCapabilities, port int, key string) map[string]any {
-	nativeID := func(id string) string {
+	maximum := make(map[string]int, len(s.Models))
+	for _, m := range s.Models {
+		maximum[m.ID] = m.Maximum
+	}
+	// The picker identity is the spelling Claude Code sends after stripping the
+	// [1m] tag, so overrides stay keyed on it and never on the tagged form.
+	pickerID := func(id string) string {
 		if caps.Picker {
 			if native := claudePickerKey(id); native != "" {
 				return native
@@ -203,6 +227,7 @@ func claudeManagedSettings(s claudeSelection, caps claudeCapabilities, port int,
 		}
 		return id
 	}
+	nativeID := func(id string) string { return claudeContextTag(pickerID(id), maximum[id]) }
 	env := map[string]any{"ANTHROPIC_BASE_URL": "http://127.0.0.1:" + strconv.Itoa(port), "ANTHROPIC_AUTH_TOKEN": key, "ANTHROPIC_MODEL": nativeID(s.Initial)}
 	result := map[string]any{"env": env, "model": nativeID(s.Initial)}
 	if window, output := claudeContextBudget(s); window >= 100000 {
@@ -252,7 +277,7 @@ func claudeManagedSettings(s claudeSelection, caps claudeCapabilities, port int,
 		result["modelPicker"] = map[string]any{"options": options, "replaceBuiltInOptions": true}
 		overrides := map[string]string{}
 		for _, m := range s.Models {
-			if native := nativeID(m.ID); native != m.ID {
+			if native := pickerID(m.ID); native != m.ID {
 				overrides[native] = m.ID
 			}
 		}
