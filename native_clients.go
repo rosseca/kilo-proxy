@@ -237,7 +237,7 @@ func nativeClientPayload(key string, s *nativeClientSelection) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		selection.Models = append(selection.Models, claudeModel{ID: m.Model.ID, DisplayName: m.DisplayName, Effort: effort, Context: limits.ContextWindow, Output: limits.MaxOutputTokens})
+		selection.Models = append(selection.Models, claudeModel{ID: m.Model.ID, DisplayName: m.DisplayName, Effort: effort, Context: limits.ContextWindow, Output: limits.MaxOutputTokens, Maximum: m.Model.ContextWindow})
 	}
 	if strings.HasPrefix(key, "xcode-") {
 		selection.Mode = "installed"
@@ -272,6 +272,26 @@ func nativeSelectionFingerprint(key string, s *nativeClientSelection, base, keyV
 	}
 	data, _ := json.Marshal(values)
 	return string(data)
+}
+
+// Filter only the saved list, retaining its manual order and offline entries.
+// Searching is a view operation: it must not remove hidden choices or defaults.
+func nativeFilterSavedModels(models []modelInfo, selection *nativeClientSelection, query string) []modelInfo {
+	query = strings.ToLower(strings.TrimSpace(query))
+	if query == "" {
+		return models
+	}
+	var out []modelInfo
+	for _, model := range models {
+		name := model.Name
+		if choice := selection.choice(model.ID); choice != nil {
+			name += " " + choice.DisplayName
+		}
+		if strings.Contains(strings.ToLower(model.ID+" "+name), query) {
+			out = append(out, model)
+		}
+	}
+	return out
 }
 
 func nativeVisibleModels(catalog []modelInfo, s *nativeClientSelection, query string, selectedOnly, codingOnly bool, order, lab string) []modelInfo {
@@ -822,8 +842,20 @@ func (u *nativeUI) clientPicker(key string, s *nativeClientSelection) layout.Wid
 		}
 	}
 	if shared && !catalog {
-		available = u.sharedModelOrder()
-		controls = []layout.Widget{u.pills(u.disclosure(prefix+"advanced", u.tr("Advanced model options", "Opciones avanzadas de modelos")))}
+		saved := u.sharedModelOrder()
+		available = nativeFilterSavedModels(saved, s, u.value(prefix+"search"))
+		search := u.modelSearchField(prefix+"search", u.tr("Search models", "Buscar modelos"))
+		toolbar := []layout.Widget{search}
+		if u.value(prefix+"search") != "" {
+			toolbar = append(toolbar, u.ghostButton(prefix+"search-clear", u.tr("Clear search", "Limpiar búsqueda"), func() {
+				u.setValue(prefix+"search", "")
+			}))
+		}
+		controls = []layout.Widget{
+			u.actionRow(toolbar[0], toolbar[1:]...),
+			u.note(fmt.Sprintf(u.tr("%d of %d saved models", "%d de %d modelos guardados"), len(available), len(saved))),
+			u.pills(u.disclosure(prefix+"advanced", u.tr("Advanced model options", "Opciones avanzadas de modelos"))),
+		}
 	} else if !compactSetup {
 		controls = append(controls, u.note(u.modelSortHint(order)))
 	}
@@ -983,7 +1015,11 @@ func (u *nativeUI) clientPicker(key string, s *nativeClientSelection) layout.Wid
 		cardIDs = append(cardIDs, id)
 	}
 	if len(cards) == 0 {
-		controls = append(controls, u.note(u.tr("No matches. Refresh or add an exact model ID.", "Sin resultados. Actualiza o añade un ID exacto.")))
+		if shared && !catalog && strings.TrimSpace(u.value(prefix+"search")) != "" {
+			controls = append(controls, u.note(u.tr("No saved models match. Clear the search to see all saved models.", "Ningún modelo guardado coincide. Limpia la búsqueda para ver todos los modelos guardados.")))
+		} else {
+			controls = append(controls, u.note(u.tr("No matches. Refresh or add an exact model ID.", "Sin resultados. Actualiza o añade un ID exacto.")))
+		}
 	} else {
 		controls = append(controls, u.modelGrid(prefix+"models", cardIDs, cards))
 	}

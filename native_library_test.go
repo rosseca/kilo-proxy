@@ -323,6 +323,7 @@ func TestNativeLibraryUnknownOfflineModelRemainsVisible(t *testing.T) {
 	u.flushModelLibrary()
 	h := &nativePointerHarness{t: t, u: u, size: image.Pt(780, 700), now: time.Now()}
 	h.frame()
+	h.reveal("Saved offline choice", semantic.CheckBox)
 	h.target("Saved offline choice", semantic.CheckBox)
 	warning := false
 	for _, node := range h.nodes() {

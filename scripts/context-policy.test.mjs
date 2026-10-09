@@ -4,7 +4,7 @@ import {contextModel, contextLimits, contextLibraryFields, resolveContextPolicy,
 import {codexCatalog} from '../ui/codex-catalog.mjs';
 import {editorPayload} from '../ui/editor-helper.mjs';
 import {ompPayload, ompConfig} from '../ui/omp-helper.mjs';
-import {claudeSelection, claudeSettings} from '../ui/claude-helper.mjs';
+import {claudeSelection, claudeSettings, claudeContextTag} from '../ui/claude-helper.mjs';
 import {openDesignLibrary} from '../ui/open-design-helper.mjs';
 import {clientConfig} from '../ui/client-config.mjs';
 
@@ -69,6 +69,24 @@ test('Claude exports a conservative session budget and rejects unsupported small
  assert.equal(settings.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW,'128000');
  assert.equal(settings.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS,'8192');
  assert.throws(()=>claudeSettings(claudeSelection([{id:'vendor/tiny',contextWindow:64000}]),{},'http://127.0.0.1:8877/v1','local'),/at least 100,000/);
+});
+
+test('Claude tags only the models whose catalog maximum reaches the 1M ceiling', () => {
+ for(const [maximum,tagged] of [[0,false],[999999,false],[1000000,true],[1048576,true]])assert.equal(claudeContextTag('vendor/model',maximum)==='vendor/model',!tagged);
+ // A recommended working preset below 1M must not hide the catalog maximum: without
+ // the tag Claude Code assumes ~200K and the model's real ceiling is unreachable.
+ const selection=claudeSelection([{id:'vendor/large',contextWindow:1050000},{id:'vendor/medium',contextWindow:200000}],'vendor/large');
+ assert.equal(selection.models[0].contextMaximum,1050000);assert.equal(selection.models[1].contextMaximum,200000);
+ const settings=claudeSettings(selection,{},'http://127.0.0.1:8877/v1','local');
+ assert.equal(settings.model,'vendor/large[1m]');
+ assert.equal(settings.env.ANTHROPIC_MODEL,'vendor/large[1m]');
+ assert.deepEqual(settings.modelPicker,undefined);
+ // The tag lifts Claude Code's assumed ceiling; the preset still sets the budget.
+ assert.equal(settings.autoCompactWindow,200000);
+ const maximum=claudeSettings(claudeSelection([{id:'vendor/large',contextWindow:1050000,contextPreset:'maximum'}],'vendor/large'),{},'http://127.0.0.1:8877/v1','local');
+ assert.equal(maximum.model,'vendor/large[1m]');assert.equal(maximum.autoCompactWindow,1000000);
+ const unlisted=claudeSelection([{id:'vendor/large'}],'vendor/large');
+ assert.equal(claudeSettings(unlisted,{},'http://127.0.0.1:8877/v1','local').model,'vendor/large');
 });
 
 
