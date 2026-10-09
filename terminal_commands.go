@@ -205,7 +205,7 @@ func (a *app) prepareTerminalProfile(client, home string, library modelLibrary, 
 		if !validClaudeEffort(model.ID, effort) || !caps.PerModelEffort && (model.ID != library.DefaultModel || effort == "xhigh") {
 			effort = ""
 		}
-		selection.Models = append(selection.Models, claudeModel{ID: model.ID, DisplayName: model.DisplayName, Effort: effort, Context: context.ContextWindow, Output: context.MaxOutputTokens})
+		selection.Models = append(selection.Models, claudeModel{ID: model.ID, DisplayName: model.DisplayName, Effort: effort, Context: context.ContextWindow, Output: context.MaxOutputTokens, Maximum: choices[i].Model.ContextWindow})
 		ids[model.ID] = true
 	}
 	if old, err := readCatalogFile(filepath.Join(dir, "kilo-models.json")); err == nil {
