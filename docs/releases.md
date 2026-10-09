@@ -46,6 +46,14 @@ python3 scripts/check-codex-context.py /absolute/path/to/codex
 
 This creates an isolated temporary profile, verifies Recommended/Low usable windows and an automatic compaction event, then removes the profile. It does not contact Kilo or use personal credentials. CI covers preset persistence, exported metadata and native/browser interactions without requiring an installed third-party agent.
 
+When changing Claude profiles or context presets, also check the installed client against a disposable synthetic gateway:
+
+```sh
+python3 scripts/check-claude-profile.py /absolute/path/to/claude
+```
+
+This uses temporary profiles and local synthetic responses to verify the generated settings, exact gateway model IDs, reasoning and context behavior. It does not contact Kilo or use personal credentials or paid inference.
+
 When changing the Codex V1 collaboration compatibility repair, run the installed-client A/B check:
 
 ```sh
@@ -125,13 +133,13 @@ The numbers above are examples; always use the version actually committed in `VE
 The **Release** workflow calls **Test and package**, which:
 
 1. Runs Go race tests, vet, module verification, every Node helper test, and Python release tests on macOS, Linux, and Windows. Release tags must match `VERSION`.
-2. Runs Playwright E2E in separate Chromium and WebKit jobs against temporary profiles and a synthetic gateway. Each browser keeps one worker and its own time budget; failures retain reports and traces in browser-specific CI artifacts.
+2. Runs Playwright E2E against temporary profiles and a synthetic gateway in one Chromium job and two WebKit shards. Each job keeps one worker and its own time budget; failures retain reports and traces in shard-specific CI artifacts. Together the WebKit shards run the complete suite.
 3. Runs the Go native control tests, including shared-library restart/recovery/conflict/propagation, Agents preparation-to-open and folder persistence, and saved tray/spend behavior. It renders Agents and Models review screenshots at wide/compact sizes in English and Spanish on all six targets, then builds raw production desktop executables on native Apple Silicon, Intel Mac, Linux x64/ARM64, and Windows x64/ARM64 runners. These jobs create no app bundles or release archives.
 4. Runs the native desktop self-test on every target: rendered Agents/Models/Activity/Settings controls, shared-model save/reload and in-memory client propagation, authenticated backend access, language handling, native clipboard, closing and reopening the window through the tray action, continued proxy operation with the window closed, persisted tray appearance and process-session spend presentation, and graceful quit. Each invocation explicitly selects a temporary test profile and synthetic data; it never needs real Kilo credentials or billed requests.
 5. Runs headless race tests, pure-Go vet, production builds and console smoke on native macOS and Linux x64/ARM64 runners. These jobs install no desktop session or graphics helpers.
 6. Only after **all** core, browser, desktop and headless tests pass, packages the previously tested executables. No rebuild occurs between the native test and packaging. Both macOS desktop bundles receive complete ad-hoc signatures and strict integrity checks.
 7. Extracts and reruns the native desktop self-test from every desktop release archive, and the headless smoke from all four console archives. Both macOS ZIPs also receive signature verification and an additional LaunchServices launch check to detect bundle or startup regressions.
-8. Downloads all ten archives, creates and verifies the complete SHA-256 manifest, and uploads the single `release-assets` workflow artifact consumed by the publishing job. The ordinary validation run has 22 jobs; Release adds the publishing job for 23.
+8. Downloads all ten archives, creates and verifies the complete SHA-256 manifest, and uploads the single `release-assets` workflow artifact consumed by the publishing job. The ordinary validation run has 23 jobs; Release adds the publishing job for 24.
 
 Only after those jobs pass does the publishing job receive `contents: write`. It downloads and rechecks the assets, creates a draft with GitHub-generated notes, uploads all files, and publishes it. Stable versions become the latest release. Alpha/beta/RC tags are marked as prereleases and do not replace the latest stable release. Concurrent runs of the same tag are serialized.
 

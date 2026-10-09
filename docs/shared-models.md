@@ -11,6 +11,8 @@ The native app has a shared **Models** library that every agent uses by default.
 
 Catalog sorting controls the discovery view. Library order is a separate saved preference. Changing either does not silently change your default model. The gateway ID stays exact: a short name is a display label, not a model substitution. Missing catalog entries retain their saved IDs and preferences; catalog availability does not prove protocol support or access to inference.
 
+In **Models → Your models**, **Search models** filters your saved cards by model name, gateway ID or custom display name, ignoring case and surrounding whitespace. The matching/saved count shows how many cards are visible. **Clear search** restores the full list in its saved order. Searching also works when the catalog is unavailable and does not remove hidden models or change the default or saved settings.
+
 **Add models** refreshes the catalog automatically when the last successful fetch is at least one hour old. The fetch time is saved with the catalog, so restarting the app does not reset its age. Catalogs saved by older versions without a fetch time refresh the next time you click **Add models**. Your existing catalog remains visible while loading; if the refresh fails, it remains available and another **Add models** action retries. **Refresh catalog** always requests the latest catalog, regardless of its age. Refreshing does not replace your selected models, custom names, order, default, reasoning preferences or context settings.
 
 ## Model packs and personal copies

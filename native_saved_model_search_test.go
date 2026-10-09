@@ -4,11 +4,71 @@ package main
 
 import (
 	"image"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
+	"sync"
 	"testing"
+	"time"
 
 	"gioui.org/io/semantic"
 )
+
+// Models navigation may refresh an empty catalog. Its completion adds a notice
+// above the search and changes pointer coordinates, so render that completion
+// before resolving the single real click. Never retry a missed click.
+func nativeSavedModelSearchClear(h *nativePointerHarness) {
+	h.t.Helper()
+	nativeTestWait(h.t, h.u, func() bool { return !h.u.busy["POST/api/models"] })
+	h.frame()
+	h.click("Clear search", semantic.Button)
+	if h.u.value("client:shared:search") != "" {
+		h.t.Fatal("clear search failed")
+	}
+}
+
+func TestNativeSavedModelSearchClearAfterPendingCatalogRefresh(t *testing.T) {
+	h := newNativePointerHarness(t, image.Pt(720, 700))
+	models := nativeClientModelsForTest()
+	nativeSeedSharedForTest(t, h.u, models[0], models[1])
+	entered, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	unblock := func() { once.Do(func() { close(release) }) }
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/gateway/models" {
+			http.NotFound(w, r)
+			return
+		}
+		close(entered)
+		<-release
+		jsonResponse(w, 200, map[string]any{"data": []any{map[string]any{"id": models[0].ID, "name": models[0].Name, "context_length": models[0].ContextWindow}, map[string]any{"id": models[1].ID, "name": models[1].Name, "context_length": models[1].ContextWindow}}})
+	}))
+	t.Cleanup(up.Close)
+	t.Cleanup(unblock)
+	setUpstream(h.u.owner, up.URL)
+	h.u.models = nil
+	h.click("Models", semantic.Button)
+	select {
+	case <-entered:
+	case <-time.After(8 * time.Second):
+		t.Fatal("navigation did not start the catalog refresh")
+	}
+	h.reveal("Search models", semantic.Editor)
+	h.click("Search models", semantic.Editor)
+	h.typeText("SONNET")
+	if h.u.value("client:shared:search") != "SONNET" || !h.u.busy["POST/api/models"] {
+		t.Fatal("search did not remain usable while the catalog refresh was held")
+	}
+	h.target("Claude Sonnet", semantic.CheckBox)
+	unblock()
+	nativeSavedModelSearchClear(h)
+	if h.u.notice != "Loaded 2 models" {
+		t.Fatal("held refresh did not add the notice that moves the search")
+	}
+	if got := h.u.library.selection; !reflect.DeepEqual(got.ids(), []string{models[0].ID, models[1].ID}) || got.Initial != models[0].ID {
+		t.Fatal("search or refresh changed the saved selection/default")
+	}
+}
 
 func TestNativeSavedModelSearchPreservesOrderAndSelection(t *testing.T) {
 	models := []modelInfo{
@@ -57,8 +117,11 @@ func TestNativeSavedModelSearchPointerTypingAndClear(t *testing.T) {
 			h := newNativePointerHarness(t, size)
 			models := nativeClientModelsForTest()
 			selection := nativeSeedSharedForTest(t, h.u, models[0], models[1])
-			h.u.models = nil // Saved models must remain searchable with an unavailable catalog.
 			h.click("Models", semantic.Button)
+			// Make this fixture offline after navigation, which otherwise starts
+			// a catalog refresh and can restore it while the pointer test runs.
+			h.u.models = nil
+			h.frame()
 			before := libraryFingerprint(h.u.modelLibraryValue())
 			h.reveal("Search models", semantic.Editor)
 			h.click("Search models", semantic.Editor)
@@ -72,10 +135,7 @@ func TestNativeSavedModelSearchPointerTypingAndClear(t *testing.T) {
 			}
 			h.target("Claude Sonnet", semantic.CheckBox)
 			nativeGridCapture(t, h, "saved-search-filtered-"+fmtSize(size))
-			h.click("Clear search", semantic.Button)
-			if h.u.value("client:shared:search") != "" {
-				t.Fatal("clear search failed")
-			}
+			nativeSavedModelSearchClear(h)
 			h.u.flushModelLibrary()
 			if after := libraryFingerprint(h.u.modelLibraryValue()); after != before {
 				t.Fatal("search changed the saved library")
@@ -93,10 +153,13 @@ func TestNativeSavedModelSearchPointerTypingAndClear(t *testing.T) {
 				t.Fatal("missing search-specific empty state")
 			}
 			nativeGridCapture(t, h, "saved-search-empty-"+fmtSize(size))
-			h.click("Clear search", semantic.Button)
+			nativeSavedModelSearchClear(h)
 			h.u.flushModelLibrary()
 			if after := libraryFingerprint(h.u.owner.modelLibrary.snapshot().Library); after != before {
 				t.Fatal("empty search changed on-disk model settings")
+			}
+			if len(h.u.models) != 0 || h.u.busy["POST/api/models"] {
+				t.Fatal("offline search fixture restored or refreshed the catalog")
 			}
 		})
 	}
