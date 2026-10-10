@@ -35,6 +35,7 @@ func validateT3CodeLibrary(library modelLibrary) error {
 type t3CodeProfileOptions struct {
 	RootDir, NormalHome, CodexBinary, ClaudeBinary string
 	Version                                        string
+	ClaudeModelDefaults                            bool
 	NormalEnvironment                              map[string]string
 	Library                                        modelLibrary
 	Catalog                                        []modelInfo
@@ -128,8 +129,8 @@ func planT3CodeProfiles(options t3CodeProfileOptions) (t3CodeProfiles, error) {
 	}
 	selection := claudeSelection{Initial: options.Library.DefaultModel, Mode: "installed", Aliases: map[string]string{}}
 	claudeSettingsCaps := claudeCapabilities{}
-	if options.Version == t3CodeNightlyVersion && options.ClaudeCaps.PerModelEffort {
-		// Nightly V2 discards Claude effort options for custom gateway IDs.
+	if options.ClaudeModelDefaults && options.ClaudeCaps.PerModelEffort {
+		// T3 V2 discards Claude effort options for custom gateway IDs.
 		// Keep the defaults in the private CLI profile without family aliases,
 		// a replacement picker or a global effort shared by unrelated models.
 		claudeSettingsCaps.PerModelEffort = true
@@ -141,14 +142,14 @@ func planT3CodeProfiles(options t3CodeProfileOptions) (t3CodeProfiles, error) {
 			return t3CodeProfiles{}, err
 		}
 		effort := ""
-		if options.Version == t3CodeNightlyVersion && model.ReasoningEffort != "" && validClaudeEffort(model.ID, model.ReasoningEffort) {
+		if options.ClaudeModelDefaults && model.ReasoningEffort != "" && validClaudeEffort(model.ID, model.ReasoningEffort) {
 			if !strings.Contains(model.ID, "/") {
-				return t3CodeProfiles{}, errors.New("T3 Code nightly requires provider-qualified Claude model IDs (for example anthropic/claude-opus-4-6) for saved reasoning defaults. Use the exact gateway ID in Models.")
+				return t3CodeProfiles{}, errors.New("T3 Code requires provider-qualified Claude model IDs (for example anthropic/claude-opus-4-6) for saved reasoning defaults. Use the exact gateway ID in Models.")
 			}
 			_, preferred := nativeReasoningFor(choices[i])
 			if preferred != "" && validClaudeEffort(model.ID, preferred) {
 				if !claudeEffortCompatible(model.ID, options.ClaudeCaps) {
-					return t3CodeProfiles{}, managedClaudeEffortVersionError(model.ID, "T3 Code nightly")
+					return t3CodeProfiles{}, managedClaudeEffortVersionError(model.ID, "T3 Code")
 				}
 				effort = preferred
 			}
@@ -365,7 +366,7 @@ func t3CodeProviderInstances(options t3CodeProfileOptions, profiles t3CodeProfil
 	}
 	codex := map[string]any{"setupMode": "existing", "binaryPath": options.CodexBinary, "homePath": profiles.CodexHome, "shadowHomePath": "", "launchArgs": "", "customModels": t3CodeCustomModels(choices, false, options.ClaudeCaps)}
 	claudeModels := t3CodeCustomModels(choices, true, options.ClaudeCaps)
-	if options.Version == t3CodeNightlyVersion {
+	if options.ClaudeModelDefaults {
 		for _, model := range claudeModels {
 			model["capabilities"].(map[string]any)["optionDescriptors"] = []map[string]any{}
 		}

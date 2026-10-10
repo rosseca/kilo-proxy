@@ -4,6 +4,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"image"
 	"net/http"
 	"net/http/httptest"
@@ -18,14 +19,17 @@ import (
 const nativeUpdateTestURL = "https://github.com/rosseca/kilo-proxy/releases/tag/v0.51.0"
 
 type nativeUpdateFixture struct {
-	h         *nativePointerHarness
-	mu        sync.Mutex
-	state     releaseUpdateState
-	posts     int
-	failPost  bool
-	postGate  <-chan struct{}
-	stateGate <-chan struct{}
-	stateSeen chan struct{}
+	h            *nativePointerHarness
+	mu           sync.Mutex
+	state        releaseUpdateState
+	posts        int
+	failPost     bool
+	postGate     <-chan struct{}
+	stateGate    <-chan struct{}
+	stateSeen    chan struct{}
+	installPosts int
+	installFail  bool
+	installGate  <-chan struct{}
 }
 
 func newNativeUpdateFixture(t *testing.T, language string, size image.Point) *nativeUpdateFixture {
@@ -76,6 +80,27 @@ func newNativeUpdateFixture(t *testing.T, language string, size image.Point) *na
 				return
 			}
 			jsonResponse(w, 200, state)
+		case "/api/updates/install":
+			f.installPosts++
+			gate, fail := f.installGate, f.installFail
+			f.mu.Unlock()
+			var body struct {
+				Version string `json:"version"`
+				Confirm bool   `json:"confirm"`
+			}
+			if r.Method != "POST" || json.NewDecoder(r.Body).Decode(&body) != nil || body.Version != state.LatestVersion || !body.Confirm {
+				t.Error("package update omitted the explicit version confirmation")
+				jsonError(w, 400, "invalid confirmation")
+				return
+			}
+			if gate != nil {
+				<-gate
+			}
+			if fail {
+				jsonError(w, 409, "synthetic launch failure")
+				return
+			}
+			jsonResponse(w, 200, map[string]any{"started": true, "message": "synthetic terminal"})
 		default:
 			f.mu.Unlock()
 			t.Errorf("unexpected request in isolated update fixture: %s %s", r.Method, r.URL.Path)
@@ -114,6 +139,12 @@ func (f *nativeUpdateFixture) count() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.posts
+}
+
+func (f *nativeUpdateFixture) installCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.installPosts
 }
 
 func nativeUpdateHasText(h *nativePointerHarness, text string) bool {
@@ -249,10 +280,10 @@ func TestNativeUpdateRejectsUntrustedReleaseURLs(t *testing.T) {
 		"https://github.com/rosseca/kilo-proxy/releases/tag/v0.51.0-alpha.1",
 		"file:///tmp/update",
 	} {
-		f.setState(releaseUpdateState{CurrentVersion: "0.50.0", LatestVersion: "0.51.0", Available: true, ReleaseURL: address})
+		f.setState(releaseUpdateState{CurrentVersion: "0.50.0", LatestVersion: "0.51.0", Available: true, ReleaseURL: address, InstallMethod: "apt", CanInstall: true})
 		f.refresh(t)
 		u.openUpdateRelease()
-		if u.updateAvailable() || nativeUpdateHasText(f.h, "Download update") {
+		if u.updateAvailable() || nativeUpdateHasText(f.h, "Download update") || u.canInstallUpdate() {
 			t.Fatalf("untrusted release action appeared: %q", address)
 		}
 	}
@@ -305,5 +336,168 @@ func TestNativeUpdatePollRecoversAfterManualRequestError(t *testing.T) {
 	f.refresh(t)
 	if u.updateRequestFailed || !nativeUpdateHasText(f.h, "Up to date") {
 		t.Fatal("a later automatic result retained the old manual request error")
+	}
+}
+
+func TestNativePackageUpdateConfirmationAndLaunch(t *testing.T) {
+	for _, size := range []image.Point{{1180, 820}, {780, 700}} {
+		for _, language := range []string{"en", "es"} {
+			t.Run(fmtSize(size)+"-"+language, func(t *testing.T) {
+				f := newNativeUpdateFixture(t, language, size)
+				h, u := f.h, f.h.u
+				state := releaseUpdateState{CurrentVersion: "0.50.0", LatestVersion: "0.51.0", Available: true, ReleaseURL: nativeUpdateTestURL, InstallMethod: "brew-formula", CanInstall: true}
+				f.setState(state)
+				f.refresh(t)
+				install := u.tr("Update and restart", "Actualizar y reiniciar")
+				confirm := u.tr("Confirm update and restart", "Confirmar actualización y reinicio")
+				cancel := u.tr("Cancel", "Cancelar")
+				if f.installCount() != 0 {
+					t.Fatal("render installed an update")
+				}
+				u.page = "agents"
+				h.frame()
+				h.click(install, semantic.Button)
+				h.reveal(confirm, semantic.Button)
+				if u.page != "settings" || !nativeUpdateHasText(h, fmt.Sprintf(u.tr("Update to %s with %s? This closes Kilo Proxy and interrupts active requests. A terminal opens; APT may ask for your administrator password there. Kilo Proxy restarts after a successful update.", "¿Actualizar a %s con %s? Se cerrará Kilo Proxy y se interrumpirán las peticiones activas. Se abrirá una terminal; APT puede pedirte allí la contraseña de administrador. Kilo Proxy se reiniciará si la actualización termina correctamente."), "0.51.0", "Homebrew")) {
+					t.Fatal("notice did not explain and request confirmation")
+				}
+				nativeGridCapture(t, h, "package-update-confirm-"+fmtSize(size)+"-"+language)
+				h.click(cancel, semantic.Button)
+				if f.installCount() != 0 || u.packageUpdateConfirmVersion != "" {
+					t.Fatal("cancelling started an update")
+				}
+				// A new target or package manager invalidates a previous consent.
+				h.reveal(install, semantic.Button)
+				h.click(install, semantic.Button)
+				state.InstallMethod = "apt"
+				f.setState(state)
+				f.refresh(t)
+				u.installPackageUpdate()
+				if f.installCount() != 0 {
+					t.Fatal("stale package-manager confirmation was used")
+				}
+				h.reveal(install, semantic.Button)
+				h.click(install, semantic.Button)
+				state.LatestVersion, state.ReleaseURL = "0.52.0", "https://github.com/rosseca/kilo-proxy/releases/tag/v0.52.0"
+				f.setState(state)
+				f.refresh(t)
+				u.installPackageUpdate()
+				if f.installCount() != 0 {
+					t.Fatal("stale version confirmation was used")
+				}
+				// A failed handoff stays in Settings and can be retried explicitly.
+				f.mu.Lock()
+				f.installFail = true
+				f.mu.Unlock()
+				h.reveal(install, semantic.Button)
+				h.click(install, semantic.Button)
+				h.reveal(confirm, semantic.Button)
+				h.click(confirm, semantic.Button)
+				nativeTestWait(t, u, func() bool { return u.packageUpdateFailed && !u.packageUpdateWorking() })
+				h.frame()
+				if !nativeUpdateHasText(h, u.tr("Could not start the update. Try again or download it manually.", "No se pudo iniciar la actualización. Inténtalo de nuevo o descárgala manualmente.")) || f.installCount() != 1 {
+					t.Fatal("failed update did not remain actionable")
+				}
+				gate := make(chan struct{})
+				var once sync.Once
+				unblock := func() { once.Do(func() { close(gate) }) }
+				t.Cleanup(unblock)
+				f.mu.Lock()
+				f.installFail, f.installGate = false, gate
+				f.mu.Unlock()
+				h.reveal(install, semantic.Button)
+				h.click(install, semantic.Button)
+				h.reveal(confirm, semantic.Button)
+				h.click(confirm, semantic.Button)
+				nativeTestWait(t, u, func() bool { return f.installCount() == 2 })
+				u.installPackageUpdate()
+				u.preparePackageUpdate()
+				h.frame()
+				if !nativeUpdateHasText(h, u.tr("Opening the update terminal…", "Abriendo la terminal de actualización…")) {
+					t.Fatal("handoff progress missing")
+				}
+				unblock()
+				nativeTestWait(t, u, func() bool { return u.packageUpdateStarted && !u.busy["POST/api/updates/install"] })
+				h.frame()
+				if f.installCount() != 2 || !nativeUpdateHasText(h, u.tr("Waiting for the update terminal…", "Esperando a la terminal de actualización…")) {
+					t.Fatal("handoff duplicated or pending guidance missing")
+				}
+				state.Installing, state.InstallMessage = true, "update_starting"
+				f.setState(state)
+				f.refresh(t)
+				if !u.packageUpdateWorking() {
+					t.Fatal("helper readiness wait lost the pending guard")
+				}
+				state.Installing, state.InstallMessage = false, "update_start_failed"
+				f.setState(state)
+				f.refresh(t)
+				if u.packageUpdateStarted || u.packageUpdateWorking() || !u.packageUpdateFailed {
+					t.Fatal("asynchronous helper failure blocked explicit retry")
+				}
+				h.reveal(install, semantic.Button)
+				h.click(install, semantic.Button)
+				h.reveal(confirm, semantic.Button)
+				h.click(confirm, semantic.Button)
+				nativeTestWait(t, u, func() bool { return f.installCount() == 3 && u.packageUpdateStarted })
+			})
+		}
+	}
+}
+
+func TestNativePackageUpdateQuickFailureIgnoresPreInstallPoll(t *testing.T) {
+	f := newNativeUpdateFixture(t, "en", image.Pt(1180, 820))
+	u := f.h.u
+	state := releaseUpdateState{CurrentVersion: "0.50.0", LatestVersion: "0.51.0", Available: true, ReleaseURL: nativeUpdateTestURL, InstallMethod: "apt", CanInstall: true, InstallMessage: "package_update_failed"}
+	f.setState(state)
+	f.refresh(t)
+	gate, seen := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	unblock := func() { once.Do(func() { close(gate) }) }
+	t.Cleanup(unblock)
+	f.mu.Lock()
+	f.stateGate, f.stateSeen = gate, seen
+	f.mu.Unlock()
+	u.refreshState()
+	select {
+	case <-seen:
+	case <-time.After(3 * time.Second):
+		t.Fatal("pre-install poll did not reach fixture")
+	}
+	u.preparePackageUpdate()
+	u.installPackageUpdate()
+	nativeTestWait(t, u, func() bool { return u.packageUpdateStarted && !u.busy["POST/api/updates/install"] })
+	unblock()
+	nativeTestWait(t, u, func() bool { return !u.busy["GET/api/state"] })
+	if !u.packageUpdateStarted || u.packageUpdateFailed || f.installCount() != 1 {
+		t.Fatal("pre-install failure snapshot undid the accepted handoff")
+	}
+	// The helper may fail before a single poll observes Installing=true.
+	state.InstallMessage = "update_start_failed"
+	f.setState(state)
+	f.refresh(t)
+	if u.packageUpdateStarted || !u.packageUpdateFailed || u.packageUpdateWorking() {
+		t.Fatal("quick helper failure was hidden until a progress snapshot")
+	}
+	u.preparePackageUpdate()
+	u.installPackageUpdate()
+	nativeTestWait(t, u, func() bool { return u.packageUpdateStarted && f.installCount() == 2 })
+}
+
+func TestNativePackageUpdateRequiresTrustedManagedTarget(t *testing.T) {
+	f := newNativeUpdateFixture(t, "en", image.Pt(1180, 820))
+	u := f.h.u
+	for _, state := range []releaseUpdateState{
+		{LatestVersion: "0.51.0", Available: true, ReleaseURL: nativeUpdateTestURL},
+		{LatestVersion: "0.51.0", Available: true, ReleaseURL: nativeUpdateTestURL, CanInstall: true, InstallMethod: "manual"},
+		{LatestVersion: "0.52.0", Available: true, ReleaseURL: nativeUpdateTestURL, CanInstall: true, InstallMethod: "apt"},
+		{LatestVersion: "0.51.0", Available: true, ReleaseURL: nativeUpdateTestURL, CanInstall: true, InstallMethod: "apt", Checking: true},
+	} {
+		f.setState(state)
+		f.refresh(t)
+		u.preparePackageUpdate()
+		u.installPackageUpdate()
+		if u.canInstallUpdate() || f.installCount() != 0 {
+			t.Fatal("unsafe or unavailable target allowed an update")
+		}
 	}
 }

@@ -98,6 +98,7 @@ func TestManagedClaude55PreparationCarriesVerifiedVersion(t *testing.T) {
 	for _, synara := range []bool{false, true} {
 		options := t3ProfileTestOptions(t)
 		options.Version = t3CodeNightlyVersion
+		options.ClaudeModelDefaults = true
 		options.Library = modelLibrary{SchemaVersion: 1, DefaultModel: "anthropic/claude-opus-5.5", Models: []modelLibraryItem{{ID: "anthropic/claude-opus-5.5", ReasoningEffort: "high", ReasoningCustom: true, ReasoningLevels: []string{"low", "high"}, ContextWindow: 200000}}}
 		for _, version := range []string{"2.1.266", "2.1.267"} {
 			options.ClaudeCaps = claudeCaps(version)

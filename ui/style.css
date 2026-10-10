@@ -141,6 +141,7 @@
 .update-notice{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;padding:16px 20px;margin-bottom:20px;border:1px solid #cbd7e1;border-radius:9px;background:#f1f5f9;color:#324357;font-size:13px}
 .update-notice[hidden]{display:none}.update-notice a,.update-actions a{color:#345778;font-size:12px;font-weight:600}
 .update-actions{display:flex;align-items:center;flex-wrap:wrap;gap:16px}.update-actions .secondary-button{flex:0 1 auto}
+.update-confirmation{margin-top:16px;padding:12px 16px;border:1px solid #cbd7e1;border-radius:9px;background:#f1f5f9}.update-confirmation[hidden]{display:none}.update-notice .secondary-button,.update-actions .secondary-button{height:auto;min-height:36px;white-space:normal;padding:8px 12px}
 #app-updates p{font-size:12px;line-height:1.7}#app-updates .update-error{color:#9a4c2d}.sidebar-bottom #version{color:inherit;text-underline-offset:3px}
 
 #chatgpt-pending { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }

@@ -99,9 +99,9 @@ func TestT3CodeInstalledDesktop(t *testing.T) {
 		}
 		time.Sleep(250 * time.Millisecond)
 	}()
-	version, _ := t3CodeVersion(installed, runtime.GOOS)
+	installation, _ := inspectT3CodeInstallation(installed, runtime.GOOS)
 	uiName := "t3code"
-	if version == t3CodeNightlyVersion {
+	if installation.ProtocolV2 {
 		uiName = "t3code-v2"
 	}
 	uiPath := filepath.Join(paths.UIHome, "Library", "Application Support", uiName)

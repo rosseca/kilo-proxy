@@ -93,15 +93,15 @@ test('connection edits invalidate prepared status and disconnect blocks preparat
 });
 
 test('nightly guidance shows the detected version and explains handoff in both languages',async t=>{
- const source=saved(),version='0.0.46-nightly.20261003.2610';
- const {helper,nodes}=fixture(t,async path=>path==='model-library'?source:{prepared:true,library:source.library,version});
+ const source=saved(),version='9.0.0-beta.2';
+ const {helper,nodes}=fixture(t,async path=>path==='model-library'?source:{prepared:true,library:source.library,version,protocolV2:true});
  await tick();
- assert.match(nodes.get('t3-code-requirements').textContent,/Detected: 0\.0\.46-nightly\.20261003\.2610/);
+ assert.match(nodes.get('t3-code-requirements').textContent,/Detected: 9\.0\.0-beta\.2/);
  assert.match(nodes.get('t3-code-compatibility').textContent,/change agents between turns/);
  assert.match(nodes.get('t3-code-compatibility').textContent,/attachments are not transferred/);
  assert.doesNotMatch(nodes.get('t3-code-compatibility').textContent,/new chat to switch/);
  helper.render({state:{connectionReady:true},language:'es'});
- assert.match(nodes.get('t3-code-requirements').textContent,/Detectado: 0\.0\.46-nightly\.20261003\.2610/);
+ assert.match(nodes.get('t3-code-requirements').textContent,/Detectado: 9\.0\.0-beta\.2/);
  assert.match(nodes.get('t3-code-compatibility').textContent,/cambiar de agente entre turnos/);
  assert.match(nodes.get('t3-code-compatibility').textContent,/no transfiere el razonamiento/);
 });

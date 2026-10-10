@@ -15,7 +15,7 @@
     <div class="content">
       <div class="page-heading"><div><div class="eyebrow">KILO, DONDE TÚ TRABAJAS</div><h1>Un gateway.<br class="mobile-break"> Cualquier editor.</h1><p>Conecta el saldo de tu organización con las herramientas que ya usas.</p></div><div id="status-pill" class="status-pill"><span></span><span id="status-label">Proxy detenido</span></div></div>
       <div id="notice" class="notice" role="status" hidden></div>
-      <section id="update-notice" class="update-notice" aria-labelledby="update-notice-title" hidden><strong id="update-notice-title"></strong><a id="update-notice-download" target="_blank" rel="noopener noreferrer"></a></section>
+      <section id="update-notice" class="update-notice" aria-labelledby="update-notice-title" hidden><strong id="update-notice-title"></strong><div class="update-actions"><button id="update-notice-install" class="secondary-button" type="button" hidden></button><a id="update-notice-download" target="_blank" rel="noopener noreferrer"></a></div></section>
       <section id="image-dependency-notice" class="image-dependency-notice" aria-labelledby="image-dependency-title" hidden>
         <div><h2 id="image-dependency-title"></h2><p id="image-dependency-description"></p></div>
         <div class="image-dependency-actions"><a id="image-dependency-install" target="_blank" rel="noopener noreferrer"></a><button id="image-dependency-copy" class="secondary-button" type="button" hidden></button><button id="image-dependency-check" class="secondary-button" type="button"></button><button id="image-dependency-dismiss" class="text-button" type="button"></button></div>
@@ -92,7 +92,7 @@
 <h3 id="t3-code-title">T3 Code · Kilo</h3><p id="t3-code-intro"></p>
 <p id="t3-code-summary" role="status"></p><ol id="t3-code-models"></ol><p id="t3-code-library-help" class="field-help"></p>
 <h4 id="t3-code-agents-title"></h4><ul id="t3-code-agents"></ul>
-<details><summary id="t3-code-options"></summary><p id="t3-code-requirements" class="field-help"></p><p id="t3-code-compatibility" class="protocol-note"></p><p id="t3-code-privacy" class="field-help"></p><div class="xcode-actions"><button id="t3-code-reload" class="secondary-button" type="button"></button><button id="t3-code-prepare" class="secondary-button" type="button"></button></div><p id="t3-code-prepared" class="field-help"></p><p><a id="t3-code-install" href="https://github.com/pingdotgg/t3code/releases/tag/v0.0.46-nightly.20261003.2610" target="_blank" rel="noopener noreferrer"></a></p></details>
+<details><summary id="t3-code-options"></summary><p id="t3-code-requirements" class="field-help"></p><p id="t3-code-compatibility" class="protocol-note"></p><p id="t3-code-privacy" class="field-help"></p><div class="xcode-actions"><button id="t3-code-reload" class="secondary-button" type="button"></button><button id="t3-code-prepare" class="secondary-button" type="button"></button></div><p id="t3-code-prepared" class="field-help"></p><p><a id="t3-code-install" href="https://github.com/pingdotgg/t3code/releases" target="_blank" rel="noopener noreferrer"></a></p></details>
 <p id="t3-code-status" role="status"></p></section><section id="synara-helper" hidden aria-labelledby="synara-title">
 <h3 id="synara-title">Synara · Kilo</h3><p id="synara-intro"></p>
 <p id="synara-summary" role="status"></p><ol id="synara-models"></ol><p id="synara-library-help" class="field-help"></p>
@@ -204,7 +204,9 @@
       <section class="card clients-card" id="app-updates" aria-labelledby="updates-title">
         <h2 id="updates-title"></h2><p id="updates-description" class="field-help"></p>
         <p id="updates-current"></p><p id="updates-status" role="status"></p><p id="updates-checked" class="field-help" hidden></p>
-        <div class="update-actions"><button id="updates-check" class="secondary-button" type="button"></button><a id="updates-download" target="_blank" rel="noopener noreferrer" hidden></a></div>
+        <p id="updates-method" class="field-help" hidden></p><p id="updates-unavailable" class="field-help" hidden></p><p id="updates-message" class="field-help" hidden></p>
+        <div class="update-actions"><button id="updates-check" class="secondary-button" type="button"></button><button id="updates-install" class="secondary-button" type="button" hidden></button><a id="updates-download" target="_blank" rel="noopener noreferrer" hidden></a></div>
+        <div id="updates-confirmation" class="update-confirmation" hidden><p id="updates-confirmation-text"></p><div class="update-actions"><button id="updates-confirm" class="secondary-button" type="button"></button><button id="updates-cancel" class="secondary-button" type="button"></button></div></div>
       </section>
       <footer><span><b>Kilo Proxy</b> · Companion independiente, sin afiliación oficial.</span><span>Go por dentro. Tu flujo por fuera.</span></footer>
     </div>

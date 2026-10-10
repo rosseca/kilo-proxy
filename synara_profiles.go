@@ -86,7 +86,7 @@ func planSynaraProfiles(options synaraProfileOptions) (synaraProfiles, error) {
 	if err != nil {
 		return result, err
 	}
-	baseOptions := t3CodeProfileOptions{RootDir: options.RootDir, NormalHome: options.NormalHome, CodexBinary: options.CodexBinary, ClaudeBinary: options.ClaudeBinary, NormalEnvironment: options.NormalEnvironment, Library: options.Library, Catalog: options.Catalog, ClaudeCaps: options.ClaudeCaps, Version: t3CodeNightlyVersion, Port: options.Port, LocalKey: options.LocalKey, Images: options.Images}
+	baseOptions := t3CodeProfileOptions{RootDir: options.RootDir, NormalHome: options.NormalHome, CodexBinary: options.CodexBinary, ClaudeBinary: options.ClaudeBinary, NormalEnvironment: options.NormalEnvironment, Library: options.Library, Catalog: options.Catalog, ClaudeCaps: options.ClaudeCaps, ClaudeModelDefaults: true, Port: options.Port, LocalKey: options.LocalKey, Images: options.Images}
 	if _, err := synaraNormalSecureStorage(baseOptions); err != nil {
 		return result, err
 	}
