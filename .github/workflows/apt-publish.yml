@@ -1,0 +1,67 @@
+name: Publish Ubuntu APT repository
+
+on:
+  workflow_call:
+    inputs:
+      signing-fingerprint:
+        type: string
+        required: true
+      allow-bootstrap:
+        type: boolean
+        default: false
+    secrets:
+      KILO_APT_SIGNING_KEY:
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kilo-proxy-apt-publication
+  cancel-in-progress: false
+
+jobs:
+  sign:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: debian-assets
+          path: dist/debian
+      - name: Sign the tested Debian packages and retain authenticated history
+        env:
+          APT_PRIVATE_KEY: ${{ secrets.KILO_APT_SIGNING_KEY }}
+          APT_FINGERPRINT: ${{ inputs.signing-fingerprint }}
+          APT_BOOTSTRAP: ${{ inputs.allow-bootstrap }}
+        run: |
+          export GNUPGHOME="$(mktemp -d "$RUNNER_TEMP/kilo-apt-release.XXXXXX")"
+          chmod 700 "$GNUPGHOME"
+          trap 'gpgconf --kill all; rm -rf "$GNUPGHOME"' EXIT
+          printf '%s' "$APT_PRIVATE_KEY" | gpg --batch --import
+          unset APT_PRIVATE_KEY
+          bootstrap=()
+          if [ "$APT_BOOTSTRAP" = 'true' ]; then bootstrap=(--allow-bootstrap); fi
+          python scripts/prepare_apt_site.py --packages-directory dist/debian --output dist/apt-site --signing-key "$APT_FINGERPRINT" --previous-url 'https://rosseca.github.io/kilo-proxy/apt' "${bootstrap[@]}"
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist/apt-site
+
+  deploy:
+    needs: sign
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy the signed repository
+        id: deployment
+        uses: actions/deploy-pages@v4
