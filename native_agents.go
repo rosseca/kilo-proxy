@@ -13,6 +13,7 @@ import (
 
 	"gioui.org/font"
 	"gioui.org/layout"
+	"gioui.org/unit"
 )
 
 type nativeAgents struct {
@@ -204,7 +205,12 @@ func (u *nativeUI) agentModelSummary() layout.Widget {
 			text = fmt.Sprintf(u.tr("1 shared model · Default: %s", "1 modelo compartido · Predeterminado: %s"), name)
 		}
 	}
-	strip := u.card(u.actionRow(u.column(u.eyebrow(u.tr("YOUR MODELS", "TUS MODELOS")), u.label(text)), u.button("agents:edit-models", u.tr("Edit models", "Editar modelos"), func() { u.page = "models" })))
+	strip := func(gtx layout.Context) layout.Dimensions {
+		return nativeBox(gtx, nativeIvory, func(gtx layout.Context) layout.Dimensions {
+			gtx.Constraints.Min.X = gtx.Constraints.Max.X
+			return layout.Inset{Top: 12, Bottom: 12, Left: 16, Right: 12}.Layout(gtx, u.actionRow(u.column(u.eyebrow(u.tr("YOUR MODELS", "TUS MODELOS")), u.label(text)), u.buttonWidget("agents:edit-models", u.tr("Edit models", "Editar modelos"), nativeButtonLink, nativeIconChevronRight, true, false, func() { u.page = "models" })))
+		})
+	}
 	widgets := []layout.Widget{strip}
 	if status, ready := u.libraryStatus(); !ready {
 		widgets = append(widgets, u.note(status))
@@ -241,30 +247,23 @@ func (u *nativeUI) agentProjectPicker(key string) layout.Widget {
 }
 
 func (u *nativeUI) agentMonogram(key string) layout.Widget {
-	initials := ""
-	switch key {
-	case "codex":
-		initials = "CD"
-	case "codex-cli":
-		initials = "CC"
-	case "claude", "claude-desktop":
-		initials = "CL"
-	case "opencode":
-		initials = "OC"
-	case "omp":
-		initials = "OM"
-	case "zed":
-		initials = "ZE"
-	case "open-design":
-		initials = "OD"
-	}
+	// Desktop apps use two letters; terminal agents carry a ">" prompt prefix,
+	// so every agent is distinct and its kind reads at a glance.
+	initials := map[string]string{
+		"codex": "CX", "claude-desktop": "CD", "zed": "ZD", "open-design": "OD",
+		"codex-cli": ">CX", "claude": ">CC", "opencode": ">OC", "omp": ">OM",
+	}[key]
 	return func(gtx layout.Context) layout.Dimensions {
 		side := gtx.Dp(40)
 		gtx.Constraints = layout.Constraints{Min: image.Pt(side, side), Max: image.Pt(side, side)}
 		return nativeBox(gtx, nativeInk, func(gtx layout.Context) layout.Dimensions {
 			// Stack children start with a zero minimum; fill the tile so the initials center on it.
 			gtx.Constraints.Min = image.Pt(side, side)
-			return layout.Center.Layout(gtx, u.monoStyle(16, initials, nativeSurface, font.Bold))
+			size := unit.Sp(16)
+			if utf8.RuneCountInString(initials) > 2 {
+				size = 13
+			}
+			return layout.Center.Layout(gtx, u.monoStyle(size, initials, nativeSurface, font.Bold))
 		})
 	}
 }
@@ -298,7 +297,7 @@ func (u *nativeUI) agentOptions(key string) layout.Widget {
 		return u.column(u.note(u.agentCompatibility(key)), u.pills(u.button("agent:open-design:detect", u.tr("Refresh detection", "Actualizar detección"), func() { u.detectLaunchers(); u.detectOpenDesign() }), u.button("agent:open-design:install", u.tr("Installation instructions", "Instrucciones de instalación"), func() { u.open(u.openDesignInstallURL()) })))
 	}
 	if key == "claude-desktop" {
-		return u.column(u.note(u.agentCompatibility(key)), u.pills(
+		return u.column(u.note(u.claudeDesktopSelectionNote(u.sharedClientSelection(key))), u.note(u.agentCompatibility(key)), u.pills(
 			u.button("agent:claude-desktop:setup", u.tr("Integration settings", "Ajustes de integración"), func() { u.agentSetup(key) }),
 			u.button("agent:claude-desktop:detect", u.tr("Refresh detection", "Actualizar detección"), u.detectLaunchers),
 		))
@@ -323,7 +322,7 @@ func (u *nativeUI) agentOptions(key string) layout.Widget {
 		widgets = append(widgets, u.disabled(a.FolderBusy == "", u.button("agent:codex:locate-options", u.tr("Locate Codex", "Localizar Codex"), u.locateCodexApplication)))
 	}
 	if terminalClientSupported(key) {
-		widgets = append(widgets, u.button("agent:"+key+":terminal-commands", u.tr("Terminal commands in Settings", "Comandos de terminal en Ajustes"), func() { u.page = "settings" }))
+		widgets = append(widgets, u.button("agent:"+key+":terminal-commands", u.tr("Terminal commands in Settings", "Comandos de terminal en Ajustes"), func() { u.page, u.settingsTab = "settings", "terminal" }))
 	}
 	widgets = append(widgets, u.pills(u.button("agent:"+key+":setup", u.tr("Integration settings", "Ajustes de integración"), func() { u.agentSetup(key) }), u.button("agent:"+key+":detect", u.tr("Refresh detection", "Actualizar detección"), func() { u.refreshAgentInstallation(key) })))
 	if !u.nativeLaunchAvailable(key) {
@@ -441,7 +440,7 @@ func (u *nativeUI) agentCard(key string) layout.Widget {
 	if cli && c.LaunchChecked && !available {
 		controls = append(controls, u.disabled(!u.busy["GET"+nativeLaunchEndpoint], u.iconButton("agent:"+key+":detect-visible", u.tr("Check again", "Comprobar de nuevo"), nativeButtonGhost, nativeIconRefresh, func() { u.refreshAgentInstallation(key) })))
 	}
-	controls = append(controls, u.buttonWidget(optionsID, u.tr("Options", "Opciones"), nativeButtonGhost, nativeIconChevronRight, true, false, func() { u.expanded[optionsID] = !u.expanded[optionsID] }))
+	controls = append(controls, u.disclosure(optionsID, u.tr("Options", "Opciones")))
 	if key == "codex" && !available && c.LaunchChecked {
 		controls = append(controls, u.disabled(a.FolderBusy == "", u.button("agent:codex:locate", u.tr("Locate Codex", "Localizar Codex"), u.locateCodexApplication)))
 	}
@@ -456,7 +455,7 @@ func (u *nativeUI) agentCard(key string) layout.Widget {
 		widgets = append(widgets, u.agentProjectPicker(key))
 	}
 	if key == "claude-desktop" {
-		widgets = append(widgets, u.note(u.claudeDesktopModelSummary(s)), u.note(u.claudeDesktopSelectionNote(s)))
+		widgets = append(widgets, u.note(u.claudeDesktopModelSummary(s)))
 	}
 	widgets = append(widgets, layout.Spacer{Height: 4}.Layout, u.pills(controls...))
 	if disabledReason != "" {
@@ -483,13 +482,23 @@ func (u *nativeUI) agentsPanel() layout.Widget {
 	if !c.OpenDesignDetectStarted {
 		u.detectOpenDesign()
 	}
-	widgets := []layout.Widget{u.agentModelSummary(), u.agentCard("codex"), u.agentCard("claude-desktop"), u.topRow(u.agentCard("claude"), u.agentCard("opencode")), u.topRow(u.agentCard("omp"), u.agentCard("codex-cli")), u.topRow(u.agentCard("zed"), u.agentCard("open-design"))}
+	// One uniform grid: desktop apps first, then terminal agents.
+	widgets := []layout.Widget{
+		u.agentModelSummary(),
+		u.eyebrow(u.tr("Desktop apps", "Apps de escritorio")),
+		u.topRow(u.agentCard("codex"), u.agentCard("claude-desktop")),
+		u.topRow(u.agentCard("zed"), u.agentCard("open-design")),
+		layout.Spacer{Height: nativeSpace8}.Layout,
+		u.eyebrow(u.tr("Terminal agents · open in your project folder", "Agentes de terminal · se abren en la carpeta del proyecto")),
+		u.topRow(u.agentCard("claude"), u.agentCard("codex-cli")),
+		u.topRow(u.agentCard("opencode"), u.agentCard("omp")),
+	}
 	if a.Error != "" {
 		widgets = append([]layout.Widget{u.message(nativeToneError, a.Error)}, widgets...)
 	}
 	if c.LaunchError != "" {
 		widgets = append([]layout.Widget{u.message(nativeToneError, c.LaunchError)}, widgets...)
 	}
-	widgets = append(widgets, u.card(u.heading(u.tr("More integrations", "Más integraciones")), u.pills(u.button("agents:xcode", u.tr("Set up Xcode", "Configurar Xcode"), func() { u.agentSetup("xcode-chat") }), u.button("agents:other", u.tr("Other clients", "Otros clientes"), func() { u.agentSetup("other") })), u.note(u.tr("Xcode needs provider setup. Other clients can use the local OpenAI-compatible endpoint.", "Xcode requiere configurar el proveedor. Otros clientes pueden usar el endpoint local compatible con OpenAI."))))
+	widgets = append(widgets, layout.Spacer{Height: nativeSpace8}.Layout, u.section(u.tr("More integrations", "Más integraciones"), "", u.pills(u.button("agents:xcode", u.tr("Set up Xcode", "Configurar Xcode"), func() { u.agentSetup("xcode-chat") }), u.button("agents:other", u.tr("Other clients", "Otros clientes"), func() { u.agentSetup("other") })), u.note(u.tr("Xcode needs provider setup. Other clients can use the local OpenAI-compatible endpoint.", "Xcode requiere configurar el proveedor. Otros clientes pueden usar el endpoint local compatible con OpenAI."))))
 	return u.column(widgets...)
 }

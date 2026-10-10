@@ -3,6 +3,7 @@
 package main
 
 import (
+	"fmt"
 	"image"
 	"image/png"
 	"os"
@@ -82,6 +83,11 @@ func TestNativeScreenshots(t *testing.T) {
 	shoot(u, "08-activity", 1280, 1100)
 	u.page = "settings"
 	shoot(u, "09-settings", 1280, 1600)
+	for i, tab := range []string{"images", "preferences", "terminal", "updates"} {
+		u.settingsTab = tab
+		shoot(u, fmt.Sprintf("09%c-settings-%s", 'a'+i, tab), 1280, 1100)
+	}
+	u.settingsTab = ""
 	u.page = "connection"
 	shoot(u, "10-connection", 1280, 1100)
 	u.page = "agents"

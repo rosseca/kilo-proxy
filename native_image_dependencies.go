@@ -43,7 +43,7 @@ func (u *nativeUI) imageDependencyNoticeVisible() bool {
 }
 
 func (u *nativeUI) showImageSettings() {
-	u.page = "settings"
+	u.page, u.settingsTab = "settings", "images"
 	u.imageSettingsFocus = true
 	u.list("page.settings").ScrollTo(0)
 }

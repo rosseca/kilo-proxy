@@ -182,6 +182,7 @@ func TestNativeConnectionSaveStartStopAndEditPreservation(t *testing.T) {
 }
 func TestNativeLanguageClipboardTeamsAndLoginCancel(t *testing.T) {
 	u := nativeTestUI(t)
+	u.settingsTab = "preferences"
 	nativeTestFrame(t, u)
 	u.clickable("language.es").Click()
 	nativeTestFrame(t, u)
@@ -190,6 +191,8 @@ func TestNativeLanguageClipboardTeamsAndLoginCancel(t *testing.T) {
 	if err != nil || saved.Language != "es" {
 		t.Fatal("language not persisted")
 	}
+	u.settingsTab = "account"
+	nativeTestFrame(t, u)
 	u.clickable("connection.copy-url").Click()
 	nativeTestFrame(t, u)
 	bridge := u.owner.desktop.(*nativeRecordingBridge)

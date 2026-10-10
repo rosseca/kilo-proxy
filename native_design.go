@@ -21,21 +21,27 @@ import (
 
 var (
 	// Brutalist palette: black on white, square corners, heavy rules and hard shadows.
-	// Colour only carries meaning (status tones); there is no brand accent.
+	// Citrus (brand) is the single accent and only means "selected / active / running";
+	// it always travels with a second cue (check, star, bar or label), never colour alone.
 	nativeInk          = nativeColor(0x000000)
 	nativeInkSoft      = nativeColor(0x2a2a2a)
+	nativeForest       = nativeColor(0x202720)
+	nativeCitrus       = nativeColor(0xe8f36a)
+	nativeIvory        = nativeColor(0xf4f5ef)
 	nativeAccent       = nativeColor(0x000000)
-	nativeAccentHover  = nativeColor(0x3a3a3a)
-	nativeSelected     = nativeColor(0xe6e6e6)
+	nativeAccentHover  = nativeForest
+	nativeSelected     = nativeCitrus
 	nativeBg           = nativeColor(0xffffff)
 	nativeSurface      = nativeColor(0xffffff)
-	nativeSurfaceAlt   = nativeColor(0xf0f0f0)
+	nativeSurfaceAlt   = nativeIvory
+	nativeDisabledBG   = nativeColor(0xf0f0f0)
 	nativeBorder       = nativeColor(0x000000)
 	nativeBorderStrong = nativeColor(0x000000)
 	nativeText         = nativeColor(0x000000)
 	nativeTextMuted    = nativeColor(0x3d3d3d)
-	nativeTextSubtle   = nativeColor(0x6b6b6b)
-	nativeTextDisabled = nativeColor(0x9e9e9e)
+	nativeTextSubtle   = nativeColor(0x62685e)
+	nativeTextDisabled = nativeColor(0x767676)
+	nativeSidebarText  = nativeColor(0xbdbdbd)
 
 	nativeInfoFG      = nativeColor(0x2b5277)
 	nativeInfoBG      = nativeColor(0xeaf1f8)
@@ -137,7 +143,11 @@ func nativeBox(gtx layout.Context, background color.NRGBA, content layout.Widget
 
 // nativeHardShadow draws a solid offset shadow; content must paint an opaque background.
 func nativeHardShadow(gtx layout.Context, content layout.Widget) layout.Dimensions {
-	offset := gtx.Dp(nativeShadow)
+	return nativeHardShadowSized(gtx, nativeShadow, content)
+}
+
+func nativeHardShadowSized(gtx layout.Context, size unit.Dp, content layout.Widget) layout.Dimensions {
+	offset := gtx.Dp(size)
 	gtx.Constraints.Max.X, gtx.Constraints.Max.Y = max(0, gtx.Constraints.Max.X-offset), max(0, gtx.Constraints.Max.Y-offset)
 	gtx.Constraints.Min.X, gtx.Constraints.Min.Y = min(gtx.Constraints.Min.X, gtx.Constraints.Max.X), min(gtx.Constraints.Min.Y, gtx.Constraints.Max.Y)
 	recording := op.Record(gtx.Ops)
@@ -168,19 +178,37 @@ func (u *nativeUI) textStyle(size unit.Sp, s string, c color.NRGBA, weight font.
 	}
 }
 func (u *nativeUI) eyebrow(s string) layout.Widget {
-	return u.monoStyle(11, strings.ToUpper(s), nativeTextSubtle, font.Bold)
+	return u.monoStyle(12, strings.ToUpper(s), nativeTextSubtle, font.Bold)
 }
 func (u *nativeUI) metric(label, value, caption string) layout.Widget {
 	return u.column(u.eyebrow(label), u.monoStyle(28, value, nativeText, font.Bold), u.note(caption))
 }
 
-// section is a titled card: every settings/detail group starts with a heading and a one-line purpose.
+// section is an informational group: a heavy top rule, a heading and a one-line
+// purpose. It has no box or shadow; those are reserved for actionable surfaces.
 func (u *nativeUI) section(title, description string, children ...layout.Widget) layout.Widget {
 	head := []layout.Widget{u.heading(title)}
 	if description != "" {
 		head = append(head, u.note(description))
 	}
-	return u.card(append([]layout.Widget{u.column(head...)}, children...)...)
+	body := u.column(append([]layout.Widget{u.column(head...)}, children...)...)
+	return func(gtx layout.Context) layout.Dimensions {
+		gtx.Constraints.Min.X = gtx.Constraints.Max.X
+		return layout.Inset{Bottom: nativeSpace24}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions { return nativeRule(gtx, nativeLineHeavy) }),
+				layout.Rigid(layout.Spacer{Height: nativeSpace16}.Layout),
+				layout.Rigid(body),
+			)
+		})
+	}
+}
+
+// nativeRule paints a full-width ink rule.
+func nativeRule(gtx layout.Context, thickness unit.Dp) layout.Dimensions {
+	size := image.Pt(gtx.Constraints.Max.X, gtx.Dp(thickness))
+	paint.FillShape(gtx.Ops, nativeInk, clip.Rect{Max: size}.Op())
+	return layout.Dimensions{Size: size}
 }
 func (u *nativeUI) navButton(id, label string, icon *widget.Icon) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
@@ -194,9 +222,9 @@ func (u *nativeUI) navButton(id, label string, icon *widget.Icon) layout.Widget 
 			}
 		}
 		active := u.page == id || (id == "settings" && u.page == "connection") || (id == "agents" && u.page == "clients")
-		background, foreground := color.NRGBA{}, nativeColor(0xbdbdbd)
+		background, foreground := color.NRGBA{}, nativeSidebarText
 		if active {
-			background, foreground = nativeInkSoft, nativeSurface
+			background, foreground = nativeCitrus, nativeInk
 		} else if b.Hovered() {
 			background = nativeInkSoft
 		}
@@ -210,30 +238,40 @@ func (u *nativeUI) navButton(id, label string, icon *widget.Icon) layout.Widget 
 			}
 			return layout.Stack{}.Layout(gtx,
 				layout.Expanded(func(gtx layout.Context) layout.Dimensions {
-					return nativeBox(gtx, background, func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{Size: gtx.Constraints.Min} })
+					// Paint directly: nativeBox's stacked child would reset the minimum size to zero.
+					paint.FillShape(gtx.Ops, background, clip.Rect{Max: gtx.Constraints.Min}.Op())
+					return layout.Dimensions{Size: gtx.Constraints.Min}
 				}),
 				layout.Expanded(func(gtx layout.Context) layout.Dimensions {
 					if active {
-						sz := image.Pt(gtx.Dp(3), gtx.Constraints.Min.Y)
-						paint.FillShape(gtx.Ops, nativeSurface, clip.Rect{Max: sz}.Op())
+						sz := image.Pt(gtx.Dp(4), gtx.Constraints.Min.Y)
+						paint.FillShape(gtx.Ops, nativeInk, clip.Rect{Max: sz}.Op())
+					} else if b.Hovered() {
+						foreground = nativeIvory
 					}
 					return layout.Dimensions{Size: gtx.Constraints.Min}
 				}),
 				layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+					// Stacked children start at a zero minimum; keep the full-width 44dp row.
+					gtx.Constraints.Min = image.Pt(gtx.Constraints.Max.X, gtx.Dp(44))
 					return layout.Inset{Left: 14, Right: 8}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								gtx.Constraints.Min = image.Pt(gtx.Dp(18), gtx.Dp(18))
-								return icon.Layout(gtx, foreground)
-							}),
-							layout.Rigid(layout.Spacer{Width: 12}.Layout),
-							layout.Flexed(1, u.textStyle(13, label, foreground, func() font.Weight {
-								if active {
-									return font.SemiBold
-								}
-								return font.Medium
-							}())),
-						)
+						// Center the row vertically; Flex would pass the 44dp minimum to its children.
+						return layout.W.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							gtx.Constraints.Min = image.Pt(gtx.Constraints.Max.X, 0)
+							return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									gtx.Constraints.Min = image.Pt(gtx.Dp(18), gtx.Dp(18))
+									return icon.Layout(gtx, foreground)
+								}),
+								layout.Rigid(layout.Spacer{Width: 12}.Layout),
+								layout.Flexed(1, u.textStyle(13, label, foreground, func() font.Weight {
+									if active {
+										return font.SemiBold
+									}
+									return font.Medium
+								}())),
+							)
+						})
 					})
 				}),
 			)
@@ -241,7 +279,7 @@ func (u *nativeUI) navButton(id, label string, icon *widget.Icon) layout.Widget 
 	}
 }
 func (u *nativeUI) sidebar(gtx layout.Context) layout.Dimensions {
-	gtx.Constraints.Min.X, gtx.Constraints.Max.X = gtx.Dp(196), gtx.Dp(196)
+	gtx.Constraints.Min.X, gtx.Constraints.Max.X = gtx.Dp(224), gtx.Dp(224)
 	gtx.Constraints.Min.Y = gtx.Constraints.Max.Y
 	return nativeBox(gtx, nativeInk, func(gtx layout.Context) layout.Dimensions {
 		return layout.Inset{Top: 28, Bottom: 22, Left: 16, Right: 16}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -252,26 +290,105 @@ func (u *nativeUI) sidebar(gtx layout.Context) layout.Dimensions {
 						layout.Flexed(1, u.textStyle(18, "Kilo Proxy", nativeSurface, font.SemiBold)),
 					)
 				}),
-				layout.Rigid(layout.Spacer{Height: 36}.Layout),
+				layout.Rigid(layout.Spacer{Height: 28}.Layout),
+				layout.Rigid(u.proxyStatusBlock()),
+				layout.Rigid(layout.Spacer{Height: 28}.Layout),
 				layout.Rigid(u.column(u.navButton("agents", u.tr("Agents", "Agentes"), nativeIconAgents), u.navButton("models", u.tr("Models", "Modelos"), nativeIconModels), u.navButton("activity", u.tr("Activity", "Actividad"), nativeIconActivity), u.navButton("settings", u.tr("Settings", "Ajustes"), nativeIconSettings))),
 				layout.Flexed(1, layout.Spacer{}.Layout),
-				layout.Rigid(u.textStyle(10, "KILO PROXY  /  v"+version, nativeTextSubtle, font.Normal)),
+				layout.Rigid(u.monoStyle(10, "KILO PROXY / v"+version, nativeSidebarText, font.Normal)),
 			)
 		})
 	})
 }
-func (u *nativeUI) proxyControl() layout.Widget {
-	tone, label := nativeToneNeutral, u.tr("Proxy stopped", "Proxy detenido")
-	if u.setupNeeded() || !u.agentConnectionReady() {
-		tone, label = nativeToneWarning, u.tr("Setup needed", "Configuración necesaria")
-	} else if u.busy["POST/api/start"] || u.busy["POST/api/stop"] {
-		tone, label = nativeToneInfo, u.tr("Proxy changing state", "Cambiando estado del proxy")
-	} else if nativeBool(u.state, "running") {
-		tone, label = nativeToneSuccess, u.tr("Proxy running", "Proxy activo")
+
+// proxyState is the single source for the proxy's visible state everywhere.
+func (u *nativeUI) proxyState() (nativeTone, string) {
+	switch {
+	case u.setupNeeded() || !u.agentConnectionReady():
+		return nativeToneWarning, u.tr("Setup needed", "Configuración necesaria")
+	case u.busy["POST/api/start"]:
+		return nativeToneInfo, u.tr("Starting…", "Arrancando…")
+	case u.busy["POST/api/stop"]:
+		return nativeToneInfo, u.tr("Stopping…", "Deteniendo…")
+	case nativeBool(u.state, "running"):
+		return nativeToneSuccess, u.tr("Running", "En marcha")
 	}
+	return nativeToneNeutral, u.tr("Stopped", "Detenido")
+}
+
+// proxyTeam names the organization that pays for requests.
+func (u *nativeUI) proxyTeam() string {
+	teamID := nativeString(u.state, "orgId")
+	for _, raw := range nativeArray(u.state, "organizations") {
+		org := nativeMap(raw)
+		if nativeString(org, "id") == teamID && nativeString(org, "name") != "" {
+			return nativeString(org, "name")
+		}
+	}
+	return teamID
+}
+
+// proxyStatusBlock keeps the proxy state, billed team, local endpoint and the
+// start/stop action permanently visible in the sidebar.
+func (u *nativeUI) proxyStatusBlock() layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
+		tone, label := u.proxyState()
+		running := tone == nativeToneSuccess
+		pill := func(gtx layout.Context) layout.Dimensions {
+			bg, fg, dot := nativeDisabledBG, nativeInk, nativeInk
+			switch tone {
+			case nativeToneSuccess:
+				bg = nativeCitrus
+			case nativeToneWarning:
+				bg, fg, dot = nativeWarningBG, nativeWarningFG, nativeWarningFG
+			case nativeToneInfo:
+				bg, fg, dot = nativeInfoBG, nativeInfoFG, nativeInfoFG
+			}
+			return nativeBox(gtx, bg, func(gtx layout.Context) layout.Dimensions {
+				return widget.Border{Color: nativeInk, Width: 1}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return layout.Inset{Top: 5, Bottom: 5, Left: 8, Right: 10}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								sz := gtx.Dp(8)
+								if running {
+									paint.FillShape(gtx.Ops, dot, clip.Ellipse(image.Rectangle{Max: image.Pt(sz, sz)}).Op(gtx.Ops))
+								} else {
+									paint.FillShape(gtx.Ops, dot, clip.Stroke{Path: clip.Ellipse(image.Rectangle{Min: image.Pt(1, 1), Max: image.Pt(sz-1, sz-1)}).Path(gtx.Ops), Width: float32(gtx.Dp(1.5))}.Op())
+								}
+								return layout.Dimensions{Size: image.Pt(sz, sz)}
+							}),
+							layout.Rigid(layout.Spacer{Width: 7}.Layout),
+							layout.Rigid(u.monoStyle(12, strings.ToUpper(label), fg, font.Bold)),
+						)
+					})
+				})
+			})
+		}
+		children := []layout.Widget{u.monoStyle(11, u.tr("PROXY", "PROXY"), nativeTextSubtle, font.Bold), pill}
+		if team := u.proxyTeam(); team != "" {
+			children = append(children, u.column(u.textStyle(11, u.tr("Billed to", "Se factura a"), nativeTextSubtle, font.Normal), u.textStyle(13, team, nativeInk, font.SemiBold)))
+		}
+		if base := nativeString(u.state, "baseURL"); base != "" {
+			children = append(children, u.column(
+				u.textStyle(11, u.tr("Local endpoint", "Endpoint local"), nativeTextSubtle, font.Normal),
+				u.buttonWidget("sidebar.copy-url", strings.TrimPrefix(base, "http://"), nativeButtonLink, nativeIconCopy, true, false, func() { u.copy(base) }),
+			))
+		}
+		children = append(children, func(gtx layout.Context) layout.Dimensions {
+			gtx.Constraints.Min.X = gtx.Constraints.Max.X
+			return u.proxyButton()(gtx)
+		})
+		return nativeBox(gtx, nativeIvory, func(gtx layout.Context) layout.Dimensions {
+			gtx.Constraints.Min.X = gtx.Constraints.Max.X
+			return layout.UniformInset(12).Layout(gtx, u.column(children...))
+		})
+	}
+}
+func (u *nativeUI) proxyControl() layout.Widget {
+	return func(gtx layout.Context) layout.Dimensions {
+		tone, label := u.proxyState()
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-			layout.Rigid(u.statusBadge(tone, label)),
+			layout.Rigid(u.statusBadge(tone, u.tr("Proxy: ", "Proxy: ")+label)),
 			layout.Rigid(layout.Spacer{Width: 8}.Layout),
 			layout.Rigid(u.proxyButton()),
 		)
@@ -286,15 +403,16 @@ func (u *nativeUI) pageTop(gtx layout.Context) layout.Dimensions {
 		descriptions["agents"] = [2]string{"Opening an agent starts the proxy automatically. You can also start it here.", "Abrir un agente arranca el proxy automáticamente. También puedes arrancarlo aquí."}
 	}
 	title, description := titles[u.page], descriptions[u.page]
-	var controls layout.Widget
+	controls := func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{} }
 	if u.page == "setup" {
 		choices := []nativeChoice{{Value: "en", Label: "English"}, {Value: "es", Label: "Español"}}
 		controls = u.segmented("language.", choices, u.language, true, u.setLanguage)
-	} else {
+	} else if !u.sidebarVisible {
+		// Narrow windows hide the sidebar; the proxy state stays in the header.
 		controls = u.proxyControl()
 	}
 	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-		layout.Flexed(1, u.column(u.monoStyle(26, u.tr(title[0], title[1]), nativeText, font.Bold), u.note(u.tr(description[0], description[1])))),
+		layout.Flexed(1, u.column(u.monoStyle(28, u.tr(title[0], title[1]), nativeText, font.Bold), u.textStyle(14, u.tr(description[0], description[1]), nativeTextMuted, font.Normal))),
 		layout.Rigid(layout.Spacer{Width: 16}.Layout), layout.Rigid(controls),
 	)
 }
@@ -319,6 +437,7 @@ func (u *nativeUI) Layout(gtx layout.Context) layout.Dimensions {
 	u.laidOut = true
 	paint.Fill(gtx.Ops, nativeBg)
 	wide := u.page != "setup" && gtx.Constraints.Max.X >= gtx.Dp(940)
+	u.sidebarVisible = wide
 	children := []layout.FlexChild{}
 	if wide {
 		children = append(children, layout.Rigid(u.sidebar))
@@ -387,7 +506,7 @@ func (u *nativeUI) Layout(gtx layout.Context) layout.Dimensions {
 					case "activity":
 						panel = u.activityPanel()
 					default:
-						panel = u.column(u.imageSettingsConnectionPanel(), u.imageTransportPanel(), u.appearancePanel(), u.updatesPanel(), u.terminalCommandsPanel())
+						panel = u.settingsPanel()
 					}
 					if u.imageDependencyNoticeVisible() && u.page != "settings" && u.page != "connection" {
 						panel = u.column(u.imageDependencyNotice(false), panel)
@@ -468,16 +587,26 @@ func (u *nativeUI) actionRow(field layout.Widget, actions ...layout.Widget) layo
 }
 func (u *nativeUI) modelCard(selected bool, children ...layout.Widget) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
-		background, width := nativeSurface, nativeLine
+		width := nativeLine
 		if selected {
-			background, width = nativeSelected, nativeLineHeavy
+			width = nativeLineHeavy
 		}
-		return nativeHardShadow(gtx, func(gtx layout.Context) layout.Dimensions {
-			return nativeBox(gtx, background, func(gtx layout.Context) layout.Dimensions {
-				return widget.Border{Color: nativeInk, Width: width}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					gtx.Constraints.Min.X = gtx.Constraints.Max.X
-					return layout.UniformInset(16).Layout(gtx, u.column(children...))
-				})
+		return nativeBox(gtx, nativeSurface, func(gtx layout.Context) layout.Dimensions {
+			return widget.Border{Color: nativeInk, Width: width}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				gtx.Constraints.Min.X = gtx.Constraints.Max.X
+				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						if !selected {
+							return layout.Dimensions{}
+						}
+						size := image.Pt(gtx.Constraints.Max.X, gtx.Dp(6))
+						paint.FillShape(gtx.Ops, nativeCitrus, clip.Rect{Max: size}.Op())
+						return layout.Dimensions{Size: size}
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return layout.UniformInset(16).Layout(gtx, u.column(children...))
+					}),
+				)
 			})
 		})
 	}
@@ -490,6 +619,10 @@ const (
 	nativeButtonPrimary
 	nativeButtonGhost
 	nativeButtonDanger
+	// nativeButtonLink is an always-underlined inline control (navigation or copy).
+	nativeButtonLink
+	// nativeButtonDisclosure expands content in place: mono caps, +/− and underline.
+	nativeButtonDisclosure
 )
 
 type nativeChoice struct{ Value, Label, Caption string }
@@ -498,12 +631,15 @@ const (
 	nativeLine      unit.Dp = 2
 	nativeLineHeavy unit.Dp = 3
 	nativeShadow    unit.Dp = 4
-	nativeSpace4    unit.Dp = 4
-	nativeSpace8    unit.Dp = 8
-	nativeSpace12   unit.Dp = 12
-	nativeSpace16   unit.Dp = 16
-	nativeSpace24   unit.Dp = 24
-	nativeSpace32   unit.Dp = 32
+	// nativePrimaryShadow is the hard shadow under primary buttons.
+	nativePrimaryShadow unit.Dp = 3
+	nativeSpace20       unit.Dp = 20
+	nativeSpace4        unit.Dp = 4
+	nativeSpace8        unit.Dp = 8
+	nativeSpace12       unit.Dp = 12
+	nativeSpace16       unit.Dp = 16
+	nativeSpace24       unit.Dp = 24
+	nativeSpace32       unit.Dp = 32
 )
 
 func (u *nativeUI) segmented(idPrefix string, choices []nativeChoice, selected string, enabled bool, choose func(value string)) layout.Widget {
@@ -565,7 +701,7 @@ func (u *nativeUI) optionCard(id string, choice nativeChoice, selected, enabled 
 			background = nativeSurfaceAlt
 		}
 		if !enabled {
-			background, border = nativeSurfaceAlt, color.NRGBA{}
+			background, border = nativeDisabledBG, color.NRGBA{}
 		}
 		return b.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			semantic.ClassOp(semantic.Button).Add(gtx.Ops)
@@ -576,7 +712,20 @@ func (u *nativeUI) optionCard(id string, choice nativeChoice, selected, enabled 
 			return nativeBox(gtx, background, func(gtx layout.Context) layout.Dimensions {
 				return widget.Border{Color: border, Width: borderWidth}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					gtx.Constraints.Min.X = gtx.Constraints.Max.X
-					content := []layout.Widget{u.subheading(choice.Label)}
+					title := u.subheading(choice.Label)
+					if selected {
+						title = func(gtx layout.Context) layout.Dimensions {
+							return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									gtx.Constraints.Min = image.Pt(gtx.Dp(16), gtx.Dp(16))
+									return nativeIconCheck.Layout(gtx, nativeInk)
+								}),
+								layout.Rigid(layout.Spacer{Width: 6}.Layout),
+								layout.Flexed(1, u.subheading(choice.Label)),
+							)
+						}
+					}
+					content := []layout.Widget{title}
 					if choice.Caption != "" {
 						content = append(content, u.note(choice.Caption))
 					}
@@ -633,13 +782,9 @@ func (u *nativeUI) menuItem(id, label string, selected bool, action func()) layo
 
 func (u *nativeUI) disclosure(id, label string) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
-		icon := nativeIconChevronRight
-		if u.expanded[id] {
-			icon = nativeIconExpandMore
-		}
 		// A disclosure is an inline control; stretching it centers the label away from its content.
 		gtx.Constraints.Min.X = 0
-		return u.buttonWidget(id, label, nativeButtonGhost, icon, true, false, func() { u.expanded[id] = !u.expanded[id] })(gtx)
+		return u.buttonWidget(id, label, nativeButtonDisclosure, nil, false, u.expanded[id], func() { u.expanded[id] = !u.expanded[id] })(gtx)
 	}
 }
 func (u *nativeUI) banner(tone nativeTone, text string) layout.Widget {
@@ -710,7 +855,7 @@ func (u *nativeUI) statusBadge(tone nativeTone, text string) layout.Widget {
 }
 
 func (u *nativeUI) learnMore(id, address string) layout.Widget {
-	return u.buttonWidget(id, u.tr("Learn more", "Más información"), nativeButtonGhost, nativeIconOpenInNew, true, false, func() { u.open(address) })
+	return u.buttonWidget(id, u.tr("Learn more", "Más información"), nativeButtonLink, nativeIconOpenInNew, true, false, func() { u.open(address) })
 }
 
 func (u *nativeUI) setNotice(tone nativeTone, text string) {
@@ -726,4 +871,40 @@ func (u *nativeUI) noticeError(err error) {
 		return
 	}
 	u.setNotice(nativeToneError, nativeMessage(err.Error(), u.language))
+}
+
+// settingsPanel splits settings into task-based tabs instead of one long page.
+func (u *nativeUI) settingsPanel() layout.Widget {
+	choices := []nativeChoice{
+		{Value: "account", Label: u.tr("Account & connection", "Cuenta y conexión")},
+		{Value: "images", Label: u.tr("Large images", "Imágenes grandes")},
+		{Value: "preferences", Label: u.tr("Preferences", "Preferencias")},
+		{Value: "terminal", Label: u.tr("Terminal", "Terminal")},
+		{Value: "updates", Label: u.tr("Updates", "Actualizaciones")},
+	}
+	if u.settingsTab == "" {
+		u.settingsTab = "account"
+	}
+	var body layout.Widget
+	switch u.settingsTab {
+	case "images":
+		body = u.imageTransportPanel()
+	case "preferences":
+		body = u.appearancePanel()
+	case "terminal":
+		body = u.terminalCommandsPanel()
+	case "updates":
+		body = u.updatesPanel()
+	default:
+		body = u.imageSettingsConnectionPanel()
+	}
+	tabs := u.tabs("settings.tab.", choices, u.settingsTab, func(tab string) { u.settingsTab = tab })
+	return func(gtx layout.Context) layout.Dimensions {
+		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+			layout.Rigid(tabs),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions { return nativeRule(gtx, 1) }),
+			layout.Rigid(layout.Spacer{Height: nativeSpace24}.Layout),
+			layout.Rigid(body),
+		)
+	}
 }

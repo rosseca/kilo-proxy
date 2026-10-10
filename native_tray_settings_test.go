@@ -18,6 +18,7 @@ func TestNativeTrayAppearancePointerAndPersistence(t *testing.T) {
 				u.setLanguage(lang)
 				nativeTestWait(t, u, func() bool { return u.languageTarget == "" && !u.busy["GET/api/state"] })
 				u.page = "settings"
+				u.settingsTab = "preferences"
 				h := &nativePointerHarness{t: t, u: u, size: size, now: time.Now()}
 				h.frame()
 				// Terminal discovery below Appearance can change the scroll extent.

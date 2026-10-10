@@ -14,6 +14,7 @@ import (
 
 	"gioui.org/font"
 	"gioui.org/layout"
+	"gioui.org/widget"
 )
 
 const sharedModelKey = "shared"
@@ -330,13 +331,16 @@ func (u *nativeUI) modelsPanel() layout.Widget {
 					widgets = append(widgets, u.card(u.recommendedPanel(recommended)))
 				}
 			}
-			widgets = append(widgets, u.sharedContextPanel())
 		} else if u.page == "setup" && len(recommended) > 0 {
 			// Setup opens the full catalog after the connection step; the short
 			// list stays above it so a first choice never needs a search.
 			widgets = append(widgets, u.card(u.recommendedPanel(recommended)))
 		}
 		widgets = append(widgets, u.clientPicker(sharedModelKey, s))
+		if !u.expanded["library.catalog"] {
+			// The library is the page's content; the global context window follows it.
+			widgets = append(widgets, layout.Spacer{Height: nativeSpace16}.Layout, u.sharedContextPanel())
+		}
 	}
 	if !u.expanded["library.catalog"] {
 		widgets = append(widgets, u.note(u.tr("Changes apply the next time you open an agent. Already-open agents may need reopening.", "Los cambios se aplican al volver a abrir un agente. Los agentes abiertos pueden necesitar reiniciarse.")))
@@ -450,17 +454,19 @@ func (u *nativeUI) shutdownModelLibrary() {
 
 func (u *nativeUI) libraryDefaultBadge() layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
-		// Inverted black keeps the badge visible on the grey selected card.
-		return nativeBox(gtx, nativeInk, func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Top: 4, Bottom: 4, Left: 8, Right: 8}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						gtx.Constraints.Min = image.Pt(gtx.Dp(14), gtx.Dp(14))
-						return nativeIconStar.Layout(gtx, nativeSurface)
-					}),
-					layout.Rigid(layout.Spacer{Width: 6}.Layout),
-					layout.Rigid(u.monoStyle(11, strings.ToUpper(u.tr("Default", "Predeterminado")), nativeSurface, font.Bold)),
-				)
+		// Citrus matches the band on the default card; the star and label carry the meaning.
+		return nativeBox(gtx, nativeCitrus, func(gtx layout.Context) layout.Dimensions {
+			return widget.Border{Color: nativeInk, Width: 1}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Top: 4, Bottom: 4, Left: 8, Right: 8}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							gtx.Constraints.Min = image.Pt(gtx.Dp(14), gtx.Dp(14))
+							return nativeIconStar.Layout(gtx, nativeInk)
+						}),
+						layout.Rigid(layout.Spacer{Width: 6}.Layout),
+						layout.Rigid(u.monoStyle(11, strings.ToUpper(u.tr("Default", "Predeterminado")), nativeInk, font.Bold)),
+					)
+				})
 			})
 		})
 	}

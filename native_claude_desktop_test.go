@@ -175,7 +175,7 @@ func TestNativeClaudeDesktopExperimentalSaveFailureRestoresMode(t *testing.T) {
 	}
 }
 
-func TestNativeClaudeDesktopAgentFullRowBelowCodex(t *testing.T) {
+func TestNativeClaudeDesktopAgentBesideCodex(t *testing.T) {
 	for _, lang := range []string{"en", "es"} {
 		t.Run(lang, func(t *testing.T) {
 			u, recorder := nativeLaunchTestUI(t, "claude-desktop", false, false)
@@ -198,18 +198,19 @@ func TestNativeClaudeDesktopAgentFullRowBelowCodex(t *testing.T) {
 					codeHeader = node.Desc.Bounds
 				}
 			}
-			if desktop.Min.X != codex.Min.X || desktop.Min.Y <= codex.Max.Y || desktopHeader.Empty() || codeHeader.Empty() || desktop.Max.Y >= codeHeader.Min.Y {
-				t.Fatalf("Desktop is not a distinct row after Codex and before Claude Code: codex=%v desktop=%v desktopHeader=%v codeHeader=%v", codex, desktop, desktopHeader, codeHeader)
+			// Desktop apps share one row; terminal agents start below it.
+			if desktop.Min.X <= codex.Max.X || desktop.Min.Y >= codex.Max.Y+codex.Dy()*2 || desktopHeader.Empty() || codeHeader.Empty() || desktop.Max.Y >= codeHeader.Min.Y {
+				t.Fatalf("Desktop is not beside Codex and before Claude Code: codex=%v desktop=%v desktopHeader=%v codeHeader=%v", codex, desktop, desktopHeader, codeHeader)
 			}
-			// The full-width card's status sits at the same right edge as Codex's.
+			// Both desktop cards show their status above the terminal agents.
 			var installed []image.Rectangle
 			for _, node := range h.nodes() {
 				if node.Desc.Label == u.tr("Installed · Desktop", "Instalado · Escritorio") {
 					installed = append(installed, node.Desc.Bounds)
 				}
 			}
-			if len(installed) < 2 || installed[0].Max.X != installed[1].Max.X {
-				t.Fatalf("Desktop card did not span the Codex row width: %v", installed)
+			if len(installed) < 2 || installed[0].Min.Y != installed[1].Min.Y || installed[0].Min.Y >= codeHeader.Min.Y {
+				t.Fatalf("Desktop card status is not in the desktop row: %v", installed)
 			}
 			if _, exists := u.buttons["agent:claude-desktop:folder"]; exists {
 				t.Fatal("Desktop exposed an unsupported folder picker")

@@ -307,7 +307,8 @@ func (u *nativeUI) setupStepCircle(step int) layout.Widget {
 			}
 		case step == u.setupStep:
 			square(0, nativeInk)
-			content = u.monoStyle(12, fmt.Sprint(step+1), nativeSurface, font.Bold)
+			square(gtx.Dp(nativeLine), nativeCitrus)
+			content = u.monoStyle(12, fmt.Sprint(step+1), nativeInk, font.Bold)
 		default:
 			square(0, nativeInk)
 			square(gtx.Dp(nativeLine), nativeBg)
@@ -383,7 +384,7 @@ func (u *nativeUI) setupPanel() layout.Widget {
 			u.setupSummaryRowWidget(u.tr("Account and team", "Cuenta y equipo"), account),
 			u.setupSummaryRowWidget(u.tr("Models", "Modelos"), modelCount),
 			u.setupSummaryRowWidget(u.tr("Default model", "Modelo predeterminado"), defaultModel),
-			u.pills(u.button("setup.connection-settings", u.tr("Connection settings", "Ajustes de conexión"), func() { u.page = "settings" })),
+			u.pills(u.button("setup.connection-settings", u.tr("Connection settings", "Ajustes de conexión"), func() { u.page, u.settingsTab = "settings", "account" })),
 		)
 		content = u.column(u.banner(nativeToneSuccess, u.tr("You're ready", "Todo está listo")), summary)
 	default:

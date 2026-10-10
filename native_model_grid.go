@@ -60,7 +60,7 @@ func (u *nativeUI) modelGridLayout(id string, ids []string, cards []layout.Widge
 		if scroll {
 			width -= gtx.Dp(14)
 		}
-		columns := nativeModelGridColumns(width, gtx.Dp(280), gap)
+		columns := nativeModelGridColumns(width, gtx.Dp(260), gap)
 		c := u.clientState()
 		if c.Grids == nil {
 			c.Grids = map[string]*nativeModelGridState{}

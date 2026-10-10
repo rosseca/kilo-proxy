@@ -90,6 +90,7 @@ func newNativeUpdateFixture(t *testing.T, language string, size image.Point) *na
 	c.OpenDesignChecked, c.OpenDesignDetectStarted = true, true
 	u.terminalCommands = &nativeTerminalCommands{Started: true, Checked: true, ManualStarted: true, ManualChecked: true}
 	u.page = "settings"
+	u.settingsTab = "updates"
 	f.h = &nativePointerHarness{t: t, u: u, size: size, now: time.Now()}
 	f.refresh(t)
 	return f

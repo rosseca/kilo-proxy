@@ -29,6 +29,7 @@ func nativeTerminalCommandsTestUI(t *testing.T, platform string) *nativeUI {
 	t.Setenv("ZDOTDIR", "")
 	u := nativeTestUI(t)
 	u.page = "settings"
+	u.settingsTab = "terminal"
 	u.owner.launcher = &clientLaunchRuntime{platform: platform, home: u.owner.editorTestRoot}
 	u.owner.terminalCommandsShell = "/bin/zsh"
 	u.owner.terminalCommandsBinary = filepath.Join(u.owner.editorTestRoot, "Kilo Proxy")

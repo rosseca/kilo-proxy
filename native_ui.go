@@ -19,6 +19,8 @@ import (
 	"gioui.org/font"
 	"gioui.org/io/semantic"
 	"gioui.org/layout"
+	"gioui.org/op/clip"
+	"gioui.org/op/paint"
 	"gioui.org/text"
 	"gioui.org/unit"
 	"gioui.org/widget"
@@ -71,6 +73,8 @@ type nativeUI struct {
 	client, language, page, notice string
 	noticeTone                     nativeTone
 	authenticated, laidOut         bool
+	sidebarVisible                 bool
+	settingsTab                    string
 	lastOrg                        string
 	trace                          *requestTrace
 	traceStage                     string
@@ -175,10 +179,13 @@ func (u *nativeUI) label(s string) layout.Widget {
 	return u.textStyle(14, s, nativeText, font.Normal)
 }
 func (u *nativeUI) note(s string) layout.Widget {
-	return u.textStyle(12, s, nativeTextMuted, font.Normal)
+	return u.textStyle(13, s, nativeTextMuted, font.Normal)
 }
+
+// heading is the section title (Inter); Go Mono is reserved for page titles,
+// eyebrows, disclosures and status so each typeface has one job.
 func (u *nativeUI) heading(s string) layout.Widget {
-	return u.monoStyle(17, s, nativeText, font.Bold)
+	return u.textStyle(18, s, nativeText, font.SemiBold)
 }
 func (u *nativeUI) subheading(s string) layout.Widget {
 	return u.textStyle(14, s, nativeText, font.SemiBold)
@@ -212,35 +219,42 @@ func (u *nativeUI) buttonWidget(id, label string, kind nativeButtonKind, icon *w
 				}
 			}
 		}
+		inline := kind == nativeButtonGhost || kind == nativeButtonLink || kind == nativeButtonDisclosure
+		expanded := false
+		if kind == nativeButtonDisclosure {
+			// For a disclosure "selected" means expanded; it never takes the selection colour.
+			expanded, selected = selected, false
+		}
 		background, foreground, border, borderWidth := nativeSurface, nativeInk, nativeBorderStrong, nativeLine
 		switch kind {
 		case nativeButtonPrimary:
 			background, foreground, border = nativeAccent, nativeSurface, nativeAccent
-		case nativeButtonGhost:
-			background, border = color.NRGBA{}, color.NRGBA{}
 		case nativeButtonDanger:
 			foreground, border = nativeErrorFG, nativeErrorLine
+		}
+		if inline {
+			background, border = color.NRGBA{}, color.NRGBA{}
 		}
 		if selected {
 			background, foreground, border, borderWidth = nativeSelected, nativeInk, nativeInk, nativeLineHeavy
 		}
 		if !gtx.Enabled() {
 			foreground = nativeTextDisabled
-			if kind != nativeButtonGhost {
-				background, border = nativeSurfaceAlt, color.NRGBA{}
+			if !inline {
+				background, border = nativeDisabledBG, color.NRGBA{}
 			}
 		} else if b.Hovered() {
-			switch kind {
-			case nativeButtonPrimary:
+			switch {
+			case kind == nativeButtonPrimary:
 				background = nativeAccentHover
-			case nativeButtonDanger:
+			case kind == nativeButtonDanger:
 				background = nativeErrorBG
+			case inline:
+				background = nativeIvory
+			case selected:
+				background = nativeSelected
 			default:
-				if selected {
-					background = nativeSelected
-				} else {
-					background = nativeSurfaceAlt
-				}
+				background = nativeSurfaceAlt
 			}
 		}
 		if selected && icon == nil {
@@ -251,38 +265,70 @@ func (u *nativeUI) buttonWidget(id, label string, kind nativeButtonKind, icon *w
 			weight = font.SemiBold
 		}
 		inset := layout.Inset{Top: 9, Bottom: 9, Left: 14, Right: 14}
+		if inline {
+			inset.Left, inset.Right = 4, 4
+		}
 		gtx.Constraints.Min.Y = max(gtx.Constraints.Min.Y, gtx.Dp(36))
+		text := u.textStyle(13, label, foreground, weight)
+		if kind == nativeButtonDisclosure {
+			sign := "+ "
+			if expanded {
+				sign = "− "
+			}
+			text = u.monoStyle(13, sign+strings.ToUpper(label), foreground, font.Bold)
+		}
+		if inline {
+			text = nativeUnderlined(text, foreground)
+		}
 		buttonBackground := material.ButtonLayout(u.theme, b)
 		buttonBackground.Background, buttonBackground.CornerRadius = background, 0
-		return widget.Border{Color: border, Width: borderWidth}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			return buttonBackground.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				semantic.LabelOp(label).Add(gtx.Ops)
-				if selected {
-					semantic.SelectedOp(true).Add(gtx.Ops)
-				}
-				return inset.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					iconWidget := func(gtx layout.Context) layout.Dimensions {
-						if icon == nil {
-							return layout.Dimensions{}
+		body := func(gtx layout.Context) layout.Dimensions {
+			return widget.Border{Color: border, Width: borderWidth}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return buttonBackground.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					semantic.LabelOp(label).Add(gtx.Ops)
+					if selected || expanded {
+						semantic.SelectedOp(true).Add(gtx.Ops)
+					}
+					return inset.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						iconWidget := func(gtx layout.Context) layout.Dimensions {
+							if icon == nil {
+								return layout.Dimensions{}
+							}
+							gtx.Constraints.Min = image.Pt(gtx.Dp(16), gtx.Dp(16))
+							return icon.Layout(gtx, foreground)
 						}
-						gtx.Constraints.Min = image.Pt(gtx.Dp(16), gtx.Dp(16))
-						return icon.Layout(gtx, foreground)
-					}
-					iconGap := func(gtx layout.Context) layout.Dimensions {
-						if icon == nil {
-							return layout.Dimensions{}
+						iconGap := func(gtx layout.Context) layout.Dimensions {
+							if icon == nil {
+								return layout.Dimensions{}
+							}
+							return layout.Spacer{Width: 7}.Layout(gtx)
 						}
-						return layout.Spacer{Width: 7}.Layout(gtx)
-					}
-					// Plain text: a material.Button here would lay out the same Clickable twice.
-					textWidget := u.textStyle(13, label, foreground, weight)
-					if iconAfter {
-						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, layout.Rigid(textWidget), layout.Rigid(iconGap), layout.Rigid(iconWidget))
-					}
-					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, layout.Rigid(iconWidget), layout.Rigid(iconGap), layout.Rigid(textWidget))
+						// Plain text: a material.Button here would lay out the same Clickable twice.
+						if iconAfter {
+							return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, layout.Rigid(text), layout.Rigid(iconGap), layout.Rigid(iconWidget))
+						}
+						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, layout.Rigid(iconWidget), layout.Rigid(iconGap), layout.Rigid(text))
+					})
 				})
 			})
-		})
+		}
+		if kind == nativeButtonPrimary && gtx.Enabled() && !selected {
+			// The hard shadow marks the one action that matters on a surface.
+			return nativeHardShadowSized(gtx, nativePrimaryShadow, body)
+		}
+		return body(gtx)
+	}
+}
+
+// nativeUnderlined draws a permanent 1dp underline so inline controls read as
+// clickable before any hover.
+func nativeUnderlined(content layout.Widget, c color.NRGBA) layout.Widget {
+	return func(gtx layout.Context) layout.Dimensions {
+		dims := content(gtx)
+		y := dims.Size.Y + gtx.Dp(2)
+		paint.FillShape(gtx.Ops, c, clip.Rect{Min: image.Pt(0, y), Max: image.Pt(dims.Size.X, y+gtx.Dp(1))}.Op())
+		dims.Size.Y += gtx.Dp(3)
+		return dims
 	}
 }
 func (u *nativeUI) disabled(enabled bool, child layout.Widget) layout.Widget {
@@ -307,7 +353,7 @@ func (u *nativeUI) field(id, label, placeholder string, secret bool) layout.Widg
 			border, width = nativeInk, nativeLineHeavy
 		}
 		if !gtx.Enabled() {
-			background = nativeSurfaceAlt
+			background = nativeDisabledBG
 		}
 		return nativeBox(gtx, background, func(gtx layout.Context) layout.Dimensions {
 			return widget.Border{Color: border, Width: width}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -412,14 +458,15 @@ func (u *nativeUI) alignedRow(alignment layout.Alignment, children ...layout.Wid
 		return u.column(rows...)(gtx)
 	}
 }
+
+// card groups the controls for one thing (an agent, a notice). It is flat:
+// the hard shadow is reserved for primary actions.
 func (u *nativeUI) card(children ...layout.Widget) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
-		return nativeHardShadow(gtx, func(gtx layout.Context) layout.Dimensions {
-			return nativeBox(gtx, nativeSurface, func(gtx layout.Context) layout.Dimensions {
-				return widget.Border{Color: nativeBorder, Width: nativeLine}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					gtx.Constraints.Min.X = gtx.Constraints.Max.X
-					return layout.UniformInset(nativeSpace24).Layout(gtx, u.column(children...))
-				})
+		return nativeBox(gtx, nativeSurface, func(gtx layout.Context) layout.Dimensions {
+			return widget.Border{Color: nativeBorder, Width: nativeLine}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				gtx.Constraints.Min.X = gtx.Constraints.Max.X
+				return layout.UniformInset(nativeSpace20).Layout(gtx, u.column(children...))
 			})
 		})
 	}
@@ -876,27 +923,35 @@ func (u *nativeUI) connectionPanel() layout.Widget {
 				u.setNotice(nativeToneSuccess, u.tr("Gateway reached. Model listing does not verify organization credit or generation permissions.", "Gateway accesible. El catálogo no verifica saldo ni permisos de generación."))
 			})
 		})),
-		u.subheading(u.tr("Your local endpoint", "Tu endpoint local")),
-		u.label(nativeString(u.state, "baseURL")),
+	)
+	if !editable {
+		account = append(account, u.hint(u.tr("Stop the proxy or wait for the current connection action to finish before editing these settings.", "Detén el proxy o espera a que termine la acción de conexión para editar estos ajustes.")))
+	}
+	endpoint := []layout.Widget{
+		u.monoStyle(15, nativeString(u.state, "baseURL"), nativeText, font.Bold),
 		u.pills(
 			u.button("connection.copy-url", u.tr("Copy base URL", "Copiar URL base"), func() { u.copy(nativeString(u.state, "baseURL")) }),
 			u.button("connection.copy-key", u.tr("Copy local API key", "Copiar API key local"), func() { u.copy(nativeString(u.state, "localKey")) }),
 		),
 		u.note(u.tr("The local key authenticates your tools. Your personal Kilo key stays on this device.", "La clave local autentica tus herramientas. Tu clave personal de Kilo permanece en este equipo.")),
-		u.pills(u.buttonWidget("connection.clients", u.tr("Go to agents", "Ir a agentes"), nativeButtonGhost, nativeIconChevronRight, true, false, func() {
+		u.pills(u.buttonWidget("connection.clients", u.tr("Go to agents", "Ir a agentes"), nativeButtonLink, nativeIconChevronRight, true, false, func() {
 			u.page = "agents"
 			if len(u.models) == 0 {
 				u.refreshModels()
 			}
 		})),
-	)
-	if !editable {
-		account = append(account, u.hint(u.tr("Stop the proxy or wait for the current connection action to finish before editing these settings.", "Detén el proxy o espera a que termine la acción de conexión para editar estos ajustes.")))
 	}
-	return nativeSettingsPanelWithGap(u.section(
-		u.tr("Kilo account", "Cuenta de Kilo"),
-		u.tr("Sign in and choose the team Kilo Proxy uses for upstream requests.", "Inicia sesión y elige el equipo que Kilo Proxy usará para las peticiones."),
-		account...,
+	return nativeSettingsPanelWithGap(u.column(
+		u.section(
+			u.tr("Kilo account", "Cuenta de Kilo"),
+			u.tr("Sign in and choose the team Kilo Proxy uses for upstream requests.", "Inicia sesión y elige el equipo que Kilo Proxy usará para las peticiones."),
+			account...,
+		),
+		u.section(
+			u.tr("Local endpoint", "Endpoint local"),
+			u.tr("Point any OpenAI-compatible client here. Agents opened from Kilo Proxy are configured automatically.", "Apunta aquí cualquier cliente compatible con OpenAI. Los agentes abiertos desde Kilo Proxy se configuran solos."),
+			endpoint...,
+		),
 	))
 }
 

@@ -996,11 +996,12 @@ func (u *nativeUI) clientActions(key string, s *nativeClientSelection, launchDes
 	} else if s.Saved != "" {
 		profileTone, profileStatus = nativeToneWarning, u.tr("Changes need preparing", "Hay cambios por preparar")
 	}
-	launchWidgets := launchSetup
+	// Profile state leads the section so the effect of "Open" is visible before acting.
+	launchWidgets := append([]layout.Widget{u.pills(u.statusBadge(profileTone, profileStatus))}, launchSetup...)
 	launchWidgets = append(launchWidgets,
 		u.clientLauncherPanel(key, s, canPrepare),
+		u.hint(u.tr("Open prepares this profile and starts the proxy automatically. Prepare without opening only writes the profile.", "Abrir prepara este perfil y arranca el proxy automáticamente. Preparar sin abrir solo escribe el perfil.")),
 		u.pills(u.disabled(canPrepare, u.button("client:"+key+":prepare", u.tr("Prepare without opening", "Preparar sin abrir"), func() { u.prepareClient(key) }))),
-		u.statusBadge(profileTone, profileStatus),
 	)
 	if ready {
 		launchWidgets = append(launchWidgets, u.note(s.Path))

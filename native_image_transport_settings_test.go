@@ -40,6 +40,7 @@ func TestNativeImageTransportSettingsPointerAndPersistence(t *testing.T) {
 			t.Run(fmtSize(size)+"-"+lang, func(t *testing.T) {
 				u := nativeTestUI(t)
 				u.page = "settings"
+				u.settingsTab = "images"
 				// Persist the language through the real API. Assigning u.language
 				// alone lets the periodic state refresh restore the fixture's English.
 				u.setLanguage(lang)
@@ -105,6 +106,9 @@ func TestNativeImageTransportSettingsPointerAndPersistence(t *testing.T) {
 				choose(u.tr("Off", "Desactivado"), "off", "high")
 				// Layout, scrolling and changing language must never opt in by themselves.
 				nextLanguage := u.tr("es", "en")
+				// Language lives under Preferences; switching tabs keeps image settings intact.
+				u.settingsTab = "preferences"
+				h.frame()
 				nativeScrollImageSetting(h, u.tr("Español", "English"))
 				h.click(u.tr("Español", "English"), semantic.Button)
 				nativeTestWait(t, u, func() bool {
