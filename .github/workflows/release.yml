@@ -37,3 +37,14 @@ jobs:
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: python scripts/release.py publish --tag "$RELEASE_TAG"
+
+  homebrew:
+    name: Update Homebrew tap
+    needs: publish
+    # Validated release versions use a hyphen only for alpha/beta/RC tags.
+    if: ${{ !contains(github.ref_name, '-') }}
+    uses: rosseca/homebrew-tap/.github/workflows/update-kilo-proxy.yml@75b8d5c6733b7acd3da67929cc0d322c0be1cd45
+    permissions:
+      contents: read
+    secrets:
+      KILO_PROXY_TAP_DEPLOY_KEY: ${{ secrets.KILO_PROXY_TAP_DEPLOY_KEY }}
