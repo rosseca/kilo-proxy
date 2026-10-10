@@ -38,7 +38,7 @@ After selecting at least one model and letting its automatic save complete, **St
 
 The library is `models.json` in the application configuration directory; project choices live in `agent-preferences.json`. Neither is a generated agent credential file. See [shared-model paths, recovery and propagation limits](shared-models.md).
 
-**App updates** checks the latest stable GitHub release on startup and every six hours without blocking the proxy. A newer version adds a compact download notice; Settings also shows the installed version, last check and a manual check button. Download opens the release page in your browser, and you install it when ready. Offline checks report that the version could not be checked. Prereleases and drafts are excluded; no Kilo credentials are used.
+**App updates** checks the latest stable GitHub release on startup and every six hours without blocking the proxy. A newer version adds a compact notice; Settings shows the installed version, last check and a manual check button. For a supported Homebrew or APT installation, **Update and restart** asks for confirmation before opening a visible terminal, closing Kilo Proxy and interrupting active requests. The package manager performs the update; APT may request your administrator password in the terminal. Kilo Proxy restarts after a successful update. **Download update** remains available for manual installations or when a package update is unavailable. See [package updates](package-updates.md). Offline checks report that the version could not be checked. Prereleases and drafts are excluded; no Kilo credentials are used.
 
 ## Interface preview
 

@@ -28,7 +28,7 @@ export async function verifyT3ModelPicker(input) {
   for (const provider of [normal, codexNormal]) assert.ok(!provider.accentColor, 'Normal acquired a Kilo brand accent');
   const builtin = 'claude-opus-5-5';
   assert.ok(proxy.models.some(model => model.slug === builtin), 'Baseline catalog did not contain the old built-in');
-  const v2 = fixture.version === '0.0.46-nightly.20261003.2610';
+  const v2 = fixture.protocolV2 === true;
   const threadId = randomUUID();
   const initialSelection = { instanceId: proxy.instanceId, model: fixture.defaultModel };
   await dispatch({ type: 'thread.create', ...creation, threadId, projectId,

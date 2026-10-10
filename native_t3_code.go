@@ -8,13 +8,15 @@ import (
 	"gioui.org/layout"
 )
 
-const t3CodeDownloadURL = "https://github.com/pingdotgg/t3code/releases/tag/v" + t3CodeNightlyVersion
+const t3CodeDownloadURL = "https://github.com/pingdotgg/t3code/releases"
 
 type nativeT3CodeInfo struct {
-	Prepared bool          `json:"prepared"`
-	Library  *modelLibrary `json:"library"`
-	Version  string        `json:"version"`
-	Message  string        `json:"message"`
+	Prepared            bool          `json:"prepared"`
+	Library             *modelLibrary `json:"library"`
+	Version             string        `json:"version"`
+	ProtocolV2          bool          `json:"protocolV2"`
+	ClaudeModelDefaults bool          `json:"claudeModelDefaults"`
+	Message             string        `json:"message"`
 }
 
 type nativeT3CodeState struct {
@@ -101,11 +103,11 @@ func (u *nativeUI) t3CodeClientPanel(s *nativeClientSelection) layout.Widget {
 	} else if state.Info.Message != "" {
 		widgets = append(widgets, u.note(nativeMessage(state.Info.Message, u.language)))
 	}
-	chatHelp := u.tr("In T3 Code 0.0.45, existing chats keep their agent; start a new chat to switch between normal and Kilo.", "En T3 Code 0.0.45, los chats existentes conservan su agente; inicia uno nuevo para cambiar entre normal y Kilo.")
-	if state.Info.Version == t3CodeNightlyVersion {
-		chatHelp = u.tr("This nightly can change agents between turns in the same chat. T3 transfers a summary when switching providers; previous reasoning, tool results and attachments are not transferred. Each agent keeps its own CLI profile. This nightly ignores Claude effort options for custom IDs, so Claude · Kilo uses compatible levels saved in Kilo Models. Close and reopen the Kilo workspace after changing them; Claude Code 2.1.251 or newer is required for these levels.", "Este nightly permite cambiar de agente entre turnos en el mismo chat. T3 transfiere un resumen al cambiar de proveedor; no transfiere el razonamiento anterior, los resultados de herramientas ni los adjuntos. Cada agente conserva su propio perfil CLI. Este nightly ignora las opciones de esfuerzo de Claude para IDs personalizados, por lo que Claude · Kilo usa los niveles compatibles guardados en Modelos de Kilo. Cierra y reabre el espacio Kilo tras cambiarlos; requieren Claude Code 2.1.251 o posterior.")
+	chatHelp := u.tr("Start a new chat to switch between normal and Kilo when this T3 build keeps an existing chat’s agent.", "Inicia un chat nuevo para cambiar entre normal y Kilo si esta compilación de T3 conserva el agente de un chat existente.")
+	if state.Info.ProtocolV2 {
+		chatHelp = u.tr("This T3 build can change agents between turns in the same chat. T3 transfers a summary when switching providers; previous reasoning, tool results and attachments are not transferred. Each agent keeps its own CLI profile. This build uses its built-in catalog for Claude effort, so Claude · Kilo uses compatible levels saved in Kilo Models. Close and reopen the Kilo workspace after changing them; Claude Code 2.1.251 or newer is required for these levels.", "Esta compilación de T3 permite cambiar de agente entre turnos en el mismo chat. T3 transfiere un resumen al cambiar de proveedor; no transfiere el razonamiento anterior, los resultados de herramientas ni los adjuntos. Cada agente conserva su propio perfil CLI. Esta compilación usa el catálogo incluido para el esfuerzo de Claude, por lo que Claude · Kilo usa los niveles compatibles guardados en Modelos de Kilo. Cierra y reabre el espacio Kilo tras cambiarlos; requieren Claude Code 2.1.251 o posterior.")
 	}
-	requirements := u.tr("Supports T3 Code 0.0.45 and nightly 0.0.46-nightly.20261003.2610. Requires Codex CLI and Claude Code.", "Admite T3 Code 0.0.45 y nightly 0.0.46-nightly.20261003.2610. Requiere Codex CLI y Claude Code.")
+	requirements := u.tr("Detects installed T3 Code release channels, including alpha, beta and nightly. Preparation checks the installed integration contract. Requires Codex CLI and Claude Code.", "Detecta canales instalados de T3 Code, incluidos alpha, beta y nightly. La preparación comprueba el contrato de integración instalado. Requiere Codex CLI y Claude Code.")
 	if state.Info.Version != "" {
 		requirements += u.tr(" Detected: ", " Detectado: ") + state.Info.Version + "."
 	}

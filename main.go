@@ -54,6 +54,9 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == clientLaunchRunnerFlag {
 		os.Exit(runClientLaunchMode(os.Args[2:]))
 	}
+	if len(os.Args) > 1 && os.Args[1] == packageUpdateRunnerFlag {
+		os.Exit(runPackageUpdateMode(os.Args[2:]))
+	}
 	if handled, code := runHeadlessCLI(os.Args[1:]); handled {
 		os.Exit(code)
 	}
@@ -108,6 +111,19 @@ func main() {
 	}
 	stopFakeGateway := func() {}
 	app.billingAutoRefresh = *selfTest == ""
+	if *selfTest == "" {
+		var restartArgs []string
+		if *noBrowser {
+			restartArgs = append(restartArgs, "--no-browser")
+		}
+		if *noTray {
+			restartArgs = append(restartArgs, "--no-tray")
+		}
+		if *useBrowser {
+			restartArgs = append(restartArgs, "--browser")
+		}
+		app.configurePackageUpdates(restartArgs)
+	}
 	if *selfTest != "" {
 		app.launcher = &clientLaunchRuntime{home: isolatedProfile}
 		stopFakeGateway = app.desktopTestGateway()

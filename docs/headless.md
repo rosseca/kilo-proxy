@@ -115,6 +115,18 @@ Each wrapper uses the current project directory, forwards arguments and stdin/st
 
 Headless-generated agent profiles live in this profile's private `profiles/codex`, `profiles/claude`, `profiles/opencode`, and `profiles/omp` directories. Different headless controllers do not overwrite each other's generated configuration or the desktop terminal agent profiles. Install an underlying agent CLI separately if its command is unavailable on the server; the wrappers do not install agent software.
 
+## Updates
+
+Check the latest stable release without opening credentials or changing the profile:
+
+```sh
+kilo-proxy-headless update check
+```
+
+For a Homebrew or APT installation, stop the profile and run `kilo-proxy-headless update install` with the same `--config-dir`. Confirm in the terminal; APT may request your sudo password there. The command refreshes the package catalog, upgrades only the installed Kilo Proxy package and verifies the installed version. It preserves the profile and refreshes only its existing managed terminal commands. Run `serve` again when ready. `--yes` skips the confirmation, not package ownership or profile checks.
+
+An installed user service must first be stopped and uninstalled with the same `--config-dir`, then reinstalled after updating so it references the new executable. Uninstalling the service preserves credentials, models and sessions. Updates refuse busy profiles and do not manage administrator-created services. Manual downloads display the new release link instead. See [package updates](package-updates.md) for desktop updates and package-manager details.
+
 ## Credentials, remote access, and services
 
 The headless configuration directory is private (0700). Its file credential vault uses private files (0600) and stores credential-vault values in plaintext, unlike the desktop OS keyring. ChatGPT OAuth credentials still use the existing encrypted credential format, but the encryption key is in this private file vault. Someone able to read the entire headless profile can obtain its credentials. Protect it with your server account permissions, disk encryption, and appropriately restricted backups. Do not commit or share the profile directory.

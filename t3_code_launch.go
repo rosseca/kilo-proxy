@@ -3,25 +3,20 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/binary"
 	"encoding/json"
 	"encoding/xml"
 	"errors"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 )
 
-const t3CodeSupportedVersion = "0.0.45"
-const t3CodeNightlyVersion = "0.0.46-nightly.20261003.2610"
 const t3CodeMarker = "--kilo-proxy-t3-root="
 
-func t3CodeVersionSupported(version string) bool {
-	return version == t3CodeSupportedVersion || version == t3CodeNightlyVersion
+func t3CodeVersionValid(version string) bool {
+	return version != "" && len(version) <= 80 && strings.TrimSpace(version) == version && !strings.ContainsAny(version, "\x00\r\n")
 }
 
 func t3CodeInstallationCandidates(platform, home, localAppData string) []string {
@@ -34,12 +29,12 @@ func t3CodeInstallationCandidates(platform, home, localAppData string) []string 
 			}
 		}
 	case "windows":
-		for _, name := range []string{"T3 Code (Nightly).exe", "T3 Code.exe", "T3 Code (Alpha).exe", "t3code.exe"} {
+		for _, name := range []string{"T3 Code (Nightly).exe", "T3 Code.exe", "T3 Code (Alpha).exe", "T3 Code (Beta).exe", "t3code.exe"} {
 			for _, root := range []string{localAppData, os.Getenv("ProgramFiles"), os.Getenv("ProgramFiles(x86)")} {
 				if !filepath.IsAbs(root) {
 					continue
 				}
-				for _, dir := range []string{"Programs/T3 Code (Nightly)", "T3 Code (Nightly)", "Programs/t3code", "Programs/T3 Code", "Programs/T3 Code (Alpha)", "t3code", "T3 Code", "T3 Code (Alpha)"} {
+				for _, dir := range []string{"Programs/T3 Code (Nightly)", "T3 Code (Nightly)", "Programs/t3code", "Programs/T3 Code", "Programs/T3 Code (Alpha)", "Programs/T3 Code (Beta)", "t3code", "T3 Code", "T3 Code (Alpha)", "T3 Code (Beta)"} {
 					candidates = append(candidates, filepath.Join(root, filepath.FromSlash(dir), name))
 				}
 			}
@@ -53,13 +48,13 @@ func t3CodeInstallationCandidates(platform, home, localAppData string) []string 
 				candidates = append(candidates, path)
 			}
 		}
-		for _, root := range []string{"/opt/t3code", "/opt/T3 Code", "/opt/T3 Code (Alpha)", filepath.Join(home, ".local", "share", "t3code")} {
-			for _, name := range []string{"t3code", "t3-code", "T3 Code (Nightly)", "T3 Code", "T3 Code (Alpha)"} {
+		for _, root := range []string{"/opt/t3code", "/opt/T3 Code", "/opt/T3 Code (Alpha)", "/opt/T3 Code (Beta)", filepath.Join(home, ".local", "share", "t3code")} {
+			for _, name := range []string{"t3code", "t3-code", "T3 Code (Nightly)", "T3 Code", "T3 Code (Alpha)", "T3 Code (Beta)"} {
 				candidates = append(candidates, filepath.Join(root, name))
 			}
 		}
 	}
-	return candidates
+	return append(candidates, t3CodeDiscoveredCandidates(platform, home, localAppData)...)
 }
 
 func resolveT3Code(platform, home, localAppData string) (string, error) {
@@ -76,7 +71,7 @@ func resolveT3CodeCandidates(candidates []string) (string, error) {
 			return path, nil
 		}
 	}
-	return "", errors.New("Install T3 Code desktop 0.0.45 or nightly 0.0.46-nightly.20261003.2610, Codex CLI and Claude Code, then refresh installed apps. Extract an AppImage before using it on Linux.")
+	return "", errors.New("Install T3 Code desktop (any release channel), Codex CLI and Claude Code, then refresh installed apps. Extract an AppImage before using it on Linux.")
 }
 
 type t3CodeASAREntry struct {
@@ -90,77 +85,30 @@ type t3CodeASAREntry struct {
 // Inspect metadata without executing Electron or a CLI. Only the root package
 // entry is read, never package dependencies or user configuration.
 func t3CodeVersion(executable, platform string) (string, error) {
-	if resolved, err := filepath.EvalSymlinks(executable); err == nil {
-		executable = resolved
-	}
-	root := filepath.Dir(executable)
-	if (platform == "darwin" || platform == "macos") && strings.HasSuffix(executable, ".app") {
-		root = filepath.Join(executable, "Contents")
-	}
-	var packageData []byte
-	var err error
-	for _, resources := range []string{"Resources", "resources"} {
-		packageData, err = t3CodeASARPackage(filepath.Join(root, resources, "app.asar"))
-		if err == nil {
-			break
-		}
-	}
+	archive, err := t3CodeOpenPackage(executable, platform)
 	if err != nil {
-		return "", errors.New("Cannot verify this T3 Code desktop installation. Install supported desktop 0.0.45 or nightly 0.0.46-nightly.20261003.2610 and refresh detection.")
+		return "", errors.New("Cannot read this T3 Code desktop installation. Reinstall the desktop app and refresh detection.")
 	}
-	var metadata struct{ Name, Version string }
-	if json.Unmarshal(packageData, &metadata) != nil || metadata.Name != "t3code" || len(metadata.Version) > 80 {
-		return "", errors.New("Cannot verify the T3 Code desktop package metadata.")
+	defer archive.file.Close()
+	metadata, err := archive.metadata()
+	if err != nil {
+		return "", err
 	}
 	return metadata.Version, nil
 }
 
 func t3CodeASARPackage(path string) ([]byte, error) {
-	file, err := os.Open(path)
+	archive, err := t3CodeOpenASAR(path)
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
-	info, err := file.Stat()
-	if err != nil || !info.Mode().IsRegular() {
-		return nil, errors.New("Invalid T3 Code package.")
-	}
-	var prefix [16]byte
-	if _, err = io.ReadFull(file, prefix[:]); err != nil {
-		return nil, err
-	}
-	headerSize, jsonSize := int64(binary.LittleEndian.Uint32(prefix[4:8])), int64(binary.LittleEndian.Uint32(prefix[12:16]))
-	if binary.LittleEndian.Uint32(prefix[:4]) != 4 || headerSize < 8 || headerSize > 8<<20 || jsonSize < 2 || jsonSize > headerSize-8 || headerSize+8 > info.Size() {
-		return nil, errors.New("Invalid T3 Code package header.")
-	}
-	header := make([]byte, jsonSize)
-	if _, err = io.ReadFull(file, header); err != nil {
-		return nil, err
-	}
-	var tree t3CodeASAREntry
-	if json.Unmarshal(header, &tree) != nil {
-		return nil, errors.New("Invalid T3 Code package index.")
-	}
-	entry, ok := tree.Files["package.json"]
-	offset, numberErr := strconv.ParseInt(entry.Offset, 10, 64)
-	base := headerSize + 8
-	if !ok || numberErr != nil || offset < 0 || entry.Size < 1 || entry.Size > 64<<10 || entry.Unpacked || entry.Link != "" || offset > info.Size()-base || entry.Size > info.Size()-base-offset {
-		return nil, errors.New("Invalid T3 Code package metadata entry.")
-	}
-	data := make([]byte, entry.Size)
-	_, err = file.ReadAt(data, base+offset)
-	return data, err
+	defer archive.file.Close()
+	return archive.read("package.json", 64<<10)
 }
 
 func t3CodeCompatibility(executable, platform string) error {
-	version, err := t3CodeVersion(executable, platform)
-	if err != nil {
-		return err
-	}
-	if !t3CodeVersionSupported(version) {
-		return errors.New("This integration supports T3 Code desktop 0.0.45 and nightly 0.0.46-nightly.20261003.2610. Other versions must be validated before preparing their private configuration.")
-	}
-	return nil
+	_, err := inspectT3CodeInstallation(executable, platform)
+	return err
 }
 
 func t3CodeBundleExecutable(bundle string) string {
@@ -284,7 +232,7 @@ func (a *app) applyT3CodeLaunch(plan *clientLaunchPlan, rt clientLaunchRuntime) 
 	if err != nil || !a.t3CodeReady(saved, plan.Executable, rt) {
 		return errors.New("Prepare T3 Code again: its private profiles or proxy connection changed.")
 	}
-	if saved.Version == t3CodeNightlyVersion {
+	if saved.ClaudeModelDefaults {
 		var caps *claudeCapabilities
 		for _, model := range saved.Library.Models {
 			if model.ReasoningEffort == "" || !validClaudeEffort(model.ID, model.ReasoningEffort) {
@@ -299,7 +247,7 @@ func (a *app) applyT3CodeLaunch(plan *clientLaunchPlan, rt clientLaunchRuntime) 
 				caps = &current
 			}
 			if !claudeEffortCompatible(model.ID, *caps) {
-				return managedClaudeEffortVersionError(model.ID, "T3 Code nightly")
+				return managedClaudeEffortVersionError(model.ID, "T3 Code")
 			}
 		}
 	}

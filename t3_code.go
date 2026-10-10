@@ -14,7 +14,7 @@ import (
 )
 
 const t3CodeProfileEndpoint = "/api/clients/t3-code"
-const t3CodeProfileRevision = 3
+const t3CodeProfileRevision = 4
 
 type t3CodeManagedPaths struct{ Root, Data, UIHome, Settings, ClientSettings, Secrets, Selection string }
 
@@ -25,11 +25,13 @@ func t3CodePaths(appDir string) t3CodeManagedPaths {
 }
 
 type t3CodePrepared struct {
-	Library     modelLibrary      `json:"library"`
-	Version     string            `json:"version"`
-	Fingerprint string            `json:"fingerprint"`
-	Providers   map[string]any    `json:"providers"`
-	Files       map[string]string `json:"files"`
+	Library             modelLibrary      `json:"library"`
+	Version             string            `json:"version"`
+	ProtocolV2          bool              `json:"protocolV2"`
+	ClaudeModelDefaults bool              `json:"claudeModelDefaults"`
+	Fingerprint         string            `json:"fingerprint"`
+	Providers           map[string]any    `json:"providers"`
+	Files               map[string]string `json:"files"`
 }
 
 type t3CodeModelSummary struct {
@@ -56,7 +58,11 @@ func (a *app) t3CodeFingerprint(binary, version string, library modelLibrary, rt
 	}
 	// A retained symlink spelling can resolve to a different provider home
 	// after preparation. Record its resolved directory identity as well.
-	data, _ := json.Marshal([]any{binary, version, codex, claude, library, a.config.Port, a.config.LocalKey, a.config.OrgID, a.catalogScopeLocked(), a.clientImageSettingsLocked(), rt.home, normalEnvironment, canonicalCodex, canonicalClaude, t3CodeProfileRevision})
+	installation, err := inspectT3CodeInstallation(binary, rt.platform)
+	if err != nil || installation.Version != version {
+		return ""
+	}
+	data, _ := json.Marshal([]any{binary, version, installation.SourceDigest, codex, claude, library, a.config.Port, a.config.LocalKey, a.config.OrgID, a.catalogScopeLocked(), a.clientImageSettingsLocked(), rt.home, normalEnvironment, canonicalCodex, canonicalClaude, t3CodeProfileRevision})
 	return openDesignHash(data)
 }
 
@@ -66,7 +72,7 @@ func (a *app) readT3CodePrepared() (t3CodePrepared, error) {
 		return saved, errors.New("Prepare the private T3 Code profiles first.")
 	}
 	data, err := readCatalogFile(t3CodePaths(a.dir).Selection)
-	if err != nil || json.Unmarshal(data, &saved) != nil || !t3CodeVersionSupported(saved.Version) || saved.Fingerprint == "" || len(saved.Library.Models) == 0 || validateT3CodeLibrary(saved.Library) != nil || len(saved.Providers) != 4 || len(saved.Files) < 4 || len(saved.Files) > 32 {
+	if err != nil || json.Unmarshal(data, &saved) != nil || !t3CodeVersionValid(saved.Version) || saved.Fingerprint == "" || len(saved.Library.Models) == 0 || validateT3CodeLibrary(saved.Library) != nil || len(saved.Providers) != 4 || len(saved.Files) < 4 || len(saved.Files) > 32 {
 		return t3CodePrepared{}, errors.New("Prepare the private T3 Code profiles first.")
 	}
 	for _, id := range []string{t3CodeCodexNormalID, t3CodeCodexProxyID, t3CodeClaudeNormalID, t3CodeClaudeProxyID} {
@@ -78,8 +84,9 @@ func (a *app) readT3CodePrepared() (t3CodePrepared, error) {
 }
 
 func (a *app) t3CodeReady(saved t3CodePrepared, binary string, rt clientLaunchRuntime) bool {
-	version, err := t3CodeVersion(binary, rt.platform)
-	if err != nil || !t3CodeVersionSupported(version) || saved.Version != version || saved.Fingerprint != a.t3CodeFingerprint(binary, version, saved.Library, rt) {
+	installation, err := inspectT3CodeInstallation(binary, rt.platform)
+	version := installation.Version
+	if err != nil || saved.Version != version || saved.ProtocolV2 != installation.ProtocolV2 || saved.ClaudeModelDefaults != installation.ClaudeModelDefaults || saved.Fingerprint != a.t3CodeFingerprint(binary, version, saved.Library, rt) {
 		return false
 	}
 	paths := t3CodePaths(a.dir)
@@ -116,7 +123,7 @@ func (a *app) t3CodeReady(saved t3CodePrepared, binary string, rt clientLaunchRu
 		}
 	}
 	clientSettings, err := readCatalogFile(paths.ClientSettings)
-	return err == nil && t3CodeClientSettingsReady(clientSettings, saved.Library, t3CodeCachedClaudeSlugs(paths))
+	return err == nil && t3CodeClientSettingsReady(clientSettings, saved.Library, append(t3CodeCachedClaudeSlugs(paths), installation.ClaudeBuiltins...))
 }
 
 func t3CodeSubset(expected, actual any) bool {
@@ -246,7 +253,11 @@ func (a *app) prepareT3Code(library modelLibrary, rt clientLaunchRuntime, binary
 	if err := a.t3CodeAvailability(binary, rt); err != nil {
 		return err
 	}
-	version, _ := t3CodeVersion(binary, rt.platform)
+	installation, err := inspectT3CodeInstallation(binary, rt.platform)
+	if err != nil {
+		return err
+	}
+	version := installation.Version
 	codex, err := resolveOpenDesignCLI("codex-cli", rt)
 	if err != nil {
 		return err
@@ -261,7 +272,7 @@ func (a *app) prepareT3Code(library modelLibrary, rt clientLaunchRuntime, binary
 			return err
 		}
 	}
-	planned, err := planT3CodeProfiles(t3CodeProfileOptions{RootDir: paths.Root, NormalHome: rt.home, CodexBinary: codex, ClaudeBinary: claude, NormalEnvironment: t3CodeNormalEnvironment(rt.home, os.Environ(), rt.platform), Library: library, Catalog: readNativeCatalogCache(a.dir, a.catalogScopeLocked()), ClaudeCaps: a.t3CodeClaudeCapabilities(claude, rt), Version: version, Port: a.config.Port, LocalKey: a.config.LocalKey, Images: a.clientImageSettingsLocked()})
+	planned, err := planT3CodeProfiles(t3CodeProfileOptions{RootDir: paths.Root, NormalHome: rt.home, CodexBinary: codex, ClaudeBinary: claude, NormalEnvironment: t3CodeNormalEnvironment(rt.home, os.Environ(), rt.platform), Library: library, Catalog: readNativeCatalogCache(a.dir, a.catalogScopeLocked()), ClaudeCaps: a.t3CodeClaudeCapabilities(claude, rt), Version: version, ClaudeModelDefaults: installation.ClaudeModelDefaults, Port: a.config.Port, LocalKey: a.config.LocalKey, Images: a.clientImageSettingsLocked()})
 	if err != nil {
 		return err
 	}
@@ -275,7 +286,7 @@ func (a *app) prepareT3Code(library modelLibrary, rt clientLaunchRuntime, binary
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return errors.New("Cannot safely read the private T3 Code client settings.")
 	}
-	clientSettings, err = planT3CodeClientSettings(clientSettings, library, t3CodeCachedClaudeSlugs(paths))
+	clientSettings, err = planT3CodeClientSettings(clientSettings, library, append(t3CodeCachedClaudeSlugs(paths), installation.ClaudeBuiltins...))
 	if err != nil {
 		return err
 	}
@@ -284,7 +295,7 @@ func (a *app) prepareT3Code(library modelLibrary, rt clientLaunchRuntime, binary
 		return err
 	}
 	files = append(files, clientFile)
-	saved := t3CodePrepared{Library: library, Version: version, Fingerprint: a.t3CodeFingerprint(binary, version, library, rt), Providers: planned.Providers, Files: map[string]string{}}
+	saved := t3CodePrepared{Library: library, Version: version, ProtocolV2: installation.ProtocolV2, ClaudeModelDefaults: installation.ClaudeModelDefaults, Fingerprint: a.t3CodeFingerprint(binary, version, library, rt), Providers: planned.Providers, Files: map[string]string{}}
 	for _, file := range files {
 		if file.path == paths.Settings || file.path == paths.ClientSettings {
 			continue
@@ -294,6 +305,10 @@ func (a *app) prepareT3Code(library modelLibrary, rt clientLaunchRuntime, binary
 			return err
 		}
 		saved.Files[relative] = openDesignHash(file.new)
+	}
+	current, err := inspectT3CodeInstallation(binary, rt.platform)
+	if err != nil || current.SourceDigest != installation.SourceDigest || saved.Fingerprint == "" {
+		return errors.New("T3 Code changed while preparing. Refresh detection and prepare again.")
 	}
 	data, _ := json.MarshalIndent(saved, "", "  ")
 	selection, err := prepareProfileFile(paths.Selection, append(data, '\n'))
@@ -312,6 +327,7 @@ func (a *app) t3CodeProfileAPI(w http.ResponseWriter, r *http.Request) {
 		state := a.modelLibrary.snapshot()
 		library := state.Library
 		version, _ := t3CodeVersion(binary, rt.platform)
+		installation, _ := inspectT3CodeInstallation(binary, rt.platform)
 		message := "Prepare T3 Code to add Codex and Claude agents with normal and Kilo Proxy connections in a separate T3 window."
 		if resolveErr == nil {
 			resolveErr = a.t3CodeAvailability(binary, rt)
@@ -331,7 +347,7 @@ func (a *app) t3CodeProfileAPI(w http.ResponseWriter, r *http.Request) {
 				models = append(models, t3CodeModelSummary{ID: model.ID, Name: model.DisplayName, ReasoningEffort: model.ReasoningEffort})
 			}
 		}
-		jsonResponse(w, 200, map[string]any{"prepared": ready, "library": library, "profileDir": paths.Root, "version": version, "models": models, "message": message})
+		jsonResponse(w, 200, map[string]any{"prepared": ready, "library": library, "profileDir": paths.Root, "version": version, "protocolV2": installation.ProtocolV2, "claudeModelDefaults": installation.ClaudeModelDefaults, "models": models, "message": message})
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -401,8 +417,9 @@ func (a *app) t3CodeProfileAPI(w http.ResponseWriter, r *http.Request) {
 	for _, model := range library.Models {
 		models = append(models, t3CodeModelSummary{ID: model.ID, Name: model.DisplayName, ReasoningEffort: model.ReasoningEffort})
 	}
-	version, _ := t3CodeVersion(binary, rt.platform)
-	jsonResponse(w, 200, map[string]any{"prepared": true, "library": library, "profileDir": paths.Root, "version": version, "models": models, "message": "T3 Code prepared with Codex and Claude agents using normal and Kilo Proxy connections."})
+	saved, _ = a.readT3CodePrepared()
+	version := saved.Version
+	jsonResponse(w, 200, map[string]any{"prepared": true, "library": library, "profileDir": paths.Root, "version": version, "protocolV2": saved.ProtocolV2, "claudeModelDefaults": saved.ClaudeModelDefaults, "models": models, "message": "T3 Code prepared with Codex and Claude agents using normal and Kilo Proxy connections."})
 }
 
 // Round-trip generated provider maps so persisted JSON and runtime JSON share

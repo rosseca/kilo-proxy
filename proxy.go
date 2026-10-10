@@ -37,6 +37,7 @@ type app struct {
 	chatGPTQuotaDue           time.Time
 	providerChanging          bool
 	updates                   *releaseUpdateChecker
+	packageUpdates            *packageUpdateManager
 	imageURLBackends          imageURLBackendManager
 	imageDependencyLookup     func(string) string
 	imageURLLeaseFactory      func(context.Context, string, string) (imageURLLease, error)

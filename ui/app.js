@@ -1,7 +1,7 @@
 import {chatGPTConnected,chatGPTReady,connectionReady,validChatGPTVerificationURL,renderChatGPT,renderSubscriptionUsage} from './chatgpt-helper.mjs';
 import {contextControls,contextModel,syncContextModels,contextError,contextPreview} from './context-policy.mjs';
 import {renderAccountUsage} from './account-usage.mjs';
-import {renderUpdates} from './update-helper.mjs';
+import {renderUpdates, updateView, packageUpdateFailureCode} from './update-helper.mjs';
 import {createOpenMausBotHelper} from './openmausbot-helper.mjs';
 import {createT3CodeHelper} from './t3-code-helper.mjs';
 import {createSynaraHelper} from './synara-helper.mjs';
@@ -48,6 +48,7 @@ if (token && /^[a-f0-9]{64}$/.test(token)) {
 let state, client = 'generic', busy = false, stopped = false, initialized = false, toastTimer, imageTransportPending = null;
 let imageDependencyPrompt={};
 let updateCheckPending = false, updateRequestError = false;
+let updateInstall = {};
 let updateCheckRevision = 0;
 let chatGPTRevision = 0, chatGPTPending = false, chatGPTLoginRequested = false;
 let imageSettingsSaving = false;
@@ -426,7 +427,8 @@ function render(s) {
   }
   renderImageTransport(s);
   if (updateRequestError && (s.update?.checking || (s.update?.checkedAt || '') !== updateFailedCheck)) updateRequestError = false;
-  renderUpdates(document, s, language, updateCheckPending, updateRequestError);
+  if (updateInstall.version && (!updateView(s.update).canInstall || updateInstall.version !== s.update?.latestVersion || updateInstall.method !== s.update?.installMethod)) updateInstall = {};
+  renderUpdates(document, s, language, updateCheckPending, updateRequestError, updateInstall);
   $('toggle-key').textContent = t($('api-key').type === 'password' ? 'Ver' : 'Ocultar');
   $('toggle-key').setAttribute('aria-label', t($('api-key').type === 'password' ? 'Mostrar API key' : 'Ocultar API key'));
   $('version').textContent = 'v' + s.version;
@@ -858,10 +860,12 @@ $('model-picker').addEventListener('change', event => {
 });
 async function refresh() {
   if (stopped) return;
-  const revision = updateCheckRevision, authRevision=chatGPTRevision, changing=chatGPTPending, next = await api('state');
+  const revision = updateCheckRevision, updateSaving = updateCheckPending || updateInstall.pending, authRevision=chatGPTRevision, changing=chatGPTPending, next = await api('state');
   if(changing||chatGPTPending||authRevision!==chatGPTRevision)return;
   // A state poll already in flight must not undo a newer manual check.
-  if (revision !== updateCheckRevision && state) next.update = state.update;
+  if ((updateSaving || updateCheckPending || updateInstall.pending || revision !== updateCheckRevision) && state) next.update = state.update;
+  else if (updateInstall.started && !next.update?.installing && packageUpdateFailureCode(next.update?.installMessage)) updateInstall = {failed:true};
+  else if (updateInstall.handedOff) updateInstall = {...updateInstall,handedOff:false};
   render(next);
 }
 async function action(fn) {
@@ -957,7 +961,14 @@ document.querySelectorAll('.nav-link').forEach(link => link.addEventListener('cl
 bindDesktopLinks(document, error => notify(error.message, true));
 async function poll() {
   if (stopped) return;
-  if (!busy) { try { await refresh(); } catch { if (!stopped) notify('Se ha perdido la conexión con la aplicación. Comprueba que Kilo Proxy siga abierto.', true); } }
+  if (!busy) { try { await refresh(); } catch {
+    if (updateInstall.started || state?.update?.installing) {
+      updateInstall = {...updateInstall,handedOff:true};
+      // A lost GET can also be transient while the helper is still starting.
+      // Keep retrying so a later failure snapshot can restore the controls.
+      renderUpdates(document,state,language,updateCheckPending,updateRequestError,updateInstall);
+    } else if (!stopped && !updateInstall.pending) notify('Se ha perdido la conexión con la aplicación. Comprueba que Kilo Proxy siga abierto.', true);
+  } }
   setTimeout(poll, 2500);
 }
 $('language').addEventListener('change', async () => {
@@ -1068,11 +1079,11 @@ for(const prefix of ['image-dependency','image-cloudflare']) {
 }
 $('image-dependency-dismiss').addEventListener('click',()=>{imageDependencyPrompt.dismissed=true;if(state)renderImageTransport(state);});
 $('updates-check').addEventListener('click', async () => {
-  if (updateCheckPending || state?.update?.checking) return;
+  if (updateCheckPending || state?.update?.checking || updateView(state?.update, language, state?.version, updateInstall).working) return;
   updateCheckPending = true;
   updateCheckRevision++;
   updateRequestError = false;
-  renderUpdates(document, state, language, true);
+  renderUpdates(document, state, language, true, false, updateInstall);
   try {
     const update = await api('updates', {});
     if (state) state.update = update;
@@ -1082,6 +1093,38 @@ $('updates-check').addEventListener('click', async () => {
   } finally {
     updateCheckRevision++;
     updateCheckPending = false;
-    renderUpdates(document, state, language, false, updateRequestError);
+    renderUpdates(document, state, language, false, updateRequestError, updateInstall);
+  }
+});
+for (const id of ['update-notice-install', 'updates-install']) $(id).addEventListener('click', () => {
+  const view = updateView(state?.update, language, state?.version, updateInstall);
+  if (!view.canInstall || view.working) return;
+  updateInstall = {version: state.update.latestVersion, method: state.update.installMethod};
+  renderUpdates(document, state, language, updateCheckPending, updateRequestError, updateInstall);
+  $('updates-confirmation').scrollIntoView({block: 'center'});
+});
+$('updates-cancel').addEventListener('click', () => {
+  if (updateInstall.pending) return;
+  updateInstall = {};
+  renderUpdates(document, state, language, updateCheckPending, updateRequestError, updateInstall);
+});
+$('updates-confirm').addEventListener('click', async () => {
+  const view = updateView(state?.update, language, state?.version, updateInstall);
+  if (!view.confirming || view.working) return;
+  const version = updateInstall.version;
+  updateInstall = {pending: true};
+  updateCheckRevision++;
+  renderUpdates(document, state, language, updateCheckPending, updateRequestError, updateInstall);
+  try {
+    const result = await api('updates/install', {version, confirm: true});
+    if (result?.started !== true) throw new Error('Update not started');
+    updateInstall = {started: true};
+    // Keep polling: starting a terminal process is not the helper's ready ACK.
+    // A later snapshot can report a failed handoff while the app stays open.
+  } catch {
+    updateInstall = {failed: true};
+  } finally {
+    updateCheckRevision++;
+    renderUpdates(document, state, language, updateCheckPending, updateRequestError, updateInstall);
   }
 });

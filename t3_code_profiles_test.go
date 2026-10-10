@@ -249,6 +249,7 @@ func TestT3CodeProfilesModelIDsAndReasoningCapabilities(t *testing.T) {
 func TestT3CodeNightlyProfilesApplyPrivateClaudeDefaultsWithoutGlobalEffort(t *testing.T) {
 	options := t3ProfileTestOptions(t)
 	options.Version = t3CodeNightlyVersion
+	options.ClaudeModelDefaults = true
 	options.Library.Models = []modelLibraryItem{
 		{ID: "anthropic/claude-opus-4-6", ReasoningEffort: "high", ContextWindow: 200000, MaxOutputTokens: 4096},
 		{ID: "anthropic/claude-sonnet-4-6", ReasoningEffort: "low", ContextWindow: 200000, MaxOutputTokens: 4096},
@@ -310,6 +311,7 @@ func TestT3CodeNightlyProfilesApplyPrivateClaudeDefaultsWithoutGlobalEffort(t *t
 		t.Fatal("nightly removed the working Codex effort selector")
 	}
 	options.Version = t3CodeSupportedVersion
+	options.ClaudeModelDefaults = false
 	result, err = prepareT3CodeProfiles(options)
 	if err != nil {
 		t.Fatal(err)
@@ -339,6 +341,7 @@ func TestT3CodeNightlyProfilesRequireVerifiedCLIForExplicitClaudeDefaults(t *tes
 		}
 	}
 	options.Version = t3CodeNightlyVersion
+	options.ClaudeModelDefaults = true
 	for _, caps := range []claudeCapabilities{claudeCaps("2.1.250"), {}} {
 		options.ClaudeCaps = caps
 		if _, err := prepareT3CodeProfiles(options); err == nil || !strings.Contains(err.Error(), "Claude Code 2.1.251") {
@@ -364,6 +367,7 @@ func TestT3CodeNightlyProfilesRejectConflictingCanonicalClaudeDefaults(t *testin
 		t.Run(second, func(t *testing.T) {
 			options := t3ProfileTestOptions(t)
 			options.Version = t3CodeNightlyVersion
+			options.ClaudeModelDefaults = true
 			options.Library.DefaultModel = "anthropic/claude-opus-4.6"
 			options.Library.Models = []modelLibraryItem{
 				{ID: "anthropic/claude-opus-4.6", ReasoningEffort: "high", ContextWindow: 200000, MaxOutputTokens: 4096},
@@ -386,6 +390,7 @@ func TestT3CodeNightlyProfilesRejectConflictingCanonicalClaudeDefaults(t *testin
 				t.Fatal("identical canonical defaults were unnecessarily rejected", err)
 			}
 			options.Version = t3CodeSupportedVersion
+			options.ClaudeModelDefaults = false
 			options.Library.Models[1].ReasoningEffort = second
 			if _, err := prepareT3CodeProfiles(options); err != nil {
 				t.Fatal("stable descriptor compatibility changed", err)
@@ -397,6 +402,7 @@ func TestT3CodeNightlyProfilesRejectConflictingCanonicalClaudeDefaults(t *testin
 func TestT3CodeNightlyProfilesRequireQualifiedClaudeIDsForSavedDefaults(t *testing.T) {
 	options := t3ProfileTestOptions(t)
 	options.Version = t3CodeNightlyVersion
+	options.ClaudeModelDefaults = true
 	options.Library.DefaultModel = "claude-opus-4-6"
 	options.Library.Models = []modelLibraryItem{{ID: options.Library.DefaultModel, ReasoningEffort: "low", ContextWindow: 200000, MaxOutputTokens: 4096}}
 	options.Catalog = []modelInfo{{ID: options.Library.DefaultModel, ReasoningEfforts: []string{"low", "high"}}}
@@ -431,6 +437,7 @@ func TestT3CodeNightlyProfilesRequireQualifiedClaudeIDsForSavedDefaults(t *testi
 		t.Fatal("builtin automatic default was unnecessarily rejected", err)
 	}
 	options.Version = t3CodeSupportedVersion
+	options.ClaudeModelDefaults = false
 	options.Library.Models[0].ReasoningEffort = "low"
 	if _, err := prepareT3CodeProfiles(options); err != nil {
 		t.Fatal("stable builtin descriptor compatibility changed", err)

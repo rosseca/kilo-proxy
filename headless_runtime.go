@@ -344,13 +344,14 @@ Usage: kilo-proxy-headless [--config-dir DIR] COMMAND [OPTIONS]
   proxy        Start or stop inference in the running service
   stop         Stop the service and wait for cleanup
   service      Install or inspect a systemd/launchd user service
+  update       Check for a release; use update install to upgrade via Brew/APT
 
 The headless profile is separate from the desktop app by default.
 The proxy and its private control API listen only on 127.0.0.1.`)
 }
 
 func parseHeadlessCommand(args []string) (command, dir string, rest []string, recognized bool, err error) {
-	known := map[string]bool{"serve": true, "status": true, "stop": true, "proxy": true, "configure": true, "login": true, "logout": true, "models": true, "commands": true, "connection": true, "service": true, "help": true}
+	known := map[string]bool{"serve": true, "status": true, "stop": true, "proxy": true, "configure": true, "login": true, "logout": true, "models": true, "commands": true, "connection": true, "service": true, "update": true, "help": true}
 	leading := 0
 	dirSpecified := false
 	for leading < len(args) && strings.HasPrefix(args[leading], "--config-dir") {
@@ -454,6 +455,8 @@ func runHeadlessCLI(args []string) (bool, int) {
 		return true, runHeadlessSetupCLI(dir, command, rest, os.Stdin, os.Stdout, os.Stderr)
 	case "service":
 		return true, runHeadlessServiceCLI(dir, rest, os.Stdout, os.Stderr)
+	case "update":
+		return true, runHeadlessUpdateCLI(dir, rest, os.Stdin, os.Stdout, os.Stderr)
 	default:
 		return true, runHeadlessRuntimeCLI(dir, command, rest, os.Stdout, os.Stderr)
 	}

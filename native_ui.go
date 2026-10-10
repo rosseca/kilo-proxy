@@ -53,13 +53,17 @@ type nativeUI struct {
 	contextRemovalIDs   []string
 	contextRemovalTag   int
 
-	imageDependencyDismissed bool
-	imageSettingsFocus       bool
-	updateRevision           uint64
-	updateRequestFailed      bool
-	proxyRevision            uint64
-	chatGPTRevision          uint64
-	chatGPTLoginRequested    bool
+	imageDependencyDismissed    bool
+	imageSettingsFocus          bool
+	updateRevision              uint64
+	updateRequestFailed         bool
+	packageUpdateConfirmVersion string
+	packageUpdateConfirmMethod  string
+	packageUpdateStarted        bool
+	packageUpdateFailed         bool
+	proxyRevision               uint64
+	chatGPTRevision             uint64
+	chatGPTLoginRequested       bool
 
 	owner                          *app
 	invalidate                     func()
@@ -577,7 +581,7 @@ func (u *nativeUI) refreshState() {
 	revision, saving := u.languageRevision, u.languageTarget != ""
 	chatGPTRevision, chatGPTSaving := u.chatGPTRevision, u.chatGPTRequestBusy()
 	proxyRevision, proxySaving := u.proxyRevision, u.busy["POST/api/start"] || u.busy["POST/api/stop"]
-	updateRevision, updateSaving := u.updateRevision, u.busy["POST/api/updates"]
+	updateRevision, updateSaving := u.updateRevision, u.busy["POST/api/updates"] || u.busy["POST/api/updates/install"]
 	c := u.clientState()
 	desktopRevision, desktopSaving := c.DesktopExperimentalRevision, c.DesktopExperimentalTarget != nil
 	u.call("GET", "/api/state", nil, func(raw json.RawMessage) {
@@ -594,7 +598,7 @@ func (u *nativeUI) refreshState() {
 		update := u.state["update"]
 		u.acceptState(raw)
 		// A poll captured before a manual check must not restore its old status.
-		if updateSaving || updateRevision != u.updateRevision || u.busy["POST/api/updates"] {
+		if updateSaving || updateRevision != u.updateRevision || u.busy["POST/api/updates"] || u.busy["POST/api/updates/install"] {
 			u.state["update"] = update
 		} else if u.updateRequestFailed {
 			var previous releaseUpdateState
@@ -602,6 +606,12 @@ func (u *nativeUI) refreshState() {
 			current := u.releaseUpdate()
 			if current.Checking || current.CheckedAt != "" && current.CheckedAt != previous.CheckedAt {
 				u.updateRequestFailed = false
+			}
+		}
+		if !updateSaving && updateRevision == u.updateRevision && !u.busy["POST/api/updates"] && !u.busy["POST/api/updates/install"] {
+			current := u.releaseUpdate()
+			if u.packageUpdateStarted && !current.Installing && packageUpdateFailureCode(current.InstallMessage) {
+				u.packageUpdateStarted, u.packageUpdateFailed = false, true
 			}
 		}
 		// Ignore a Desktop option snapshot captured before or during its save.

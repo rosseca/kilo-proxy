@@ -9,8 +9,9 @@ import { join } from 'node:path';
 
 const fixturePath = process.argv[2] === '--manifest' ? process.argv[3] : process.argv[2];
 const fixture = JSON.parse(await readFile(fixturePath, 'utf8'));
-assert.ok(['0.0.45', '0.0.46-nightly.20261003.2610'].includes(fixture.version), 'Unsupported T3 acceptance fixture');
-const v2 = fixture.version === '0.0.46-nightly.20261003.2610';
+assert.equal(typeof fixture.version, 'string');
+assert.equal(typeof fixture.protocolV2, 'boolean');
+const v2 = fixture.protocolV2;
 const listener = createServer();
 await new Promise(resolve => listener.listen(0, '127.0.0.1', resolve));
 const port = listener.address().port;

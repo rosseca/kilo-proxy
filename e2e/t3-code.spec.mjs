@@ -59,7 +59,7 @@ test('T3 Code prepares four agents before desktop launch and guards a second ope
  await expect(page.locator('#t3-code-compatibility')).toContainText('check the selected model before continuing');
  await expect(page.locator('#t3-code-privacy')).toContainText('regular T3 Code workspace and chats stay separate');
  await expect(page.locator('#t3-code-requirements')).toContainText('not Desktop app logins');
- await expect(page.locator('#t3-code-install')).toHaveAttribute('href','https://github.com/pingdotgg/t3code/releases/tag/v0.0.46-nightly.20261003.2610');
+ await expect(page.locator('#t3-code-install')).toHaveAttribute('href','https://github.com/pingdotgg/t3code/releases');
  await expect(page.locator('#t3-code-helper')).not.toContainText('synthetic-kilo-personal-key');
  await expect(page.locator('#t3-code-helper')).not.toContainText(profile.profileDir);
  await page.locator('#t3-code-helper').screenshot({path:testInfo.outputPath('t3-code-en-wide.png')});

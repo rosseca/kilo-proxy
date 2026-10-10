@@ -94,6 +94,10 @@ func (a *app) adminHandler() http.Handler {
 			a.updatesAPI(w, r)
 			return
 		}
+		if r.URL.Path == "/api/updates/install" {
+			a.installPackageUpdateAPI(w, r)
+			return
+		}
 		if r.URL.Path == "/api/clients/launch" {
 			a.clientsLaunch(w, r)
 			return

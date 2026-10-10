@@ -60,7 +60,9 @@ Both codes use HTTP 502 for compatibility. The client-facing message does not in
 
 Normal app startup and a six-hour background timer query `GET https://api.github.com/repos/rosseca/kilo-proxy/releases/latest`. This uses a separate unauthenticated HTTP client: it sends no Kilo key, organization, local/admin key, request content or GitHub token. Checks have a ten-second timeout, bounded response size, no redirects, and at most one request per minute. The status cache is in memory. Isolated desktop self-tests and terminal command runners do not start this background check.
 
-Only a newer stable version produces a download notice. GitHub failures, missing releases, invalid responses and unknown development versions cannot produce an up-to-date status. Download actions open a validated release tag in this repository; no package is downloaded, executed or installed automatically. **Settings → App updates** and the browser helper provide a manual check and show the last attempt.
+Only a newer stable version produces an update notice. GitHub failures, missing releases, invalid responses and unknown development versions cannot produce an up-to-date status. Download actions open a validated release tag in this repository. **Settings → App updates** and the browser helper provide a manual check and show the last attempt.
+
+Supported Homebrew and APT installations can offer **Update and restart**. Rendering or checking for updates never installs a package. A separate confirmation identifies the version and package manager and warns that closing the app interrupts active requests. The authenticated local API revalidates the installation before opening a visible terminal with the package manager; administrator authorization belongs to that terminal, never a password field in Kilo Proxy. Manual download remains available. See [package updates](package-updates.md) for supported installations, commands and recovery after a failed package update.
 
 ## Large image handling
 

@@ -150,13 +150,14 @@ func TestNativeT3CodeNightlyGuidance(t *testing.T) {
 			h := &nativePointerHarness{t: t, u: u, size: image.Pt(720, 1900), now: time.Now()}
 			h.frame()
 			nativeTestWait(t, u, func() bool { return u.agentsState().T3Code.Loaded })
-			u.agentsState().T3Code.Info.Version = t3CodeNightlyVersion
+			u.agentsState().T3Code.Info.Version = "9.0.0-beta.2"
+			u.agentsState().T3Code.Info.ProtocolV2 = true
 			h.frame()
 			labels := ""
 			for _, node := range h.nodes() {
 				labels += node.Desc.Label + "\n"
 			}
-			for _, text := range []string{t3CodeNightlyVersion, u.tr("change agents between turns", "cambiar de agente entre turnos"), u.tr("attachments are not transferred", "ni los adjuntos")} {
+			for _, text := range []string{"9.0.0-beta.2", u.tr("change agents between turns", "cambiar de agente entre turnos"), u.tr("attachments are not transferred", "ni los adjuntos")} {
 				if !strings.Contains(labels, text) {
 					t.Fatalf("missing nightly guidance %q", text)
 				}

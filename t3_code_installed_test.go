@@ -35,7 +35,8 @@ func TestT3CodeInstalledFourAgents(t *testing.T) {
 	if err := t3CodeCompatibility(installed, runtime.GOOS); err != nil {
 		t.Fatal(err)
 	}
-	version, err := t3CodeVersion(installed, runtime.GOOS)
+	installation, err := inspectT3CodeInstallation(installed, runtime.GOOS)
+	version := installation.Version
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +111,7 @@ func TestT3CodeInstalledFourAgents(t *testing.T) {
 		{ID: claudeModel, Name: "Synthetic Claude", ContextWindow: 128000, MaxOutputTokens: 4096, ReasoningEfforts: []string{"low", "medium", "high"}},
 		{ID: chatgptModel, Name: "Synthetic ChatGPT", ContextWindow: 128000, MaxOutputTokens: 4096, ReasoningEfforts: []string{"low", "high"}},
 	}
-	if version == t3CodeNightlyVersion {
+	if installation.ProtocolV2 {
 		library.Models = append(library.Models, modelLibraryItem{ID: claudeLowModel, ReasoningEffort: "low", ReasoningCustom: true, ReasoningLevels: []string{"low", "medium", "high"}, ContextWindow: 128000, MaxOutputTokens: 4096})
 		catalog = append(catalog, modelInfo{ID: claudeLowModel, Name: "Synthetic Claude Low", ContextWindow: 128000, MaxOutputTokens: 4096, ReasoningEfforts: []string{"low", "medium", "high"}})
 	}
@@ -226,7 +227,7 @@ func TestT3CodeInstalledFourAgents(t *testing.T) {
 			mu.Lock()
 			previousRequests := counts[t3CodeClaudeProxyID]
 			mu.Unlock()
-			if version == t3CodeNightlyVersion && previousRequests == 2 {
+			if installation.ProtocolV2 && previousRequests == 2 {
 				expectedEffort = "low"
 				expectedModel = claudeLowModel
 			}
@@ -343,7 +344,7 @@ func TestT3CodeInstalledFourAgents(t *testing.T) {
 		}
 	}
 	claudeOptions := map[string]any{"effort": "high"}
-	if version == t3CodeNightlyVersion {
+	if installation.ProtocolV2 {
 		claudeOptions = nil
 	}
 	libraryIDs := make([]string, 0, len(library.Models))
@@ -352,7 +353,7 @@ func TestT3CodeInstalledFourAgents(t *testing.T) {
 	}
 	fixture := map[string]any{
 		"binary": plan.Executable, "entry": filepath.Join(installed, "Contents", "Resources", "app.asar", "apps", "server", "dist", "bin.mjs"),
-		"version": version,
+		"version": version, "protocolV2": installation.ProtocolV2,
 		"baseDir": paths.Data, "home": paths.UIHome, "project": project, "env": env, "expectedResponse": responseText,
 		"verifyModelPicker": os.Getenv("KILO_TEST_T3_PICKER") == "1", "clientSettingsPath": paths.ClientSettings,
 		"artifactsDirectory": os.Getenv("KILO_TEST_T3_ARTIFACTS"),

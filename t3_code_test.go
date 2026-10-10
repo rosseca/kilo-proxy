@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"os"
@@ -12,6 +11,9 @@ import (
 	"testing"
 	"time"
 )
+
+const t3CodeSupportedVersion = "0.0.45"
+const t3CodeNightlyVersion = "0.0.46-nightly.20261003.2610"
 
 func syntheticT3CodeExecutable(t *testing.T, root, platform string, versions ...string) string {
 	t.Helper()
@@ -47,20 +49,16 @@ func syntheticT3CodeVersionExecutable(t *testing.T, root, platform, version stri
 	if err := os.WriteFile(executable, []byte("synthetic native executable; never executed"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	packageData, err := json.Marshal(map[string]string{"name": "t3code", "version": version})
-	if err != nil {
-		t.Fatal(err)
+	metadata, _ := json.Marshal(map[string]string{"name": "t3code", "version": version, "main": "apps/desktop/dist-electron/main.cjs"})
+	server := "providerInstances homePath binaryPath customModels claudeAgent valueRedacted provider-env- base64url secretsDir .bin settings.json server-runtime.json CODEX_HOME CLAUDE_CONFIG_DIR thread.turn.start"
+	if strings.Contains(version, "nightly") || strings.Contains(version, "beta") || strings.Contains(version, "alpha") {
+		server += " message.dispatch provider-session.detach"
 	}
-	header, _ := json.Marshal(t3CodeASAREntry{Files: map[string]t3CodeASAREntry{"package.json": {Size: int64(len(packageData)), Offset: "0"}}})
-	prefix := make([]byte, 16)
-	binary.LittleEndian.PutUint32(prefix[:4], 4)
-	binary.LittleEndian.PutUint32(prefix[4:8], uint32(len(header)+8))
-	binary.LittleEndian.PutUint32(prefix[8:12], uint32(len(header)+4))
-	binary.LittleEndian.PutUint32(prefix[12:16], uint32(len(header)))
-	archive := append(append(prefix, header...), packageData...)
-	if err := os.WriteFile(filepath.Join(resources, "app.asar"), archive, 0600); err != nil {
-		t.Fatal(err)
-	}
+	writeT3CodeFixtureASAR(t, filepath.Join(resources, "app.asar"), map[string][]byte{
+		"package.json":                        metadata,
+		"apps/desktop/dist-electron/main.cjs": []byte("T3CODE_HOME T3CODE_DISABLE_AUTO_UPDATE userData client-settings.json providerModelPreferences hiddenModels modelOrder"),
+		"apps/server/dist/bin.mjs":            []byte(server),
+	})
 	if platform == "macos" || platform == "darwin" {
 		if err := os.WriteFile(filepath.Join(appRoot, "Contents", "Info.plist"), []byte(`<plist><dict><key>CFBundleExecutable</key><string>`+appName+`</string></dict></plist>`), 0600); err != nil {
 			t.Fatal(err)
@@ -519,18 +517,18 @@ func TestT3CodeVersionAndMarkerBoundaries(t *testing.T) {
 	}
 }
 
-func TestT3CodeCompatibilityAcceptsOnlyValidatedReleases(t *testing.T) {
+func TestT3CodeCompatibilityAcceptsReleaseChannelsByContract(t *testing.T) {
 	for _, platform := range []string{"macos", "linux", "windows"} {
-		for _, version := range []string{t3CodeSupportedVersion, t3CodeNightlyVersion, "0.0.46", "0.0.46-nightly.20261003.2611", "0.0.45-nightly.20261002.2600", t3CodeNightlyVersion + "+modified"} {
+		for _, version := range []string{t3CodeSupportedVersion, t3CodeNightlyVersion, "0.0.46", "0.0.46-nightly.20261003.2611", "0.0.45-nightly.20261002.2600", "4.0.0-alpha.2", "5.0.0-beta.4", "7.0.0-rc.1", "9.0.0-canary.73", t3CodeNightlyVersion + "+modified"} {
 			t.Run(platform+"/"+version, func(t *testing.T) {
 				path := syntheticT3CodeVersionExecutable(t, t.TempDir(), platform, version)
 				parsed, err := t3CodeVersion(path, platform)
 				if err != nil || parsed != version {
 					t.Fatal("package version could not be read", parsed, err)
 				}
-				wantSupported := version == t3CodeSupportedVersion || version == t3CodeNightlyVersion
+				wantSupported := true
 				if err := t3CodeCompatibility(path, platform); (err == nil) != wantSupported {
-					t.Fatal("unvalidated version accepted or validated version rejected", version, err)
+					t.Fatal("compatible channel rejected", version, err)
 				}
 				if platform == "macos" && t3CodeBundleExecutable(path) != filepath.Join(path, "Contents", "MacOS", filepath.Base(strings.TrimSuffix(path, ".app"))) {
 					t.Fatal("native bundle executable was not resolved")
@@ -660,8 +658,8 @@ func TestT3CodeNightlyResolutionAndStableFallback(t *testing.T) {
 			}
 			unvalidated := install("0.0.46-nightly.20261003.2611")
 			selected, err := resolveT3CodeCandidates(candidates)
-			if err != nil || selected != unvalidated || t3CodeCompatibility(selected, platform) == nil {
-				t.Fatal("unvalidated nightly silently fell back to stable", selected, err)
+			if err != nil || selected != unvalidated || t3CodeCompatibility(selected, platform) != nil {
+				t.Fatal("compatible new nightly silently fell back to stable", selected, err)
 			}
 		})
 	}
