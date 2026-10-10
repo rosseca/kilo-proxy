@@ -48,3 +48,18 @@ jobs:
       contents: read
     secrets:
       KILO_PROXY_TAP_DEPLOY_KEY: ${{ secrets.KILO_PROXY_TAP_DEPLOY_KEY }}
+
+  apt:
+    name: Update Ubuntu APT repository
+    needs: publish
+    if: ${{ !contains(github.ref_name, '-') && vars.KILO_APT_ENABLED == 'true' }}
+    uses: ./.github/workflows/apt-publish.yml
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    with:
+      signing-fingerprint: ${{ vars.KILO_APT_FINGERPRINT }}
+      allow-bootstrap: ${{ vars.KILO_APT_BOOTSTRAP == 'true' }}
+    secrets:
+      KILO_APT_SIGNING_KEY: ${{ secrets.KILO_APT_SIGNING_KEY }}

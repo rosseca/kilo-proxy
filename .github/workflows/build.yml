@@ -389,6 +389,126 @@ jobs:
             dist/*.zip
             dist/*.tar.gz
 
+  debian-package:
+    needs: [test, browser-e2e, native, headless]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: desktop-binary-linux-${{ matrix.arch }}
+          path: dist/binaries
+      - uses: actions/download-artifact@v4
+        with:
+          name: headless-binary-linux-${{ matrix.arch }}
+          path: dist/headless-binaries
+      - name: Install Debian dependency inspection tools and runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dpkg-dev libwayland-client0 libwayland-cursor0 libwayland-egl1 libx11-6 libx11-xcb1 libxkbcommon-x11-0 libxcursor1 libxfixes3 libegl1 libgles2 libvulkan1 mesa-vulkan-drivers libgl1-mesa-dri
+      - name: Package the exact tested Linux executables
+        env:
+          KILO_ARCH: ${{ matrix.arch }}
+        run: |
+          chmod 0755 "dist/binaries/kilo-proxy-linux-${KILO_ARCH}" "dist/headless-binaries/kilo-proxy-headless-linux-${KILO_ARCH}"
+          export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+          python scripts/package_debian.py --binaries-directory dist/binaries --headless-binaries-directory dist/headless-binaries --arch "$KILO_ARCH" --output dist/debian
+      - uses: actions/upload-artifact@v4
+        with:
+          name: debian-packages-${{ matrix.arch }}
+          path: dist/debian/*.deb
+          if-no-files-found: error
+          retention-days: 14
+
+  apt-repository:
+    needs: debian-package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: debian-packages-*
+          merge-multiple: true
+          path: dist/debian
+      - name: Build a repository using a disposable CI signing identity
+        run: |
+          export GNUPGHOME="$(mktemp -d "$RUNNER_TEMP/kilo-apt-ci.XXXXXX")"
+          chmod 700 "$GNUPGHOME"
+          trap 'gpgconf --kill all; rm -rf "$GNUPGHOME"' EXIT
+          gpg --batch --pinentry-mode loopback --passphrase '' --quick-generate-key 'Kilo Proxy disposable APT test <apt-test@example.invalid>' ed25519 sign 1d
+          signing_key="$(gpg --batch --with-colons --list-secret-keys | awk -F: '$1 == "fpr" { print $10; exit }')"
+          python scripts/build_apt_repository.py --packages-directory dist/debian --output dist/apt --signing-key "$signing_key" --source-date-epoch "$(git log -1 --format=%ct)"
+          (cd dist/debian && sha256sum ./*.deb > DEBIAN-SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apt-test-repository
+          path: dist/apt/
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: debian-assets
+          path: dist/debian/
+          if-no-files-found: error
+          retention-days: 14
+
+  apt-install:
+    needs: apt-repository
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+            ubuntu: '24.04'
+          - runner: ubuntu-24.04
+            arch: amd64
+            ubuntu: '26.04'
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+            ubuntu: '24.04'
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+            ubuntu: '26.04'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: apt-test-repository
+          path: dist/apt
+      - name: Install, upgrade and remove through authenticated APT
+        env:
+          KILO_ARCH: ${{ matrix.arch }}
+          KILO_UBUNTU: ${{ matrix.ubuntu }}
+        run: |
+          docker run --rm --init \
+            -e DEBIAN_FRONTEND=noninteractive -e KILO_DEBIAN_DISPOSABLE_CONTAINER=1 \
+            -e KILO_ARCH -e KILO_UBUNTU \
+            -v "$GITHUB_WORKSPACE:/work:ro" -w /work \
+            "ubuntu:$KILO_UBUNTU" /bin/bash -euc '
+              apt-get update
+              apt-get install -y --no-install-recommends python3 ca-certificates gnupg dbus-x11 xvfb xauth
+              python3 scripts/smoke_debian.py --repository-directory /work/dist/apt --version "$(cat VERSION)" --arch "$KILO_ARCH" --ubuntu-version "$KILO_UBUNTU"
+            '
+
   aggregate:
     needs: package
     runs-on: ubuntu-24.04
