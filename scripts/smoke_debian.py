@@ -7,6 +7,7 @@ The upgrade fixture changes package metadata only: it tests APT's lifecycle with
 the candidate executable, not migration from an earlier release's executable.
 """
 import argparse
+from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
@@ -144,6 +145,30 @@ def assert_installed(commands, package_version, arch):
             raise RuntimeError('APT installed an unexpected package identity: ' + package)
 
 
+@contextmanager
+def include_package_documentation(config_directory=Path('/etc/dpkg/dpkg.cfg.d')):
+    # Minimal Ubuntu container images exclude /usr/share/doc/* by default.
+    # This acceptance test must install every file recorded in our packages'
+    # md5sums; override only these two documentation trees, never that policy.
+    path = config_directory / ('zz-kilo-proxy-acceptance-' + uuid.uuid4().hex)
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+    try:
+        with os.fdopen(descriptor, 'w') as config:
+            for package in PACKAGES:
+                config.write(f'path-include=/usr/share/doc/{package}\n'
+                             f'path-include=/usr/share/doc/{package}/*\n')
+        yield path
+    finally:
+        path.unlink(missing_ok=True)
+
+
+def verify_installed_payload(commands):
+    for package in PACKAGES:
+        diagnostic = commands.run(['dpkg', '--verify', package]).strip()
+        if diagnostic:
+            raise RuntimeError('Installed package payload failed verification: ' + package + '\n' + diagnostic[-8000:])
+
+
 def assert_preserved(sentinels):
     if any(not path.is_file() or path.is_symlink() or path.read_bytes() != value
            for path, value in sentinels.items()):
@@ -167,7 +192,7 @@ def smoke(repository_directory, trusted_key, ubuntu_version, arch, version):
     package_version = expected_package_version(version)
     suite = SUITES[ubuntu_version]
     checks = []
-    with tempfile.TemporaryDirectory(prefix='kilo-apt-acceptance-') as temporary:
+    with tempfile.TemporaryDirectory(prefix='kilo-apt-acceptance-') as temporary, include_package_documentation():
         root = Path(temporary)
         root.chmod(0o755)  # APT's unprivileged download user can read public inputs.
         home = root / 'synthetic-home'
@@ -236,9 +261,7 @@ def smoke(repository_directory, trusted_key, ubuntu_version, arch, version):
             commands.run([*apt, 'install', '--yes', '--no-install-recommends',
                           *(package + '=' + package_version for package in PACKAGES)], timeout=600)
             assert_installed(commands, package_version, arch)
-            for package in PACKAGES:
-                if commands.run(['dpkg', '--verify', package]).strip():
-                    raise RuntimeError('Installed package payload failed verification: ' + package)
+            verify_installed_payload(commands)
             assert_preserved(sentinels)
             checks.append('apt-upgrade-to-authenticated-candidate')
             for package, binary in BINARIES.items():

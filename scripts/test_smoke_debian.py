@@ -124,6 +124,62 @@ class FixtureTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'sentinel'):
                 smoke_debian.assert_preserved({path: b'preserve'})
 
+    def test_documentation_includes_are_exact_and_do_not_replace_container_policy(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config_directory = Path(directory)
+            existing = config_directory / 'excludes'
+            policy = 'path-exclude=/usr/share/doc/*\n'
+            existing.write_text(policy)
+            with smoke_debian.include_package_documentation(config_directory) as config:
+                self.assertRegex(config.name, r'^zz-kilo-proxy-acceptance-[a-f0-9]{32}$')
+                self.assertEqual(config.read_text().splitlines(), [
+                    'path-include=/usr/share/doc/kilo-proxy-desktop',
+                    'path-include=/usr/share/doc/kilo-proxy-desktop/*',
+                    'path-include=/usr/share/doc/kilo-proxy-headless',
+                    'path-include=/usr/share/doc/kilo-proxy-headless/*'])
+                self.assertEqual(existing.read_text(), policy)
+            self.assertFalse(config.exists())
+            self.assertEqual(existing.read_text(), policy)
+
+    def test_documentation_include_config_is_removed_after_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config_directory = Path(directory)
+            with self.assertRaisesRegex(RuntimeError, 'acceptance failed'):
+                with smoke_debian.include_package_documentation(config_directory) as config:
+                    raise RuntimeError('acceptance failed')
+            self.assertFalse(config.exists())
+            self.assertEqual(list(config_directory.iterdir()), [])
+
+    def test_documentation_include_config_never_overwrites_an_existing_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config_directory = Path(directory)
+            with patch.object(smoke_debian.uuid, 'uuid4') as unique:
+                unique.return_value.hex = 'a' * 32
+                existing = config_directory / ('zz-kilo-proxy-acceptance-' + 'a' * 32)
+                existing.write_text('existing configuration remains intact\n')
+                with self.assertRaises(FileExistsError):
+                    with smoke_debian.include_package_documentation(config_directory):
+                        self.fail('An existing configuration must never be reused')
+                self.assertEqual(existing.read_text(), 'existing configuration remains intact\n')
+
+    def test_payload_verification_retains_missing_and_tampered_file_diagnostics(self):
+        class Commands:
+            def __init__(self, diagnostic):
+                self.diagnostic = diagnostic
+                self.verified = []
+
+            def run(self, arguments):
+                self.verified.append(arguments[-1])
+                return self.diagnostic
+
+        commands = Commands('')
+        smoke_debian.verify_installed_payload(commands)
+        self.assertEqual(commands.verified, list(smoke_debian.PACKAGES))
+        for diagnostic in ('missing /usr/share/doc/kilo-proxy-desktop/README.md',
+                           '??5?????? /usr/share/doc/kilo-proxy-desktop/README.md'):
+            with self.subTest(diagnostic=diagnostic), self.assertRaisesRegex(RuntimeError, 'README.md'):
+                smoke_debian.verify_installed_payload(Commands(diagnostic))
+
 
 if __name__ == '__main__':
     unittest.main()
