@@ -1,6 +1,6 @@
 # Ubuntu APT packages
 
-The APT distribution is prepared for Ubuntu **24.04 LTS (noble)** and **26.04 LTS (resolute)**, on **amd64** and **arm64**. It is disabled until the repository's Pages site and dedicated APT signing identity have been configured. The commands below apply after activation; the GitHub release archives remain available independently.
+The APT distribution supports Ubuntu **24.04 LTS (noble)** and **26.04 LTS (resolute)**, on **amd64** and **arm64**. The signed repository is hosted at **https://rosseca.github.io/kilo-proxy/apt**. The GitHub release archives remain available independently.
 
 Two packages can coexist:
 
@@ -13,9 +13,13 @@ APT installs the declared system dependencies. Desktop requires a graphical sess
 
 ## Add the repository once
 
-The planned public repository URL is `https://rosseca.github.io/kilo-proxy/apt`. Before activation, the maintainer must publish the complete signing fingerprint in this document and verify it against the deployed public key. Do not skip that comparison or use `trusted=yes`, `apt-key` or unauthenticated-package options.
+The dedicated archive key has this full primary fingerprint:
 
-After activation, download and inspect the public key:
+```text
+15AAF121DBFB06322EF1D7C8099722B1E76932AC
+```
+
+A copy of the [public archive key](keys/kilo-proxy-archive-keyring.asc) is also tracked in this repository. Download and inspect the deployed public key; its fingerprint must match the value above. Do not use `trusted=yes`, `apt-key` or unauthenticated-package options.
 
 ```sh
 curl -fsSLo /tmp/kilo-proxy-archive-keyring.asc \
@@ -72,14 +76,14 @@ The publisher authenticates the previous repository snapshot before extracting i
 
 APT metadata deliberately has no `Valid-Until`: an infrequently released repository must not require periodic resigning. This means a previously valid signed index does not expire automatically. Users still verify signatures and package hashes, and maintainers must handle signing-key compromise or revocation explicitly. No package automatically changes users' trusted keys.
 
-## Maintainer activation
+## Maintainer configuration
 
-Activation is separate from preparing the code. No production key or hosting change is required for PR tests.
+Build and PR tests continue to use disposable keys. The production identity is dedicated to Kilo Proxy APT: an Ed25519 certification key and a separate Ed25519 signing subkey. Only the signing subkey is stored in Actions; the primary private key and revocation certificate are backed up outside Git with private filesystem permissions. The published identity has no automatic expiry; revocation or rotation requires an explicit trust transition.
 
 1. Enable GitHub Pages for `rosseca/kilo-proxy` with the GitHub Actions build source. Its site must be dedicated to this repository output; the publisher deploys the complete site, including `/apt`.
-2. Create a dedicated OpenPGP signing identity in a new private `GNUPGHOME`, with no personal keys. Back up the key and revocation certificate securely. Store its ASCII-armored private key only in the encrypted repository Actions secret `KILO_APT_SIGNING_KEY`; it must be usable noninteractively. Do not commit it or put it in logs.
-3. Set the complete public fingerprint in repository variable `KILO_APT_FINGERPRINT`, publish that fingerprint above, and set `KILO_APT_ENABLED=true` only when ready to publish.
-4. Set `KILO_APT_BOOTSTRAP=true` for the first deployment only, then remove it or set it to `false` immediately after verifying deployment. Subsequent deployments must authenticate and retain the existing repository history.
-5. Restrict the `github-pages` environment to the intended stable release tags. Only the deployment job needs `pages: write` and `id-token: write`; build jobs use a read-only GitHub token and no production signing key. No SSH deploy key or personal access token is needed.
+2. Keep the dedicated OpenPGP identity separate from personal keys. Back up the complete private key and revocation certificate securely. Store only its ASCII-armored signing-subkey export in the encrypted repository Actions secret `KILO_APT_SIGNING_KEY`; it must be usable noninteractively. Never commit private keys or put them in logs.
+3. Keep repository variable `KILO_APT_FINGERPRINT` equal to the complete primary fingerprint above. `KILO_APT_ENABLED=true` enables publication after successful stable releases.
+4. Leave `KILO_APT_BOOTSTRAP` absent or `false` in normal operation. The one-time manual `apt-bootstrap.yml` workflow pins the already-tested 0.56.3 CI run and artifact, validates every job and the published release identity before signing, and explicitly permits initial bootstrap. It creates no tag or GitHub release. Subsequent deployments must authenticate and retain the existing repository history.
+5. Restrict the `github-pages` environment to release tags matching `v*`; the Release workflow also rejects prereleases. An exact `main` branch policy is needed only for initial manual bootstrap and is removed after public verification. Only deployment needs `pages: write` and `id-token: write`; build jobs use a read-only GitHub token and no production signing key. Artifact recovery additionally needs `actions: read`. No SSH deploy key or personal access token is needed.
 
 The `.github/workflows/apt-publish.yml` reusable workflow is called directly from Release after `publish`. It downloads the same-run `debian-assets` artifact, verifies the four files against `DEBIAN-SHA256SUMS.txt`, signs the repository and history snapshot in an isolated keyring, and deletes its temporary keyring on exit. Key rotation requires a planned trust transition; changing the configured fingerprint alone cannot authenticate history signed by a different key.
