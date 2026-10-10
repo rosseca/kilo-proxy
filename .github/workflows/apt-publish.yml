@@ -9,12 +9,25 @@ on:
       allow-bootstrap:
         type: boolean
         default: false
+      source-run-id:
+        type: string
+        default: ''
+      source-head-sha:
+        type: string
+        default: ''
+      source-artifact-id:
+        type: string
+        default: ''
+      source-artifact-digest:
+        type: string
+        default: ''
     secrets:
       KILO_APT_SIGNING_KEY:
         required: true
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: kilo-proxy-apt-publication
@@ -26,13 +39,26 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - uses: actions/download-artifact@v4
+        if: inputs.source-run-id == ''
         with:
           name: debian-assets
           path: dist/debian
+      - name: Validate and download the explicitly selected bootstrap packages
+        if: inputs.source-run-id != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.source-run-id }}
+          SOURCE_HEAD_SHA: ${{ inputs.source-head-sha }}
+          SOURCE_ARTIFACT_ID: ${{ inputs.source-artifact-id }}
+          SOURCE_ARTIFACT_DIGEST: ${{ inputs.source-artifact-digest }}
+        run: |
+          python scripts/validate_apt_bootstrap.py --run-id "$SOURCE_RUN_ID" --head-sha "$SOURCE_HEAD_SHA" --artifact-id "$SOURCE_ARTIFACT_ID" --artifact-digest "$SOURCE_ARTIFACT_DIGEST" --download-directory dist/debian
       - name: Sign the tested Debian packages and retain authenticated history
         env:
           APT_PRIVATE_KEY: ${{ secrets.KILO_APT_SIGNING_KEY }}
