@@ -291,10 +291,11 @@ func (u *nativeUI) sidebar(gtx layout.Context) layout.Dimensions {
 					)
 				}),
 				layout.Rigid(layout.Spacer{Height: 28}.Layout),
-				layout.Rigid(u.proxyStatusBlock()),
-				layout.Rigid(layout.Spacer{Height: 28}.Layout),
 				layout.Rigid(u.column(u.navButton("agents", u.tr("Agents", "Agentes"), nativeIconAgents), u.navButton("models", u.tr("Models", "Modelos"), nativeIconModels), u.navButton("activity", u.tr("Activity", "Actividad"), nativeIconActivity), u.navButton("settings", u.tr("Settings", "Ajustes"), nativeIconSettings))),
 				layout.Flexed(1, layout.Spacer{}.Layout),
+				// Navigation stays under the brand; the proxy status is pinned above the footer.
+				layout.Rigid(u.proxyStatusBlock()),
+				layout.Rigid(layout.Spacer{Height: 16}.Layout),
 				layout.Rigid(u.monoStyle(10, "KILO PROXY / v"+version, nativeSidebarText, font.Normal)),
 			)
 		})

@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"gioui.org/font"
 	"gioui.org/io/semantic"
@@ -275,7 +276,12 @@ func (u *nativeUI) buttonWidget(id, label string, kind nativeButtonKind, icon *w
 			if expanded {
 				sign = "− "
 			}
-			text = u.monoStyle(13, sign+strings.ToUpper(label), foreground, font.Bold)
+			// Short labels read as brutalist tags; long phrases stay legible in Inter.
+			if utf8.RuneCountInString(label) <= 16 {
+				text = u.monoStyle(13, sign+strings.ToUpper(label), foreground, font.Bold)
+			} else {
+				text = u.textStyle(13, sign+label, foreground, font.SemiBold)
+			}
 		}
 		if inline {
 			text = nativeUnderlined(text, foreground)
