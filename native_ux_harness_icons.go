@@ -6,7 +6,7 @@ import (
 	"bytes"
 	"image"
 	"image/png"
-	"path/filepath"
+	"path"
 	"strings"
 
 	"gioui.org/font"
@@ -38,16 +38,17 @@ var uxhIconSources = map[string][]string{
 func uxhIconBadged(key string) bool { return key == "claude" || key == "codex-cli" }
 
 // nativeAppBundle returns the .app bundle that contains path, or "".
-func nativeAppBundle(path string) string {
-	path = filepath.Clean(path)
-	if !filepath.IsAbs(path) {
+func nativeAppBundle(name string) string {
+	// Bundles are a macOS concept, so the path is always slash-separated.
+	name = path.Clean(name)
+	if !path.IsAbs(name) {
 		return ""
 	}
 	bundle := ""
-	for _, part := range strings.Split(path, string(filepath.Separator)) {
-		bundle += part + string(filepath.Separator)
+	for _, part := range strings.Split(name, "/") {
+		bundle += part + "/"
 		if strings.HasSuffix(part, ".app") {
-			return filepath.Clean(bundle)
+			return path.Clean(bundle)
 		}
 	}
 	return ""
