@@ -130,4 +130,26 @@ func TestNativeScreenshots(t *testing.T) {
 	shoot(r, "18-setup-recommended", 1280, 1600)
 	r.addRecommendedModels(r.recommendedModels())
 	shoot(r, "19-setup-recommended-added", 1280, 1600)
+
+	// Activity: Kilo overview, request list, inspector and the local fallback.
+	act := nativeTestUI(t)
+	if lang != "" {
+		act.language = lang
+		act.owner.mu.Lock()
+		act.owner.config.Language = lang
+		act.owner.mu.Unlock()
+	}
+	act.page = "activity"
+	uxaSeedActivityForTest(t, act, true)
+	shoot(act, "50-activity-overview", 1280, 1500)
+	act.uxa().tab = "requests"
+	shoot(act, "51-activity-requests", 1280, 900)
+	var events []event
+	nativeDecode(act.state["events"], &events)
+	act.uxaOpenRequest(events[0])
+	nativeTestWait(t, act, func() bool { return act.trace != nil })
+	shoot(act, "52-activity-inspector", 1280, 1100)
+	shoot(act, "53-activity-inspector-narrow", 860, 1100)
+	act.uxa().tab, act.uxa().selected = "conversations", ""
+	shoot(act, "54-activity-conversations", 1280, 1400)
 }

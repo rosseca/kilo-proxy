@@ -412,6 +412,9 @@ func (u *nativeUI) pageTop(gtx layout.Context) layout.Dimensions {
 		// Narrow windows hide the sidebar; the proxy state stays in the header.
 		controls = u.proxyControl()
 	}
+	if u.page == "activity" {
+		description, controls = u.uxaPageTop(description, controls)
+	}
 	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 		layout.Flexed(1, u.column(u.monoStyle(28, u.tr(title[0], title[1]), nativeText, font.Bold), u.textStyle(14, u.tr(description[0], description[1]), nativeTextMuted, font.Normal))),
 		layout.Rigid(layout.Spacer{Width: 16}.Layout), layout.Rigid(controls),
