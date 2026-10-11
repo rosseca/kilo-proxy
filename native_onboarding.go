@@ -516,7 +516,7 @@ func (u *nativeUI) setupConnectionPanel() layout.Widget {
 	if u.expanded["setup.manual"] {
 		widgets = append(widgets, u.disabled(editable, u.field("connection.key", u.tr("Personal API key", "API key personal"), u.tr("Leave blank to keep the current key", "Deja vacío para mantener la clave"), true)), u.disabled(editable, u.field("connection.org", u.tr("Organization ID", "ID de organización"), "org_…", false)))
 	} else if hasKey && u.value("connection.org") != "" {
-		widgets = append(widgets, u.note(u.tr("Selected team ID: ", "ID de equipo seleccionado: ")+u.value("connection.org")))
+		widgets = append(widgets, u.note(u.tr("Selected team: ", "Equipo seleccionado: ")+u.teamName(u.value("connection.org"))))
 	}
 	widgets = append(widgets, u.disabled(editable, u.check("connection.remember", u.tr("Remember my login in the system credential store", "Recordar mi sesión en el almacén del sistema"), nil)), u.hint(u.tr("Remember saves your login in the system credential store, so you stay signed in after quitting.", "Recordar guarda tu inicio de sesión en el almacén del sistema para mantener la sesión al volver a abrir la aplicación.")))
 	if hasKey || u.expanded["setup.manual"] {

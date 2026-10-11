@@ -95,6 +95,10 @@ type nativeUI struct {
 	traceStage             string
 }
 
+// nativeRememberDefault keeps a saved login's choice. Without a saved login the
+// box starts checked, so people who sign in stay signed in after quitting.
+func nativeRememberDefault(remember, hasKey bool) bool { return remember || !hasKey }
+
 func newNativeUI(owner *app, invalidate func()) *nativeUI {
 	t := material.NewTheme()
 	t.Shaper = text.NewShaper(text.WithCollection(nativeFonts()))
@@ -110,7 +114,7 @@ func newNativeUI(owner *app, invalidate func()) *nativeUI {
 	catalog := readNativeCachedCatalog(owner.dir, owner.catalogScopeLocked())
 	u.models, u.catalogFetchedAt = catalog.Models, catalog.FetchedAt
 	u.catalogCached = len(u.models) > 0
-	u.setChecked("connection.remember", owner.config.Remember)
+	u.setChecked("connection.remember", nativeRememberDefault(owner.config.Remember, owner.apiKey != ""))
 	owner.mu.Unlock()
 	u.initModelLibrary()
 	if u.setupNeeded() {
@@ -739,7 +743,7 @@ func (u *nativeUI) acceptState(raw json.RawMessage) {
 	}
 	if first {
 		u.setValue("connection.port", fmt.Sprint(state["port"]))
-		u.setChecked("connection.remember", nativeBool(state, "remember"))
+		u.setChecked("connection.remember", nativeRememberDefault(nativeBool(state, "remember"), nativeBool(state, "hasKey")))
 		if warning := nativeString(state, "warning"); warning != "" {
 			u.setNotice(nativeToneWarning, nativeMessage(warning, u.language))
 		}
