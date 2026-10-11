@@ -92,4 +92,27 @@ func TestNativeScreenshots(t *testing.T) {
 	shoot(u, "10-connection", 1280, 1100)
 	u.page = "agents"
 	shoot(u, "11-agents-narrow", 860, 900)
+
+	// Model library in onboarding and on the Models page: empty, catalog open and populated.
+	m := nativeTestUI(t)
+	if lang != "" {
+		m.language = lang
+	}
+	m.models = nativeGridModels()
+	m.page, m.setupStep = "setup", setupModels
+	shoot(m, "12-setup-models-empty", 1280, 860)
+	m.expanded["library.catalog"] = true
+	shoot(m, "13-setup-models-catalog", 1280, 1400)
+	m.expanded["library.catalog"] = false
+	m.page = "models"
+	shoot(m, "14-models-empty", 1280, 900)
+	m.expanded["library.catalog"] = true
+	shoot(m, "15-models-catalog", 1280, 1400)
+	m.expanded["library.catalog"] = false
+	nativeSeedSharedForTest(t, m, nativeClientModelsForTest()...)
+	m.page, m.setupStep = "setup", setupModels
+	shoot(m, "16-setup-models-selected", 1280, 1100)
+	m.page = "models"
+	m.expanded["library.catalog"] = true
+	shoot(m, "17-models-catalog-selected", 1280, 1400)
 }
