@@ -187,48 +187,47 @@ func TestNativeClaudeDesktopAgentBesideCodex(t *testing.T) {
 			u.setValue(agentProjectField("claude-desktop"), "/does-not-exist/unused")
 			h := &nativePointerHarness{t: t, u: u, size: image.Pt(1180, 1500), now: time.Now()}
 			h.frame()
+			open := u.tr("Open Claude Desktop", "Abrir Claude Desktop")
 			codex := h.target(u.tr("Open Codex", "Abrir Codex"), semantic.Button).Desc.Bounds
-			desktop := h.target(u.tr("Open Claude Desktop · Kilo", "Abrir Claude Desktop · Kilo"), semantic.Button).Desc.Bounds
-			var desktopHeader, codeHeader image.Rectangle
+			desktop := h.target(open, semantic.Button).Desc.Bounds
+			var codeHeader image.Rectangle
 			for _, node := range h.nodes() {
-				if node.Desc.Label == "Claude Desktop · Kilo" {
-					desktopHeader = node.Desc.Bounds
-				}
-				if node.Desc.Label == "Claude Code" {
+				if node.Desc.Label == "Claude Code" && node.Desc.Class != semantic.Button {
 					codeHeader = node.Desc.Bounds
 				}
 			}
-			// Desktop apps share one row; terminal agents start below it.
-			if desktop.Min.X <= codex.Max.X || desktop.Min.Y >= codex.Max.Y+codex.Dy()*2 || desktopHeader.Empty() || codeHeader.Empty() || desktop.Max.Y >= codeHeader.Min.Y {
-				t.Fatalf("Desktop is not beside Codex and before Claude Code: codex=%v desktop=%v desktopHeader=%v codeHeader=%v", codex, desktop, desktopHeader, codeHeader)
+			// Desktop apps share one group, listed before the coding harnesses.
+			if desktop.Min.Y <= codex.Max.Y || desktop.Min.Y-codex.Max.Y > codex.Dy()*4 || codeHeader.Empty() || desktop.Max.Y >= codeHeader.Min.Y {
+				t.Fatalf("Desktop is not after Codex and before Claude Code: codex=%v desktop=%v codeHeader=%v", codex, desktop, codeHeader)
 			}
-			// Both desktop cards show their status above the terminal agents.
+			// Both desktop rows show their installed status above the coding harnesses.
 			var installed []image.Rectangle
 			for _, node := range h.nodes() {
-				if node.Desc.Label == u.tr("Installed · Desktop", "Instalado · Escritorio") {
+				if node.Desc.Label == "● "+u.tr("Installed", "Instalado") && node.Desc.Bounds.Min.Y < codeHeader.Min.Y-40 {
 					installed = append(installed, node.Desc.Bounds)
 				}
 			}
-			if len(installed) < 2 || installed[0].Min.Y != installed[1].Min.Y || installed[0].Min.Y >= codeHeader.Min.Y {
-				t.Fatalf("Desktop card status is not in the desktop row: %v", installed)
+			if len(installed) < 2 || installed[0].Min.Y >= desktop.Min.Y || installed[1].Min.Y < codex.Max.Y {
+				t.Fatalf("Desktop row status is not in the desktop group: %v", installed)
 			}
 			if _, exists := u.buttons["agent:claude-desktop:folder"]; exists {
 				t.Fatal("Desktop exposed an unsupported folder picker")
 			}
 			nativeGridCapture(t, h, "native-claude-desktop-agents-"+lang)
-			h.click(u.tr("Open Claude Desktop · Kilo", "Abrir Claude Desktop · Kilo"), semantic.Button)
+			h.click(open, semantic.Button)
 			nativeTestWait(t, u, func() bool { return u.clientState().Launching == "" })
 			if recorder.count() != 1 || recorder.prepares.Load() != 1 {
 				t.Fatalf("Desktop did not prepare and launch: %s", u.notice)
 			}
-			if u.agentsState().Preferences.Projects["claude-desktop"] != "" {
-				t.Fatal("Desktop incorrectly remembered a project folder")
+			if u.agentsState().Preferences.Projects["claude-desktop"] != "" || u.agentsState().Preferences.LastOpened["claude-desktop"] == 0 {
+				t.Fatal("Desktop remembered a project folder or forgot when it was opened")
 			}
 			u.agentSetup("claude-desktop")
 			h.frame()
-			h.target(u.tr("Prepare without opening", "Preparar sin abrir"), semantic.Button)
+			h.reveal(u.tr("Prepare", "Preparar"), semantic.Button)
+			h.target(u.tr("Prepare", "Preparar"), semantic.Button)
 			for _, node := range h.nodes() {
-				if node.Desc.Label == u.tr("Project folder", "Carpeta del proyecto") || strings.Contains(node.Desc.Label, "alias (empty") {
+				if node.Desc.Label == u.tr("Folder", "Carpeta") || strings.HasPrefix(node.Desc.Label, "sonnet") {
 					t.Fatalf("Desktop exposed CLI or project settings: %s", node.Desc.Label)
 				}
 			}

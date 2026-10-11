@@ -4,6 +4,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"image"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"gioui.org/f32"
+	"gioui.org/io/input"
 	"gioui.org/io/pointer"
 	"gioui.org/io/semantic"
 )
@@ -97,6 +99,79 @@ func nativeAgentInstallationLabelCount(h *nativePointerHarness, label string) in
 	return count
 }
 
+// nativeAgentRowButton finds the button labelled label in the Harnesses row
+// whose name is name: several rows can share a label such as "How to install".
+func nativeAgentRowButton(h *nativePointerHarness, name, label string) input.SemanticNode {
+	h.t.Helper()
+	node, ok := nativeAgentRowFind(h, name, label)
+	if !ok {
+		h.t.Fatalf("no %q button in harness row %q", label, name)
+	}
+	return node
+}
+
+func nativeAgentRowFind(h *nativePointerHarness, name, label string) (input.SemanticNode, bool) {
+	h.t.Helper()
+	nodes := h.nodes()
+	rowY := -1
+	for _, node := range nodes {
+		if node.Desc.Label == name && node.Desc.Class != semantic.Button {
+			rowY = node.Desc.Bounds.Min.Y // text bounds extend downwards; use the top
+			break
+		}
+	}
+	if rowY < 0 {
+		h.t.Fatalf("no harness row %q", name)
+	}
+	best, distance := input.SemanticNode{}, -1
+	for _, text := range nodes {
+		if text.Desc.Label != label {
+			continue
+		}
+		for _, node := range nodes {
+			if node.Desc.Class != semantic.Button || node.Desc.Disabled || !text.Desc.Bounds.Min.In(node.Desc.Bounds) {
+				continue
+			}
+			d := (node.Desc.Bounds.Min.Y+node.Desc.Bounds.Max.Y)/2 - rowY
+			if d < 0 {
+				d = -d
+			}
+			if distance < 0 || d < distance {
+				best, distance = node, d
+			}
+		}
+	}
+	return best, distance >= 0 && distance <= 80
+}
+
+// nativeRevealText scrolls the page so the text labelled label is centred.
+func nativeRevealText(h *nativePointerHarness, label string) {
+	h.t.Helper()
+	for _, node := range h.nodes() {
+		if node.Desc.Label == label && node.Desc.Class != semantic.Button {
+			list := h.u.list("page." + h.u.page)
+			list.Position.Offset = max(0, list.Position.Offset+node.Desc.Bounds.Min.Y-h.size.Y/2)
+			h.frame()
+			return
+		}
+	}
+	h.t.Fatalf("no text %q", label)
+}
+
+func nativeClickNode(h *nativePointerHarness, node input.SemanticNode) {
+	bounds := node.Desc.Bounds.Intersect(image.Rectangle{Max: h.size})
+	p := f32.Pt(float32(bounds.Min.X+bounds.Dx()/2), float32(bounds.Min.Y+bounds.Dy()/2))
+	for _, event := range []pointer.Event{
+		{Kind: pointer.Move, Source: pointer.Mouse, Position: p},
+		{Kind: pointer.Press, Source: pointer.Mouse, Buttons: pointer.ButtonPrimary, Position: p},
+		{Kind: pointer.Release, Source: pointer.Mouse, Position: p},
+	} {
+		h.router.Queue(event)
+		h.frame()
+	}
+	h.frame()
+}
+
 func TestNativeAgentCLIInstallationGuidesAndRecheck(t *testing.T) {
 	for _, size := range []image.Point{{1180, 820}, {780, 700}} {
 		for _, language := range []string{"en", "es"} {
@@ -108,23 +183,24 @@ func TestNativeAgentCLIInstallationGuidesAndRecheck(t *testing.T) {
 					if info.Installed || info.Available || info.Path != "" || info.InstallURL != client.url {
 						t.Fatalf("wrong missing CLI detection: %+v", info)
 					}
-					guide := u.tr("Installation guide", "Guía de instalación")
+					guide := u.tr("How to install", "Cómo instalarlo")
 					check := u.tr("Check again", "Comprobar de nuevo")
-					name, _ := launchClientIdentity(client.key)
+					name := uxhName(client.key)
 					open := u.tr("Open ", "Abrir ") + name
-					if nativeAgentInstallationLabelCount(h, u.tr("CLI not found", "CLI no encontrado")) != 1 || nativeAgentInstallationLabelCount(h, open) != 0 {
+					if u.uxhInstallState(client.key) != uxhMissing || nativeAgentInstallationLabelCount(h, "○ "+u.tr("Not installed", "No instalado")) == 0 || nativeAgentInstallationLabelCount(h, open) != 0 {
 						t.Fatal("missing CLI did not replace Open with installation guidance")
 					}
-					if _, exists := u.buttons["agent:"+client.key+":folder"]; exists {
-						t.Fatal("missing CLI still asks for a project folder")
+					if nativeAgentInstallationLabelCount(h, fmt.Sprintf(u.tr("%s settings", "Ajustes de %s"), name)) != 0 {
+						t.Fatal("missing CLI still offers its settings")
 					}
-					h.reveal(guide, semantic.Button)
-					if !h.target(guide, semantic.Button).Desc.Bounds.In(image.Rectangle{Max: size}) {
+					nativeRevealText(h, name)
+					row := nativeAgentRowButton(h, name, guide)
+					if !row.Desc.Bounds.In(image.Rectangle{Max: size}) {
 						t.Fatal("installation guide is clipped")
 					}
 					nativeGridCapture(t, h, "agent-cli-missing-"+client.key+"-"+fmtSize(size)+"-"+language)
 					before := nativeTerminalHomeSnapshot(t, u.owner.editorTestRoot)
-					h.click(guide, semantic.Button)
+					nativeClickNode(h, row)
 					bridge := u.owner.desktop.(*nativeRecordingBridge)
 					nativeTestWait(t, u, func() bool {
 						bridge.mu.Lock()
@@ -138,32 +214,37 @@ func TestNativeAgentCLIInstallationGuidesAndRecheck(t *testing.T) {
 						t.Fatal("installation guide changed settings or generated a profile")
 					}
 					gets := f.recorder.gets.Load()
-					h.reveal(check, semantic.Button)
-					h.click(check, semantic.Button)
+					nativeClickNode(h, nativeAgentRowButton(h, name, check))
 					nativeTestWait(t, u, func() bool { return !u.busy["GET"+nativeLaunchEndpoint] && !u.busy["GET/api/claude/info"] })
 					h.frame()
-					if f.recorder.gets.Load() != gets+1 || nativeAgentInstallationLabelCount(h, guide) == 0 {
+					if _, stillGuided := nativeAgentRowFind(h, name, guide); f.recorder.gets.Load() != gets+1 || !stillGuided {
 						t.Fatalf("recheck did not repeat discovery while the CLI was still absent: GETs %d -> %d, guides %d", gets, f.recorder.gets.Load(), nativeAgentInstallationLabelCount(h, guide))
 					}
 					if client.key == "claude" && (f.claudeDetections.Load() != 1 || u.clientState().Claude.Version != "2.1.252") {
 						t.Fatal("Claude recheck did not refresh CLI capabilities")
 					}
 					f.installed.Store(true)
-					h.click(check, semantic.Button)
+					nativeRevealText(h, name)
+					nativeClickNode(h, nativeAgentRowButton(h, name, check))
 					nativeTestWait(t, u, func() bool { return !u.busy["GET"+nativeLaunchEndpoint] && !u.busy["GET/api/claude/info"] })
 					h.frame()
 					info = u.clientState().LaunchInfo.Clients[client.key]
-					if !info.Installed || !info.Available || nativeAgentInstallationLabelCount(h, guide) != 0 || nativeAgentInstallationLabelCount(h, check) != 0 {
+					nativeRevealText(h, name)
+					_, guided := nativeAgentRowFind(h, name, guide)
+					_, recheck := nativeAgentRowFind(h, name, check)
+					if !info.Installed || !info.Available || guided || recheck {
 						t.Fatalf("installed CLI retained installation guidance: %+v", info)
 					}
-					if nativeAgentInstallationLabelCount(h, u.tr("CLI installed", "CLI instalado")) != 4 {
-						t.Fatal("installed CLI status was not shown for all four agents")
+					for _, other := range nativeCLIInstallationCases {
+						if u.uxhInstallState(other.key) != uxhInstalled {
+							t.Fatalf("installed CLI status was not shown for %s", other.key)
+						}
 					}
 					h.reveal(open, semantic.Button)
 					h.target(open, semantic.Button)
-					if _, exists := u.buttons["agent:"+client.key+":folder"]; !exists {
-						t.Fatal("installed CLI did not restore its project picker")
-					}
+					settings := fmt.Sprintf(u.tr("%s settings", "Ajustes de %s"), name)
+					h.reveal(settings, semantic.Button)
+					h.target(settings, semantic.Button)
 					nativeGridCapture(t, h, "agent-cli-installed-"+client.key+"-"+fmtSize(size)+"-"+language)
 					if f.recorder.prepares.Load() != 0 || f.recorder.launchRequests.Load() != 0 || f.recorder.count() != 0 {
 						t.Fatal("rechecking installation prepared or launched a CLI")
@@ -179,7 +260,7 @@ func TestNativeAgentCLIInstalledWithoutTerminal(t *testing.T) {
 		t.Run(language, func(t *testing.T) {
 			f := newNativeAgentInstallationFixture(t, "claude", language, image.Pt(780, 700), true, false)
 			h, u := f.h, f.h.u
-			guide := u.tr("Installation guide", "Guía de instalación")
+			guide := u.tr("How to install", "Cómo instalarlo")
 			check := u.tr("Check again", "Comprobar de nuevo")
 			for _, client := range nativeCLIInstallationCases {
 				info := u.clientState().LaunchInfo.Clients[client.key]
@@ -189,7 +270,13 @@ func TestNativeAgentCLIInstalledWithoutTerminal(t *testing.T) {
 				u.clickable("agent:" + client.key + ":launch").Click()
 			}
 			h.frame()
-			if nativeAgentInstallationLabelCount(h, guide) != 0 || nativeAgentInstallationLabelCount(h, u.tr("CLI not found", "CLI no encontrado")) != 0 || nativeAgentInstallationLabelCount(h, u.tr("CLI installed", "CLI instalado")) != 4 {
+			installedCLIs := 0
+			for _, client := range nativeCLIInstallationCases {
+				if u.uxhInstallState(client.key) == uxhInstalled {
+					installedCLIs++
+				}
+			}
+			if nativeAgentInstallationLabelCount(h, guide) != 0 || installedCLIs != 4 {
 				t.Fatal("terminal failure suggested installing an already installed CLI")
 			}
 			if f.recorder.prepares.Load() != 0 || f.recorder.launchRequests.Load() != 0 || f.recorder.count() != 0 {

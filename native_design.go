@@ -291,7 +291,7 @@ func (u *nativeUI) sidebar(gtx layout.Context) layout.Dimensions {
 					)
 				}),
 				layout.Rigid(layout.Spacer{Height: 28}.Layout),
-				layout.Rigid(u.column(u.navButton("agents", u.tr("Agents", "Agentes"), nativeIconAgents), u.navButton("models", u.tr("Models", "Modelos"), nativeIconModels), u.navButton("activity", u.tr("Activity", "Actividad"), nativeIconActivity), u.navButton("settings", u.tr("Settings", "Ajustes"), nativeIconSettings))),
+				layout.Rigid(u.column(u.navButton("agents", u.tr("Harnesses", "Harnesses"), nativeIconAgents), u.navButton("models", u.tr("Models", "Modelos"), nativeIconModels), u.navButton("activity", u.tr("Activity", "Actividad"), nativeIconActivity), u.navButton("settings", u.tr("Settings", "Ajustes"), nativeIconSettings))),
 				layout.Flexed(1, layout.Spacer{}.Layout),
 				// Navigation stays under the brand; the proxy status is pinned above the footer.
 				layout.Rigid(u.proxyStatusBlock()),
@@ -472,7 +472,7 @@ func (u *nativeUI) Layout(gtx layout.Context) layout.Dimensions {
 					if wide {
 						return layout.Dimensions{}
 					}
-					choices := []nativeChoice{{Value: "agents", Label: u.tr("Agents", "Agentes")}, {Value: "models", Label: u.tr("Models", "Modelos")}, {Value: "activity", Label: u.tr("Activity", "Actividad")}, {Value: "settings", Label: u.tr("Settings", "Ajustes")}}
+					choices := []nativeChoice{{Value: "agents", Label: u.tr("Harnesses", "Harnesses")}, {Value: "models", Label: u.tr("Models", "Modelos")}, {Value: "activity", Label: u.tr("Activity", "Actividad")}, {Value: "settings", Label: u.tr("Settings", "Ajustes")}}
 					selected := u.page
 					if selected == "clients" {
 						selected = "agents"

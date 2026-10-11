@@ -148,7 +148,7 @@ func TestNativePointerNavigationAndModelSelection(t *testing.T) {
 			if h.u.library.selection.choice("vendor/one").DisplayName != "My shared model" {
 				t.Fatal("per-card Edit did not update shared display name")
 			}
-			for _, page := range []struct{ label, key string }{{"Agents", "agents"}, {"Activity", "activity"}, {"Settings", "settings"}, {"Models", "models"}} {
+			for _, page := range []struct{ label, key string }{{"Harnesses", "agents"}, {"Activity", "activity"}, {"Settings", "settings"}, {"Models", "models"}} {
 				h.click(page.label, semantic.Button)
 				if h.u.page != page.key {
 					t.Fatalf("pointer did not navigate to %s", page.label)
