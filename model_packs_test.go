@@ -169,3 +169,30 @@ func TestPersonalPacksWithoutValidBackupCannotBeResetSilently(t *testing.T) {
 		}
 	}
 }
+
+func TestRecommendedPackFollowsCatalogRecommendations(t *testing.T) {
+	long := strings.Repeat("a", 120)
+	catalog := []modelInfo{
+		{ID: "x/plain"},
+		{ID: "x/second", Recommendation: &modelRecommendation{Rank: 2, Default: true, NoteEN: "Second", NoteES: long}},
+		{ID: "x/first", Recommendation: &modelRecommendation{Rank: 1, NoteEN: "First", NoteES: "Primero"}},
+	}
+	packs := curatedModelPacks(catalog)
+	if len(packs) != len(builtinModelPacks())+1 || packs[0].ID != modelLibraryStartRecommended {
+		t.Fatalf("Recommended must lead the curated packs, got %d packs starting with %q", len(packs), packs[0].ID)
+	}
+	pack := packs[0]
+	if len(pack.Models) != 2 || pack.Models[0].ID != "x/first" || pack.Models[1].ID != "x/second" || pack.DefaultModel != "x/second" {
+		t.Fatalf("unexpected recommended pack: %+v", pack)
+	}
+	if !validPackText(pack.Models[1].Role.ES, 80) {
+		t.Fatalf("long notes must fit a pack role, got %d runes", len([]rune(pack.Models[1].Role.ES)))
+	}
+	library, err := modelPackLibrary(emptyModelPacksFile(), modelLibraryStartRecommended, catalog)
+	if err != nil || len(library.Models) != 2 || library.DefaultModel != "x/second" {
+		t.Fatalf("recommended pack library = %+v, %v", library, err)
+	}
+	if _, err := modelPackLibrary(emptyModelPacksFile(), modelLibraryStartRecommended, []modelInfo{{ID: "x/plain"}}); err == nil {
+		t.Fatal("a catalog without recommendations must not resolve an empty Recommended pack")
+	}
+}

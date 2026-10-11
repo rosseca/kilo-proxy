@@ -35,7 +35,7 @@ func (u *nativeUI) uxmPacksPanel() layout.Widget {
 // uxmCuratedPack returns the selected built-in pack, selecting the first one.
 func (u *nativeUI) uxmCuratedPack() *curatedModelPack {
 	p := u.packsState()
-	builtins := builtinModelPacks()
+	builtins := u.curatedPacks()
 	for i := range builtins {
 		if builtins[i].ID == p.selected {
 			return &builtins[i]
@@ -51,7 +51,7 @@ func (u *nativeUI) uxmCuratedPack() *curatedModelPack {
 func (u *nativeUI) uxmCuratedPackList() layout.Widget {
 	chosen := u.uxmCuratedPack()
 	rows := []layout.Widget{}
-	for _, pack := range builtinModelPacks() {
+	for _, pack := range u.curatedPacks() {
 		id := pack.ID
 		rows = append(rows, u.uxmPackListRow("packs.pick."+id, u.localizedPackText(pack.Name), u.localizedPackText(pack.Description), u.uxmPackUsers(id), chosen != nil && chosen.ID == id, func() { u.packsState().selected = id }))
 	}
@@ -70,6 +70,11 @@ func (u *nativeUI) uxmCuratedPackDetail() layout.Widget {
 	pack := *chosen
 	columns := u.uxmCuratedColumns()
 	rows := []layout.Widget{u.uxmTableHeader(columns)}
+	if len(pack.Models) == 0 {
+		rows = append(rows, func(gtx layout.Context) layout.Dimensions {
+			return layout.UniformInset(18).Layout(gtx, u.note(u.tr("None of the recommended models are in your team catalog yet. Refresh the catalog to check again.", "Ninguno de los modelos recomendados figura todavía en el catálogo de tu equipo. Actualiza el catálogo para volver a comprobarlo.")))
+		})
+	}
 	for _, spec := range pack.Models {
 		isDefault := spec.ID == pack.DefaultModel
 		star := uxmIcon(nativeIconStarOutline, 18, nativeInk)
@@ -99,10 +104,14 @@ func (u *nativeUI) uxmCuratedPackDetail() layout.Widget {
 			return layout.Inset{Top: 12, Bottom: 12, Left: 18, Right: 18}.Layout(gtx, u.pills(chips...))
 		})
 	}
-	copyButton := u.disabled(len(u.models) > 0 && len(u.missingPackModels(pack.ID)) == 0, u.button("packs.copy."+pack.ID, u.tr("Copy and edit", "Copiar y editar"), func() { u.createPersonalPack(pack.ID) }))
+	copyButton := u.disabled(len(pack.Models) > 0 && len(u.models) > 0 && len(u.missingPackModels(pack.ID)) == 0, u.button("packs.copy."+pack.ID, u.tr("Copy and edit", "Copiar y editar"), func() { u.createPersonalPack(pack.ID) }))
+	caption := u.tr("Candidate selection, not a ranking. Built-in packs update with the app; to change something, make your copy.", "Selección candidata, no un ranking. Los packs preparados se actualizan con la app; si quieres cambiar algo, haz tu copia.")
+	if pack.ID == modelLibraryStartRecommended {
+		caption = u.tr("Follows the published recommendations and refreshes with your catalog; to change something, make your copy.", "Sigue las recomendaciones publicadas y se actualiza con tu catálogo; si quieres cambiar algo, haz tu copia.")
+	}
 	header := u.uxmPackHeader(u.textStyle(26, u.localizedPackText(pack.Name), nativeInk, font.Bold),
 		u.textStyle(15, u.localizedPackText(pack.Description), nativeText, font.Normal),
-		u.uxmSubtle(13, u.tr("Candidate selection, not a ranking. Built-in packs update with the app; to change something, make your copy.", "Selección candidata, no un ranking. Los packs preparados se actualizan con la app; si quieres cambiar algo, haz tu copia.")),
+		u.uxmSubtle(13, caption),
 	)
 	body := []layout.Widget{header, uxmHRule(nativeLine, nativeInk), uxmStack(rows...)}
 	if missing := u.missingPackModels(pack.ID); len(missing) > 0 && len(u.models) > 0 {

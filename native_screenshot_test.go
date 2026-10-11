@@ -231,6 +231,14 @@ func TestNativeScreenshots(t *testing.T) {
 		k.language = lang
 	}
 	k.models = uxmPackCatalogForTest(r.models)
+	// Mark the catalog with the published list so the Recommended pack has rows.
+	if recommendations, err := parseRecommendedModels(embeddedRecommendedModels); err == nil {
+		for i := range k.models {
+			if rec, ok := recommendations[k.models[i].ID]; ok {
+				k.models[i].Recommendation = &rec
+			}
+		}
+	}
 	k.page, k.setupStep = "setup", setupModels
 	k.setValue("setup.models.start", "full-stack-dev")
 	shoot(k, "30-models-setup-pack", 1280, 1700)
@@ -246,6 +254,10 @@ func TestNativeScreenshots(t *testing.T) {
 	shoot(k, "31-models-packs", 1280, 1100)
 	k.uxmOpenMenu("packs.use.full-stack-dev", "")
 	shoot(k, "32-models-packs-use", 1280, 1100)
+	k.setValue("uxm.menu", "")
+	p.selected = modelLibraryStartRecommended
+	shoot(k, "31b-models-packs-recommended", 1280, 1300)
+	p.selected = "full-stack-dev"
 	k.setValue("uxm.menu", "")
 	k.createPersonalPack("full-stack-dev")
 	k.assignPack(p.selected, "opencode")

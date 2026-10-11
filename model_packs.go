@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -116,6 +117,50 @@ func builtinModelPacks() []curatedModelPack {
 	return catalog.Packs
 }
 
+// recommendedModelPack is the "Recommended" pack: the published picks that the
+// team catalog offers, in list order. It is built from the catalog so it never
+// names a model the team cannot use, and it follows the published list.
+func recommendedModelPack(catalog []modelInfo) curatedModelPack {
+	pack := curatedModelPack{
+		ID:          modelLibraryStartRecommended,
+		Name:        packText{EN: "Recommended", ES: "Recomendados"},
+		Description: packText{EN: "Our current picks across providers, limited to the models your team can use.", ES: "Nuestra selección actual de varios proveedores, solo con los modelos que tu equipo puede usar."},
+	}
+	recommended := []modelInfo{}
+	for _, m := range catalog {
+		if m.Recommendation != nil {
+			recommended = append(recommended, m)
+		}
+	}
+	slices.SortStableFunc(recommended, func(a, b modelInfo) int { return a.Recommendation.Rank - b.Recommendation.Rank })
+	for _, m := range recommended {
+		r := m.Recommendation
+		pack.Models = append(pack.Models, packModelSpec{ID: m.ID, Role: packText{EN: packRole(r.NoteEN), ES: packRole(r.NoteES)}})
+		if r.Default && pack.DefaultModel == "" {
+			pack.DefaultModel = m.ID
+		}
+	}
+	if len(recommended) > 0 && pack.DefaultModel == "" {
+		pack.DefaultModel = recommended[0].ID
+	}
+	return pack
+}
+
+// packRole fits a recommendation note into a pack role, which personal copies
+// limit to 80 characters.
+func packRole(note string) string {
+	r := []rune(strings.TrimSpace(note))
+	if len(r) <= 80 {
+		return string(r)
+	}
+	return strings.TrimSpace(string(r[:79])) + "…"
+}
+
+// curatedModelPacks lists the Recommended pack first, then the built-in packs.
+func curatedModelPacks(catalog []modelInfo) []curatedModelPack {
+	return append([]curatedModelPack{recommendedModelPack(catalog)}, builtinModelPacks()...)
+}
+
 func emptyModelPacksFile() modelPacksFile {
 	return modelPacksFile{SchemaVersion: 1, Personal: []personalModelPack{}, Assignments: map[string]string{}}
 }
@@ -165,9 +210,12 @@ func modelPackLibrary(file modelPacksFile, id string, catalog []modelInfo) (mode
 	if personal := file.personalPack(id); personal != nil {
 		return cloneModelLibrary(personal.Library), nil
 	}
-	for _, pack := range builtinModelPacks() {
+	for _, pack := range curatedModelPacks(catalog) {
 		if pack.ID != id {
 			continue
+		}
+		if len(pack.Models) == 0 {
+			return modelLibrary{}, errors.New("No recommended models are in your team catalog. Refresh Models or choose another pack.")
 		}
 		known := make(map[string]modelInfo, len(catalog))
 		for _, model := range catalog {

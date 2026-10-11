@@ -23,23 +23,22 @@ type nativePackUI struct {
 func (u *nativeUI) packsState() *nativePackUI {
 	if u.packs == nil {
 		store := newModelPacksStore(u.owner.dir)
-		selected := ""
-		if builtins := builtinModelPacks(); len(builtins) > 0 {
-			selected = builtins[0].ID
-		}
-		u.packs = &nativePackUI{store: store, file: cloneModelPacksFile(store.value), tab: "library", selected: selected}
+		u.packs = &nativePackUI{store: store, file: cloneModelPacksFile(store.value), tab: "library", selected: modelLibraryStartRecommended}
 	}
 	return u.packs
 }
 
 func (u *nativeUI) localizedPackText(value packText) string { return u.tr(value.EN, value.ES) }
 
+// curatedPacks lists the Recommended pack first, then the built-in packs.
+func (u *nativeUI) curatedPacks() []curatedModelPack { return curatedModelPacks(u.models) }
+
 func (u *nativeUI) packName(id string) string {
 	p := u.packsState()
 	if personal := p.file.personalPack(id); personal != nil {
 		return personal.Name
 	}
-	for _, builtin := range builtinModelPacks() {
+	for _, builtin := range u.curatedPacks() {
 		if builtin.ID == id {
 			return u.localizedPackText(builtin.Name)
 		}
@@ -130,7 +129,7 @@ func (u *nativeUI) createPersonalPack(basedOn string) {
 	roles := map[string]string{}
 	if basedOn != "" {
 		var builtin *curatedModelPack
-		for _, spec := range builtinModelPacks() {
+		for _, spec := range u.curatedPacks() {
 			if spec.ID == basedOn {
 				copy := spec
 				builtin = &copy
@@ -150,11 +149,16 @@ func (u *nativeUI) createPersonalPack(basedOn string) {
 			return
 		}
 		name = u.tr("My ", "Mi ") + u.localizedPackText(builtin.Name)
+		if basedOn == modelLibraryStartRecommended {
+			name = u.tr("My recommended", "Mis recomendados")
+		}
 		library = modelLibrary{SchemaVersion: 1, Models: []modelLibraryItem{}}
 		for _, spec := range builtin.Models {
 			model, _ := u.packCatalogModel(spec.ID)
 			library.Models = append(library.Models, modelLibraryItem{ID: spec.ID, ContextPreset: contextPresetRecommended, MaxOutputTokens: model.MaxOutputTokens})
-			roles[spec.ID] = u.localizedPackText(spec.Role)
+			if role := u.localizedPackText(spec.Role); role != "" {
+				roles[spec.ID] = role
+			}
 		}
 		if len(library.Models) == 0 {
 			u.noticeError(errors.New(u.tr("None of this pack's models are in your team's catalog.", "Ningún modelo de este pack figura en el catálogo de tu equipo.")))

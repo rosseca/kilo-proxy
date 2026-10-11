@@ -301,7 +301,7 @@ func (u *nativeUI) modelsPanel() layout.Widget {
 	}
 	tabs := u.uxmTabs("models.tab.", []uxmTab{
 		{value: "library", label: u.tr("Your models", "Tus modelos"), count: len(u.library.selection.Models)},
-		{value: "packs", label: u.tr("Packs", "Packs"), count: len(builtinModelPacks())},
+		{value: "packs", label: u.tr("Packs", "Packs"), count: len(u.curatedPacks())},
 		{value: "mine", label: u.tr("My packs", "Mis packs"), count: len(packs.file.Personal)},
 	}, packs.tab, func(value string) { packs.tab = value })
 	panel := u.uxmLibraryPage()

@@ -32,6 +32,14 @@
       "note": { "en": "Anthropic's top tier for the hardest problems. Expensive.", "es": "La gama más alta de Anthropic para los problemas más duros. Caro." }
     },
     {
+      "id": "google/gemini-3.8-flash",
+      "note": { "en": "Google's latest Gemini Flash. Fast and cheap.", "es": "El Gemini Flash más reciente de Google. Rápido y barato." }
+    },
+    {
+      "id": "meta/muse-spark-1.3",
+      "note": { "en": "Meta's latest Muse Spark model.", "es": "El Muse Spark más reciente de Meta." }
+    },
+    {
       "id": "deepseek/deepseek-v4-pro-0813",
       "reasoning": "max",
       "note": { "en": "DeepSeek Pro for coding and reasoning. Starts at max reasoning.", "es": "DeepSeek Pro para programar y razonar. Empieza con razonamiento máximo." }
