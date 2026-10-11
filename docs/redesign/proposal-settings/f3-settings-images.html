@@ -1,0 +1,34 @@
+<!doctype html><meta charset=utf-8><!doctype html><meta charset=utf-8><link rel=stylesheet href=style.css><body><aside><div class="brand"><div class="logo">K</div>Kilo Proxy</div><nav><a>↗&nbsp; Harnesses</a><a>▦&nbsp; Modelos</a><a>〜&nbsp; Actividad</a><a class="on">⚙&nbsp; Ajustes</a></nav><div class="grow"></div><div class="proxy"><div class="mono muted">PROXY</div><div class="st mono">● EN MARCHA</div><div class="sub">Facturado a</div><div style="font-size:14px;margin-top:2px">e2e-team</div><div class="sub">Endpoint local</div><div style="font-size:14px;margin-top:2px;text-decoration:underline">127.0.0.1:56062/v1</div><div class="btn" style="background:#fff;color:#000;border:2px solid #000">Detener proxy</div></div><div class="ver mono">KILO PROXY / v0.50.0</div></aside><style>
+.layout{display:grid;grid-template-columns:190px 1fr;gap:30px;align-items:start}
+.idx{position:sticky;top:20px;font-size:14px}
+.idx a{display:block;padding:9px 12px;border-left:3px solid #ddd;color:#3d3d3d}
+.idx a.on{border-left-color:#000;color:#000;font-weight:600;background:#f4f5ef}
+.block h3 small{font-family:Inter;font-weight:400;font-size:13px;color:#62685e}
+.kv .k{width:200px}
+.kv .k b{display:block;color:#000;font-weight:600}
+.kv .k small{display:block;color:#62685e;font-size:12px;margin-top:2px}
+.kv .v small{display:block;color:#62685e;font-weight:400;font-size:12px;margin-top:3px}
+.ok2{color:#1e6b43;font-weight:600}
+.warn{color:#8a5a00;font-weight:600}
+.st{display:inline-flex;gap:6px;align-items:center}
+.sub2{background:#fafaf6;border-top:1px solid #000;padding:16px 18px 18px 234px}
+.field{border:2px solid #000;height:42px;display:flex;align-items:center;padding:0 12px;font-size:14px;background:#fff}
+.radio{display:flex;flex-direction:column;border:2px solid #000;background:#fff}
+.radio div{display:flex;gap:12px;align-items:center;padding:11px 14px;border-bottom:1px solid #000;font-size:14px}
+.radio div:last-child{border-bottom:none}
+.radio div.on{background:#e8f36a;font-weight:600}
+.radio i{width:18px;height:18px;border:2px solid #000;border-radius:50%;background:#fff;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.radio .on i::after{content:'';width:8px;height:8px;border-radius:50%;background:#000}
+.radio small{color:#62685e;font-weight:400;margin-left:auto;font-size:12px}
+.mono2{font-family:Menlo,monospace;font-size:13px}
+.togl{width:44px;height:24px;border:2px solid #000;position:relative;display:inline-block;background:#fff}
+.togl::after{content:'';position:absolute;left:2px;top:2px;width:16px;height:16px;background:#000}
+.togl.on{background:#000}.togl.on::after{left:auto;right:2px;background:#e8f36a}
+</style><main style="max-width:1100px"><h1>Ajustes</h1><p class="lead">Todo se guarda solo. Nada de esto hace falta para empezar.</p><div class="layout" style="margin-top:0"><div class="idx"><a class="">Cuentas</a><a class="">Conexión</a><a class="">Preferencias</a><a class="on">Imágenes grandes</a><a class="">Comandos de terminal</a><a class="">Actualizaciones</a></div><div><div class="block"><h3>Imágenes grandes <small>cuando una captura pesa más de lo que acepta el modelo</small></h3><div class="kv "><div class="k"><b>Método</b></div><div class="v">Cloudflare · túnel temporal <span class="ok2" style="font-size:13px;margin-left:8px">✓ cloudflared encontrado</span><small>Sirve la imagen original desde tu ordenador con un enlace que se borra al terminar.</small></div><span class="link">Cerrar</span></div><div class="sub2"><div class="radio">
+<div><i></i>Desactivado <small>envía las imágenes tal cual</small></div>
+<div><i></i>Comprimir aquí <small>copias más ligeras, sin salir de tu equipo</small></div>
+<div class="on"><i></i>Cloudflare <small>enlace público temporal · recomendado</small></div>
+<div><i></i>Tailscale Funnel <small>si ya usas Tailscale</small></div>
+<div><i></i>Litterbox · experimental <small>alojamiento temporal de terceros</small></div>
+<div><i></i>Kilo · experimental <small>almacenamiento de adjuntos de Kilo</small></div></div>
+<div class="muted" style="font-size:12px;margin-top:10px">Solo se usa el método elegido; si falla, no se prueba otro. <span class="link">Más información ↗</span></div></div></div><div class="block"><h3>Comandos de terminal</h3><div class="kv "><div class="k"><b>Atajos</b><small>kilo-claude, kilo-codex, kilo-opencode, kilo-omp</small></div><div class="v"><span class="muted">No instalados</span><small>Abre cualquier CLI desde tu terminal con tus modelos. Se instalan en ~/.local/bin.</small></div><span class="btnp">Instalar</span><span class="link" style="margin-left:8px">Manual</span></div></div><div class="block"><h3>Actualizaciones</h3><div class="kv "><div class="k"><b>Versión</b></div><div class="v">0.57.0 · <span class="ok2">al día</span><small>Comprobado hace 2 h · se revisa al abrir y cada 6 h. Nunca se instala sin preguntarte.</small></div><span class="btns">↻ Buscar ahora</span></div></div></div></div></main>
