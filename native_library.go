@@ -98,6 +98,13 @@ type nativeLibrary struct {
 	last          string
 	pendingImport *nativeClientSelection
 	importSource  string
+	// startingPack and roles describe where the list came from (onboarding or
+	// "Change to another pack"). They are saved in models.json but never
+	// change a pack, and roles of removed models are dropped on save.
+	startingPack string
+	roles        map[string]string
+	// switchUndo restores the list replaced by the last pack switch.
+	switchUndo *uxmLibrarySnapshot
 }
 
 func (u *nativeUI) initModelLibrary() {
@@ -114,7 +121,7 @@ func (u *nativeUI) initModelLibrary() {
 		u.setValue(nativeClientField(sharedModelKey, item.ID, "reasoning"), item.ReasoningEffort)
 	}
 	w := &nativeLibraryWriter{store: u.owner.modelLibrary, latest: state.Library, revision: state.Revision, warning: state.Warning, recoveryRequired: state.RecoveryRequired, invalidate: u.invalidate}
-	u.library = &nativeLibrary{selection: s, writer: w}
+	u.library = &nativeLibrary{selection: s, writer: w, startingPack: state.Library.StartingPack, roles: cloneModelLibrary(state.Library).Roles}
 	u.library.last = libraryFingerprint(u.modelLibraryValue())
 }
 func libraryFingerprint(value modelLibrary) string { b, _ := json.Marshal(value); return string(b) }
@@ -123,6 +130,15 @@ func (u *nativeUI) modelLibraryValue() modelLibrary {
 	value := modelLibrary{SchemaVersion: 1, DefaultModel: s.Initial, Models: []modelLibraryItem{}}
 	for _, m := range s.Models {
 		value.Models = append(value.Models, nativeLibraryItem(m))
+		if role := u.library.roles[m.Model.ID]; role != "" {
+			if value.Roles == nil {
+				value.Roles = map[string]string{}
+			}
+			value.Roles[m.Model.ID] = role
+		}
+	}
+	if len(s.Models) > 0 {
+		value.StartingPack = u.library.startingPack
 	}
 	return value
 }
@@ -276,138 +292,26 @@ func (u *nativeUI) sharedModelSummary() string {
 
 func (u *nativeUI) modelsPanel() layout.Widget {
 	u.initModelLibrary()
-	if u.page == "models" {
-		packs := u.packsState()
-		tabs := u.tabs("models.tab.", []nativeChoice{
-			{Value: "library", Label: u.tr("Library", "Biblioteca")},
-			{Value: "packs", Label: u.tr("Packs", "Packs")},
-			{Value: "mine", Label: u.tr("My packs", "Mis packs")},
-		}, packs.tab, func(value string) { packs.tab = value })
-		if packs.tab != "library" {
-			return u.column(tabs, u.packsPanel())
-		}
-		// The existing library remains the default view; packs never rewrite it.
-		return u.column(tabs, u.libraryModelsPanel())
+	if u.page != "models" {
+		return u.uxmLibraryPage()
 	}
-	return u.libraryModelsPanel()
+	packs := u.packsState()
+	if packs.tab == "library" && u.expanded["library.catalog"] {
+		return u.uxmLibraryPage()
+	}
+	tabs := u.uxmTabs("models.tab.", []uxmTab{
+		{value: "library", label: u.tr("Your models", "Tus modelos"), count: len(u.library.selection.Models)},
+		{value: "packs", label: u.tr("Packs", "Packs"), count: len(builtinModelPacks())},
+		{value: "mine", label: u.tr("My packs", "Mis packs"), count: len(packs.file.Personal)},
+	}, packs.tab, func(value string) { packs.tab = value })
+	panel := u.uxmLibraryPage()
+	if packs.tab != "library" {
+		panel = u.packsPanel()
+	}
+	// Packs never rewrite the library; the library stays the default view.
+	return uxmStack(tabs, uxmGap(20), panel)
 }
 
-func (u *nativeUI) libraryModelsPanel() layout.Widget {
-	u.initModelLibrary()
-	s := u.library.selection
-	u.syncClientSelection(sharedModelKey, s)
-	status, saved := u.libraryStatus()
-	w := u.library.writer
-	w.mu.Lock()
-	recovery, failed, warning := w.recoveryRequired, w.err != nil, w.warning
-	w.mu.Unlock()
-	statusTone := nativeToneInfo
-	statusText := status
-	if saved {
-		statusTone, statusText = nativeToneSuccess, u.tr("Saved", "Guardado")
-	} else if recovery || failed || u.library.validation != "" {
-		statusTone = nativeToneWarning
-	}
-	modelCount := fmt.Sprintf(u.tr("%d models", "%d modelos"), len(s.Models))
-	if len(s.Models) == 1 {
-		modelCount = u.tr("1 model", "1 modelo")
-	}
-	recommended := u.recommendedModels()
-	addKind := nativeButtonPrimary
-	if u.page == "setup" || len(s.Models) == 0 && len(recommended) > 0 {
-		addKind = nativeButtonSecondary
-	}
-	add := u.iconButton("primary.models.add", u.tr("Add models", "Añadir modelos"), addKind, nativeIconAdd, u.openModelCatalog)
-	top := u.actionRow(u.column(u.heading(u.tr("Your models", "Tus modelos")), u.note(modelCount), u.message(statusTone, statusText)), add)
-	if u.expanded["library.catalog"] {
-		done := u.primaryButton("models.done", u.tr("Done", "Listo"), func() { u.expanded["library.catalog"] = false })
-		if u.page == "setup" {
-			done = u.button("models.done", u.tr("Done", "Listo"), func() { u.expanded["library.catalog"] = false })
-		}
-		top = u.actionRow(u.column(u.heading(u.tr("Add models", "Añadir modelos")), u.note(u.tr("Select once. Every agent uses this library.", "Elige una vez. Todos los agentes usan esta biblioteca."))), done)
-	}
-	widgets := []layout.Widget{top}
-	if u.chatGPTConnected() {
-		widgets = append(widgets, u.note(u.tr("One library for both connections. Models marked ChatGPT use subscription quota; other models use Kilo credit.", "Una biblioteca para ambas conexiones. Los modelos marcados ChatGPT usan la cuota de suscripción; los demás usan crédito de Kilo.")))
-	}
-	if len(nativeArray(u.state, "catalogWarnings")) > 0 {
-		widgets = append(widgets, u.message(nativeToneWarning, u.tr("Some models could not be loaded. Check the affected connection and refresh the catalog.", "No se pudieron cargar algunos modelos. Comprueba la conexión afectada y actualiza el catálogo.")))
-	}
-
-	if recovery || failed || u.library.validation != "" {
-		label := u.tr("Retry save", "Reintentar guardado")
-		if recovery {
-			label = u.tr("Recover this selection", "Recuperar esta selección")
-		}
-		widgets = append(widgets, u.card(u.note(warning), u.pills(u.disabled(u.library.validation == "", u.button("models.retry", label, func() { u.retryModelLibrary(recovery) })), u.button("models.review-saved", u.tr("Review saved version", "Revisar versión guardada"), func() { u.reviewSavedLibrary() }))))
-	}
-	if len(s.Models) == 0 && !u.expanded["library.catalog"] {
-		if len(recommended) > 0 {
-			widgets = append(widgets, u.card(u.recommendedPanel(recommended)))
-		} else {
-			widgets = append(widgets, u.card(u.heading(u.tr("A model library for all your agents", "Una biblioteca para todos tus agentes")), u.note(u.tr("Add the models you use, give them short names and choose a default. Your selection stays here next time.", "Añade tus modelos, ponles nombres cortos y elige uno inicial. Tu selección seguirá aquí la próxima vez."))))
-		}
-	} else {
-		if !u.expanded["library.catalog"] {
-			if len(recommended) > 0 {
-				widgets = append(widgets, u.pills(u.disclosure("models.recommended", u.tr("Recommended models", "Modelos recomendados"))))
-				if u.expanded["models.recommended"] {
-					widgets = append(widgets, u.card(u.recommendedPanel(recommended)))
-				}
-			}
-		} else if u.page == "setup" && len(recommended) > 0 {
-			// Setup opens the full catalog after the connection step; the short
-			// list stays above it so a first choice never needs a search.
-			widgets = append(widgets, u.card(u.recommendedPanel(recommended)))
-		}
-		widgets = append(widgets, u.clientPicker(sharedModelKey, s))
-		if !u.expanded["library.catalog"] {
-			// The library is the page's content; the global context window follows it.
-			widgets = append(widgets, layout.Spacer{Height: nativeSpace16}.Layout, u.sharedContextPanel())
-		}
-	}
-	if !u.expanded["library.catalog"] {
-		widgets = append(widgets, u.note(u.tr("Changes apply the next time you open an agent. Already-open agents may need reopening.", "Los cambios se aplican al volver a abrir un agente. Los agentes abiertos pueden necesitar reiniciarse.")))
-		widgets = append(widgets, u.disclosure("models.import.toggle", u.tr("Import an existing agent selection", "Importar la selección de un agente")))
-		if u.expanded["models.import.toggle"] {
-			imports := []layout.Widget{u.note(u.tr("Choose which saved profile to import. You can review before replacing your shared models.", "Elige un perfil guardado para importar. Puedes revisarlo antes de sustituir los modelos compartidos."))}
-			for _, option := range []struct{ key, name string }{{"codex", "Codex Desktop"}, {"claude-desktop", "Claude Desktop"}, {"codex-cli", "Codex CLI"}, {"claude", "Claude Code"}, {"opencode", "OpenCode"}, {"omp", "Oh My Pi"}, {"zed", "Zed"}} {
-				key, name := option.key, option.name
-				imports = append(imports, u.button("models.import."+key, name, func() { u.importModelLibrary(key) }))
-			}
-			widgets = append(widgets, u.card(imports...))
-		}
-		if candidate := u.library.pendingImport; candidate != nil {
-			names := []string{}
-			for _, m := range candidate.Models {
-				names = append(names, nativeCodexDisplayName(m))
-			}
-			widgets = append(widgets, u.card(u.heading(u.tr("Review imported models", "Revisar modelos importados")), u.note(strings.Join(names, " · ")), u.pills(u.button("models.import.accept", u.tr("Use this selection for all agents", "Usar esta selección para todos"), func() {
-				u.library.selection = candidate
-				if state := u.library.pendingState; state != nil {
-					w.mu.Lock()
-					w.revision = state.Revision
-					w.recoveryRequired = state.RecoveryRequired
-					w.warning = state.Warning
-					w.err = nil
-					w.mu.Unlock()
-					u.library.last = ""
-					u.library.pendingState = nil
-				}
-				for _, m := range candidate.Models {
-					u.seedClientChoice(sharedModelKey, m)
-				}
-				u.library.pendingImport = nil
-				u.expanded["models.import.toggle"] = false
-			}), u.button("models.import.cancel", u.tr("Cancel", "Cancelar"), func() { u.library.pendingImport = nil }))))
-		}
-		widgets = append(widgets, u.disclosure("models.images.toggle", u.tr("Image generation", "Generación de imágenes")))
-		if u.expanded["models.images.toggle"] {
-			widgets = append(widgets, u.clientImagesPanel("codex", u.sharedClientSelection("codex")))
-		}
-	}
-	return u.column(widgets...)
-}
 func (u *nativeUI) importModelLibrary(key string) {
 	u.clientRequest("GET", nativeClientEndpoint(key), nil, func(raw json.RawMessage, err error) {
 		if err != nil {

@@ -63,17 +63,25 @@ func TestNativeLabMenuPointerAndCrossClientState(t *testing.T) {
 			h.click("Models", semantic.Button)
 			h.click("Add models", semantic.Button)
 			before, _ := json.Marshal(selection)
-			h.click("All labs", semantic.Button)
+			h.click("Filters", semantic.Button)
 			h.click("Anthropic", semantic.Button)
-			if h.u.value("models.lab") != "anthropic" || h.u.expanded["models.lab"] {
-				t.Fatal("lab selection did not apply or close menu")
+			if h.u.value("models.lab") != "anthropic" || !h.u.uxmMenuOpen("models.filters") {
+				t.Fatal("lab selection did not apply or closed the filters menu")
 			}
-			h.click("Anthropic", semantic.Button)
-			h.click("Code Mode Rank", semantic.Button)
-			if h.u.expanded["models.lab"] || !h.u.expanded["models.sort"] {
-				t.Fatal("opening sort left both menus open")
+			h.router.Queue(key.Event{Name: key.NameEscape, State: key.Press})
+			h.frame()
+			h.frame()
+			if h.u.uxmMenuOpen("models.filters") {
+				t.Fatal("Escape did not dismiss the filters menu")
+			}
+			h.click("Order: Most used for code", semantic.Button)
+			if !h.u.uxmMenuOpen("models.order") {
+				t.Fatal("order menu did not open")
 			}
 			h.click("Speed", semantic.Button)
+			if h.u.value("models.sort") != "speed" || h.u.uxmMenuOpen("models.order") {
+				t.Fatal("order did not apply or close its menu")
+			}
 			h.click("Done", semantic.Button)
 			h.click("Activity", semantic.Button)
 			h.click("Models", semantic.Button)
@@ -81,21 +89,19 @@ func TestNativeLabMenuPointerAndCrossClientState(t *testing.T) {
 			if h.u.value("models.lab") != "anthropic" || h.u.value("models.sort") != "speed" {
 				t.Fatal("navigation lost catalog preferences")
 			}
-			h.click("Anthropic", semantic.Button)
-			h.click("Search models", semantic.Editor)
-			if h.u.expanded["models.lab"] || !h.router.Source().Focused(h.u.editor("client:shared:search")) {
-				t.Fatal("outside click did not close labs and focus search")
+			h.click("Filters · 1", semantic.Button)
+			// An outside press only dismisses the menu; it never reaches the page.
+			h.click("Search by name, lab or ID", semantic.Editor)
+			if h.u.uxmMenuOpen("models.filters") || h.router.Source().Focused(h.u.editor("client:shared:search")) {
+				t.Fatal("outside click did not just dismiss the filters menu")
 			}
-			h.click("Anthropic", semantic.Button)
-			h.router.Queue(key.Event{Name: key.NameEscape, State: key.Press})
-			h.frame()
-			h.frame()
-			if h.u.expanded["models.lab"] {
-				t.Fatal("Escape did not dismiss labs")
+			h.click("Search by name, lab or ID", semantic.Editor)
+			if !h.router.Source().Focused(h.u.editor("client:shared:search")) {
+				t.Fatal("search did not take focus once the menu was closed")
 			}
 			h.u.models = nil
 			h.frame()
-			h.click("Anthropic", semantic.Button)
+			h.click("Filters · 1", semantic.Button)
 			h.click("All labs", semantic.Button)
 			if h.u.value("models.lab") != "" {
 				t.Fatal("could not reset lab after catalog changed")

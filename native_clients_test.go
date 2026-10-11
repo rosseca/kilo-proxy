@@ -199,16 +199,14 @@ func TestNativeClientsWidgetActionsPrepareEveryEditor(t *testing.T) {
 				u.clientState().ClaudeDetectStarted = true
 			}
 			nativeTestFrame(t, u)
-			u.clickable("client:shared:select-all").Click()
-			nativeTestFrame(t, u)
+			uxmClickMenuItem(t, u, "models.filters", "client:shared:select-all")
 			shared := u.library.selection
 			if len(shared.Models) != 2 {
 				t.Fatalf("native select-results did not select both models: %d", len(shared.Models))
 			}
 			u.clickable("models.done").Click()
 			nativeTestFrame(t, u)
-			u.clickable("client:shared:edit:vendor/one").Click()
-			nativeTestFrame(t, u)
+			uxmClickMenuItem(t, u, "models.row:vendor/one", "client:shared:edit:vendor/one")
 			u.setValue(nativeClientField(sharedModelKey, "vendor/one", "name"), "Short Native")
 			if strings.Contains(key, "codex") {
 				field := nativeClientField(sharedModelKey, "vendor/one", "reasoning")

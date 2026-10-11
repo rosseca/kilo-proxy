@@ -58,10 +58,16 @@ func TestNativePacksCopyEditAssignSwitchAndRestore(t *testing.T) {
 	u.expanded["packs.my.add"] = true
 	u.setValue("packs.my.search", "vendor/new-model")
 	nativeTestFrame(t, u)
-	u.clickable("packs.my.add.vendor/new-model").Click()
+	u.clickable("packs.my.choose:vendor/new-model").Click()
 	nativeTestFrame(t, u)
 	if got := p.file.personalPack(id); got == nil || len(got.Library.Models) != 4 || got.Library.Models[3].ID != "vendor/new-model" {
 		t.Fatalf("user could not add a new catalog model to their own pack: %+v", got)
+	}
+	u.clickable("models.done").Click()
+	nativeTestFrame(t, u)
+	nativeTestFrame(t, u)
+	if u.expanded["packs.my.add"] {
+		t.Fatal("Done did not close the pack catalog")
 	}
 	u.clickable("packs.my.default.vendor/new-model").Click()
 	nativeTestFrame(t, u)
@@ -71,8 +77,7 @@ func TestNativePacksCopyEditAssignSwitchAndRestore(t *testing.T) {
 	if got := u.sharedClientSelection("codex"); len(got.Models) != 4 || got.Initial != "vendor/new-model" {
 		t.Fatalf("agent did not pick up its edited personal pack: %+v", got)
 	}
-	u.clickable("packs.my.remove.vendor/new-model").Click()
-	nativeTestFrame(t, u)
+	uxmClickMenuItem(t, u, "packs.my.row.vendor/new-model", "packs.my.remove.vendor/new-model")
 	if got := p.file.personalPack(id); len(got.Library.Models) != 3 || got.Library.DefaultModel != "deepseek/deepseek-v4.1-flash" {
 		t.Fatalf("removing a custom default did not restore an existing model: %+v", got)
 	}
@@ -182,11 +187,15 @@ func TestNativePersonalPackCreateRenameRoleDeleteAndAgentFallback(t *testing.T) 
 	u.expanded["packs.my.add"] = true
 	u.setValue("packs.my.search", "vendor/new-model")
 	nativeTestFrame(t, u)
-	u.clickable("packs.my.add.vendor/new-model").Click()
+	u.clickable("packs.my.choose:vendor/new-model").Click()
+	nativeTestFrame(t, u)
+	u.expanded["packs.my.add"] = false
 	nativeTestFrame(t, u)
 	if got := p.file.personalPack(id); len(got.Library.Models) != 1 || got.Library.DefaultModel != "vendor/new-model" {
 		t.Fatalf("first model was not saved as pack default: %+v", got)
 	}
+	u.clickable("packs.my.rename-toggle." + id).Click()
+	nativeTestFrame(t, u)
 	u.setValue("packs.name", "Mi QA propio")
 	u.clickable("packs.my.rename." + id).Click()
 	nativeTestFrame(t, u)
@@ -207,8 +216,7 @@ func TestNativePersonalPackCreateRenameRoleDeleteAndAgentFallback(t *testing.T) 
 	if p.file.Assignments["codex"] != id {
 		t.Fatal("nonempty own pack could not be assigned")
 	}
-	u.clickable("packs.my.delete." + id).Click()
-	nativeTestFrame(t, u)
+	uxmClickMenuItem(t, u, "packs.my.menu", "packs.my.delete."+id)
 	if p.pendingDelete != id || len(p.file.Personal) != 1 {
 		t.Fatal("delete action skipped confirmation")
 	}
@@ -217,8 +225,7 @@ func TestNativePersonalPackCreateRenameRoleDeleteAndAgentFallback(t *testing.T) 
 	if p.pendingDelete != "" || len(p.file.Personal) != 1 {
 		t.Fatal("cancel deleted a pack")
 	}
-	u.clickable("packs.my.delete." + id).Click()
-	nativeTestFrame(t, u)
+	uxmClickMenuItem(t, u, "packs.my.menu", "packs.my.delete."+id)
 	u.clickable("packs.my.confirm-delete").Click()
 	nativeTestFrame(t, u)
 	if len(p.file.Personal) != 0 || p.file.Assignments["codex"] != "" || len(u.sharedClientSelection("codex").Models) != 1 {
@@ -310,9 +317,9 @@ func TestNativePackUiPointerNavigationAndOwnCopy(t *testing.T) {
 			nativeGridCapture(t, h, "native-packs-gallery-"+fmtSize(size))
 			h.reveal("QA · Cazabugs", semantic.Button)
 			h.click("QA · Cazabugs", semantic.Button)
-			h.reveal("Crear mi versión editable", semantic.Button)
+			h.reveal("Copiar y editar", semantic.Button)
 			nativeGridCapture(t, h, "native-packs-catalog-"+fmtSize(size))
-			h.click("Crear mi versión editable", semantic.Button)
+			h.click("Copiar y editar", semantic.Button)
 			if u.packsState().tab != "mine" || len(u.packsState().file.Personal) != 1 {
 				t.Fatal("pointer could not create a personal copy")
 			}
@@ -320,13 +327,13 @@ func TestNativePackUiPointerNavigationAndOwnCopy(t *testing.T) {
 				t.Fatalf("saved test language changed during pack navigation: %s", u.language)
 			}
 			nativeGridCapture(t, h, "native-packs-own-start-"+fmtSize(size))
-			h.reveal("Añadir modelo del catálogo", semantic.Button)
-			h.click("Añadir modelo del catálogo", semantic.Button)
+			h.reveal("Añadir modelos", semantic.Button)
+			h.click("Añadir modelos", semantic.Button)
 			u.setValue("packs.my.search", "vendor/new-model")
 			h.frame()
-			h.reveal("Añadir a mi pack", semantic.Button)
+			h.reveal("New model", semantic.CheckBox)
 			nativeGridCapture(t, h, "native-packs-own-"+fmtSize(size))
-			h.click("Añadir a mi pack", semantic.Button)
+			h.click("New model", semantic.CheckBox)
 			if got := len(u.packsState().file.Personal[0].Library.Models); got != 4 {
 				t.Fatalf("pointer add did not persist fourth model: %d", got)
 			}

@@ -46,8 +46,7 @@ func TestNativeLibraryModelActionsAutosaveAndRestore(t *testing.T) {
 	}
 	u.clickable("models.done").Click()
 	nativeTestFrame(t, u)
-	u.clickable("client:shared:edit:vendor/one").Click()
-	nativeTestFrame(t, u)
+	uxmClickMenuItem(t, u, "models.row:vendor/one", "client:shared:edit:vendor/one")
 	u.setValue(nativeClientField(sharedModelKey, "vendor/one", "name"), "My daily model")
 	reasoning := nativeClientField(sharedModelKey, "vendor/one", "reasoning")
 	u.clickable(reasoning + ".toggle").Click()
@@ -56,10 +55,7 @@ func TestNativeLibraryModelActionsAutosaveAndRestore(t *testing.T) {
 	nativeTestFrame(t, u)
 	u.clickable("client:shared:initial:anthropic/claude-sonnet-4.6").Click()
 	nativeTestFrame(t, u)
-	u.clickable("client:shared:edit:anthropic/claude-sonnet-4.6").Click()
-	nativeTestFrame(t, u)
-	u.clickable("client:shared:up:anthropic/claude-sonnet-4.6").Click()
-	nativeTestFrame(t, u)
+	uxmClickMenuItem(t, u, "models.row:anthropic/claude-sonnet-4.6", "client:shared:up:anthropic/claude-sonnet-4.6")
 	u.flushModelLibrary()
 	state := u.owner.modelLibrary.snapshot()
 	if state.Library.DefaultModel != "anthropic/claude-sonnet-4.6" || state.Library.Models[0].ID != state.Library.DefaultModel {
@@ -94,7 +90,8 @@ func TestNativeLibraryModelActionsAutosaveAndRestore(t *testing.T) {
 	// A real pointer action on Your models removes exactly the selected choice.
 	h := &nativePointerHarness{t: t, u: u, size: image.Pt(1180, 820), now: time.Now()}
 	h.frame()
-	h.click("My daily model", semantic.CheckBox)
+	h.click("More actions for My daily model", semantic.Button)
+	h.click("Remove from the list", semantic.Button)
 	u.flushModelLibrary()
 	removed := u.owner.modelLibrary.snapshot().Library
 	if len(removed.Models) != 1 || removed.Models[0].ID != "anthropic/claude-sonnet-4.6" || removed.DefaultModel != removed.Models[0].ID {
@@ -323,8 +320,8 @@ func TestNativeLibraryUnknownOfflineModelRemainsVisible(t *testing.T) {
 	u.flushModelLibrary()
 	h := &nativePointerHarness{t: t, u: u, size: image.Pt(780, 700), now: time.Now()}
 	h.frame()
-	h.reveal("Saved offline choice", semantic.CheckBox)
-	h.target("Saved offline choice", semantic.CheckBox)
+	h.reveal("Saved offline choice", semantic.Unknown)
+	h.target("Saved offline choice", semantic.Unknown)
 	warning := false
 	for _, node := range h.nodes() {
 		warning = warning || strings.Contains(node.Desc.Label, "catalog unavailable")

@@ -120,7 +120,7 @@ func (u *nativeUI) setupConnectionContinue() {
 		}
 		u.setNotice(nativeToneNeutral, "")
 		u.setSetupStep(setupModels)
-		u.expanded["library.catalog"] = len(u.library.selection.Models) == 0
+		u.expanded["library.catalog"] = false
 		u.models, u.catalogCached = nil, false
 		// Fetch after the saved connection revision reaches the UI, so a
 		// previous account's catalog cannot win a concurrent refresh.
@@ -445,12 +445,7 @@ func (u *nativeUI) setupFooter() layout.Widget {
 		}
 	case setupModels:
 		back = u.button("setup.back-account", u.tr("Back", "Atrás"), func() { u.setSetupStep(setupConnect) })
-		_, ready := u.libraryStatus()
-		primary = u.disabled(ready && len(u.library.selection.Models) > 0, u.primaryButton("primary.setup.models-next", u.tr("Continue", "Continuar"), u.setupModelsContinue))
-		if len(u.library.selection.Models) == 0 && !u.expanded["library.catalog"] && len(u.recommendedModels()) > 0 {
-			// One click accepts the recommendations and moves on once they are saved.
-			primary = u.disabled(!u.setupContinueWhenSaved, u.primaryButton("primary.setup.use-recommended", u.tr("Use recommended & continue", "Usar recomendados y continuar"), u.setupUseRecommended))
-		}
+		primary = u.uxmSetupPrimary()
 	case setupReady:
 		back = u.button("setup.back-models", u.tr("Back", "Atrás"), func() { u.setSetupStep(setupModels) })
 		label := u.tr("Start proxy and go to agents", "Arrancar proxy e ir a agentes")

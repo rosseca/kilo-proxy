@@ -203,10 +203,10 @@ func TestNativeOnboardingManualPointerWalkthrough(t *testing.T) {
 	if u.setupStep != setupModels {
 		t.Fatal("reachable models step could not be reopened from the stepper")
 	}
-	search := h.target("Search models", semantic.Editor).Desc.Bounds
+	search := h.target("Search by name, lab or ID", semantic.Editor).Desc.Bounds
 	u.list("page.setup").Position.Offset = max(0, search.Min.Y-350)
 	h.frame()
-	h.click("Search models", semantic.Editor)
+	h.click("Search by name, lab or ID", semantic.Editor)
 	h.typeText("vendor/one")
 	if u.value("client:shared:search") != "vendor/one" {
 		t.Fatal("pointer focus and keyboard input did not reach the model search")
