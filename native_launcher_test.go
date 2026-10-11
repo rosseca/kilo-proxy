@@ -538,7 +538,7 @@ func TestNativeClosedCatalogControlsStayInsidePage(t *testing.T) {
 	u.models = nativeGridModels()
 	h := &nativePointerHarness{t: t, u: u, size: image.Pt(720, 700), now: time.Now()}
 	h.frame()
-	bounds := h.target("All labs", semantic.Button).Desc.Bounds
+	bounds := h.target("Filters", semantic.Button).Desc.Bounds
 	u.list("page.models").Position.Offset = bounds.Min.Y + bounds.Size().Y/2 - 40
 	h.frame()
 	offset := u.list("page.models").Position.Offset
@@ -554,7 +554,7 @@ func TestNativeClosedCatalogControlsStayInsidePage(t *testing.T) {
 	h.router.Queue(pointer.Event{Kind: pointer.Release, Source: pointer.Mouse, Position: p})
 	h.frame()
 	h.frame()
-	if u.expanded["models.lab"] {
+	if u.uxmMenuOpen("models.filters") {
 		t.Fatal("scrolled-out filter trigger intercepted a click in the fixed header")
 	}
 }

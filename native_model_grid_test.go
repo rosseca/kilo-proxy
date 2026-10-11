@@ -120,30 +120,32 @@ func TestNativeModelGridPointerSettingsAndResize(t *testing.T) {
 				h.frame()
 				first := h.target("GPT-5.6 Sol", semantic.CheckBox).Desc.Bounds
 				second := h.target("Claude Sonnet 4.6", semantic.CheckBox).Desc.Bounds
-				if first.Min.Y != second.Min.Y || second.Min.X <= first.Max.X {
-					t.Fatalf("models are not distinct columns: %v %v", first, second)
-				}
-				if size.X == 1180 {
-					third := h.target("Gemini 3.1 Pro", semantic.CheckBox).Desc.Bounds
-					if third.Min.Y != first.Min.Y || third.Min.X <= second.Max.X {
-						t.Fatalf("wide catalog did not create three columns: %v", third)
-					}
+				// The catalog is a list of full-width rows in a stable order.
+				if second.Min.Y < first.Max.Y || second.Min.X != first.Min.X || second.Dx() != first.Dx() {
+					t.Fatalf("catalog rows are not stacked full width: %v %v", first, second)
 				}
 				nativeGridCapture(t, h, "native-model-grid-"+fmtSize(size)+"-"+lang)
 				h.click("Claude Sonnet 4.6", semantic.CheckBox)
 				s := u.library.selection
 				if s.choice("anthropic/claude-sonnet-4.6") == nil || len(s.Models) != 1 {
-					t.Fatal("second-column pointer selected the wrong model")
+					t.Fatal("row pointer selected the wrong model")
+				}
+				// Selecting keeps the order: the rows above and below stay in place.
+				// The footer chip repeats the name, so find the row by its place.
+				selectedInPlace := false
+				for _, node := range h.nodes() {
+					selectedInPlace = selectedInPlace || node.Desc.Class == semantic.CheckBox && node.Desc.Bounds == second && node.Desc.Selected
+				}
+				if moved := h.target("GPT-5.6 Sol", semantic.CheckBox).Desc.Bounds; moved != first || !selectedInPlace {
+					t.Fatalf("selecting moved the rows or lost the selected state: %v %v", first, moved)
 				}
 				nativeGridCapture(t, h, "native-model-grid-selected-"+fmtSize(size)+"-"+lang)
 				u.list("page.models").Position.Offset = 0
 				h.frame()
 				h.click(u.tr("Done", "Listo"), semantic.Button)
-				// Context presets precede the library; scroll to the selected card.
-				u.list("page.models").Position.Offset = 220
-				h.frame()
 				field := nativeClientField(sharedModelKey, "anthropic/claude-sonnet-4.6", "name")
-				h.click(u.tr("Edit", "Editar"), semantic.Button)
+				h.click(u.tr("More actions for ", "Más acciones para ")+"Claude Sonnet 4.6", semantic.Button)
+				h.click(u.tr("Rename", "Renombrar"), semantic.Button)
 				h.reveal("Claude Sonnet 4.6", semantic.Editor)
 				h.click("Claude Sonnet 4.6", semantic.Editor)
 				if !h.router.Source().Focused(u.editor(field)) {

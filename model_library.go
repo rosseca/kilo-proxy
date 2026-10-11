@@ -16,12 +16,23 @@ import (
 
 const modelLibraryLimit = 128 << 10
 
+// modelLibraryStartRecommended marks a library started from the published
+// recommended models instead of a curated pack.
+const modelLibraryStartRecommended = "recommended"
+
 // This is a user's ordered selection, independent of generated client profiles
 // and of the live catalog. Never add credentials, prices or inferred capabilities.
 type modelLibrary struct {
 	SchemaVersion int                `json:"schemaVersion"`
 	DefaultModel  string             `json:"defaultModel"`
 	Models        []modelLibraryItem `json:"models"`
+	// StartingPack records where the list came from in onboarding:
+	// "recommended" or a curated pack ID. It is informational only; editing
+	// the library never changes the pack and a pack never rewrites this list.
+	StartingPack string `json:"startingPack,omitempty"`
+	// Roles keeps the curated pack's purpose label for each model copied from
+	// it. Keys must be selected models; user-added models have no role.
+	Roles map[string]string `json:"roles,omitempty"`
 }
 
 type modelLibraryItem struct {
@@ -107,6 +118,17 @@ func validateModelLibrary(library modelLibrary) error {
 			return errors.New("Choose the default reasoning effort from the enabled custom levels.")
 		}
 	}
+	if library.StartingPack != "" && library.StartingPack != modelLibraryStartRecommended && !modelPackIDPattern.MatchString(library.StartingPack) {
+		return errors.New("Use a valid starting pack.")
+	}
+	if len(library.Roles) > 50 {
+		return errors.New("Choose at most 50 model roles.")
+	}
+	for id, role := range library.Roles {
+		if !seen[id] || !validPackText(role, 80) {
+			return errors.New("Model roles must belong to a selected model and have 1–80 characters without control characters.")
+		}
+	}
 	if (len(library.Models) == 0 && library.DefaultModel != "") || (len(library.Models) > 0 && !seen[library.DefaultModel]) {
 		return errors.New("Choose an initial model from your library; an empty library must have no initial model.")
 	}
@@ -119,6 +141,13 @@ func cloneModelLibrary(library modelLibrary) modelLibrary {
 	for i, item := range library.Models {
 		copy.Models[i] = item
 		copy.Models[i].ReasoningLevels = append([]string(nil), item.ReasoningLevels...)
+	}
+	copy.Roles = nil
+	if len(library.Roles) > 0 {
+		copy.Roles = make(map[string]string, len(library.Roles))
+		for id, role := range library.Roles {
+			copy.Roles[id] = role
+		}
 	}
 	return copy
 }

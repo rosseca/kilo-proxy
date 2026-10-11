@@ -26,6 +26,7 @@ func TestNativeContextPresetsAutosaveAndRestart(t *testing.T) {
 	u.models = nativeContextModels()
 	u.page = "models"
 	nativeSeedSharedForTest(t, u, u.models...)
+	u.expanded["models.context.open"] = true
 	nativeTestFrame(t, u)
 	for _, choice := range u.library.selection.Models {
 		if choice.ContextPreset != contextPresetRecommended {
@@ -42,8 +43,7 @@ func TestNativeContextPresetsAutosaveAndRestart(t *testing.T) {
 	}
 	// A per-model Custom override is an ordinary auto-saved editor. It retains
 	// the requested budget even when that budget is capped by model capacity.
-	u.clickable("client:shared:edit:openai/large").Click()
-	nativeTestFrame(t, u)
+	uxmClickMenuItem(t, u, "models.row:openai/large", "client:shared:context:openai/large")
 	u.clickable(nativeClientField(sharedModelKey, "openai/large", "context-preset:custom")).Click()
 	nativeTestFrame(t, u)
 	u.setValue(nativeClientField(sharedModelKey, "openai/large", "context"), "400000")
@@ -75,6 +75,7 @@ func TestNativeContextCatalogRefreshKeepsPolicyAndResolvesEachClient(t *testing.
 	u := nativeTestUI(t)
 	u.models = nativeContextModels()
 	nativeSeedSharedForTest(t, u, u.models...)
+	u.expanded["models.context.open"] = true
 	u.models[0].ContextWindow = 250000
 	u.models[0].MaxOutputTokens = 16000
 	u.syncClientSelection(sharedModelKey, u.library.selection)
@@ -124,6 +125,7 @@ func TestNativeContextMaximumUnknownNeverPartiallyApplies(t *testing.T) {
 	u := nativeTestUI(t)
 	u.models = append(nativeContextModels(), modelInfo{ID: "private/unknown", Name: "Private model"})
 	nativeSeedSharedForTest(t, u, u.models...)
+	u.expanded["models.context.open"] = true
 	u.page = "models"
 	before := u.modelLibraryValue()
 	if u.applySharedContext(contextPresetMaximum, 0) {
@@ -152,6 +154,7 @@ func TestNativeContextBlockersRequireConfirmationAndAutosave(t *testing.T) {
 	absent := modelInfo{ID: "provider/absent", Name: "Absent"}
 	u.models = []modelInfo{known, unpublished}
 	s := nativeSeedSharedForTest(t, u, known, unpublished, absent)
+	u.expanded["models.context.open"] = true
 	nativeTestFrame(t, u)
 	if got := u.unknownContextMaximumIDs(); !reflect.DeepEqual(got, []string{unpublished.ID, absent.ID}) {
 		t.Fatalf("blockers = %v", got)
@@ -204,6 +207,7 @@ func TestNativeContextRemovalOfDefaultAndCatalogRefresh(t *testing.T) {
 	absent := modelInfo{ID: "provider/absent", Name: "Absent"}
 	u.models = []modelInfo{known}
 	s := nativeSeedSharedForTest(t, u, known, absent)
+	u.expanded["models.context.open"] = true
 	s.Initial = absent.ID
 	nativeTestFrame(t, u)
 	u.requestContextRemoval([]string{absent.ID})
@@ -241,6 +245,7 @@ func TestNativeContextFiftyModelsCanRemoveThenChooseReplacements(t *testing.T) {
 	}
 	models = append(models, modelInfo{ID: "provider/old-one"}, modelInfo{ID: "provider/old-two"})
 	s := nativeSeedSharedForTest(t, u, models...)
+	u.expanded["models.context.open"] = true
 	if len(s.Models) != 50 || len(u.unknownContextMaximumIDs()) != 2 {
 		t.Fatal("test library did not reproduce the 50-model limit and two blockers")
 	}
@@ -274,6 +279,7 @@ func TestNativeContextCatalogUnavailableDoesNotOfferMassRemoval(t *testing.T) {
 	u.models = nil
 	model := modelInfo{ID: "provider/offline", Name: "Offline"}
 	nativeSeedSharedForTest(t, u, model)
+	u.expanded["models.context.open"] = true
 	h := &nativePointerHarness{t: t, u: u, size: image.Pt(1180, 900), now: time.Now()}
 	h.frame()
 	if !strings.Contains(u.contextMaximumBlockerReason(model.ID), "Not in the current catalog") {
@@ -309,6 +315,7 @@ func TestNativeContextBlockerDialogPointerConfirmation(t *testing.T) {
 				unknown := modelInfo{ID: "provider/unknown", Name: "Unknown"}
 				u.models = []modelInfo{known}
 				nativeSeedSharedForTest(t, u, known, unknown)
+				u.expanded["models.context.open"] = true
 				h := &nativePointerHarness{t: t, u: u, size: size, now: time.Now()}
 				h.frame()
 				label := u.tr("Remove the model from my library", "Quitar el modelo de mi biblioteca")
@@ -348,17 +355,11 @@ func TestNativeContextPresetControlsFitAndPointerApply(t *testing.T) {
 				u.models = nativeContextModels()[:1]
 				u.page, u.language = "models", lang
 				nativeSeedSharedForTest(t, u, u.models...)
+				u.expanded["models.context.open"] = true
 				h := &nativePointerHarness{t: t, u: u, size: size, now: time.Now()}
 				h.frame()
 				if !h.selected(u.contextPresetLabel(contextPresetRecommended), semantic.Button) {
 					t.Fatal("recommended context preset is not semantically selected")
-				}
-				for _, preset := range []string{contextPresetRecommended, contextPresetLow} {
-					tokens := contextRecommendedTokens
-					if preset == contextPresetLow {
-						tokens = contextLowTokens
-					}
-					h.target(u.contextPresetCaption(preset, tokens), semantic.Button)
 				}
 				// The context window follows the library; scroll it into view
 				// before checking that every preset fits the viewport.
@@ -388,6 +389,7 @@ func TestNativeContextBulkCustomDraftAndMaximumPersistPolicies(t *testing.T) {
 	u.models = nativeContextModels()
 	u.page = "models"
 	nativeSeedSharedForTest(t, u, u.models...)
+	u.expanded["models.context.open"] = true
 	nativeTestFrame(t, u)
 	u.clickable("models.context.custom").Click()
 	nativeTestFrame(t, u)

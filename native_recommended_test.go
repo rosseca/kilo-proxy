@@ -85,9 +85,11 @@ func TestNativeSetupShowsEveryRecommendedModelAndChoosesDefault(t *testing.T) {
 		u.models[i].Recommendation = &modelRecommendation{Rank: i + 1, Default: i == 0}
 	}
 	last := u.models[len(u.models)-1]
-	h := &nativePointerHarness{t: t, u: u, size: image.Pt(1180, 820), now: time.Now()}
+	h := &nativePointerHarness{t: t, u: u, size: image.Pt(1180, 1500), now: time.Now()}
 	h.frame()
-	h.click("Add all (12)", semantic.Button)
+	h.click("Filters", semantic.Button)
+	u.clickable("client:shared:select-all").Click()
+	h.frame()
 	s := u.library.selection
 	if len(s.Models) != 12 || s.Initial != u.models[0].ID {
 		t.Fatalf("add all: %v default %s", s.ids(), s.Initial)
@@ -136,21 +138,19 @@ func TestNativeOnboardingShowsRecommendedModelsAfterConnection(t *testing.T) {
 		return u.setupStep == setupModels && !u.busy["GET/api/state"] && !u.busy["POST/api/models"] && len(u.models) == 2
 	})
 	h.frame()
-	if !u.expanded["library.catalog"] {
-		t.Fatal("setup no longer opens the catalog after the connection step")
+	if u.expanded["library.catalog"] || !h.selected("Recommended", semantic.RadioButton) {
+		t.Fatal("setup does not start from the recommended set after the connection step")
 	}
 	nativeGridCapture(t, h, "setup-recommended-after-connection")
 	// Two of the three published IDs exist in this team's catalog.
-	h.click("Add all (2)", semantic.Button)
+	h.click("Use recommended & continue", semantic.Button)
+	nativeTestWait(t, u, func() bool {
+		h.frame()
+		return u.setupStep == setupReady
+	})
 	s := u.library.selection
-	if !slices.Equal(s.ids(), []string{"vendor/one", "anthropic/claude-sonnet-4.6"}) || s.Initial != "anthropic/claude-sonnet-4.6" {
-		t.Fatalf("wizard recommendations added %v with default %s", s.ids(), s.Initial)
-	}
-	nativeTestWait(t, u, func() bool { _, ready := u.libraryStatus(); return ready })
-	h.frame()
-	h.click("Continue", semantic.Button)
-	if u.setupStep != setupReady {
-		t.Fatal("recommended models did not satisfy the models step")
+	if !slices.Equal(s.ids(), []string{"vendor/one", "anthropic/claude-sonnet-4.6"}) || s.Initial != "anthropic/claude-sonnet-4.6" || u.library.startingPack != modelLibraryStartRecommended {
+		t.Fatalf("wizard recommendations added %v with default %s from %q", s.ids(), s.Initial, u.library.startingPack)
 	}
 }
 

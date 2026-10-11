@@ -26,6 +26,7 @@ func TestNativeScreenshots(t *testing.T) {
 		t.Skip("set KILO_SCREENSHOT_DIR")
 	}
 	const scale = 2
+	lang := os.Getenv("KILO_SCREENSHOT_LANG")
 	shoot := func(u *nativeUI, name string, w, h int) {
 		t.Helper()
 		win, err := headless.NewWindow(w*scale, h*scale)
@@ -36,6 +37,9 @@ func TestNativeScreenshots(t *testing.T) {
 		var router input.Router
 		var ops op.Ops
 		for i := 0; i < 4; i++ { // settle async state and layout
+			if lang != "" { // async settings loads must not switch the language mid-run
+				u.language = lang
+			}
 			ops.Reset()
 			gtx := layout.Context{Ops: &ops, Source: router.Source(), Constraints: layout.Exact(image.Pt(w*scale, h*scale)), Metric: unit.Metric{PxPerDp: scale, PxPerSp: scale}, Now: time.Now()}
 			u.Layout(gtx)
@@ -59,7 +63,6 @@ func TestNativeScreenshots(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	lang := os.Getenv("KILO_SCREENSHOT_LANG")
 	u := nativeTestUI(t)
 	if lang != "" {
 		u.language = lang
@@ -130,4 +133,34 @@ func TestNativeScreenshots(t *testing.T) {
 	shoot(r, "18-setup-recommended", 1280, 1600)
 	r.addRecommendedModels(r.recommendedModels())
 	shoot(r, "19-setup-recommended-added", 1280, 1600)
+
+	// Onboarding with every pack available, one selected and expanded.
+	k := nativeTestUI(t)
+	if lang != "" {
+		k.language = lang
+	}
+	k.models = uxmPackCatalogForTest(r.models)
+	k.page, k.setupStep = "setup", setupModels
+	k.setValue("setup.models.start", "full-stack-dev")
+	shoot(k, "30-models-setup-pack", 1280, 1700)
+
+	// Packs: a built-in pack in use, its "Use in…" menu and a personal copy.
+	nativeSeedSharedForTest(t, k, k.models[0])
+	k.page = "models"
+	p := k.packsState()
+	p.tab, p.selected = "packs", "full-stack-dev"
+	k.assignPack("full-stack-dev", "claude")
+	k.assignPack("full-stack-dev", "codex-cli")
+	k.setNotice(nativeToneInfo, "")
+	shoot(k, "31-models-packs", 1280, 1100)
+	k.uxmOpenMenu("packs.use.full-stack-dev", "")
+	shoot(k, "32-models-packs-use", 1280, 1100)
+	k.setValue("uxm.menu", "")
+	k.createPersonalPack("full-stack-dev")
+	k.assignPack(p.selected, "opencode")
+	k.setNotice(nativeToneInfo, "")
+	shoot(k, "33-models-mypacks", 1280, 1100)
+	k.uxmOpenMenu("packs.my.menu", "")
+	shoot(k, "34-models-mypacks-menu", 1280, 1100)
+	k.setValue("uxm.menu", "")
 }

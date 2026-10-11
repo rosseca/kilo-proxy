@@ -418,6 +418,9 @@ func (u *nativeUI) pageTop(gtx layout.Context) layout.Dimensions {
 	)
 }
 func (u *nativeUI) pageFooter() layout.Widget {
+	if u.page == "models" {
+		return u.uxmPageFooter()
+	}
 	if u.page != "setup" {
 		return nil
 	}

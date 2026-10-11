@@ -28,6 +28,7 @@ func nativeSavedModelSearchClear(h *nativePointerHarness) {
 }
 
 func TestNativeSavedModelSearchClearAfterPendingCatalogRefresh(t *testing.T) {
+	uxmShowLibrarySearch(t)
 	h := newNativePointerHarness(t, image.Pt(720, 700))
 	models := nativeClientModelsForTest()
 	nativeSeedSharedForTest(t, h.u, models[0], models[1])
@@ -53,13 +54,13 @@ func TestNativeSavedModelSearchClearAfterPendingCatalogRefresh(t *testing.T) {
 	case <-time.After(8 * time.Second):
 		t.Fatal("navigation did not start the catalog refresh")
 	}
-	h.reveal("Search models", semantic.Editor)
-	h.click("Search models", semantic.Editor)
+	h.reveal("Search your models", semantic.Editor)
+	h.click("Search your models", semantic.Editor)
 	h.typeText("SONNET")
 	if h.u.value("client:shared:search") != "SONNET" || !h.u.busy["POST/api/models"] {
 		t.Fatal("search did not remain usable while the catalog refresh was held")
 	}
-	h.target("Claude Sonnet", semantic.CheckBox)
+	h.target("Claude Sonnet", semantic.Unknown)
 	unblock()
 	nativeSavedModelSearchClear(h)
 	if h.u.notice != "Loaded 2 models" {
@@ -112,6 +113,7 @@ func TestNativeSavedModelSearchPreservesOrderAndSelection(t *testing.T) {
 }
 
 func TestNativeSavedModelSearchPointerTypingAndClear(t *testing.T) {
+	uxmShowLibrarySearch(t)
 	for _, size := range []image.Point{{1180, 820}, {720, 700}} {
 		t.Run(fmtSize(size), func(t *testing.T) {
 			h := newNativePointerHarness(t, size)
@@ -123,8 +125,8 @@ func TestNativeSavedModelSearchPointerTypingAndClear(t *testing.T) {
 			h.u.models = nil
 			h.frame()
 			before := libraryFingerprint(h.u.modelLibraryValue())
-			h.reveal("Search models", semantic.Editor)
-			h.click("Search models", semantic.Editor)
+			h.reveal("Search your models", semantic.Editor)
+			h.click("Search your models", semantic.Editor)
 			h.typeText("SONNET")
 			if h.u.value("client:shared:search") != "SONNET" {
 				t.Fatal("keyboard input did not reach search")
@@ -133,15 +135,15 @@ func TestNativeSavedModelSearchPointerTypingAndClear(t *testing.T) {
 			if len(visible) != 1 || visible[0].ID != models[1].ID {
 				t.Fatalf("unexpected filtered models: %v", visible)
 			}
-			h.target("Claude Sonnet", semantic.CheckBox)
+			h.target("Claude Sonnet", semantic.Unknown)
 			nativeGridCapture(t, h, "saved-search-filtered-"+fmtSize(size))
 			nativeSavedModelSearchClear(h)
 			h.u.flushModelLibrary()
 			if after := libraryFingerprint(h.u.modelLibraryValue()); after != before {
 				t.Fatal("search changed the saved library")
 			}
-			h.target("Very Long First Model Name", semantic.CheckBox)
-			h.click("Search models", semantic.Editor)
+			h.target("Very Long First Model Name", semantic.Unknown)
+			h.click("Search your models", semantic.Editor)
 			h.typeText("not-in-saved-models")
 			found := false
 			for _, node := range h.nodes() {

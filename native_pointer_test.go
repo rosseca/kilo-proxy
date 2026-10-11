@@ -52,6 +52,13 @@ func (h *nativePointerHarness) nodes() []input.SemanticNode {
 func (h *nativePointerHarness) target(label string, class semantic.ClassOp) input.SemanticNode {
 	h.t.Helper()
 	nodes := h.nodes()
+	// Prefer a control that carries the label itself: a popover can cover
+	// page text with the same words.
+	for _, node := range nodes {
+		if node.Desc.Class == class && node.Desc.Label == label && !node.Desc.Disabled && !node.Desc.Bounds.Intersect(image.Rectangle{Max: h.size}).Empty() {
+			return node
+		}
+	}
 	for _, text := range nodes {
 		if text.Desc.Label != label {
 			continue
@@ -125,7 +132,7 @@ func TestNativePointerNavigationAndModelSelection(t *testing.T) {
 				t.Fatal("pointer did not open Models")
 			}
 			h.click("Add models", semantic.Button)
-			h.click("Search models", semantic.Editor)
+			h.click("Search by name, lab or ID", semantic.Editor)
 			if !h.router.Source().Focused(h.u.editor("client:shared:search")) {
 				t.Fatal("real pointer did not focus shared catalog search")
 			}
@@ -138,15 +145,13 @@ func TestNativePointerNavigationAndModelSelection(t *testing.T) {
 				t.Fatal("pointer did not select the searched shared model")
 			}
 			h.click("Done", semantic.Button)
-			// Bring the first model below the shared context controls into view.
-			h.u.list("page.models").Position.Offset = 220
-			h.frame()
-			h.click("Edit", semantic.Button)
+			h.click("More actions for Very Long First Model Name", semantic.Button)
+			h.click("Rename", semantic.Button)
 			h.reveal("Very Long First Model Name", semantic.Editor)
 			h.click("Very Long First Model Name", semantic.Editor)
 			h.typeText("My shared model")
 			if h.u.library.selection.choice("vendor/one").DisplayName != "My shared model" {
-				t.Fatal("per-card Edit did not update shared display name")
+				t.Fatal("row Rename did not update shared display name")
 			}
 			for _, page := range []struct{ label, key string }{{"Agents", "agents"}, {"Activity", "activity"}, {"Settings", "settings"}, {"Models", "models"}} {
 				h.click(page.label, semantic.Button)
