@@ -47,9 +47,22 @@ jobs:
         shell: bash
 
   browser-e2e:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - browser: chromium
+            shard: 1
+            shards: 1
+          - browser: webkit
+            shard: 1
+            shards: 2
+          - browser: webkit
+            shard: 2
+            shards: 2
     runs-on: ubuntu-24.04
-    # Hosted WebKit needs about 19 minutes for the full suite. Include setup
-    # and report uploads so successful tests do not hit the job deadline.
+    # The complete serial WebKit suite can consume the whole job deadline.
+    # Split its files across two jobs, preserving setup and report time in each.
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -61,13 +74,13 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps chromium webkit
-      - run: npm run test:e2e
+      - run: npx playwright install --with-deps ${{ matrix.browser }}
+      - run: npm run test:e2e -- --project=${{ matrix.browser }} --shard=${{ matrix.shard }}/${{ matrix.shards }}
       # Keep retry traces even if the job ultimately succeeds.
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: browser-e2e-results
+          name: browser-e2e-results-${{ matrix.browser }}-${{ matrix.shard }}-of-${{ matrix.shards }}
           if-no-files-found: ignore
           retention-days: 7
           path: |
@@ -206,8 +219,62 @@ jobs:
           retention-days: 7
           path: dist/binaries/${{ matrix.binary }}
 
+  headless:
+    # These runners intentionally install no graphics or desktop-session helpers.
+    # Test raw console binaries before the shared packaging gate opens.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-latest
+            system: darwin
+            arch: arm64
+          - runner: macos-15-intel
+            system: darwin
+            arch: amd64
+          - runner: ubuntu-24.04
+            system: linux
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            system: linux
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test the console runtime and service plans
+        run: go test -race -tags headless ./...
+      - name: Vet the pure-Go console build
+        env:
+          CGO_ENABLED: '0'
+        run: go vet -tags headless ./...
+      - name: Build the console-only release executable
+        env:
+          KILO_TARGET: ${{ matrix.system }}/${{ matrix.arch }}
+        run: python scripts/package.py --headless --build-only --target "$KILO_TARGET" --output dist/headless-binaries
+      - name: Exercise the console executable without a desktop session
+        env:
+          KILO_SYSTEM: ${{ matrix.system }}
+          KILO_ARCH: ${{ matrix.arch }}
+        run: python scripts/smoke_headless.py --binary "dist/headless-binaries/kilo-proxy-headless-${KILO_SYSTEM}-${KILO_ARCH}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: headless-binary-${{ matrix.system }}-${{ matrix.arch }}
+          if-no-files-found: error
+          retention-days: 7
+          path: dist/headless-binaries/kilo-proxy-headless-${{ matrix.system }}-${{ matrix.arch }}
+
   package:
-    needs: [test, browser-e2e, native]
+    needs: [test, browser-e2e, native, headless]
     strategy:
       fail-fast: false
       matrix:
@@ -256,6 +323,11 @@ jobs:
         with:
           name: desktop-binary-${{ matrix.system }}-${{ matrix.arch }}
           path: dist/binaries
+      - uses: actions/download-artifact@v4
+        if: runner.os != 'Windows'
+        with:
+          name: headless-binary-${{ matrix.system }}-${{ matrix.arch }}
+          path: dist/headless-binaries
       - name: Install Linux runtime and graphical test dependencies
         if: runner.os == 'Linux'
         run: |
@@ -293,6 +365,21 @@ jobs:
         run: |
           kilo_release_version="$(cat VERSION)"
           python scripts/smoke_desktop.py --archive "dist/kilo-proxy-${kilo_release_version}-${KILO_SYSTEM}-${KILO_ARCH}.zip"
+      - name: Package the exact tested console executable
+        if: runner.os != 'Windows'
+        env:
+          KILO_TARGET: ${{ matrix.system }}/${{ matrix.arch }}
+        shell: bash
+        run: python scripts/package.py --headless --binaries-directory dist/headless-binaries --target "$KILO_TARGET"
+      - name: Exercise the extracted console release archive
+        if: runner.os != 'Windows'
+        env:
+          KILO_SYSTEM: ${{ matrix.system }}
+          KILO_ARCH: ${{ matrix.arch }}
+        shell: bash
+        run: |
+          kilo_release_version="$(cat VERSION)"
+          python scripts/smoke_headless.py --archive "dist/kilo-proxy-headless-${kilo_release_version}-${KILO_SYSTEM}-${KILO_ARCH}.tar.gz"
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-archive-${{ matrix.system }}-${{ matrix.arch }}
@@ -301,6 +388,126 @@ jobs:
           path: |
             dist/*.zip
             dist/*.tar.gz
+
+  debian-package:
+    needs: [test, browser-e2e, native, headless]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: desktop-binary-linux-${{ matrix.arch }}
+          path: dist/binaries
+      - uses: actions/download-artifact@v4
+        with:
+          name: headless-binary-linux-${{ matrix.arch }}
+          path: dist/headless-binaries
+      - name: Install Debian dependency inspection tools and runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dpkg-dev libwayland-client0 libwayland-cursor0 libwayland-egl1 libx11-6 libx11-xcb1 libxkbcommon-x11-0 libxcursor1 libxfixes3 libegl1 libgles2 libvulkan1 mesa-vulkan-drivers libgl1-mesa-dri
+      - name: Package the exact tested Linux executables
+        env:
+          KILO_ARCH: ${{ matrix.arch }}
+        run: |
+          chmod 0755 "dist/binaries/kilo-proxy-linux-${KILO_ARCH}" "dist/headless-binaries/kilo-proxy-headless-linux-${KILO_ARCH}"
+          export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+          python scripts/package_debian.py --binaries-directory dist/binaries --headless-binaries-directory dist/headless-binaries --arch "$KILO_ARCH" --output dist/debian
+      - uses: actions/upload-artifact@v4
+        with:
+          name: debian-packages-${{ matrix.arch }}
+          path: dist/debian/*.deb
+          if-no-files-found: error
+          retention-days: 14
+
+  apt-repository:
+    needs: debian-package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: debian-packages-*
+          merge-multiple: true
+          path: dist/debian
+      - name: Build a repository using a disposable CI signing identity
+        run: |
+          export GNUPGHOME="$(mktemp -d "$RUNNER_TEMP/kilo-apt-ci.XXXXXX")"
+          chmod 700 "$GNUPGHOME"
+          trap 'gpgconf --kill all; rm -rf "$GNUPGHOME"' EXIT
+          gpg --batch --pinentry-mode loopback --passphrase '' --quick-generate-key 'Kilo Proxy disposable APT test <apt-test@example.invalid>' ed25519 sign 1d
+          signing_key="$(gpg --batch --with-colons --list-secret-keys | awk -F: '$1 == "fpr" { print $10; exit }')"
+          python scripts/build_apt_repository.py --packages-directory dist/debian --output dist/apt --signing-key "$signing_key" --source-date-epoch "$(git log -1 --format=%ct)"
+          (cd dist/debian && sha256sum ./*.deb > DEBIAN-SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apt-test-repository
+          path: dist/apt/
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: debian-assets
+          path: dist/debian/
+          if-no-files-found: error
+          retention-days: 14
+
+  apt-install:
+    needs: apt-repository
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+            ubuntu: '24.04'
+          - runner: ubuntu-24.04
+            arch: amd64
+            ubuntu: '26.04'
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+            ubuntu: '24.04'
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+            ubuntu: '26.04'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: apt-test-repository
+          path: dist/apt
+      - name: Install, upgrade and remove through authenticated APT
+        env:
+          KILO_ARCH: ${{ matrix.arch }}
+          KILO_UBUNTU: ${{ matrix.ubuntu }}
+        run: |
+          docker run --rm --init \
+            -e DEBIAN_FRONTEND=noninteractive -e KILO_DEBIAN_DISPOSABLE_CONTAINER=1 \
+            -e KILO_ARCH -e KILO_UBUNTU \
+            -v "$GITHUB_WORKSPACE:/work:ro" -w /work \
+            "ubuntu:$KILO_UBUNTU" /bin/bash -euc '
+              apt-get update
+              apt-get install -y --no-install-recommends python3 ca-certificates gnupg dbus-x11 xvfb xauth
+              python3 scripts/smoke_debian.py --repository-directory /work/dist/apt --version "$(cat VERSION)" --arch "$KILO_ARCH" --ubuntu-version "$KILO_UBUNTU"
+            '
 
   aggregate:
     needs: package
@@ -315,7 +522,7 @@ jobs:
           pattern: desktop-archive-*
           merge-multiple: true
           path: dist
-      - name: Create and verify the complete six-target checksum manifest
+      - name: Create and verify the complete desktop and headless checksum manifest
         run: |
           python scripts/package.py --checksums-only
           python scripts/release.py verify-assets

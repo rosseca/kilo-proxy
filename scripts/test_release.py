@@ -46,6 +46,19 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(len(paths), 7)
         self.assertTrue(any(p.name.endswith('windows-arm64.zip') for p in paths))
 
+    def test_headless_release_requires_ten_archives_including_prereleases(self):
+        for version in ('0.55.0', '0.55.0-rc.1', '0.56.0'):
+            with self.subTest(version=version):
+                self.version = version
+                self.prepare()
+                paths = release.verify_assets(self.directory, version)
+                self.assertEqual(len(paths), 11)
+                self.assertEqual(sum('headless' in path.name for path in paths), 4)
+                self.paths[-1].unlink()
+                with self.assertRaises(ValueError):
+                    release.verify_assets(self.directory, version)
+        self.assertEqual(len(release.asset_names('0.54.0')), 6)
+
     def test_missing_tampered_duplicate_and_traversal_assets(self):
         self.paths[0].unlink()
         with self.assertRaises(ValueError):

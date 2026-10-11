@@ -90,6 +90,8 @@ type imageMCPGeneratedImage struct {
 }
 
 type imageMCPGenerationResult struct {
+	Provider   string                   `json:"provider,omitempty"`
+	Billing    string                   `json:"billing,omitempty"`
 	Model      string                   `json:"model"`
 	Images     []imageMCPGeneratedImage `json:"images"`
 	CostUSD    *string                  `json:"costUSD,omitempty"`
@@ -98,7 +100,7 @@ type imageMCPGenerationResult struct {
 }
 
 func imageMCPPreviews(result *imageGenerationResult) (imageMCPGenerationResult, []imagePreview) {
-	summary := imageMCPGenerationResult{Model: result.Model, CostUSD: result.CostUSD, CostSource: result.CostSource}
+	summary := imageMCPGenerationResult{Provider: result.Provider, Billing: result.Billing, Model: result.Model, CostUSD: result.CostUSD, CostSource: result.CostSource}
 	previews := make([]imagePreview, 0, len(result.Images))
 	resized, omitted := false, false
 	for _, original := range result.Images {

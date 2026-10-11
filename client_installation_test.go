@@ -14,10 +14,13 @@ import (
 
 func TestClientInstallationURLsOnlySupportedCLIs(t *testing.T) {
 	want := map[string]string{
-		"codex-cli": "https://developers.openai.com/codex/cli/",
-		"claude":    "https://code.claude.com/docs/en/setup#install-claude-code",
-		"opencode":  "https://opencode.ai/docs/#install",
-		"omp":       "https://github.com/can1357/oh-my-pi#install",
+		"t3-code":     "https://github.com/pingdotgg/t3code/releases/tag/v0.0.45",
+		"synara":      "https://github.com/Emanuele-web04/synara/releases",
+		"codex-cli":   "https://developers.openai.com/codex/cli/",
+		"claude":      "https://code.claude.com/docs/en/setup#install-claude-code",
+		"opencode":    "https://opencode.ai/docs/#install",
+		"omp":         "https://github.com/can1357/oh-my-pi#install",
+		"openmausbot": "https://github.com/milind-soni/OpenMausBot/releases",
 	}
 	for _, id := range append(append([]string{}, launchClients...), "", "unknown", "https://example.test", "CLAUDE") {
 		if got := launchClientInstallURL(id); got != want[id] {

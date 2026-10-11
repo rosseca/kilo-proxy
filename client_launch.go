@@ -40,10 +40,10 @@ type clientLaunchAvailability struct {
 	InstallURL string `json:"installURL,omitempty"`
 }
 
-var launchClients = []string{"codex", "claude-desktop", "codex-cli", "claude", "opencode", "omp", "open-design", "zed", "xcode-chat", "xcode-codex", "xcode-claude"}
+var launchClients = []string{"codex", "claude-desktop", "codex-cli", "claude", "opencode", "omp", "open-design", "openmausbot", "t3-code", "synara", "zed", "xcode-chat", "xcode-codex", "xcode-claude"}
 
 func clientLaunchUsesProject(client string) bool {
-	return client != "codex" && client != "claude-desktop" && client != "open-design"
+	return client != "codex" && client != "claude-desktop" && client != "open-design" && client != "openmausbot" && client != "t3-code" && client != "synara"
 }
 
 func launchClientIdentity(id string) (string, string) {
@@ -62,6 +62,12 @@ func launchClientIdentity(id string) (string, string) {
 		return "Oh My Pi", "terminal"
 	case "open-design":
 		return "Open Design", "desktop"
+	case "openmausbot":
+		return "OpenMausBot", "desktop"
+	case "t3-code":
+		return "T3 Code · Kilo", "desktop"
+	case "synara":
+		return "Synara · Kilo", "desktop"
 	case "zed":
 		return "Zed", "desktop"
 	case "xcode-chat", "xcode-codex", "xcode-claude":
@@ -79,6 +85,9 @@ func launchClientPlatformReason(id, platform string) string {
 	}
 	if id == "open-design" && platform != "macos" && platform != "windows" {
 		return "Open Design desktop launch is available on macOS and Windows. Linux currently requires a source build."
+	}
+	if id == "openmausbot" && platform != "macos" && platform != "windows" && platform != "linux" {
+		return "OpenMausBot desktop is supported on macOS, Windows and Linux."
 	}
 	return ""
 }
@@ -130,6 +139,24 @@ func (a *app) clientsLaunch(w http.ResponseWriter, r *http.Request) {
 						info.Reason = err.Error()
 					}
 				}
+				if id == "openmausbot" {
+					if err := openMausBotCompatibility(path, rt.platform); err != nil {
+						info.Available = false
+						info.Reason = err.Error()
+					}
+				}
+				if id == "t3-code" {
+					if err := a.t3CodeAvailability(path, rt); err != nil {
+						info.Available = false
+						info.Reason = err.Error()
+					}
+				}
+				if id == "synara" {
+					if err := a.synaraAvailability(path, rt); err != nil {
+						info.Available = false
+						info.Reason = err.Error()
+					}
+				}
 			}
 			if kind == "terminal" && info.Available && !terminal {
 				info.Available = false
@@ -164,7 +191,7 @@ func (a *app) clientsLaunch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err = a.start(); err != nil {
-		a.clientLaunchError(w, 409, "Cannot start the saved proxy. Check the Kilo credentials, organization and local port.")
+		a.writeProxyStartError(w, err)
 		return
 	}
 	if err = rt.start(plan); err != nil {
@@ -178,7 +205,7 @@ func (a *app) clientsLaunch(w http.ResponseWriter, r *http.Request) {
 	}
 	message := plan.Name + " opened."
 	if input.Client == "claude-desktop" {
-		message = "Claude Desktop opened with its Kilo gateway configuration."
+		message = "Claude Desktop opened with its separate Kilo profile."
 	}
 	if input.Client == "zed" {
 		message = "Zed opened. Local credentials and models are ready; existing projects stay open."
@@ -187,6 +214,24 @@ func (a *app) clientsLaunch(w http.ResponseWriter, r *http.Request) {
 		message = "Open Design opened with its Kilo CLI profile. Use Local CLI mode in Open Design."
 		a.mu.Lock()
 		a.openDesignLaunchUntil = time.Now().Add(30 * time.Second)
+		a.mu.Unlock()
+	}
+	if input.Client == "openmausbot" {
+		message = "OpenMausBot opened with its private Kilo configuration."
+		a.mu.Lock()
+		a.openMausBotLaunchUntil = time.Now().Add(30 * time.Second)
+		a.mu.Unlock()
+	}
+	if input.Client == "t3-code" {
+		message = "T3 Code opened with four agents in its separate Kilo workspace."
+		a.mu.Lock()
+		a.t3CodeLaunchUntil = time.Now().Add(30 * time.Second)
+		a.mu.Unlock()
+	}
+	if input.Client == "synara" {
+		message = "Synara opened with four agents in its separate Kilo workspace."
+		a.mu.Lock()
+		a.synaraLaunchUntil = time.Now().Add(30 * time.Second)
 		a.mu.Unlock()
 	}
 	if strings.HasPrefix(input.Client, "xcode-") {
@@ -244,16 +289,16 @@ func (a *app) planClientLaunch(input clientLaunchRequest, rt clientLaunchRuntime
 		return p, err
 	}
 	if input.Client == "claude-desktop" {
-		check := a.claudeDesktopCheckRunning
-		if check == nil {
-			check = claudeDesktopRunning
+		paths, pathsErr := a.claudeDesktopPaths()
+		if pathsErr != nil {
+			return p, pathsErr
 		}
-		running, checkErr := check(p.Executable)
+		running, checkErr := a.claudeDesktopProfileRunning(paths)
 		if checkErr != nil {
-			return p, errors.New("Cannot check whether Claude Desktop is running. Quit Claude Desktop and try again.")
+			return p, errors.New("Cannot check whether the Kilo Claude Desktop window is running. Close that window and try again.")
 		}
 		if running {
-			return p, errors.New("Quit Claude Desktop, then open it here to load the Kilo configuration. Existing sessions are not closed automatically.")
+			return p, errors.New("Quit the Kilo Claude Desktop window, then open it here again. Your regular Claude session can stay open.")
 		}
 	}
 	if kind == "terminal" {
@@ -264,6 +309,12 @@ func (a *app) planClientLaunch(input clientLaunchRequest, rt clientLaunchRuntime
 	a.mu.Lock()
 	if input.Client == "open-design" {
 		err = a.applyOpenDesignProfile(&p, input.Engine, rt)
+	} else if input.Client == "openmausbot" {
+		err = a.applyOpenMausBotLaunch(&p, rt.platform)
+	} else if input.Client == "t3-code" {
+		err = a.applyT3CodeLaunch(&p, rt)
+	} else if input.Client == "synara" {
+		err = a.applySynaraLaunch(&p, rt)
 	} else {
 		err = a.launchProfile(&p, rt.home)
 	}
@@ -302,14 +353,31 @@ func (a *app) planClientLaunch(input clientLaunchRequest, rt clientLaunchRuntime
 			p.Executable = filepath.Join(p.Executable, "Contents", "MacOS", binary)
 		}
 	} else if input.Client == "claude-desktop" {
-		// Keep the validated home as the child process working directory. Desktop
-		// restores its own workspace, so no project folder is passed as an argument.
-		if rt.platform == "macos" && strings.HasSuffix(p.Executable, ".app") {
-			p.Args = []string{"-a", p.Executable}
-			p.Executable = "/usr/bin/open"
+		paths, pathsErr := a.claudeDesktopPaths()
+		if pathsErr != nil {
+			return p, pathsErr
 		}
-	} else if input.Client == "open-design" {
-		// configureOpenDesignLaunch already selected its isolated native executable.
+		p.Args = []string{"--user-data-dir=" + paths.UserDataDir}
+		p.Env["CLAUDE_CONFIG_DIR"] = paths.ClaudeConfigDir
+		p.Env["CLAUDE_SECURESTORAGE_CONFIG_DIR"] = paths.ClaudeConfigDir
+		p.Unset = claudeDesktopInheritedEnvironment(os.Environ())
+		if rt.platform == "windows" {
+			// The vendor migrates legacy 3P data from APPDATA and places current
+			// 3P data under LOCALAPPDATA. Both overrides belong only to this child.
+			p.Env["LOCALAPPDATA"] = paths.LocalAppData
+			p.Env["APPDATA"] = paths.AppData
+		}
+		// LaunchServices may reuse the regular Claude process. Start the native
+		// executable directly so the separate data directory takes effect.
+		if rt.platform == "macos" && strings.HasSuffix(p.Executable, ".app") {
+			binary := plistValue(filepath.Join(p.Executable, "Contents", "Info.plist"), "CFBundleExecutable")
+			if binary == "" || filepath.Base(binary) != binary {
+				return p, errors.New("The Claude Desktop application bundle is invalid.")
+			}
+			p.Executable = filepath.Join(p.Executable, "Contents", "MacOS", binary)
+		}
+	} else if input.Client == "open-design" || input.Client == "openmausbot" || input.Client == "t3-code" || input.Client == "synara" {
+		// These clients already selected their isolated native executable.
 	} else if kind == "desktop" {
 		if rt.platform == "macos" && strings.HasSuffix(p.Executable, ".app") {
 			p.Args = []string{"-a", p.Executable}

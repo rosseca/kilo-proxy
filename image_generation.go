@@ -30,11 +30,18 @@ const imageGenerationConcurrency = 2
 var generatedImageName = regexp.MustCompile(`^image_[0-9a-f]{64}\.(png|jpg)$`)
 
 type imageGenerationSettings struct {
-	Enabled bool   `json:"enabled"`
-	Model   string `json:"model"`
+	Enabled  bool   `json:"enabled"`
+	Model    string `json:"model"`
+	Provider string `json:"provider,omitempty"`
 }
 
 func validateImageGenerationSettings(s imageGenerationSettings) error {
+	if s.Provider != "" && s.Provider != "kilo" && s.Provider != "chatgpt" {
+		return errors.New("Choose Kilo or ChatGPT as the image provider.")
+	}
+	if s.Provider == "chatgpt" {
+		return nil
+	}
 	if s.Model == "" && !s.Enabled {
 		return nil
 	}
@@ -58,6 +65,8 @@ type generatedImage struct {
 }
 
 type imageGenerationResult struct {
+	Provider   string           `json:"provider,omitempty"`
+	Billing    string           `json:"billing,omitempty"`
 	Model      string           `json:"model"`
 	Images     []generatedImage `json:"images"`
 	CostUSD    *string          `json:"costUSD,omitempty"`
@@ -169,7 +178,7 @@ func (a *app) generateImage(r *http.Request, args imageGenerationArguments, key,
 	if err := validateImageGenerationSettings(settings); err != nil {
 		return nil, err
 	}
-	if key == "" || org == "" {
+	if settings.Provider != "chatgpt" && (key == "" || org == "") {
 		return nil, errors.New("Connect a Kilo account and organization before generating images.")
 	}
 	a.imageGenerationMu.Lock()
@@ -182,6 +191,9 @@ func (a *app) generateImage(r *http.Request, args imageGenerationArguments, key,
 	defer func() { a.imageGenerationMu.Lock(); a.imageGenerationActive--; a.imageGenerationMu.Unlock() }()
 	ctx, cancel := context.WithTimeout(r.Context(), imageGenerationTimeout)
 	defer cancel()
+	if settings.Provider == "chatgpt" {
+		return a.generateChatGPTImage(r.WithContext(ctx), args, settings, localKey)
+	}
 	models, revision, err := a.fetchModels(ctx, true)
 	if err != nil {
 		return nil, errors.New("Cannot verify the image model catalog. Check your Kilo connection and try again.")
@@ -334,9 +346,19 @@ func (a *app) generateImage(r *http.Request, args imageGenerationArguments, key,
 	if len(images) == 0 {
 		return nil, errors.New("Kilo returned no image. The chosen model or organization may not support image generation.")
 	}
+	if err := saveGeneratedImages(root, dir, images); err != nil {
+		return nil, err
+	}
+	activity.status = 200
+	usage := activity.usage.snapshot().usage
+	return &imageGenerationResult{Model: output.Model, Images: images, CostUSD: usage.CostUSD, CostSource: usage.CostSource}, nil
+}
+
+// Both providers preserve full-resolution originals with the same path and permission rules.
+func saveGeneratedImages(root *os.Root, dir string, images []generatedImage) (err error) {
 	saved := []string{}
 	defer func() {
-		if resultErr != nil {
+		if err != nil {
 			for _, name := range saved {
 				_ = root.Remove(name)
 			}
@@ -350,19 +372,17 @@ func (a *app) generateImage(r *http.Request, args imageGenerationArguments, key,
 		name := randomKey("image_") + ext
 		file, err := root.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 		if err != nil {
-			return nil, errors.New("Cannot save the generated image.")
+			return errors.New("Cannot save the generated image.")
 		}
 		saved = append(saved, name)
 		_, writeErr := file.Write(images[i].data)
 		closeErr := file.Close()
 		if writeErr != nil || closeErr != nil {
-			return nil, errors.New("Cannot save the complete generated image.")
+			return errors.New("Cannot save the complete generated image.")
 		}
 		images[i].Path = filepath.Join(dir, name)
 	}
-	activity.status = 200
-	usage := activity.usage.snapshot().usage
-	return &imageGenerationResult{Model: output.Model, Images: images, CostUSD: usage.CostUSD, CostSource: usage.CostSource}, nil
+	return nil
 }
 
 func (a *app) generatedImagesRoot() (*os.Root, string, error) {

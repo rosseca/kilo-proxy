@@ -239,6 +239,10 @@ func (a *app) prepareResponseImageUploads(r *http.Request, key, org string) (*ht
 		releaseSlot()
 		return r, nil, err
 	}
+	capture := imageTraceCapture(r.Context())
+	if setting.Mode == "cloudflare" || setting.Mode == "tailscale" {
+		capture.beginImageTransport(setting.Mode)
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), imageUploadRequestTimeout)
 	var lease imageURLLease
 	if setting.Mode == "upload" {
@@ -262,13 +266,31 @@ func (a *app) prepareResponseImageUploads(r *http.Request, key, org string) (*ht
 	var once sync.Once
 	cleanup := func() {
 		once.Do(func() {
+			reason := "request_finished"
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				reason = "request_deadline"
+			} else if ctx.Err() != nil {
+				reason = "request_canceled"
+			}
+			capture.updateImageTransport(func(d *imageTransportTrace) {
+				d.CleanupStartedAt = time.Now().UnixMilli()
+				d.CleanupReason = reason
+				if reason == "request_finished" && d.GatewayStartedAt == 0 {
+					d.CleanupReason = "preparation_failed"
+				}
+			})
 			cancel()
 			defer releaseSlot()
 			// Client cancellation must not cancel deletion. No image, signed URL
 			// or storage identifier is persisted to the user's request history.
 			cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), imageUploadCleanupTimeout)
 			defer cleanupCancel()
-			if err := lease.Close(cleanupCtx); err != nil {
+			cleanupErr := lease.Close(cleanupCtx)
+			capture.updateImageTransport(func(d *imageTransportTrace) {
+				d.CleanupFinishedAt = time.Now().UnixMilli()
+				d.CleanupFailed = cleanupErr != nil
+			})
+			if cleanupErr != nil {
 				a.mu.Lock()
 				if setting.Mode == "upload" {
 					a.imageUploadWarning = "Kilo could not confirm deletion of temporary images. Files may remain in your Kilo account until its pending-upload cleanup runs. Closing the app does not guarantee deletion."

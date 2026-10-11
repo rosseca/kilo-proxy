@@ -133,7 +133,11 @@ func (a *app) saveCodexProfileSettings(dir string, catalog []byte, draft *imageG
 		}
 		transforms = append(transforms, codexQueueModeTransform(*queueMode))
 	}
-	configChanged, catalogChanged, err := saveCodexProfileOptions(dir, catalog, a.config.Port, "", &images, extra, transforms...)
+	// Persist the requested provider/model even when disconnected, but only
+	// expose its tool in the generated profile when that connection is ready.
+	// The existing transaction still rolls both files and settings back together.
+	effective := a.clientImageSettingsLocked(images)
+	configChanged, catalogChanged, err := saveCodexProfileOptions(dir, catalog, a.config.Port, "", &effective, extra, transforms...)
 	if err == nil {
 		a.config = cfg
 	}

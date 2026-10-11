@@ -161,3 +161,69 @@ func TestClaudeRejectsInventedEfforts(t *testing.T) {
 		t.Fatal("unsupported persistent effort")
 	}
 }
+
+func TestClaudeLargeContextTagFollowsTheCatalogMaximum(t *testing.T) {
+	for _, tt := range []struct {
+		maximum int
+		tagged  bool
+	}{{0, false}, {999999, false}, {1000000, true}, {1048576, true}} {
+		if got := claudeContextTag("vendor/model", tt.maximum); (got != "vendor/model") != tt.tagged {
+			t.Fatal(tt.maximum, got)
+		}
+	}
+	s := claudeFixture()
+	// A working preset below 1M must not hide a model the catalog reports at 1M.
+	s.Models[0].Context, s.Models[0].Maximum = 272000, 1048576
+	s.Models[1].Context, s.Models[1].Maximum = 200000, 200000
+	settings := claudeManagedSettings(s, claudeCaps("2.1.263"), 8877, "fixture")
+	if settings["model"] != "claude-fable-5-1[1m]" {
+		t.Fatalf("the session model lost its tag: %v", settings["model"])
+	}
+	env := settings["env"].(map[string]any)
+	if env["ANTHROPIC_MODEL"] != "claude-fable-5-1[1m]" || env["ANTHROPIC_DEFAULT_FABLE_MODEL"] != "claude-fable-5-1[1m]" {
+		t.Fatal(env["ANTHROPIC_MODEL"], env["ANTHROPIC_DEFAULT_FABLE_MODEL"])
+	}
+	// A model below the ceiling keeps the default window Claude Code assumes.
+	if env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] != "claude-opus-4-6" {
+		t.Fatal(env["ANTHROPIC_DEFAULT_HAIKU_MODEL"])
+	}
+	options := settings["modelPicker"].(map[string]any)["options"].([]map[string]any)
+	if options[0]["model"] != "claude-fable-5-1[1m]" || options[1]["model"] != "claude-opus-4-6" {
+		t.Fatal(options)
+	}
+	// Claude Code strips the tag before requesting, so overrides stay keyed on the
+	// untagged identity or the sent model would never resolve.
+	overrides := settings["modelOverrides"].(map[string]string)
+	if overrides["claude-fable-5-1"] != "anthropic/claude-fable-5.1" {
+		t.Fatal(overrides)
+	}
+	if _, tagged := overrides["claude-fable-5-1[1m]"]; tagged {
+		t.Fatal("a tagged override key cannot match the requested model", overrides)
+	}
+	// The tag widens the ceiling; it never raises the session's working budget.
+	if window, _ := claudeContextBudget(s); window != 200000 {
+		t.Fatal(window)
+	}
+}
+
+func TestClaudeSelectionCarriesTheCatalogMaximum(t *testing.T) {
+	payload := `{"models":[{"id":"vendor/large","contextWindow":272000,"contextMaximum":1048576}],"initial":"vendor/large","aliases":{},"mode":"modern"}`
+	var s claudeSelection
+	decoder := json.NewDecoder(strings.NewReader(payload))
+	// The profile endpoint decodes strictly, so a client that reports the maximum
+	// must not be rejected as an unknown field.
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&s); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateClaudeSelection(s); err != nil {
+		t.Fatal(err)
+	}
+	if s.Models[0].Maximum != 1048576 {
+		t.Fatal(s.Models[0].Maximum)
+	}
+	s.Models[0].Maximum = 100000001
+	if err := validateClaudeSelection(s); err == nil {
+		t.Fatal("accepted an out-of-range maximum")
+	}
+}

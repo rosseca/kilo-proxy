@@ -17,6 +17,9 @@ import (
 )
 
 type nativeAgents struct {
+	OpenMausBot       nativeOpenMausBotState
+	T3Code            nativeT3CodeState
+	Synara            nativeSynaraState
 	Preferences       agentPreferences
 	Error             string
 	ClaudeError       string
@@ -143,6 +146,9 @@ func (u *nativeUI) agentSetup(key string) {
 }
 
 func (u *nativeUI) agentConnectionReady() bool {
+	if u.chatGPTReady() {
+		return true
+	}
 	u.owner.mu.Lock()
 	defer u.owner.mu.Unlock()
 	return strings.TrimSpace(u.owner.apiKey) != "" && strings.TrimSpace(u.owner.config.OrgID) != ""
@@ -173,8 +179,14 @@ func (u *nativeUI) agentCompatibility(key string) string {
 		return u.tr("Uses Responses through an isolated Kilo profile, with the library's names, default and supported reasoning levels. Model support depends on the gateway.", "Usa Responses con un perfil Kilo separado: nombres, modelo inicial y niveles de razonamiento compatibles de la biblioteca. La compatibilidad depende del gateway.")
 	case "claude":
 		return u.tr("Uses Anthropic Messages. Applies only reasoning levels supported by each model and installed Claude Code version. Gateway support is also required.", "Usa Anthropic Messages. Aplica solo niveles de razonamiento compatibles con cada modelo y la versión de Claude Code. También requiere compatibilidad del gateway.")
+	case "openmausbot":
+		return u.tr("Uses the local OpenAI-compatible connection with your shared models, listing the default first. OpenMausBot shows exact model IDs instead of custom names. Kilo Proxy applies each model’s supported reasoning level saved in Models. Generation and tools depend on the model and provider.", "Usa la conexión local compatible con OpenAI con tus modelos compartidos, mostrando primero el predeterminado. OpenMausBot muestra los ID exactos en lugar de nombres personalizados. Kilo Proxy aplica el nivel de razonamiento compatible de cada modelo guardado en Modelos. La generación y las herramientas dependen del modelo y del proveedor.")
+	case "synara":
+		return u.tr("Opens a separate Synara workspace with four Codex and Claude agents. Normal agents use existing CLI sessions; Kilo agents use shared models through the proxy. Start a new chat to change accounts and select the prepared exact gateway model ID.", "Abre un espacio Synara separado con cuatro agentes Codex y Claude. Los agentes normales usan sesiones CLI existentes; los agentes Kilo usan modelos compartidos a través del proxy. Inicia un chat nuevo para cambiar de cuenta y elige el ID exacto de modelo del gateway preparado.")
+	case "t3-code":
+		return u.tr("Opens a separate T3 Code workspace with Codex, Codex · Kilo, Claude and Claude · Kilo. Normal agents use your existing CLI login; Kilo agents use your shared models through the proxy. Choose the agent when creating a new chat. Codex supports the model's reasoning levels; Claude offers only levels supported by its CLI and model.", "Abre un espacio T3 Code separado con Codex, Codex · Kilo, Claude y Claude · Kilo. Los agentes normales usan tu sesión CLI existente; los agentes Kilo usan tus modelos compartidos a través del proxy. Elige el agente al crear un chat nuevo. Codex admite los niveles de razonamiento del modelo; Claude ofrece solo los compatibles con su CLI y modelo.")
 	case "claude-desktop":
-		return u.tr("Uses the Kilo third-party configuration for Chat, Cowork and Code. Close Claude before opening to apply changes. Other providers require the experimental option in these settings.", "Usa la configuración de terceros Kilo para Chat, Cowork y Code. Cierra Claude antes de abrir para aplicar cambios. Los demás proveedores requieren la opción experimental de estos ajustes.")
+		return u.tr("Opens a separate Kilo data profile. Regular Claude can stay open; use its usual icon to open it. Quit only the Kilo window before applying changes or opening it again. Other providers require the experimental option in these settings.", "Abre un perfil de datos Kilo separado. Claude normal puede seguir abierto; ábrelo desde su icono habitual. Cierra solo la ventana Kilo antes de aplicar cambios o volver a abrirla. Los demás proveedores requieren la opción experimental de estos ajustes.")
 	case "opencode":
 		return u.tr("Uses Chat Completions with shared names and default model; reasoning stays automatic. Opens a terminal in your project. Local OpenCode settings can override this profile.", "Usa Chat Completions con nombres y modelo inicial compartidos; el razonamiento sigue automático. Abre una terminal en tu proyecto. Los ajustes de OpenCode pueden prevalecer.")
 	case "omp":
@@ -189,7 +201,8 @@ func (u *nativeUI) agentCompatibility(key string) string {
 }
 
 func (u *nativeUI) agentModelSummary() layout.Widget {
-	s := u.sharedClientSelection("codex")
+	u.initModelLibrary()
+	s := u.library.selection
 	text := u.tr("Add models to your shared library to get started.", "Añade modelos a tu biblioteca compartida para empezar.")
 	if len(s.Models) > 0 {
 		name := s.Initial
@@ -216,7 +229,7 @@ func (u *nativeUI) agentModelSummary() layout.Widget {
 		widgets = append(widgets, u.note(status))
 	}
 	if u.setupNeeded() {
-		setupCard := u.card(u.actionRow(u.column(u.heading(u.tr("Finish setting up your workspace", "Termina de configurar tu espacio")), u.note(u.tr("Connect Kilo and choose at least one model. We'll guide you through it.", "Conecta Kilo y elige al menos un modelo. Te guiamos paso a paso."))), u.primaryButton("primary.agents.setup", u.tr("Continue setup", "Continuar configuración"), u.beginSetup)))
+		setupCard := u.card(u.actionRow(u.column(u.heading(u.tr("Finish setting up your workspace", "Termina de configurar tu espacio")), u.note(u.tr("Connect Kilo or ChatGPT and choose at least one model. We'll guide you through it.", "Conecta Kilo o ChatGPT y elige al menos un modelo. Te guiamos paso a paso."))), u.primaryButton("primary.agents.setup", u.tr("Continue setup", "Continuar configuración"), u.beginSetup)))
 		widgets = append(widgets, setupCard)
 	}
 	return u.column(widgets...)
@@ -251,6 +264,7 @@ func (u *nativeUI) agentMonogram(key string) layout.Widget {
 	// so every agent is distinct and its kind reads at a glance.
 	initials := map[string]string{
 		"codex": "CX", "claude-desktop": "CD", "zed": "ZD", "open-design": "OD",
+		"t3-code": "T3", "synara": "SY", "openmausbot": "MB",
 		"codex-cli": ">CX", "claude": ">CC", "opencode": ">OC", "omp": ">OM",
 	}[key]
 	return func(gtx layout.Context) layout.Dimensions {
@@ -270,6 +284,10 @@ func (u *nativeUI) agentMonogram(key string) layout.Widget {
 
 func (u *nativeUI) agentPurpose(key string) string {
 	switch key {
+	case "t3-code", "synara":
+		return u.tr("One workspace, four Codex and Claude agent options.", "Un espacio, cuatro opciones de agentes Codex y Claude.")
+	case "openmausbot":
+		return u.tr("Desktop assistant with your shared models.", "Asistente de escritorio con tus modelos compartidos.")
 	case "codex":
 		return u.tr("Desktop app with shared Kilo models.", "App de escritorio con modelos Kilo.")
 	case "codex-cli":
@@ -277,7 +295,7 @@ func (u *nativeUI) agentPurpose(key string) string {
 	case "claude":
 		return u.tr("Claude Code with compatible models.", "Claude Code con modelos compatibles.")
 	case "claude-desktop":
-		return u.tr("Chat, Cowork and Code with your Kilo models.", "Chat, Cowork y Code con tus modelos de Kilo.")
+		return u.tr("Separate Kilo profile; regular Claude can stay open.", "Perfil Kilo separado; Claude normal puede seguir abierto.")
 	case "opencode":
 		return u.tr("OpenCode in your project terminal.", "OpenCode en tu terminal de proyecto.")
 	case "omp":
@@ -293,8 +311,29 @@ func (u *nativeUI) agentPurpose(key string) string {
 
 func (u *nativeUI) agentOptions(key string) layout.Widget {
 	a, c := u.agentsState(), u.clientState()
+	if key == "t3-code" {
+		return u.column(u.note(u.agentCompatibility(key)), u.pills(
+			u.button("agent:t3-code:setup", u.tr("Integration settings", "Ajustes de integración"), func() { u.agentSetup(key) }),
+			u.button("agent:t3-code:detect", u.tr("Refresh detection", "Actualizar detección"), func() { u.detectLaunchers(); u.refreshT3CodeProfile() }),
+			u.iconButton("agent:t3-code:install", u.tr("Get T3 Code", "Obtener T3 Code"), nativeButtonGhost, nativeIconOpenInNew, func() { u.open(t3CodeDownloadURL) }),
+		))
+	}
+	if key == "synara" {
+		return u.column(u.note(u.agentCompatibility(key)), u.pills(
+			u.button("agent:synara:setup", u.tr("Integration settings", "Ajustes de integración"), func() { u.agentSetup(key) }),
+			u.button("agent:synara:detect", u.tr("Refresh detection", "Actualizar detección"), func() { u.detectLaunchers(); u.refreshSynaraProfile() }),
+			u.iconButton("agent:synara:install", u.tr("Get Synara", "Obtener Synara"), nativeButtonGhost, nativeIconOpenInNew, func() { u.open(synaraDownloadURL) }),
+		))
+	}
 	if key == "open-design" {
 		return u.column(u.note(u.agentCompatibility(key)), u.pills(u.button("agent:open-design:detect", u.tr("Refresh detection", "Actualizar detección"), func() { u.detectLaunchers(); u.detectOpenDesign() }), u.button("agent:open-design:install", u.tr("Installation instructions", "Instrucciones de instalación"), func() { u.open(u.openDesignInstallURL()) })))
+	}
+	if key == "openmausbot" {
+		return u.column(u.note(u.agentCompatibility(key)), u.pills(
+			u.button("agent:openmausbot:setup", u.tr("Integration settings", "Ajustes de integración"), func() { u.agentSetup(key) }),
+			u.button("agent:openmausbot:detect", u.tr("Refresh detection", "Actualizar detección"), func() { u.detectLaunchers(); u.refreshOpenMausBotProfile() }),
+			u.iconButton("agent:openmausbot:install", u.tr("Get OpenMausBot", "Obtener OpenMausBot"), nativeButtonGhost, nativeIconOpenInNew, func() { u.open(openMausBotDownloadURL) }),
+		))
 	}
 	if key == "claude-desktop" {
 		return u.column(u.note(u.claudeDesktopSelectionNote(u.sharedClientSelection(key))), u.note(u.agentCompatibility(key)), u.pills(
@@ -344,6 +383,8 @@ func (u *nativeUI) agentCard(key string) layout.Widget {
 	name, kind := launchClientIdentity(key)
 	if key == "codex" {
 		name = "Codex"
+	} else if key == "claude-desktop" {
+		name = "Claude Desktop · Kilo"
 	}
 	available := u.nativeLaunchAvailable(key)
 	cli := terminalClientSupported(key)
@@ -372,15 +413,17 @@ func (u *nativeUI) agentCard(key string) layout.Widget {
 		}
 	}
 	s := u.sharedClientSelection(key)
+	packName := u.assignedPackName(key)
+	packIssue := u.packReadinessError(key)
 	_, validation := nativeClientPayload(key, s)
 	libraryStatus, libraryReady := u.libraryStatus()
 	connectionReady := u.agentConnectionReady() && !u.connectionWorking() && !u.setupConnectionNeeded()
-	canOpen := available && libraryReady && connectionReady && len(s.Models) > 0 && validation == nil && c.Launching == "" && !u.busy["POST"+nativeClientEndpoint(key)]
+	canOpen := available && libraryReady && connectionReady && len(s.Models) > 0 && validation == nil && packIssue == nil && c.Launching == "" && !u.busy["POST"+nativeClientEndpoint(key)]
 	if key == "claude-desktop" {
 		canOpen = canOpen && !u.busy["POST/api/claude-desktop/options"]
 	}
 	if key == "codex" || key == "codex-cli" {
-		canOpen = canOpen && nativeClientImagesReady(s, u.models)
+		canOpen = canOpen && nativeClientImagesReady(s, u.models, u.state)
 	}
 	if key == "claude" && (!c.ClaudeChecked || u.busy["GET/api/claude/info"]) {
 		canOpen = false
@@ -400,9 +443,11 @@ func (u *nativeUI) agentCard(key string) layout.Widget {
 			disabledReason = u.tr("Install this app, then refresh installed apps.", "Instala esta aplicación y actualiza las aplicaciones instaladas.")
 		}
 	case !connectionReady:
-		disabledReason = u.tr("Finish setting up and saving your Kilo connection first.", "Termina de configurar y guardar tu conexión de Kilo.")
+		disabledReason = u.tr("Finish setting up a connection first.", "Termina de configurar una conexión.")
 	case !libraryReady:
 		disabledReason = libraryStatus
+	case packIssue != nil:
+		disabledReason = packIssue.Error()
 	case key == "claude" && (!c.ClaudeChecked || u.busy["GET/api/claude/info"]):
 		disabledReason = u.tr("Wait for Claude Code version detection to finish.", "Espera a que termine la detección de la versión de Claude Code.")
 	case key == "open-design" && !c.OpenDesignChecked:
@@ -418,7 +463,7 @@ func (u *nativeUI) agentCard(key string) layout.Widget {
 		disabledReason = u.tr("Add at least one shared model before opening this agent.", "Añade al menos un modelo compartido antes de abrir este agente.")
 	case validation != nil:
 		disabledReason = nativeMessage(validation.Error(), u.language)
-	case (key == "codex" || key == "codex-cli") && !nativeClientImagesReady(s, u.models):
+	case (key == "codex" || key == "codex-cli") && !nativeClientImagesReady(s, u.models, u.state):
 		disabledReason = u.tr("Review image generation settings in Models before opening Codex.", "Revisa la generación de imágenes en Modelos antes de abrir Codex.")
 	case c.Launching != "" || u.busy["POST"+nativeClientEndpoint(key)] || key == "claude-desktop" && u.busy["POST/api/claude-desktop/options"]:
 		disabledReason = u.tr("Wait for the current agent operation to finish.", "Espera a que termine la operación actual del agente.")
@@ -441,12 +486,22 @@ func (u *nativeUI) agentCard(key string) layout.Widget {
 		controls = append(controls, u.disabled(!u.busy["GET"+nativeLaunchEndpoint], u.iconButton("agent:"+key+":detect-visible", u.tr("Check again", "Comprobar de nuevo"), nativeButtonGhost, nativeIconRefresh, func() { u.refreshAgentInstallation(key) })))
 	}
 	controls = append(controls, u.disclosure(optionsID, u.tr("Options", "Opciones")))
+	if _, supported := packAgentNames[key]; supported {
+		controls = append(controls, u.button("agent:"+key+":pack", u.tr("Choose model pack", "Elegir pack de modelos"), func() {
+			u.page = "models"
+			u.packsState().tab = "packs"
+			u.setValue("packs.agent", key)
+		}))
+	}
 	if key == "codex" && !available && c.LaunchChecked {
 		controls = append(controls, u.disabled(a.FolderBusy == "", u.button("agent:codex:locate", u.tr("Locate Codex", "Localizar Codex"), u.locateCodexApplication)))
 	}
 	widgets := []layout.Widget{
 		u.actionRow(u.topRow(u.agentMonogram(key), u.column(u.subheading(name), u.note(u.agentPurpose(key)))), u.statusBadge(statusTone, status)),
 		layout.Spacer{Height: 4}.Layout,
+	}
+	if packName != "" {
+		widgets = append(widgets, u.note(fmt.Sprintf(u.tr("Model pack: %s · applied on next open", "Pack de modelos: %s · se aplicará al volver a abrir"), packName)))
 	}
 	if key == "open-design" {
 		engineName, _ := launchClientIdentity(u.openDesignEngine())
@@ -482,11 +537,16 @@ func (u *nativeUI) agentsPanel() layout.Widget {
 	if !c.OpenDesignDetectStarted {
 		u.detectOpenDesign()
 	}
-	// One uniform grid: desktop apps first, then terminal agents.
+	// Desktop apps first, then terminal agents. T3 Code, Synara and
+	// OpenMausBot span the full width: their cards explain several agent
+	// options and read poorly in a half-width column.
 	widgets := []layout.Widget{
 		u.agentModelSummary(),
 		u.eyebrow(u.tr("Desktop apps", "Apps de escritorio")),
 		u.topRow(u.agentCard("codex"), u.agentCard("claude-desktop")),
+		u.agentCard("t3-code"),
+		u.agentCard("synara"),
+		u.agentCard("openmausbot"),
 		u.topRow(u.agentCard("zed"), u.agentCard("open-design")),
 		layout.Spacer{Height: nativeSpace8}.Layout,
 		u.eyebrow(u.tr("Terminal agents · open in your project folder", "Agentes de terminal · se abren en la carpeta del proyecto")),

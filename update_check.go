@@ -23,6 +23,10 @@ const (
 )
 
 type releaseUpdateState struct {
+	InstallMethod  string `json:"installMethod,omitempty"`
+	CanInstall     bool   `json:"canInstall,omitempty"`
+	InstallMessage string `json:"installMessage,omitempty"`
+	Installing     bool   `json:"installing,omitempty"`
 	CurrentVersion string `json:"currentVersion"`
 	LatestVersion  string `json:"latestVersion"`
 	Available      bool   `json:"available"`
@@ -195,10 +199,16 @@ func (c *releaseUpdateChecker) fetchLatest(ctx context.Context) (string, release
 }
 
 func (a *app) updateSnapshot() releaseUpdateState {
+	var state releaseUpdateState
 	if a.updates == nil {
-		return releaseUpdateState{CurrentVersion: strings.TrimPrefix(strings.TrimSpace(version), "v")}
+		state = releaseUpdateState{CurrentVersion: strings.TrimPrefix(strings.TrimSpace(version), "v")}
+	} else {
+		state = a.updates.snapshot()
 	}
-	return a.updates.snapshot()
+	if a.packageUpdates != nil {
+		a.packageUpdates.snapshot(&state)
+	}
+	return state
 }
 
 func (a *app) updatesAPI(w http.ResponseWriter, r *http.Request) {
@@ -210,7 +220,8 @@ func (a *app) updatesAPI(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, http.StatusServiceUnavailable, "The update checker is unavailable.")
 			return
 		}
-		jsonResponse(w, http.StatusOK, a.updates.check())
+		a.updates.check()
+		jsonResponse(w, http.StatusOK, a.updateSnapshot())
 	default:
 		w.Header().Set("Allow", "GET, POST")
 		jsonError(w, http.StatusMethodNotAllowed, "Method not allowed.")

@@ -6,7 +6,7 @@ export function reportedCost(value, priced = 1) {
   return '$' + amount.toFixed(6);
 }
 export function usageCoverage(summary) {
-  const requests = Number(summary?.requests) || 0;
+  const requests = Math.max(0,(Number(summary?.requests)||0)-(Number(summary?.subscriptionRequests)||0));
   const priced = Number(summary?.priced) || 0;
   return {requests, priced, missing: Math.max(0, requests - priced), incomplete: Number(summary?.incomplete) || 0};
 }
@@ -16,11 +16,12 @@ export function usageCoverage(summary) {
 export function reportedSpend(summary, language = 'en') {
   const {requests,priced,missing,incomplete}=usageCoverage(summary);
   const es=language==='es',partial=priced>0&&missing>0;
+  if(summary?.subscriptionRequests>0&&Number(summary.requests)===Number(summary.subscriptionRequests))return {partial:false,amount:es?'Uso de suscripción':'Subscription usage',label:es?'Uso de suscripción':'Subscription usage',coverage:es?`${summary.subscriptionRequests} peticiones de suscripción · cuota independiente`:`${summary.subscriptionRequests} subscription requests · quota shown separately`,responseStats:es?`Estadísticas de respuesta: ${incomplete} interrumpidas o limitadas`:`Response stats: ${incomplete} interrupted or limited`};
   return {
     partial,
     amount:reportedCost(summary?.costUSD,priced) ?? (es?'Coste desconocido':'Not reported'),
     label:partial?(es?'Subtotal informado':'Reported subtotal'):(es?'Coste de inferencia informado':'Reported inference cost'),
-    coverage:es?`Coste informado en ${priced} de ${requests} peticiones · ${missing} peticiones sin coste informado`:`Cost reported for ${priced} of ${requests} requests · ${missing} requests without reported cost`,
+    coverage:(es?`Coste informado en ${priced} de ${requests} peticiones · ${missing} peticiones sin coste informado`:`Cost reported for ${priced} of ${requests} requests · ${missing} requests without reported cost`)+(summary?.subscriptionRequests>0?(es?` · ${summary.subscriptionRequests} peticiones de suscripción`:` · ${summary.subscriptionRequests} subscription requests`):''),
     responseStats:es?`Estadísticas de respuesta: ${incomplete} interrumpidas o limitadas`:`Response stats: ${incomplete} interrupted or limited`
   };
 }

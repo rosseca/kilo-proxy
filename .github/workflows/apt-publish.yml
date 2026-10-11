@@ -1,0 +1,93 @@
+name: Publish Ubuntu APT repository
+
+on:
+  workflow_call:
+    inputs:
+      signing-fingerprint:
+        type: string
+        required: true
+      allow-bootstrap:
+        type: boolean
+        default: false
+      source-run-id:
+        type: string
+        default: ''
+      source-head-sha:
+        type: string
+        default: ''
+      source-artifact-id:
+        type: string
+        default: ''
+      source-artifact-digest:
+        type: string
+        default: ''
+    secrets:
+      KILO_APT_SIGNING_KEY:
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: kilo-proxy-apt-publication
+  cancel-in-progress: false
+
+jobs:
+  sign:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        if: inputs.source-run-id == ''
+        with:
+          name: debian-assets
+          path: dist/debian
+      - name: Validate and download the explicitly selected bootstrap packages
+        if: inputs.source-run-id != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.source-run-id }}
+          SOURCE_HEAD_SHA: ${{ inputs.source-head-sha }}
+          SOURCE_ARTIFACT_ID: ${{ inputs.source-artifact-id }}
+          SOURCE_ARTIFACT_DIGEST: ${{ inputs.source-artifact-digest }}
+        run: |
+          python scripts/validate_apt_bootstrap.py --run-id "$SOURCE_RUN_ID" --head-sha "$SOURCE_HEAD_SHA" --artifact-id "$SOURCE_ARTIFACT_ID" --artifact-digest "$SOURCE_ARTIFACT_DIGEST" --download-directory dist/debian
+      - name: Sign the tested Debian packages and retain authenticated history
+        env:
+          APT_PRIVATE_KEY: ${{ secrets.KILO_APT_SIGNING_KEY }}
+          APT_FINGERPRINT: ${{ inputs.signing-fingerprint }}
+          APT_BOOTSTRAP: ${{ inputs.allow-bootstrap }}
+        run: |
+          export GNUPGHOME="$(mktemp -d "$RUNNER_TEMP/kilo-apt-release.XXXXXX")"
+          chmod 700 "$GNUPGHOME"
+          trap 'gpgconf --kill all; rm -rf "$GNUPGHOME"' EXIT
+          printf '%s' "$APT_PRIVATE_KEY" | gpg --batch --import
+          unset APT_PRIVATE_KEY
+          bootstrap=()
+          if [ "$APT_BOOTSTRAP" = 'true' ]; then bootstrap=(--allow-bootstrap); fi
+          python scripts/prepare_apt_site.py --packages-directory dist/debian --output dist/apt-site --signing-key "$APT_FINGERPRINT" --previous-url 'https://rosseca.github.io/kilo-proxy/apt' "${bootstrap[@]}"
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist/apt-site
+
+  deploy:
+    needs: sign
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy the signed repository
+        id: deployment
+        uses: actions/deploy-pages@v4

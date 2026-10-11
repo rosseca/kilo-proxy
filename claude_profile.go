@@ -23,6 +23,9 @@ type claudeModel struct {
 	Effort      string `json:"effort,omitempty"`
 	Context     int    `json:"contextWindow,omitempty"`
 	Output      int    `json:"maxOutputTokens,omitempty"`
+	// Maximum is the catalog's published capacity, kept separate from Context so
+	// a working preset never hides a model's real ceiling from the 1M tag.
+	Maximum int `json:"contextMaximum,omitempty"`
 }
 type claudeSelection struct {
 	Models  []claudeModel     `json:"models"`
@@ -37,6 +40,8 @@ type claudeCapabilities struct {
 }
 
 var claudeVersionPattern = regexp.MustCompile(`^(\d+)\.(\d+)\.(\d+)(?:\s|$)`)
+
+const claude55EffortMinVersion = "2.1.267"
 
 func claudeCaps(version string) claudeCapabilities {
 	c := claudeCapabilities{Version: version}
@@ -79,16 +84,58 @@ func installedClaude() claudeCapabilities {
 	return claudeCaps(strings.TrimSpace(string(output)))
 }
 
-// Only Claude families with documented native effort are offered. Kilo IDs stay
-// unchanged on requests; modelSettings uses Claude's canonical family name.
-var claudeEffortID = regexp.MustCompile(`(?i)^(?:anthropic/)?(claude-(?:fable-5(?:[.-]1)?|opus-(?:5|4[.-][678])|sonnet-(?:5|4[.-]6)))(?:-\d{8})?$`)
+// Keep the existing standalone picker identities separate from effort keys.
+// Adding an effort default must not change the gateway ID selected for 5.5.
+var claudePickerID = regexp.MustCompile(`(?i)^(?:anthropic/)?(claude-(?:fable-5(?:[.-]1)?|opus-(?:5|4[.-][678])|sonnet-(?:5|4[.-]6)))(?:-\d{8})?$`)
+var claudeEffortID = regexp.MustCompile(`(?i)^(?:anthropic/)?(claude-(?:fable-5(?:[.-]1)?|opus-(?:5(?:[.-]5)?|4[.-][678])|sonnet-(?:5(?:[.-]5)?|4[.-]6)))(?:-\d{8})?$`)
+var claude55ID = regexp.MustCompile(`(?i)^(?:anthropic/)?claude-(?:opus|sonnet)-5[.-]5(?:-\d{8})?$`)
+
+func claudePickerKey(id string) string {
+	match := claudePickerID.FindStringSubmatch(id)
+	if match == nil {
+		return ""
+	}
+	return strings.ReplaceAll(strings.ToLower(match[1]), ".", "-")
+}
 
 func claudeEffortKey(id string) string {
 	match := claudeEffortID.FindStringSubmatch(id)
 	if match == nil {
 		return ""
 	}
-	return strings.ReplaceAll(strings.ToLower(match[1]), ".", "-")
+	family := strings.ToLower(match[1])
+	// Claude Code 2.1.267 and 2.1.288 classify a dotted gateway ID as family 5,
+	// while a hyphenated 5-5 ID has its own native key. Both contracts were
+	// checked with the real CLI and a synthetic upstream; request IDs stay exact.
+	if strings.HasSuffix(family, "-5.5") {
+		return strings.TrimSuffix(family, ".5")
+	}
+	return strings.ReplaceAll(family, ".", "-")
+}
+
+func claudeEffortCompatible(id string, caps claudeCapabilities) bool {
+	if !caps.PerModelEffort || claudeEffortKey(id) == "" {
+		return false
+	}
+	if !claude55ID.MatchString(id) {
+		return true
+	}
+	parts := claudeVersionPattern.FindStringSubmatch(caps.Version)
+	if parts == nil {
+		return false
+	}
+	minimum := claudeVersionPattern.FindStringSubmatch(claude55EffortMinVersion)
+	for i := 1; i <= 3; i++ {
+		part, err := strconv.Atoi(parts[i])
+		if err != nil {
+			return false
+		}
+		minPart, _ := strconv.Atoi(minimum[i])
+		if part != minPart {
+			return part > minPart
+		}
+	}
+	return true
 }
 func validClaudeEffort(id, effort string) bool {
 	if effort == "" {
@@ -110,14 +157,14 @@ func validateClaudeSelection(s claudeSelection) error {
 	ids := map[string]bool{}
 	nativeIDs := map[string]bool{}
 	for _, m := range s.Models {
-		if m.Context < 0 || m.Context > 100000000 || m.Context > 0 && m.Context < 1024 || m.Output < 0 || m.Output > 100000000 || m.Context > 0 && m.Output > m.Context {
+		if m.Context < 0 || m.Context > 100000000 || m.Context > 0 && m.Context < 1024 || m.Output < 0 || m.Output > 100000000 || m.Context > 0 && m.Output > m.Context || m.Maximum < 0 || m.Maximum > 100000000 {
 			return errors.New("Invalid Claude context or output limit")
 		}
 		if !catalogID.MatchString(m.ID) || ids[m.ID] || len([]rune(m.DisplayName)) > 80 || strings.IndexFunc(m.DisplayName, func(r rune) bool { return r < 32 || r == 127 }) >= 0 || !validClaudeEffort(m.ID, m.Effort) {
 			return errors.New("Invalid Claude model, display name or effort")
 		}
 		ids[m.ID] = true
-		if native := claudeEffortKey(m.ID); native != "" {
+		if native := claudePickerKey(m.ID); native != "" {
 			if nativeIDs[native] {
 				return errors.New("Choose one gateway ID per Claude family/version for native reasoning")
 			}
@@ -150,15 +197,37 @@ func claudeContextBudget(s claudeSelection) (context, output int) {
 	return min(context, 1000000), output
 }
 
+// Claude Code never reads a gateway model's published capacity: it assumes
+// roughly 200K for a model it does not recognize and 1M for one carrying the
+// [1m] tag, so a ceiling the catalog already reports is otherwise invisible to
+// the session. Tag the models whose catalog maximum reaches Claude's 1M ceiling;
+// autoCompactWindow still bounds the working budget below it, and the tag is
+// Claude's own notation, which it strips before sending the requested model.
+const claudeLargeContextTokens = 1000000
+
+func claudeContextTag(id string, maximum int) string {
+	if maximum >= claudeLargeContextTokens {
+		return id + "[1m]"
+	}
+	return id
+}
+
 func claudeManagedSettings(s claudeSelection, caps claudeCapabilities, port int, key string) map[string]any {
-	nativeID := func(id string) string {
+	maximum := make(map[string]int, len(s.Models))
+	for _, m := range s.Models {
+		maximum[m.ID] = m.Maximum
+	}
+	// The picker identity is the spelling Claude Code sends after stripping the
+	// [1m] tag, so overrides stay keyed on it and never on the tagged form.
+	pickerID := func(id string) string {
 		if caps.Picker {
-			if native := claudeEffortKey(id); native != "" {
+			if native := claudePickerKey(id); native != "" {
 				return native
 			}
 		}
 		return id
 	}
+	nativeID := func(id string) string { return claudeContextTag(pickerID(id), maximum[id]) }
 	env := map[string]any{"ANTHROPIC_BASE_URL": "http://127.0.0.1:" + strconv.Itoa(port), "ANTHROPIC_AUTH_TOKEN": key, "ANTHROPIC_MODEL": nativeID(s.Initial)}
 	result := map[string]any{"env": env, "model": nativeID(s.Initial)}
 	if window, output := claudeContextBudget(s); window >= 100000 {
@@ -208,7 +277,7 @@ func claudeManagedSettings(s claudeSelection, caps claudeCapabilities, port int,
 		result["modelPicker"] = map[string]any{"options": options, "replaceBuiltInOptions": true}
 		overrides := map[string]string{}
 		for _, m := range s.Models {
-			if native := nativeID(m.ID); native != m.ID {
+			if native := pickerID(m.ID); native != m.ID {
 				overrides[native] = m.ID
 			}
 		}
@@ -219,7 +288,7 @@ func claudeManagedSettings(s claudeSelection, caps claudeCapabilities, port int,
 	if caps.PerModelEffort {
 		settings := map[string]any{}
 		for _, m := range s.Models {
-			if m.Effort != "" {
+			if m.Effort != "" && claudeEffortCompatible(m.ID, caps) {
 				settings[claudeEffortKey(m.ID)] = map[string]any{"effortLevel": m.Effort}
 			}
 		}
@@ -240,6 +309,18 @@ func decodeClaudeSettings(data []byte) (map[string]json.RawMessage, error) {
 	return result, nil
 }
 func mergeClaudeSettings(data []byte, s claudeSelection, caps claudeCapabilities, port int, key string) ([]byte, error) {
+	byEffortKey := map[string]string{}
+	for _, model := range s.Models {
+		if model.Effort != "" && claude55ID.MatchString(model.ID) && !claudeEffortCompatible(model.ID, caps) {
+			return nil, errors.New("Claude Code " + claude55EffortMinVersion + " or newer is required to apply saved per-model reasoning for Claude 5.5. Update Claude Code and prepare again.")
+		}
+		if native := claudeEffortKey(model.ID); native != "" {
+			if effort, exists := byEffortKey[native]; exists && effort != model.Effort {
+				return nil, errors.New("Choose compatible reasoning defaults for gateway IDs that share a native Claude effort key")
+			}
+			byEffortKey[native] = model.Effort
+		}
+	}
 	result, err := decodeClaudeSettings(data)
 	if err != nil {
 		return nil, err

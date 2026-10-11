@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 )
 
 // Catalog data is a disposable cache, not a source of user selections. Scoping
@@ -20,7 +21,7 @@ func (u *nativeUI) cacheModels(org string) {
 	u.owner.mu.Lock()
 	dir := u.owner.dir
 	u.owner.mu.Unlock()
-	b, err := json.Marshal(nativeCachedCatalog{SchemaVersion: 1, OrgID: org, Models: u.models})
+	b, err := json.Marshal(nativeCachedCatalog{SchemaVersion: 1, OrgID: org, Models: u.models, FetchedAt: u.catalogFetchedAt})
 	if err != nil || len(b) > 4<<20 {
 		return
 	}
@@ -41,4 +42,13 @@ func (u *nativeUI) cacheModels(org string) {
 			u.catalogCache.written = generation
 		}
 	}()
+}
+
+func (u *nativeUI) openModelCatalog() {
+	u.expanded["library.catalog"] = true
+	if len(u.models) == 0 || modelCatalogNeedsRefresh(u.catalogFetchedAt, time.Now()) {
+		// Keep the last catalog available while fetching. Failed requests do
+		// not change its age, so another Add action can retry.
+		u.refreshModels()
+	}
 }

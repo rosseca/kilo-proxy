@@ -22,7 +22,7 @@ func trayText(language string) trayLabels {
 			balance: "Saldo de Kilo", balanceTeam: "Saldo del equipo", balancePersonal: "Saldo personal", balanceUnavailable: "Saldo no disponible", balanceStale: "Saldo desactualizado; actualízalo en Actividad", balanceLoading: "Actualizando saldo…", balanceSignIn: "Inicia sesión para consultar el saldo",
 			open: "Abrir Kilo Proxy…", start: "Arrancar proxy", setup: "Configurar conexión…",
 			stop: "Detener proxy (cancela peticiones)", hint: "Cerrar la ventana no detiene el proxy", exit: "Salir de Kilo Proxy",
-			openError: "No se pudo abrir Kilo Proxy", startError: "No se pudo arrancar; revisa el puerto en la ventana",
+			openError: "No se pudo abrir Kilo Proxy", startError: "No se pudo arrancar; consulta el error en la ventana",
 		}
 	}
 	return trayLabels{
@@ -35,7 +35,7 @@ func trayText(language string) trayLabels {
 		balance: "Kilo balance", balanceTeam: "Team balance", balancePersonal: "Personal balance", balanceUnavailable: "Balance unavailable", balanceStale: "Balance out of date; refresh in Activity", balanceLoading: "Refreshing balance…", balanceSignIn: "Sign in to check your balance",
 		open: "Open Kilo Proxy…", start: "Start proxy", setup: "Set up connection…",
 		stop: "Stop proxy (cancels requests)", hint: "Closing the window keeps the proxy running", exit: "Quit Kilo Proxy",
-		openError: "Could not open Kilo Proxy", startError: "Could not start; check the port in the window",
+		openError: "Could not open Kilo Proxy", startError: "Could not start; see the error in the window",
 	}
 }
 

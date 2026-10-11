@@ -176,6 +176,10 @@ func safeEditorDir(root, dir string) error {
 	return nil
 }
 func (a *app) editorPaths(client string) (string, string, string, error) {
+	if client == "opencode" && a.openCodeProfileDir != "" {
+		dir := a.openCodeProfileDir
+		return filepath.Dir(dir), filepath.Join(dir, "opencode.json"), filepath.Join(dir, "kilo-models.json"), nil
+	}
 	home := a.editorTestRoot
 	if home == "" {
 		var err error
@@ -226,13 +230,13 @@ func saveEditorFiles(files []profileFile) (bool, error) {
 		if !f.changed {
 			continue
 		}
-		if err := atomicCatalogFile(f.path, f.new); err != nil {
+		if err := atomicProfileFile(f.path, f.new, f.mode); err != nil {
 			restored := true
 			for _, prior := range files[:i] {
 				if prior.changed {
 					var e error
 					if prior.exists {
-						e = atomicCatalogFile(prior.path, prior.old)
+						e = atomicProfileFile(prior.path, prior.old, prior.oldMode)
 					} else {
 						e = os.Remove(prior.path)
 					}

@@ -16,7 +16,7 @@ func (a *app) prepareTerminalOpenCodeProfile(library modelLibrary) error {
 		return errors.New("Cannot locate the Kilo OpenCode profile.")
 	}
 	selection := editorSelection{Initial: library.DefaultModel}
-	for _, model := range terminalLibraryChoices(library, readNativeCatalogCache(a.dir, a.config.OrgID)) {
+	for _, model := range terminalLibraryChoices(library, readNativeCatalogCache(a.dir, a.catalogScopeLocked())) {
 		name := model.DisplayName
 		if name == "" {
 			name = model.Model.Name
@@ -44,7 +44,7 @@ func (a *app) prepareTerminalOpenCodeProfile(library modelLibrary) error {
 	if err != nil {
 		return err
 	}
-	config, err = mergeOpenDesignOpenCodeImages(config, a.config.ImageGeneration, a.config.Port, a.config.LocalKey)
+	config, err = mergeOpenDesignOpenCodeImages(config, a.clientImageSettingsLocked(), a.config.Port, a.config.LocalKey)
 	if err != nil {
 		return err
 	}

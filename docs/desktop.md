@@ -32,13 +32,13 @@ The guide opens Kilo's device authorization page for the usual login or SSO, sho
 After selecting at least one model and letting its automatic save complete, **Start proxy and go to agents** starts the listener and opens Agents only after success. Startup errors remain visible, with connection settings available to fix an occupied port. Leaving the guide early is allowed: Agents offers **Continue setup**, and the next launch resumes from the stored account and model configuration. Completing SSO alone does not skip the connection save.
 
 - **Agents:** installed-agent cards, direct Open actions, project-folder choosers and recent folders. **Start proxy** and **Stop proxy** sit beside the connection status. Opening an agent also starts the proxy first; failed startup prevents dispatching the agent. Codex Desktop and Codex CLI have distinct actions. Options contains installation guidance, integration setup and exports.
-- **Models:** one automatically saved library with names, order, a default model and supported reasoning preferences. Agent exports apply only settings supported by that client. Image generation is under **Image generation for Codex** and is saved when a Codex profile is prepared/opened.
+- **Models:** one automatically saved library with names, order, a default model and supported reasoning preferences. Agent exports apply only settings supported by that client. Image generation is under **Image generation**, with a separate **Kilo / ChatGPT** provider selector and **Save image settings** action. This shared tool setting can be saved without a Codex profile; reopen an agent to apply it.
 - **Activity:** requests, conversation breakdowns, observed costs and cache reuse.
 - **Settings:** Kilo account and organization, local connection, language, tray appearance, terminal commands and **App updates**.
 
 The library is `models.json` in the application configuration directory; project choices live in `agent-preferences.json`. Neither is a generated agent credential file. See [shared-model paths, recovery and propagation limits](shared-models.md).
 
-**App updates** checks the latest stable GitHub release on startup and every six hours without blocking the proxy. A newer version adds a compact download notice; Settings also shows the installed version, last check and a manual check button. Download opens the release page in your browser, and you install it when ready. Offline checks report that the version could not be checked. Prereleases and drafts are excluded; no Kilo credentials are used.
+**App updates** checks the latest stable GitHub release on startup and every six hours without blocking the proxy. A newer version adds a compact notice; Settings shows the installed version, last check and a manual check button. For a supported Homebrew or APT installation, **Update and restart** asks for confirmation before opening a visible terminal, closing Kilo Proxy and interrupting active requests. The package manager performs the update; APT may request your administrator password in the terminal. Kilo Proxy restarts after a successful update. **Download update** remains available for manual installations or when a package update is unavailable. See [package updates](package-updates.md). Offline checks report that the version could not be checked. Prereleases and drafts are excluded; no Kilo credentials are used.
 
 ## Interface preview
 
@@ -152,3 +152,39 @@ python3 scripts/smoke_desktop.py --binary ./kilo-proxy
 ```
 
 The executable's `--desktop-self-test REPORT.json` mode creates a fresh temporary profile and synthetic local gateway. Its report contains check names and errors. It does not use a saved Kilo account or send paid inference. Native lifecycle tests do not establish compatibility with every remote model, provider, client application or production Kilo service. Linux CI runs graphical tests inside Xvfb with a private D-Bus session and software graphics enabled.
+## Troubleshooting proxy startup
+
+The proxy listens on `127.0.0.1:8877` by default. Startup failures show the
+configured address and distinguish an occupied port, permission denial, an
+unavailable local address, and other listener errors. The message includes the
+original operating-system error and its numeric code when available. The same
+diagnostic appears when starting from the window, the tray, an agent launch, or
+the installed terminal commands. Pending sign-in and account changes have their
+own messages and are not reported as port conflicts.
+
+On Windows, error **10048** means the address is already in use. Closing the
+Kilo Proxy window keeps the proxy running in the notification area; choose
+**Quit Kilo Proxy** there before opening another copy. Another application may
+also be using the port. To inspect its owner in PowerShell:
+
+```powershell
+Get-NetTCPConnection -LocalPort 8877 -State Listen -ErrorAction SilentlyContinue |
+  Select-Object LocalAddress, LocalPort, OwningProcess
+```
+
+Use the displayed `OwningProcess` number with `Get-Process -Id <number>`.
+Replace `8877` if you configured another local port.
+
+Windows error **10013** means binding was denied. It may involve a reserved or
+restricted port, or another service holding exclusive access; it does not prove
+that another Kilo Proxy instance is listening. To inspect excluded TCP ranges:
+
+```powershell
+netsh interface ipv4 show excludedportrange protocol=tcp
+```
+
+While the proxy is stopped, its port can be changed in **Settings → Advanced →
+Local port**. Open managed agents again from Kilo Proxy to prepare their profiles
+with the new address. Investigate the reported system error before changing
+security settings. See Microsoft's [Winsock error reference](https://learn.microsoft.com/en-us/windows/win32/winsock/windows-sockets-error-codes-2)
+and [Get-NetTCPConnection reference](https://learn.microsoft.com/en-us/powershell/module/nettcpip/get-nettcpconnection).

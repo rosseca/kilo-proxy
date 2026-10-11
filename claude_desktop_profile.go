@@ -78,6 +78,7 @@ func validateClaudeDesktopSelectionMode(s editorSelection, experimental bool) er
 
 type claudeDesktopProfilePaths struct {
 	Root, ProfileDir, ConfigPath, MetaPath, ModePath, SelectionPath, Platform string
+	UserDataDir, ClaudeConfigDir, LocalAppData, AppData                       string
 }
 
 func (a *app) claudeDesktopPaths() (claudeDesktopProfilePaths, error) {
@@ -89,39 +90,32 @@ func (a *app) claudeDesktopPaths() (claudeDesktopProfilePaths, error) {
 	if !filepath.IsAbs(home) || !filepath.IsAbs(a.dir) {
 		return claudeDesktopProfilePaths{}, errors.New("Cannot locate Claude Desktop settings.")
 	}
-	root := home
-	var dir string
-	realHome, _ := os.UserHomeDir()
-	useSystemEnv := a.editorTestRoot == "" && filepath.Clean(home) == filepath.Clean(realHome)
+	// Keep every mutable Desktop/Code file inside Kilo's own configuration
+	// directory. Starting with a -3p user-data directory avoids Desktop's
+	// first-party to third-party migration touching the ordinary Claude profile.
+	root := filepath.Clean(a.dir)
+	base := filepath.Join(root, "claude-desktop")
+	userData := filepath.Join(base, "ui-3p")
+	localAppData, appData := "", ""
 	switch rt.platform {
-	case "macos", "darwin":
-		dir = filepath.Join(home, "Library", "Application Support", "Claude-3p")
+	case "macos", "darwin", "linux":
 	case "windows":
-		base := filepath.Join(home, "AppData", "Local")
-		if env := os.Getenv("LOCALAPPDATA"); useSystemEnv && runtime.GOOS == "windows" && filepath.IsAbs(env) {
-			base = env
-		}
-		dir = filepath.Join(base, "Claude-3p")
-		if !claudeDesktopWithin(home, base) {
-			root = base
-		}
-	case "linux":
-		base := filepath.Join(home, ".config")
-		if env := os.Getenv("XDG_CONFIG_HOME"); useSystemEnv && runtime.GOOS == "linux" && filepath.IsAbs(env) {
-			base = env
-		}
-		dir = filepath.Join(base, "Claude-3p")
-		if !claudeDesktopWithin(home, base) {
-			root = base
-		}
+		// Windows' vendor 3p path is based on LOCALAPPDATA even when Electron
+		// receives --user-data-dir. APPDATA must also be private so legacy
+		// migration cannot import or modify the ordinary roaming profile.
+		localAppData = filepath.Join(base, "local-app-data")
+		appData = filepath.Join(base, "app-data")
+		userData = filepath.Join(localAppData, "Claude-3p")
 	default:
 		return claudeDesktopProfilePaths{}, errors.New("Unsupported Claude Desktop platform.")
 	}
 	return claudeDesktopProfilePaths{
-		Root: root, ProfileDir: dir, Platform: rt.platform,
-		ConfigPath:    filepath.Join(dir, "configLibrary", claudeDesktopProfileID+".json"),
-		MetaPath:      filepath.Join(dir, "configLibrary", "_meta.json"),
-		ModePath:      filepath.Join(dir, "claude_desktop_config.json"),
+		Root: root, ProfileDir: userData, Platform: rt.platform,
+		UserDataDir: userData, ClaudeConfigDir: filepath.Join(base, "code"),
+		LocalAppData: localAppData, AppData: appData,
+		ConfigPath:    filepath.Join(userData, "configLibrary", claudeDesktopProfileID+".json"),
+		MetaPath:      filepath.Join(userData, "configLibrary", "_meta.json"),
+		ModePath:      filepath.Join(userData, "claude_desktop_config.json"),
 		SelectionPath: filepath.Join(a.dir, "claude-desktop-models.json"),
 	}, nil
 }
@@ -378,31 +372,12 @@ func (a *app) claudeDesktopManagedConfig(paths claudeDesktopProfilePaths) error 
 		if isolated || runtime.GOOS != "windows" {
 			return nil
 		}
-		for _, hive := range []string{"LocalMachine", "CurrentUser"} {
-			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-			// Query names only. .NET distinguishes an absent key from an access
-			// failure without depending on the language of reg.exe error text.
-			script := "$ErrorActionPreference='Stop'; try { $k=[Microsoft.Win32.Registry]::" + hive + ".OpenSubKey('SOFTWARE\\Policies\\Claude'); if ($null -eq $k) { exit 3 }; foreach ($n in $k.GetValueNames()) { [Console]::WriteLine($n) }; $k.Close() } catch { exit 1 }"
-			data, err := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script).Output()
-			cancel()
-			if err != nil {
-				var exit *exec.ExitError
-				if errors.As(err, &exit) && exit.ExitCode() == 3 {
-					continue
-				}
-				return errors.New("Cannot inspect managed Claude Desktop settings.")
-			}
-			keys := strings.Split(strings.TrimSuffix(string(data), "\r\n"), "\n")
-			if len(data) == 0 {
-				keys = nil
-			}
-			for i := range keys {
-				keys[i] = strings.TrimSuffix(keys[i], "\r")
-			}
-			if claudeDesktopManagedKeys(keys) {
-				return errors.New("Claude Desktop inference is managed by your organization; local profiles would be ignored.")
-			}
-			return nil // An existing HKLM key takes precedence over HKCU.
+		keys, err := claudeDesktopWindowsManagedKeys()
+		if err != nil {
+			return errors.New("Cannot inspect managed Claude Desktop settings.")
+		}
+		if claudeDesktopManagedKeys(keys) {
+			return errors.New("Claude Desktop inference is managed by your organization; local profiles would be ignored.")
 		}
 		return nil
 	}
@@ -435,7 +410,7 @@ func (a *app) claudeDesktopManagedConfig(paths claudeDesktopProfilePaths) error 
 }
 
 func (a *app) readClaudeDesktopSelection(paths claudeDesktopProfilePaths) (editorSelection, error) {
-	return a.readClaudeDesktopSelectionMode(paths, a.config.ClaudeDesktopExperimentalModels)
+	return a.readClaudeDesktopSelectionMode(paths, a.claudeDesktopExperimentalLocked())
 }
 
 // Reading with experimental=true during preparation validates the saved real
@@ -480,11 +455,16 @@ func (a *app) verifyClaudeDesktopProfile() error {
 	if !safeLaunchDir(filepath.Dir(paths.ConfigPath), paths.Root) {
 		return errors.New("Prepare the Claude Desktop profile first; its settings directory is missing or unsafe.")
 	}
+	for _, dir := range []string{paths.UserDataDir, paths.ClaudeConfigDir, paths.LocalAppData, paths.AppData} {
+		if dir != "" && !safeLaunchDir(dir, paths.Root) {
+			return errors.New("Prepare the Claude Desktop profile first; its private directories are missing or unsafe.")
+		}
+	}
 	config, _, exists, err := readClaudeDesktopObject(paths.ConfigPath)
 	if err != nil || !exists {
 		return errors.New("Prepare the Claude Desktop profile first; its configuration is missing or invalid.")
 	}
-	for key, value := range claudeDesktopOwnedConfig(s, a.config.Port, a.config.LocalKey, a.config.ClaudeDesktopExperimentalModels) {
+	for key, value := range claudeDesktopOwnedConfig(s, a.config.Port, a.config.LocalKey, a.claudeDesktopExperimentalLocked()) {
 		want, _ := json.Marshal(value)
 		if !launchEqualJSON(config[key], want) {
 			return errors.New("Claude Desktop gateway settings changed; prepare the profile again.")
@@ -507,10 +487,13 @@ func (a *app) verifyClaudeDesktopProfile() error {
 // Caller holds a.mu. All contents and backup destinations are validated before
 // writing; saveEditorFiles backs up and rolls back this multi-file change.
 func (a *app) saveClaudeDesktopProfile(s editorSelection, paths claudeDesktopProfilePaths) (bool, error) {
-	if err := validateClaudeDesktopSelectionMode(s, a.config.ClaudeDesktopExperimentalModels); err != nil {
+	if err := validateClaudeDesktopSelectionMode(s, a.claudeDesktopExperimentalLocked()); err != nil {
 		return false, err
 	}
 	if err := a.claudeDesktopManagedConfig(paths); err != nil {
+		return false, err
+	}
+	if err := a.claudeDesktopCanPrepare(paths); err != nil {
 		return false, err
 	}
 	if err := safeEditorDir(paths.Root, filepath.Dir(paths.ConfigPath)); err != nil {
@@ -518,6 +501,13 @@ func (a *app) saveClaudeDesktopProfile(s editorSelection, paths claudeDesktopPro
 	}
 	if err := safeEditorDir(a.dir, a.dir); err != nil {
 		return false, err
+	}
+	for _, dir := range []string{paths.UserDataDir, paths.ClaudeConfigDir, paths.LocalAppData, paths.AppData} {
+		if dir != "" {
+			if err := safeEditorDir(paths.Root, dir); err != nil {
+				return false, err
+			}
+		}
 	}
 	config, oldConfig, _, err := readClaudeDesktopObject(paths.ConfigPath)
 	if err != nil {
@@ -540,7 +530,7 @@ func (a *app) saveClaudeDesktopProfile(s editorSelection, paths claudeDesktopPro
 	delete(config, "inferenceCustomHeaders")
 	delete(config, "bootstrapUrl")
 	delete(config, "bootstrapEnabled")
-	for key, value := range claudeDesktopOwnedConfig(s, a.config.Port, a.config.LocalKey, a.config.ClaudeDesktopExperimentalModels) {
+	for key, value := range claudeDesktopOwnedConfig(s, a.config.Port, a.config.LocalKey, a.claudeDesktopExperimentalLocked()) {
 		claudeDesktopSet(config, key, value)
 	}
 	claudeDesktopSet(mode, "deploymentMode", "3p")
@@ -585,6 +575,15 @@ func (a *app) claudeDesktopProfile(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusMethodNotAllowed, "Method not allowed.")
 		return
 	}
+	if r.Method == http.MethodPost {
+		// Share the launch transaction lock: the profile must not be changed
+		// between launch validation and the child process starting to read it.
+		if !a.launchMu.TryLock() {
+			jsonError(w, 409, "Another launch is already being prepared.")
+			return
+		}
+		defer a.launchMu.Unlock()
+	}
 	paths, err := a.claudeDesktopPaths()
 	if err != nil {
 		jsonError(w, 500, err.Error())
@@ -613,7 +612,7 @@ func (a *app) claudeDesktopProfile(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, 400, "Invalid Claude Desktop setup JSON.")
 			return
 		}
-		if err = validateClaudeDesktopSelectionMode(s, a.config.ClaudeDesktopExperimentalModels); err != nil {
+		if err = validateClaudeDesktopSelectionMode(s, a.claudeDesktopExperimentalLocked()); err != nil {
 			jsonError(w, 400, err.Error())
 			return
 		}
@@ -623,5 +622,5 @@ func (a *app) claudeDesktopProfile(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	jsonResponse(w, 200, map[string]any{"ok": true, "changed": changed, "selection": s, "configPath": paths.ConfigPath, "profileDir": paths.ProfileDir, "experimentalModels": a.config.ClaudeDesktopExperimentalModels})
+	jsonResponse(w, 200, map[string]any{"ok": true, "changed": changed, "selection": s, "configPath": paths.ConfigPath, "profileDir": paths.ProfileDir, "experimentalModels": a.claudeDesktopExperimentalLocked()})
 }

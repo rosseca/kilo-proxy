@@ -26,6 +26,9 @@ func (a *app) launchProfile(p *clientLaunchPlan, home string) error {
 	if id == "open-design" {
 		return errors.New("Prepare the selected Open Design CLI engine before launching.")
 	}
+	if id == "openmausbot" {
+		return errors.New("Prepare OpenMausBot before launching.")
+	}
 	dir := ""
 	switch id {
 	case "codex":
@@ -76,7 +79,7 @@ func (a *app) launchProfile(p *clientLaunchPlan, home string) error {
 				return fail
 			}
 		} else {
-			updated, e = mergeCodexImages(updated, a.config.ImageGeneration, a.config.Port)
+			updated, e = mergeCodexImages(updated, a.clientImageSettingsLocked(), a.config.Port)
 			if e != nil {
 				return fail
 			}

@@ -123,6 +123,12 @@ func (s *nativeClientSelection) ids() []string {
 
 func nativeClientEndpoint(key string) string {
 	switch key {
+	case "openmausbot":
+		return "/api/clients/openmausbot"
+	case "t3-code":
+		return "/api/clients/t3-code"
+	case "synara":
+		return "/api/clients/synara"
 	case "open-design":
 		return openDesignProfileEndpoint
 	case "codex", "codex-cli":
@@ -142,6 +148,19 @@ func nativeClientEndpoint(key string) string {
 }
 
 func nativeClientPayload(key string, s *nativeClientSelection) (any, error) {
+	if key == "openmausbot" || key == "t3-code" || key == "synara" {
+		library := modelLibrary{SchemaVersion: 1, DefaultModel: s.Initial}
+		for _, m := range s.Models {
+			library.Models = append(library.Models, nativeLibraryItem(m))
+		}
+		if key == "t3-code" {
+			return map[string]any{"library": library}, validateT3CodeLibrary(library)
+		}
+		if key == "synara" {
+			return map[string]any{"library": library}, validateSynaraLibrary(library)
+		}
+		return map[string]any{"library": library}, validateModelLibrary(library)
+	}
 	if key == "omp" {
 		selection, err := nativeOMPSelection(s)
 		if err != nil {
@@ -166,8 +185,8 @@ func nativeClientPayload(key string, s *nativeClientSelection) (any, error) {
 		if key != "xcode-codex" && s.ImageGeneration != nil {
 			images := *s.ImageGeneration
 			payload["imageGeneration"] = images
-			if images.Enabled && !catalogID.MatchString(images.Model) && err == nil {
-				err = errors.New("Choose an image model before enabling image generation.")
+			if imageErr := validateImageGenerationSettings(images); imageErr != nil && err == nil {
+				err = imageErr
 			}
 		}
 		if key == "codex" {
@@ -218,7 +237,7 @@ func nativeClientPayload(key string, s *nativeClientSelection) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		selection.Models = append(selection.Models, claudeModel{ID: m.Model.ID, DisplayName: m.DisplayName, Effort: effort, Context: limits.ContextWindow, Output: limits.MaxOutputTokens})
+		selection.Models = append(selection.Models, claudeModel{ID: m.Model.ID, DisplayName: m.DisplayName, Effort: effort, Context: limits.ContextWindow, Output: limits.MaxOutputTokens, Maximum: m.Model.ContextWindow})
 	}
 	if strings.HasPrefix(key, "xcode-") {
 		selection.Mode = "installed"
@@ -253,6 +272,26 @@ func nativeSelectionFingerprint(key string, s *nativeClientSelection, base, keyV
 	}
 	data, _ := json.Marshal(values)
 	return string(data)
+}
+
+// Filter only the saved list, retaining its manual order and offline entries.
+// Searching is a view operation: it must not remove hidden choices or defaults.
+func nativeFilterSavedModels(models []modelInfo, selection *nativeClientSelection, query string) []modelInfo {
+	query = strings.ToLower(strings.TrimSpace(query))
+	if query == "" {
+		return models
+	}
+	var out []modelInfo
+	for _, model := range models {
+		name := model.Name
+		if choice := selection.choice(model.ID); choice != nil {
+			name += " " + choice.DisplayName
+		}
+		if strings.Contains(strings.ToLower(model.ID+" "+name), query) {
+			out = append(out, model)
+		}
+	}
+	return out
 }
 
 func nativeVisibleModels(catalog []modelInfo, s *nativeClientSelection, query string, selectedOnly, codingOnly bool, order, lab string) []modelInfo {
@@ -461,7 +500,7 @@ func (u *nativeUI) clientsPanel() layout.Widget {
 			}
 		})
 	}
-	clientNames := map[string]string{"codex": "Codex Desktop", "codex-cli": "Codex CLI", "claude": "Claude Code", "claude-desktop": "Claude Desktop", "opencode": "OpenCode", "omp": "Oh My Pi", "zed": "Zed", "open-design": "Open Design", "xcode": "Xcode", "generic": u.tr("Other agents", "Otros agentes")}
+	clientNames := map[string]string{"codex": "Codex Desktop", "codex-cli": "Codex CLI", "claude": "Claude Code", "claude-desktop": "Claude Desktop · Kilo", "t3-code": "T3 Code · Kilo", "synara": "Synara · Kilo", "opencode": "OpenCode", "omp": "Oh My Pi", "zed": "Zed", "open-design": "Open Design", "openmausbot": "OpenMausBot", "xcode": "Xcode", "generic": u.tr("Other agents", "Otros agentes")}
 	widgets := []layout.Widget{
 		u.pills(u.iconButton("agents.back", u.tr("All agents", "Todos los agentes"), nativeButtonGhost, nativeIconBack, func() { u.page = "agents" })),
 		u.heading(clientNames[u.client]),
@@ -559,6 +598,15 @@ func (u *nativeUI) clientsPanel() layout.Widget {
 		)
 	}
 	widgets = append(widgets, u.section(u.tr("Models", "Modelos"), u.tr("One shared library for this agent.", "Una biblioteca compartida para este agente."), modelWidgets...))
+	if key == "t3-code" {
+		return u.column(append(widgets, u.t3CodeClientPanel(s))...)
+	}
+	if key == "synara" {
+		return u.column(append(widgets, u.synaraClientPanel(s))...)
+	}
+	if key == "openmausbot" {
+		return u.column(append(widgets, u.openMausBotClientPanel(s))...)
+	}
 	if key == "open-design" {
 		return u.column(append(widgets, u.openDesignClientPanel(s))...)
 	}
@@ -663,20 +711,26 @@ func (u *nativeUI) claudeDesktopClientPanel(s *nativeClientSelection) layout.Wid
 		widgets = append(widgets, u.message(nativeToneError, nativeMessage(validation.Error(), u.language)))
 	}
 	u.setChecked("client:claude-desktop:experimental", u.claudeDesktopExperimentalModels())
-	return u.column(
-		u.section(u.tr("Experimental models", "Modelos experimentales"), u.tr("Off by default. Changes affect only Claude Desktop; your shared library is preserved.", "Desactivado por defecto. Los cambios solo afectan a Claude Desktop; se conserva tu biblioteca compartida."),
-			u.disabled(!working, u.check("client:claude-desktop:experimental", u.tr("Experimental: use models from other providers", "Experimental: usar modelos de otros proveedores"), u.setClaudeDesktopExperimentalModels)),
-		),
-		u.section(u.tr("Launch", "Arranque"), u.tr("Prepares the named Kilo third-party configuration with your shared models, names and default.", "Prepara la configuración de terceros Kilo con tus modelos compartidos, nombres y modelo inicial."), widgets...),
+	experimental := u.section(u.tr("Experimental models", "Modelos experimentales"), u.tr("Off by default. Changes affect only the Kilo Desktop profile; your shared library is preserved.", "Desactivado por defecto. Los cambios solo afectan al perfil Kilo de Desktop; se conserva tu biblioteca compartida."),
+		u.disabled(!working, u.check("client:claude-desktop:experimental", u.tr("Experimental: use models from other providers", "Experimental: usar modelos de otros proveedores"), u.setClaudeDesktopExperimentalModels)))
+	if u.chatGPTConnected() {
+		experimental = u.section(u.tr("Experimental models", "Modelos experimentales"), u.tr("Experimental aliases are required for ChatGPT models. This does not change your saved Kilo preference.", "Los alias experimentales son necesarios para los modelos de ChatGPT. No cambia tu preferencia guardada de Kilo."))
+	}
+	return u.column(experimental,
+		u.section(u.tr("Launch", "Arranque"), u.tr("Prepares a separate Kilo profile with your shared models, names and default. Open regular Claude from its usual icon.", "Prepara un perfil Kilo separado con tus modelos compartidos, nombres y modelo inicial. Abre Claude normal desde su icono habitual."), widgets...),
 		u.section(u.tr("Compatibility", "Compatibilidad"), u.agentCompatibility(key),
 			u.note(u.tr("Context and output limits are managed by Claude Desktop and the model. Shared context presets are not applied.", "Claude Desktop y el modelo gestionan los límites de contexto y salida. Los preajustes de contexto compartidos no se aplican.")),
-			u.note(u.tr("Claude Desktop uses one applied third-party configuration at a time. Features depend on the installed app and operating system.", "Claude Desktop usa una configuración de terceros activa cada vez. Las funciones dependen de la app y del sistema operativo.")),
+			u.note(u.tr("Application data and Code authentication are separate. Existing history and sign-in are not copied. This is a data profile, not an operating-system sandbox.", "Los datos de la app y la autenticación de Code están separados. No se copian el historial ni la sesión existentes. Es un perfil de datos, no un aislamiento del sistema operativo.")),
+			u.note(u.tr("Claude disables Chrome-extension pairing with relocated data. Cowork and updates have not been verified with this profile. A real Windows Desktop session has not been tested.", "Claude desactiva el enlace con la extensión de Chrome al cambiar la ubicación de los datos. Cowork y las actualizaciones no se han verificado con este perfil. No se ha probado una sesión real de Desktop en Windows.")),
 			u.pills(u.iconButton("client:claude-desktop:install", u.tr("Get Claude Desktop", "Obtener Claude Desktop"), nativeButtonGhost, nativeIconOpenInNew, func() { u.open("https://claude.ai/download") })),
 		),
 	)
 }
 
 func (u *nativeUI) claudeDesktopExperimentalModels() bool {
+	if u.chatGPTConnected() {
+		return true
+	}
 	if target := u.clientState().DesktopExperimentalTarget; target != nil {
 		return *target
 	}
@@ -688,6 +742,9 @@ func nativeClaudeDesktopModelAllowed(id string, experimental bool) bool {
 }
 
 func (u *nativeUI) setClaudeDesktopExperimentalModels(enabled bool) {
+	if u.chatGPTConnected() {
+		return
+	}
 	c := u.clientState()
 	if u.busy["POST/api/claude-desktop/options"] || c.Launching != "" {
 		return
@@ -785,8 +842,20 @@ func (u *nativeUI) clientPicker(key string, s *nativeClientSelection) layout.Wid
 		}
 	}
 	if shared && !catalog {
-		available = u.sharedModelOrder()
-		controls = []layout.Widget{u.pills(u.disclosure(prefix+"advanced", u.tr("Advanced model options", "Opciones avanzadas de modelos")))}
+		saved := u.sharedModelOrder()
+		available = nativeFilterSavedModels(saved, s, u.value(prefix+"search"))
+		search := u.modelSearchField(prefix+"search", u.tr("Search models", "Buscar modelos"))
+		toolbar := []layout.Widget{search}
+		if u.value(prefix+"search") != "" {
+			toolbar = append(toolbar, u.ghostButton(prefix+"search-clear", u.tr("Clear search", "Limpiar búsqueda"), func() {
+				u.setValue(prefix+"search", "")
+			}))
+		}
+		controls = []layout.Widget{
+			u.actionRow(toolbar[0], toolbar[1:]...),
+			u.note(fmt.Sprintf(u.tr("%d of %d saved models", "%d de %d modelos guardados"), len(available), len(saved))),
+			u.pills(u.disclosure(prefix+"advanced", u.tr("Advanced model options", "Opciones avanzadas de modelos"))),
+		}
 	} else if !compactSetup {
 		controls = append(controls, u.note(u.modelSortHint(order)))
 	}
@@ -908,7 +977,7 @@ func (u *nativeUI) clientPicker(key string, s *nativeClientSelection) layout.Wid
 				caps := u.clientCaps(key)
 				efforts := []string{""}
 				for _, effort := range []string{"low", "medium", "high", "xhigh"} {
-					if validClaudeEffort(id, effort) && (caps.PerModelEffort || effort != "xhigh") {
+					if validClaudeEffort(id, effort) && (caps.PerModelEffort || effort != "xhigh") && (!claude55ID.MatchString(id) || claudeEffortCompatible(id, caps)) {
 						efforts = append(efforts, effort)
 					}
 				}
@@ -946,7 +1015,11 @@ func (u *nativeUI) clientPicker(key string, s *nativeClientSelection) layout.Wid
 		cardIDs = append(cardIDs, id)
 	}
 	if len(cards) == 0 {
-		controls = append(controls, u.note(u.tr("No matches. Refresh or add an exact model ID.", "Sin resultados. Actualiza o añade un ID exacto.")))
+		if shared && !catalog && strings.TrimSpace(u.value(prefix+"search")) != "" {
+			controls = append(controls, u.note(u.tr("No saved models match. Clear the search to see all saved models.", "Ningún modelo guardado coincide. Limpia la búsqueda para ver todos los modelos guardados.")))
+		} else {
+			controls = append(controls, u.note(u.tr("No matches. Refresh or add an exact model ID.", "Sin resultados. Actualiza o añade un ID exacto.")))
+		}
 	} else {
 		controls = append(controls, u.modelGrid(prefix+"models", cardIDs, cards))
 	}
@@ -984,7 +1057,7 @@ func (u *nativeUI) clientActions(key string, s *nativeClientSelection, launchDes
 	_, validation := nativeClientPayload(key, s)
 	working := u.busy["POST"+nativeClientEndpoint(key)] || u.busy["GET"+nativeClientEndpoint(key)] || u.clientState().Launching != ""
 	canPrepare := len(s.Models) > 0 && validation == nil && !working
-	if (key == "codex" || key == "codex-cli") && !nativeClientImagesReady(s, u.models) {
+	if (key == "codex" || key == "codex-cli") && !nativeClientImagesReady(s, u.models, u.state) {
 		canPrepare = false
 	}
 	if strings.HasPrefix(key, "xcode-") && key != "xcode-chat" && !u.clientState().Xcode.Available {
@@ -1012,7 +1085,7 @@ func (u *nativeUI) clientActions(key string, s *nativeClientSelection, launchDes
 	if validation != nil && len(s.Models) > 0 {
 		launchWidgets = append(launchWidgets, u.message(nativeToneError, nativeMessage(validation.Error(), u.language)))
 	}
-	if (key == "codex" || key == "codex-cli") && !nativeClientImagesReady(s, u.models) {
+	if (key == "codex" || key == "codex-cli") && !nativeClientImagesReady(s, u.models, u.state) {
 		launchWidgets = append(launchWidgets, u.hint(u.tr("Review image generation settings in Models before opening Codex.", "Revisa la generación de imágenes en Modelos antes de abrir Codex.")))
 	}
 	if strings.HasPrefix(key, "xcode-") && key != "xcode-chat" && !u.clientState().Xcode.Available {
@@ -1149,6 +1222,10 @@ func (u *nativeUI) prepareClientAfter(key string, done func(error)) {
 		done(errors.New(u.tr("Wait for the current agent operation to finish.", "Espera a que termine la operación actual del agente.")))
 		return
 	}
+	if err := u.packReadinessError(key); err != nil {
+		done(err)
+		return
+	}
 	s := u.sharedClientSelection(key)
 	u.syncClientSelection(key, s)
 	payload, err := nativeClientPayload(key, s)
@@ -1159,6 +1236,7 @@ func (u *nativeUI) prepareClientAfter(key string, done func(error)) {
 	base, local, _ := u.clientBase()
 	fingerprint := nativeSelectionFingerprint(key, s, base, local, u.clientCaps(key))
 	imagesSent := cloneClientImageSettings(s.ImageGeneration)
+	openMausBotConnection := u.launchConnectionFingerprint()
 	u.clientRequest(http.MethodPost, nativeClientEndpoint(key), payload, func(data json.RawMessage, err error) {
 		if err != nil {
 			done(err)
@@ -1181,12 +1259,27 @@ func (u *nativeUI) prepareClientAfter(key string, done func(error)) {
 			s.Path = result.ConfigPath
 		}
 		s.Saved = fingerprint
+		if key == "openmausbot" {
+			u.acceptOpenMausBotProfile(data, openMausBotConnection)
+		}
+		if key == "t3-code" {
+			u.acceptT3CodeProfile(data, openMausBotConnection)
+		}
+		if key == "synara" {
+			u.acceptSynaraProfile(data, openMausBotConnection)
+		}
 		if key == "codex" || key == "codex-cli" {
 			u.acceptClientImages(imagesSent)
 		}
 		u.setNotice(nativeToneSuccess, u.tr("Editor profile prepared.", "Perfil del editor preparado."))
 		if key == "claude-desktop" {
-			u.setNotice(nativeToneSuccess, u.tr("Kilo configuration prepared. Reopen Claude Desktop to apply changes.", "Configuración Kilo preparada. Vuelve a abrir Claude Desktop para aplicar los cambios."))
+			u.setNotice(nativeToneSuccess, u.tr("Kilo profile prepared. Open Claude Desktop · Kilo to apply changes.", "Perfil Kilo preparado. Abre Claude Desktop · Kilo para aplicar los cambios."))
+		}
+		if key == "t3-code" {
+			u.setNotice(nativeToneSuccess, u.tr("Four agents prepared. Open T3 Code · Kilo and start a new chat to choose an agent.", "Cuatro agentes preparados. Abre T3 Code · Kilo e inicia un chat nuevo para elegir un agente."))
+		}
+		if key == "synara" {
+			u.setNotice(nativeToneSuccess, u.tr("Four agents prepared. Open Synara · Kilo and start a new chat to choose an agent.", "Cuatro agentes preparados. Abre Synara · Kilo e inicia un chat nuevo para elegir un agente."))
 		}
 		done(nil)
 	})

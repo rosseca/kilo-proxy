@@ -8,7 +8,7 @@ import re
 import subprocess
 import sys
 
-from package import ROOT, TARGETS
+from package import ROOT, TARGETS, HEADLESS_TARGETS, archive_names, includes_headless
 
 VERSION_PATTERN = r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-(?:alpha|beta|rc)\.[1-9][0-9]*)?'
 
@@ -26,8 +26,7 @@ def check_tag(tag, version):
 
 
 def asset_names(version):
-    return [f'kilo-proxy-{version}-{system}-{arch}' + ('.tar.gz' if system == 'linux' else '.zip')
-            for system, arch in TARGETS]
+    return archive_names(version, TARGETS, HEADLESS_TARGETS if includes_headless(version) else ())
 
 
 def verify_assets(directory, version):
@@ -41,7 +40,7 @@ def verify_assets(directory, version):
             raise ValueError('Invalid, unexpected, or duplicate checksum entry')
         checksums[match[2]] = match[1]
     if set(checksums) != set(expected):
-        raise ValueError('The checksum manifest must contain all six target archives')
+        raise ValueError(f'The checksum manifest must contain all {len(expected)} release archives')
     paths = [directory / name for name in expected]
     for path in paths:
         if not path.is_file() or path.is_symlink() or path.stat().st_size == 0:
@@ -68,13 +67,18 @@ def publish(tag, version, directory):
         if not json.loads(result.stdout)['isDraft']:
             raise ValueError('This release is already published; refusing to overwrite it')
     else:
+        headless_notes = (' Console-only macOS and Linux x64/ARM64 archives are named '
+                          'kilo-proxy-headless-VERSION-OS-ARCH.tar.gz; they need no desktop, '
+                          'D-Bus credential service, or graphics libraries. '
+                          f'See the [headless setup guide](https://github.com/rosseca/kilo-proxy/blob/{tag}/docs/headless.md).'
+                          if includes_headless(version) else '')
         args = ['release', 'create', tag, '--verify-tag', '--draft', '--generate-notes',
                 '--title', f'Kilo Proxy {tag}', '--notes',
                 'Portable apps for macOS, Windows, and Linux (x64 and ARM64). '
                 'Download the archive for your system and verify it with SHA256SUMS.txt. '
                 'Windows ZIPs include Kilo Proxy.exe; macOS ZIPs include Kilo Proxy.app. '
                 'macOS apps are ad-hoc signed for bundle integrity, but not Developer ID signed or notarized; '
-                'Windows binaries are unsigned. Setup instructions are included in README.md.']
+                'Windows binaries are unsigned. Setup instructions are included in README.md.' + headless_notes]
         if '-' in version:
             args.append('--prerelease')
         gh(*args)

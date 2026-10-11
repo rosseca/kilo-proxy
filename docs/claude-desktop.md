@@ -1,12 +1,12 @@
-# Claude Desktop
+# Claude Desktop · Kilo
 
-Claude Desktop is a separate integration from Claude Code CLI. Its full-width card sits immediately below Codex on **Agents**. Install the official Claude Desktop application separately.
+**Claude Desktop · Kilo** opens the official Claude Desktop application with a private Kilo profile. Its full-width card sits immediately below Codex on **Agents**, separately from Claude Code CLI. Install the official Claude Desktop application separately. Open ordinary Claude from its usual icon; it can stay open while you use the Kilo instance.
 
 ## Setup
 
 1. Add at least one Claude model to the shared **Models** library. Keep the exact Kilo model ID; a short display name is optional.
-2. Quit Claude Desktop if it is already running. Existing conversations are never closed automatically.
-3. Click **Open Claude Desktop**. Kilo Proxy prepares the gateway profile, starts the proxy if needed, and opens Desktop. **Options → Integration settings** also offers preparation without launching.
+2. If **Claude Desktop · Kilo** is already running, quit only that instance before opening it again or changing its profile. Ordinary Claude can remain open. Existing conversations are never closed automatically.
+3. Click **Open Claude Desktop · Kilo**. Kilo Proxy prepares the private gateway profile, starts the proxy if needed, and opens the Kilo instance. **Options → Integration settings** also offers preparation without launching.
 
 The configuration points to `http://127.0.0.1:<port>` using the local proxy key. Desktop adds `/v1/messages`; do not append `/v1` to this gateway base URL. Your Kilo API key and organization header stay in Kilo Proxy. No Anthropic account sign-in is needed for the configured third-party gateway.
 
@@ -24,7 +24,7 @@ The inspected Desktop configuration supports a model name, a display label and c
 
 ### Experimental models from other providers
 
-In **Claude Desktop → Options → Integration settings**, enable **Experimental: use models from other providers**. The choice is saved in Kilo Proxy settings and applies to the next preparation/open. The native helper now includes all real model IDs from the shared library, keeping its names, order and default. The browser helper has the same opt-in for its own selection.
+In **Claude Desktop · Kilo → Options → Integration settings**, enable **Experimental: use models from other providers**. The choice is saved in Kilo Proxy settings and applies to the next preparation/open. The native helper includes all real model IDs from the shared library, keeping its names, order and default. The browser helper has the same opt-in for its own selection.
 
 Claude's configuration receives a stable internal alias for each non-Claude model and a display label showing the real model name. Kilo Proxy translates only the request's `model` to its actual Kilo ID and restores the internal alias in the client-facing JSON response or streamed `message_start`. Native Claude IDs keep their normal route. Prompts, tools, tool results, thinking blocks, caching controls and provider usage metadata are not renamed or stripped.
 
@@ -38,15 +38,30 @@ Desktop still supplies its own Claude identity instructions. An aliased model ma
 
 ## Profile storage and restoration
 
-On macOS, the third-party profile is stored under `~/Library/Application Support/Claude-3p/`; on Windows it uses `%LOCALAPPDATA%\Claude-3p\`. The helper maintains its own **Kilo Proxy** entry in `configLibrary`, sets that entry as applied, and selects third-party deployment mode. Selection preferences are stored in `claude-desktop-models.json` inside Kilo Proxy's configuration directory, separately from the shared model library.
+From v0.53.0, the private profile lives under `claude-desktop/` inside Kilo Proxy's configuration directory:
 
-Existing unrelated configuration entries and settings are preserved. Changed files receive backups, sensitive files are written with private permissions, and malformed or unsafe profile paths stop preparation. Managed inference policy takes precedence; the helper refuses to overwrite an administrator's inference configuration.
+| Data | Location within `claude-desktop/` |
+| --- | --- |
+| macOS Desktop data and third-party configuration | `ui-3p/` |
+| Code settings and authentication | `code/` |
+| Windows Desktop data and third-party configuration | `local-app-data/Claude-3p/` |
+| Windows child process application-data roots | `local-app-data/` for `LOCALAPPDATA`; `app-data/` for `APPDATA` |
 
-To return to another provider, use Desktop's third-party configuration selector or its normal Claude sign-in option and restart it. Do not delete its data folder. This integration does not claim simultaneous isolated Desktop instances: the vendor app shares its third-party configuration root and reads it at startup.
+The launcher sets the Windows environment only for the Kilo child process. A custom Kilo Proxy `--config-dir` also relocates this profile. Selection preferences remain in `claude-desktop-models.json` at the Kilo Proxy configuration root, separately from the shared model library.
+
+The helper maintains a **Kilo Proxy** entry in the private `configLibrary`, applies that entry, and selects third-party deployment mode. It does not copy ordinary Claude's history or login, or modify the global `~/Library/Application Support/Claude-3p/` on macOS or `%LOCALAPPDATA%\Claude-3p\` on Windows. The Kilo instance starts with its own Desktop data and Code/auth profile.
+
+Unrelated configuration entries and settings within the private profile are preserved. Changed files receive backups, sensitive files are written with private permissions, and malformed or unsafe profile paths stop preparation. Managed inference policy takes precedence; the helper refuses to overwrite an administrator's inference configuration.
+
+If an earlier Kilo Proxy release left ordinary Claude using Kilo's gateway, restore it once through Desktop's third-party configuration selector or its normal Claude sign-in option, then restart ordinary Claude. Do not delete its data folder. After that, use the usual Claude icon for ordinary Claude and **Open Claude Desktop · Kilo** for the private instance.
+
+This separates application data; it is not an operating-system sandbox. Claude disables Chrome-extension pairing when its data directory is relocated. Cowork and application updates have not been verified with the isolated profile.
 
 ## Compatibility evidence
 
-The implementation was checked against the official macOS application **2.9939.2** and Anthropic's gateway/configuration documentation. Windows discovery and configuration paths have automated coverage; a real Windows Desktop session has not been tested. Linux does not have an official Claude Desktop distribution.
+The isolated profile was checked with the official macOS application **2.9939.4** and a synthetic gateway. Desktop started with private Desktop data, Code configuration and secure storage, passed its `POST /v1/messages` credential probe, and exited cleanly. Ordinary Claude remained running, and the global third-party deployment mode, config-library metadata and Kilo entry were byte-for-byte unchanged. This check did not exercise Chat or Code through the isolated Desktop interface. Windows discovery and configuration paths have automated coverage; a real Windows Desktop session has not been tested. Linux does not have an official Claude Desktop distribution.
+
+The following gateway and model acceptance runs used macOS Desktop **2.9939.2** with the earlier shared third-party profile and Anthropic's gateway/configuration documentation. They establish gateway and model behavior; they do not establish Chat or Code UI compatibility in the isolated profile.
 
 Local acceptance testing on macOS verified the actual application: the credential probe passed, the picker displayed native Claude names, Chat returned a requested marker, and Code read a file in a disposable workspace with its Read tool and returned its exact contents. The picker also displayed the shared GPT, GLM, MiniMax and DeepSeek names after experimental mode was enabled.
 

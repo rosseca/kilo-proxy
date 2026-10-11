@@ -114,6 +114,54 @@ Anyone who obtains an active image URL can download the image without a Kilo API
 
 URL modes do not enable request capture or create a new local image-history file. If capture is enabled separately, response bodies for URL-backed requests are omitted because models can repeat temporary links across streaming chunks. Request metadata and the redacted outbound request remain available. Keep captures private; arbitrary prompt secrets are not automatically detected.
 
+## Temporary tunnel delivery diagnostics
+
+For **Cloudflare** and **Tailscale**, enabling **Capture request details** in
+Activity before reproducing a failure adds an `imageTransport` object to the
+existing authenticated `GET /api/activity/{request-id}` inspector response.
+This first increment exposes metadata through that API; it does not add a new
+panel to the native or browser inspector.
+
+The object records:
+
+- Tunnel startup/ready times or reuse. A new tunnel already performs a public
+  synthetic-PNG GET and byte comparison; the diagnostic reports its attempt
+  count, last HTTP status, failure flag, and successful verification time.
+  Reusing a tunnel does **not** perform a new public probe, so its probe count
+  and verification time remain unset/zero for that request.
+- Up to 64 published images, identified by request-local ordinal numbers:
+  byte size, registration/removal times, and removal reason (`lease_closed`,
+  `lease_expired`, or `tunnel_closed`).
+- Per-image counts of observed GET/HEAD requests and local HTTP 200/404/405/503
+  responses, plus local bytes written, write failures (including short writes),
+  and the last access completion time/duration. Other HTTP methods are counted
+  but their caller-controlled names are not retained. Startup probes are not
+  counted as image accesses.
+- Start/finish times of the local Gateway proxy call and lease cleanup,
+  including cancellation/deadline or preparation-failure context. These are
+  not individual provider-attempt timestamps or a claim that inference succeeded.
+
+Access counters cover only requests associated with a registered image while
+its local entry exists. Unknown paths, accesses after removal, and errors at
+Cloudflare/Tailscale before reaching the origin cannot be attributed to that
+request. No path/token tombstones are retained. A request already in progress
+at cleanup may finish after the completed trace snapshot and therefore be
+absent from that snapshot.
+
+A synthetic probe returning 200 proves that probe's reachability and content
+from the proxy's network at that moment, not that the actual image can be
+fetched by a provider. Local successful writes do not establish provider
+receipt or decoding, and an observed access is not attributed to OpenAI or
+another provider.
+
+Diagnostics contain no image data, hashes, public hostnames, paths, URLs,
+addresses, headers, raw transport errors, or tunnel process output. Fixed
+counters avoid an unbounded access log. They share Activity's opt-in,
+in-memory retention and are cleared when capture is disabled; turning capture
+on cannot recover past incidents. Existing URL redaction and response-body
+omission remain in place. No extra probe, retry, transport fallback, TTL change,
+or Gateway provider-routing change is introduced.
+
 ## Validation
 
 For v0.31.0, the live Cloudflare test passed: public downloads matched the original bytes and returned HTTP 404 after lease cleanup. Litterbox returned HTTP 412 (`No file!`) or HTTP 403 from the test network, including with the documented standalone curl example. Its multipart and lifecycle tests pass, but a successful live upload has not been confirmed; the option is marked experimental. Tailscale is covered by automated process, capability, conflict, and cleanup tests; a live signed-in Tailscale account was not available for this release check.

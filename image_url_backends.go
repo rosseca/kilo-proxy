@@ -134,7 +134,7 @@ func (m *imageURLBackendManager) NewLease(ctx context.Context, backend, ttl stri
 	m.leases[l] = struct{}{}
 	// A lost caller cannot retain local images indefinitely. The TTL is a safety
 	// ceiling; normal inference completion/cancellation invokes Close immediately.
-	l.timer = time.AfterFunc(imageURLLeaseLifetime, func() { _ = l.Close(context.Background()) })
+	l.timer = time.AfterFunc(imageURLLeaseLifetime, func() { _ = l.closeWithReason("lease_expired") })
 	return l, nil
 }
 
@@ -147,6 +147,7 @@ func (m *imageURLBackendManager) getTunnel(ctx context.Context, backend string) 
 		}
 		if t := m.tunnels[backend]; t != nil && t.alive() {
 			m.mu.Unlock()
+			imageTraceCapture(ctx).updateImageTransport(func(d *imageTransportTrace) { d.TunnelReused = true })
 			return t, nil
 		}
 		if wait := m.pending[backend]; wait != nil {
@@ -171,7 +172,14 @@ func (m *imageURLBackendManager) getTunnel(ctx context.Context, backend string) 
 		}
 		startupCtx, cancel := context.WithTimeout(m.ctx, imageURLStartupTimeout)
 		stop := context.AfterFunc(ctx, cancel)
+		if capture := imageTraceCapture(ctx); capture != nil {
+			startupCtx = context.WithValue(startupCtx, traceContextKey{}, capture)
+		}
+		imageTraceCapture(ctx).updateImageTransport(func(d *imageTransportTrace) { d.TunnelStartupStartedAt = time.Now().UnixMilli() })
 		tunnel, err := newImageURLTunnel(startupCtx, backend, m.deps)
+		if err == nil {
+			imageTraceCapture(ctx).updateImageTransport(func(d *imageTransportTrace) { d.TunnelReadyAt = time.Now().UnixMilli() })
+		}
 		stop()
 		cancel()
 		m.mu.Lock()
@@ -298,7 +306,7 @@ func (l *managedImageURLLease) Upload(ctx context.Context, data []byte, mime str
 	if !l.tunnel.alive() {
 		return "", errors.New("The image tunnel stopped. Retry the request to start a new tunnel.")
 	}
-	path, err := l.tunnel.put(data, mime)
+	path, err := l.tunnel.putObserved(data, mime, imageTraceCapture(ctx))
 	if err != nil {
 		return "", err
 	}
@@ -308,6 +316,10 @@ func (l *managedImageURLLease) Upload(ctx context.Context, data []byte, mime str
 }
 
 func (l *managedImageURLLease) Close(_ context.Context) error {
+	return l.closeWithReason("lease_closed")
+}
+
+func (l *managedImageURLLease) closeWithReason(reason string) error {
 	l.mu.Lock()
 	if l.closed {
 		l.mu.Unlock()
@@ -320,7 +332,7 @@ func (l *managedImageURLLease) Close(_ context.Context) error {
 	}
 	if l.tunnel != nil {
 		for _, path := range l.paths {
-			l.tunnel.remove(path)
+			l.tunnel.removeWithReason(path, reason)
 		}
 	}
 	l.paths = nil
@@ -382,8 +394,9 @@ func (l *managedImageURLLease) uploadLitterbox(ctx context.Context, data []byte,
 }
 
 type imageURLStoredImage struct {
-	data []byte
-	mime string
+	observation *imageDeliveryObservation
+	data        []byte
+	mime        string
 }
 type imageURLTunnel struct {
 	mu        sync.Mutex
@@ -452,12 +465,16 @@ func (t *imageURLTunnel) waitReady(ctx context.Context, client *http.Client, pat
 		req, _ := http.NewRequestWithContext(probeCtx, http.MethodGet, t.process.URL()+path, nil)
 		resp, err := client.Do(req)
 		ready := false
+		status, failed := 0, err != nil
 		if err == nil {
+			status = resp.StatusCode
 			raw, readErr := io.ReadAll(io.LimitReader(resp.Body, int64(len(want)+1)))
 			_ = resp.Body.Close()
 			ready = resp.StatusCode == http.StatusOK && readErr == nil && bytes.Equal(raw, want)
+			failed = readErr != nil
 		}
 		cancel()
+		imageTraceCapture(ctx).imageProbe(status, failed || !ready, ready)
 		if ready {
 			return nil
 		}
@@ -472,6 +489,10 @@ func (t *imageURLTunnel) waitReady(ctx context.Context, client *http.Client, pat
 }
 
 func (t *imageURLTunnel) put(data []byte, mime string) (string, error) {
+	return t.putObserved(data, mime, nil)
+}
+
+func (t *imageURLTunnel) putObserved(data []byte, mime string, capture *traceCapture) (string, error) {
 	var token [32]byte
 	if _, err := rand.Read(token[:]); err != nil {
 		return "", errors.New("Could not generate a private image link.")
@@ -485,40 +506,54 @@ func (t *imageURLTunnel) put(data []byte, mime string) (string, error) {
 	if t.bytes+len(data) > imageURLStoreLimit || len(t.images) >= 129 {
 		return "", errors.New("The temporary image server is full. Wait for earlier requests to finish.")
 	}
-	t.images[path] = imageURLStoredImage{data: bytes.Clone(data), mime: mime}
+	t.images[path] = imageURLStoredImage{data: bytes.Clone(data), mime: mime, observation: capture.registerImage(len(data))}
 	t.bytes += len(data)
 	return path, nil
 }
 
 func (t *imageURLTunnel) remove(path string) {
+	t.removeWithReason(path, "lease_closed")
+}
+
+func (t *imageURLTunnel) removeWithReason(path, reason string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if data, ok := t.images[path]; ok {
+		data.observation.removed(reason)
 		t.bytes -= len(data.data)
 		delete(t.images, path)
 	}
 }
 
 func (t *imageURLTunnel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	t.mu.Lock()
+	observation := t.images[r.URL.Path].observation
+	t.mu.Unlock()
+	status, written, writeFailed := http.StatusOK, 0, false
+	started := time.Now()
+	defer func() { observation.served(r.Method, status, written, writeFailed, started) }()
 	w.Header().Set("Cache-Control", "no-store, max-age=0")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		w.Header().Set("Allow", "GET, HEAD")
-		w.WriteHeader(http.StatusMethodNotAllowed)
+		status = http.StatusMethodNotAllowed
+		w.WriteHeader(status)
 		return
 	}
 	select {
 	case t.requests <- struct{}{}:
 		defer func() { <-t.requests }()
 	default:
-		w.WriteHeader(http.StatusServiceUnavailable)
+		status = http.StatusServiceUnavailable
+		w.WriteHeader(status)
 		return
 	}
 	// No ServeMux, redirects, proxying, directory serving, health API, or lookup by
 	// caller-supplied filename. Encoded variants and query strings are rejected.
 	if r.URL.RawQuery != "" || r.URL.RawPath != "" || len(r.URL.Path) != 65 {
-		w.WriteHeader(http.StatusNotFound)
+		status = http.StatusNotFound
+		w.WriteHeader(status)
 		return
 	}
 	t.mu.Lock()
@@ -526,14 +561,17 @@ func (t *imageURLTunnel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	closed := t.closed
 	t.mu.Unlock()
 	if !ok || closed {
-		w.WriteHeader(http.StatusNotFound)
+		status = http.StatusNotFound
+		w.WriteHeader(status)
 		return
 	}
 	w.Header().Set("Content-Type", value.mime)
 	w.Header().Set("Content-Length", strconv.Itoa(len(value.data)))
 	w.WriteHeader(http.StatusOK)
 	if r.Method == http.MethodGet {
-		_, _ = w.Write(value.data)
+		var err error
+		written, err = w.Write(value.data)
+		writeFailed = err != nil || written != len(value.data)
 	}
 }
 
@@ -541,6 +579,9 @@ func (t *imageURLTunnel) Close() error {
 	t.closeOnce.Do(func() {
 		t.mu.Lock()
 		t.closed = true
+		for _, image := range t.images {
+			image.observation.removed("tunnel_closed")
+		}
 		t.images = make(map[string]imageURLStoredImage)
 		t.bytes = 0
 		t.mu.Unlock()

@@ -1,17 +1,66 @@
 """Guard macOS bundle signing and release archive verification without native tools."""
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 import json
 import os
 import plistlib
+import select
 import subprocess
 import struct
+import sys
 import tempfile
+import tarfile
 import unittest
 from unittest.mock import patch
 import zipfile
 
 import package
 import smoke_desktop
+
+
+@contextmanager
+def owned_descendant_exit(pid):
+    """Observe our gated fixture's kernel process object, never a reused PID."""
+    if os.name == 'nt':
+        import ctypes
+        from ctypes import wintypes
+        kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+        kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+        kernel32.WaitForSingleObject.restype = wintypes.DWORD
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel32.CloseHandle.restype = wintypes.BOOL
+        handle = kernel32.OpenProcess(0x00100000, False, pid)  # SYNCHRONIZE only.
+        if not handle:
+            raise ctypes.WinError(ctypes.get_last_error())
+        try:
+            def exited(timeout):
+                result = kernel32.WaitForSingleObject(handle, int(timeout * 1000))
+                if result == 0xffffffff:
+                    raise ctypes.WinError(ctypes.get_last_error())
+                return result == 0  # WAIT_OBJECT_0; WAIT_TIMEOUT remains a failure.
+            yield exited
+        finally:
+            kernel32.CloseHandle(handle)
+    elif hasattr(os, 'pidfd_open'):
+        descriptor = os.pidfd_open(pid)
+        try:
+            yield lambda timeout: bool(select.select([descriptor], [], [], timeout)[0])
+        finally:
+            os.close(descriptor)
+    else:
+        # macOS provides process exit events for non-child descendants. waitpid
+        # cannot reap this fixture after its desktop parent has already exited.
+        queue = select.kqueue()
+        try:
+            queue.control([select.kevent(pid, filter=select.KQ_FILTER_PROC,
+                                         flags=select.KQ_EV_ADD | select.KQ_EV_ONESHOT,
+                                         fflags=select.KQ_NOTE_EXIT)], 0, 0)
+            yield lambda timeout: bool(queue.control(None, 1, timeout))
+        finally:
+            queue.close()
 
 
 class PackageTests(unittest.TestCase):
@@ -21,7 +70,7 @@ class PackageTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.output = self.root / 'dist'
         self.version = '0.20.1'
-        for filename in ['VERSION', 'README.md', 'THIRD-PARTY-NOTICES.txt',
+        for filename in ['VERSION', 'README.md', 'docs/headless.md', 'THIRD-PARTY-NOTICES.txt',
                          'third_party/systray/LICENSE', 'third_party/systray/PATCHES.md',
                          'ui/icon.svg', 'ui/icon.png']:
             path = self.root / filename
@@ -47,8 +96,9 @@ class PackageTests(unittest.TestCase):
             resource.write_bytes(b'resource fixture')
         elif command[0] == 'go':
             env = kwargs['env']
-            self.assertEqual(command[command.index('-tags') + 1], 'desktop')
-            self.assertEqual(env['CGO_ENABLED'], '0' if env['GOOS'] == 'windows' else '1')
+            tags = command[command.index('-tags') + 1]
+            self.assertIn(tags, ('desktop', 'headless'))
+            self.assertEqual(env['CGO_ENABLED'], '0' if tags == 'headless' or env['GOOS'] == 'windows' else '1')
             Path(command[command.index('-o') + 1]).write_bytes(self.binary_fixture(env['GOOS'], env['GOARCH']))
         elif command[0] == '/usr/bin/codesign':
             bundle = Path(command[-1])
@@ -190,6 +240,81 @@ class PackageTests(unittest.TestCase):
             self.build('--build-only', '--target', 'linux/arm64', platform='linux')
         self.assertEqual(self.calls, [])
 
+    def test_headless_cross_build_has_no_cgo_desktop_or_native_signing(self):
+        self.build('--headless', '--build-only', '--target', 'darwin/arm64',
+                   '--target', 'linux/arm64', platform='linux')
+        self.assertEqual([call[:2] for call in self.calls], [['go', 'build'], ['go', 'build']])
+        self.assertTrue((self.output / 'kilo-proxy-headless-darwin-arm64').is_file())
+        self.assertTrue((self.output / 'kilo-proxy-headless-linux-arm64').is_file())
+        self.assertFalse((self.output / 'SHA256SUMS.txt').exists())
+
+    def test_headless_prebuilt_archive_has_console_binary_and_no_desktop_installer(self):
+        prebuilt = self.root / 'binaries'
+        prebuilt.mkdir()
+        data = self.binary_fixture('darwin', 'arm64') + b'tested headless contents'
+        (prebuilt / 'kilo-proxy-headless-darwin-arm64').write_bytes(data)
+        self.build('--headless', '--binaries-directory', str(prebuilt),
+                   '--target', 'darwin/arm64', platform='linux')
+        self.assertEqual(self.calls, [])
+        archive = self.output / f'kilo-proxy-headless-{self.version}-darwin-arm64.tar.gz'
+        with tarfile.open(archive) as tar:
+            name = f'kilo-proxy-headless-{self.version}-darwin-arm64/kilo-proxy-headless'
+            self.assertEqual(tar.extractfile(name).read(), data)
+            self.assertEqual(tar.getmember(name).mode, 0o755)
+            self.assertEqual(tar.extractfile(f'kilo-proxy-headless-{self.version}-darwin-arm64/docs/headless.md').read(), b'fixture')
+            self.assertFalse(any('Kilo Proxy.app' in member.name or member.name.endswith('install-user.sh')
+                                 for member in tar.getmembers()))
+
+    def test_headless_rejects_windows_and_app_bundle_verification(self):
+        for arguments in [('--target', 'windows/amd64'), ('--verify-macos-archives',)]:
+            with self.subTest(arguments=arguments), self.assertRaises(SystemExit):
+                self.build('--headless', *arguments, platform='linux')
+        self.assertEqual(self.calls, [])
+
+    def test_headless_archive_encodes_unix_execute_bits_from_windows_file_modes(self):
+        prebuilt = self.root / 'binaries'
+        prebuilt.mkdir()
+        data = self.binary_fixture('linux', 'arm64') + b'tested console contents'
+        (prebuilt / 'kilo-proxy-headless-linux-arm64').write_bytes(data)
+        gettarinfo = tarfile.TarFile.gettarinfo
+        chmod = Path.chmod
+        observed = []
+
+        def ineffective_chmod(path, mode, **kwargs):
+            chmod(path, 0o666 if path.name == 'kilo-proxy-headless' else mode, **kwargs)
+
+        def windows_file_mode(tar, *args, **kwargs):
+            member = gettarinfo(tar, *args, **kwargs)
+            if member.isfile():
+                member.mode = 0o666
+                observed.append(member.name)
+            return member
+
+        with patch.object(Path, 'chmod', new=ineffective_chmod), \
+             patch.object(tarfile.TarFile, 'gettarinfo', new=windows_file_mode):
+            self.build('--headless', '--binaries-directory', str(prebuilt),
+                       '--target', 'linux/arm64', platform='win32')
+        name = f'kilo-proxy-headless-{self.version}-linux-arm64/kilo-proxy-headless'
+        self.assertIn(name, observed)
+        with tarfile.open(self.output / f'kilo-proxy-headless-{self.version}-linux-arm64.tar.gz') as tar:
+            self.assertEqual(tar.getmember(name).mode, 0o755)
+            self.assertEqual(tar.extractfile(name).read(), data)
+
+    def test_current_release_checksums_require_all_ten_archives_atomically(self):
+        self.version = '0.55.0'
+        self.output.mkdir()
+        manifest = self.output / 'SHA256SUMS.txt'
+        manifest.write_text('previous manifest')
+        names = package.archive_names(self.version, package.TARGETS, package.HEADLESS_TARGETS)
+        for name in names[:-1]:
+            (self.output / name).write_bytes(b'archive')
+        with self.assertRaises(SystemExit):
+            self.build('--checksums-only', '--version', self.version, platform='linux')
+        self.assertEqual(manifest.read_text(), 'previous manifest')
+        (self.output / names[-1]).write_bytes(b'archive')
+        self.build('--checksums-only', '--version', self.version, platform='linux')
+        self.assertEqual(len(manifest.read_text().splitlines()), 10)
+
     def test_checksums_require_all_six_archives_before_replacing_manifest(self):
         self.output.mkdir()
         manifest = self.output / 'SHA256SUMS.txt'
@@ -266,6 +391,114 @@ class PackageTests(unittest.TestCase):
             report['checks'] = []
             with self.assertRaisesRegex(RuntimeError, 'Native desktop check failed'):
                 smoke_desktop.smoke(self.root / 'preview', self.root, '0.23.0-alpha.1')
+
+    def test_native_smoke_nonzero_keeps_fatal_header_and_redacts_private_diagnostics(self):
+        token = 'synthetic-admin-token-that-must-not-leak'
+        address = 'http://127.0.0.1:12345/#' + token
+        report = {'passed': True, 'checks': sorted(smoke_desktop.REQUIRED),
+                  'os': 'linux', 'arch': 'amd64', 'version': '0.23.0-alpha.1',
+                  'error': address + ' repeated token ' + token,
+                  'admin_token': 'another-private-admin-token'}
+
+        def execute(command, **kwargs):
+            Path(command[-1]).write_text(json.dumps(report))
+            kwargs['stdout'].write(('Control panel: ' + address + '\n').encode())
+            kwargs['stderr'].write(('Native check passed: proxy-start-via-ui\n'
+                                    'Exception 0xc000000d\nPC=0x1234\n'
+                                    'goroutine 1 [syscall]:\ncausal-native-frame\n'
+                                    + 'irrelevant frame\n' * 2000 + 'final-native-frame\n'
+                                    + 'upstream: wss://private.invalid/socket\n').encode())
+            return subprocess.CompletedProcess(command, 2)
+
+        with patch.object(smoke_desktop.platform, 'system', return_value='Linux'), \
+             patch.object(smoke_desktop.subprocess, 'run', side_effect=execute), \
+             self.assertRaises(RuntimeError) as failure:
+            smoke_desktop.smoke(self.root / 'preview', self.root, '0.23.0-alpha.1')
+        message = str(failure.exception)
+        for required in ['exit 2', 'Exception 0xc000000d', 'PC=0x1234',
+                         'causal-native-frame', 'final-native-frame', 'proxy-start-via-ui',
+                         'report:', 'tray-stop', 'diagnostic truncated']:
+            self.assertIn(required, message)
+        for private in [address, token, '127.0.0.1', 'private.invalid', 'another-private-admin-token']:
+            self.assertNotIn(private, message)
+        self.assertLess(len(message), 22000)
+
+    def test_native_smoke_timeout_preserves_progress_and_missing_report_failure(self):
+        def execute(command, **kwargs):
+            kwargs['stdout'].write(b'Control panel: http://127.0.0.1:43210/#private-token\n')
+            kwargs['stderr'].write(b'Native check passed: rendered-ui-and-authenticated-backend\n'
+                                    b'Exception 0xc000000d\ngoroutine 1 [syscall]:\n')
+            raise subprocess.TimeoutExpired(command, kwargs['timeout'])
+
+        with patch.object(smoke_desktop.platform, 'system', return_value='Linux'), \
+             patch.object(smoke_desktop.subprocess, 'run', side_effect=execute), \
+             self.assertRaises(RuntimeError) as failure:
+            smoke_desktop.smoke(self.root / 'preview', self.root)
+        message = str(failure.exception)
+        self.assertIn('process did not exit within 150 seconds', message)
+        self.assertIn('rendered-ui-and-authenticated-backend', message)
+        self.assertIn('Exception 0xc000000d', message)
+        self.assertNotIn('127.0.0.1', message)
+        self.assertNotIn('private-token', message)
+
+    def test_native_smoke_waits_for_desktop_without_descendant_capture_pipes(self):
+        report = {'passed': True, 'checks': sorted(smoke_desktop.REQUIRED),
+                  'os': 'linux', 'arch': 'amd64', 'version': '0.23.0-alpha.1'}
+        gate, ready, done, pid = (self.root / name for name in
+                                 ('release-child', 'child-ready', 'child-done', 'child-pid'))
+        child = '''from pathlib import Path
+import sys, time
+gate, ready, done = map(Path, sys.argv[1:])
+ready.write_text('holding inherited output handles')
+deadline = time.monotonic() + 10
+while not gate.exists() and time.monotonic() < deadline:
+    time.sleep(.02)
+sys.stdout.close()
+sys.stderr.close()
+done.write_text('closed inherited output handles')
+'''
+        parent = '''from pathlib import Path
+import subprocess, sys, time
+child = subprocess.Popen([sys.executable, '-c', sys.argv[1], *sys.argv[2:5]],
+                         stdout=sys.stdout, stderr=sys.stderr)
+Path(sys.argv[7]).write_text(str(child.pid))
+deadline = time.monotonic() + 5
+while not Path(sys.argv[3]).exists():
+    if time.monotonic() >= deadline:
+        raise RuntimeError('owned descendant did not start')
+    time.sleep(.02)
+Path(sys.argv[5]).write_text(sys.argv[6])
+'''
+        real_run = subprocess.run
+
+        def execute(command, **kwargs):
+            return real_run([sys.executable, '-c', parent, child, str(gate), str(ready),
+                             str(done), command[-1], json.dumps(report), str(pid)], **kwargs)
+
+        with ThreadPoolExecutor(max_workers=1) as executor, \
+             patch.object(smoke_desktop.platform, 'system', return_value='Linux'), \
+             patch.object(smoke_desktop.platform, 'machine', return_value='x86_64'), \
+             patch.object(smoke_desktop.subprocess, 'run', side_effect=execute):
+            future = executor.submit(smoke_desktop.smoke, self.root / 'preview', self.root, '0.23.0-alpha.1')
+            try:
+                # The real parent exits while its own descendant still holds
+                # stdout/stderr. Capturing pipes would wait until gate is set.
+                future.result(timeout=5)
+                self.assertTrue(ready.exists())
+                self.assertFalse(done.exists())
+            finally:
+                try:
+                    # Acquire while the gate keeps our exact process alive.
+                    # Its done marker precedes interpreter exit and cannot
+                    # prove that Windows released inherited log handles.
+                    with owned_descendant_exit(int(pid.read_text())) as exited:
+                        self.assertFalse(exited(0), 'owned descendant exited before release')
+                        gate.write_text('release only our temporary descendant')
+                        self.assertTrue(exited(5), 'owned descendant process did not exit')
+                        self.assertTrue(done.exists(), 'owned descendant did not finish its fixture')
+                finally:
+                    # Release even when acquiring the observer or an assert fails.
+                    gate.write_text('release only our temporary descendant')
 
     def test_post_extraction_can_verify_one_matrix_target(self):
         self.build('--target', 'darwin/arm64')

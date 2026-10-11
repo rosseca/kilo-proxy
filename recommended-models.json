@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "models": [
     {
-      "id": "openai/gpt-6-sol",
+      "id": "openai/gpt-6.1-sol",
       "note": { "en": "OpenAI's current flagship for everyday coding.", "es": "El modelo principal actual de OpenAI para programar a diario." }
     },
     {
@@ -20,8 +20,8 @@
       "note": { "en": "Previous fast model, kept for stable workflows.", "es": "El modelo rápido anterior, para flujos que ya funcionan." }
     },
     {
-      "id": "anthropic/claude-sonnet-5",
-      "note": { "en": "Anthropic's most used model. Balanced quality and price.", "es": "El Anthropic más usado. Buen equilibrio entre calidad y precio." }
+      "id": "anthropic/claude-sonnet-5.5",
+      "note": { "en": "Anthropic's latest Sonnet for everyday coding.", "es": "El Sonnet más reciente de Anthropic para programar a diario." }
     },
     {
       "id": "anthropic/claude-opus-5.5",
@@ -32,8 +32,9 @@
       "note": { "en": "Anthropic's top tier for the hardest problems. Expensive.", "es": "La gama más alta de Anthropic para los problemas más duros. Caro." }
     },
     {
-      "id": "deepseek/deepseek-v4.1-flash",
-      "note": { "en": "Among the most used coding models on Kilo. Very cheap.", "es": "De los modelos de código más usados en Kilo. Muy barato." }
+      "id": "deepseek/deepseek-v4-pro-0813",
+      "reasoning": "max",
+      "note": { "en": "DeepSeek Pro for coding and reasoning. Starts at max reasoning.", "es": "DeepSeek Pro para programar y razonar. Empieza con razonamiento máximo." }
     },
     {
       "id": "z-ai/glm-5.3",

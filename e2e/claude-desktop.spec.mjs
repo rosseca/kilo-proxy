@@ -1,5 +1,5 @@
 import {test,expect,startProxy,state} from './fixture.mjs';
-import {readFile} from 'node:fs/promises';
+import {readFile,writeFile} from 'node:fs/promises';
 
 const first='vendor/one',second='anthropic/claude-sonnet-4.6',third='anthropic/claude-opus-4.6';
 const choose=(page,id)=>page.locator(`[data-editor-id="${id}"]`);
@@ -17,7 +17,11 @@ async function seedLibrary(request,gateway){
 test('Claude Desktop starts from shared models and prepares a named configuration separately from Claude Code',async({page,gateway,request},testInfo)=>{
  await seedLibrary(request,gateway);
  await page.locator('#tab-claude-desktop').click();
- await expect(page.locator('#editor-title')).toHaveText('Claude Desktop · select and prepare');
+ await expect(page.locator('#editor-title')).toHaveText('Claude Desktop · Kilo · select and prepare');
+ await expect(page.locator('#tab-claude-desktop')).toHaveText('Claude Desktop · Kilo');
+ await expect(page.locator('#editor-intro')).toContainText('Existing history and sign-in are not copied');
+ await expect(page.locator('#editor-next')).toContainText('Regular Claude can stay open');
+ await expect(page.locator('#editor-next')).toContainText('not an operating-system sandbox');
  await expect(choose(page,first)).toHaveCount(0);await expect(choose(page,second)).toBeChecked();await expect(choose(page,third)).toBeChecked();
  await expect(name(page,second)).toHaveValue('Shared Claude');
  await expect(page.locator(`[data-editor-initial="${second}"]`)).toHaveAttribute('aria-pressed','true');
@@ -48,7 +52,9 @@ test('Claude Desktop starts from shared models and prepares a named configuratio
  await expect(page.locator('#client-launch-directory-field')).toBeVisible();
  await page.locator('#tab-claude-desktop').click();await expect(name(page,second)).toHaveValue('Desktop Claude');
  await page.locator('#language').selectOption('es');
- await expect(page.locator('#editor-title')).toHaveText('Claude Desktop · selecciona y prepara');
+ await expect(page.locator('#editor-title')).toHaveText('Claude Desktop · Kilo · selecciona y prepara');
+ await expect(page.locator('#editor-intro')).toContainText('No se copian el historial ni la sesión existentes');
+ await expect(page.locator('#editor-next')).toContainText('Claude normal puede seguir abierto');
  await expect(page.locator('#editor-limit-note')).toContainText('usa modelos Claude por defecto');
  await page.setViewportSize({width:390,height:844});
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
@@ -61,7 +67,7 @@ test('Claude Desktop prepares on launch, ignores project folders and starts the 
  await expect(page.locator('#status-label')).toHaveText('Proxy stopped');
  await page.locator('#tab-opencode').click();await page.locator('#client-launch-directory').fill('/missing/irrelevant-project');
  await page.locator('#tab-claude-desktop').click();
- await expect(page.locator('#client-launch')).toHaveText('Launch Claude Desktop');
+ await expect(page.locator('#client-launch')).toHaveText('Launch Claude Desktop · Kilo');
  await expect(page.locator('#client-launch')).toBeEnabled();
  let prepares=0,launchBody;
  page.on('request',req=>{if(req.method()!=='POST')return;const pathname=new URL(req.url()).pathname;if(pathname==='/api/claude-desktop/profile')prepares++;if(pathname==='/api/clients/launch')launchBody=req.postDataJSON();});
@@ -179,4 +185,35 @@ test('Claude Desktop ignores a delayed pre-toggle state and follows later extern
   expect((await records(gateway))).toHaveLength(0);
   expect((await state(request,gateway)).running).toBe(false);
  }finally{releaseState();await page.unroute('**/api/state');}
+});
+
+for (const language of ['en','es']) test(`Claude Desktop only asks to close its Kilo window (${language})`,async({page,gateway,request})=>{
+ await seedLibrary(request,gateway);
+ await startProxy(page,gateway);
+ await page.locator('#language').selectOption(language);
+ await page.locator('#tab-claude-desktop').click();
+ await page.locator('#editor-save').click();
+ await expect(page.locator('#editor-status')).toContainText(language==='en'?'Configuration saved:':'Configuración guardada:');
+ const profile=await saved(request,gateway),before=await readFile(profile.configPath,'utf8');
+ // Let preparation finish, then simulate an existing Kilo instance at the
+ // real launch boundary. Regular Claude is not what this fixture guard checks.
+ await page.route('**/api/clients/launch',async route=>{
+  if(route.request().method()==='POST')await writeFile(gateway.launchControl,JSON.stringify({claudeDesktopRunning:true}));
+  await route.continue();
+ });
+ await page.locator('#client-launch').click();
+ await expect(page.locator('#client-launch-status')).toContainText(language==='en'?'Quit the Kilo Claude Desktop window':'Cierra la ventana Kilo de Claude Desktop');
+ await expect(page.locator('#client-launch-status')).toContainText(language==='en'?'Your regular Claude session can stay open':'Tu sesión normal de Claude puede seguir abierta');
+ expect(await records(gateway)).toHaveLength(0);
+ expect(await readFile(profile.configPath,'utf8')).toBe(before);
+ await page.unroute('**/api/clients/launch');
+ await name(page,second).fill('Pending Kilo change');
+ await page.locator('#client-launch').click();
+ await expect(page.locator('#client-launch-status')).toContainText(language==='en'?'Close the Kilo Claude Desktop window before changing its configuration':'Cierra la ventana Kilo de Claude Desktop antes de cambiar su configuración');
+ expect(await records(gateway)).toHaveLength(0);
+ expect(await readFile(profile.configPath,'utf8')).toBe(before);
+ await writeFile(gateway.launchControl,'{}');
+ await page.locator('#client-launch').click();
+ await expect.poll(async()=>(await records(gateway)).length).toBe(1);
+ expect((await saved(request,gateway)).selection.models.find(model=>model.id===second).name).toBe('Pending Kilo change');
 });

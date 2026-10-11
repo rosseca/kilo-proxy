@@ -33,6 +33,10 @@ func (a *app) claudeDesktopOptions(w http.ResponseWriter, r *http.Request) {
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.chatgpt.snapshot().Connected {
+		jsonResponse(w, http.StatusOK, map[string]bool{"experimentalModels": true})
+		return
+	}
 	if r.Method == http.MethodPost && a.config.ClaudeDesktopExperimentalModels != *input.ExperimentalModels {
 		if !safeLaunchDir(a.dir, a.dir) {
 			jsonError(w, http.StatusConflict, "Cannot safely access the Kilo settings directory.")

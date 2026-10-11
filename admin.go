@@ -58,6 +58,22 @@ func (a *app) adminHandler() http.Handler {
 			jsonError(w, 403, "Origen no permitido.")
 			return
 		}
+		if r.URL.Path == "/chatgpt-helper.mjs" && r.Method == http.MethodGet {
+			files.ServeHTTP(w, r)
+			return
+		}
+		if r.URL.Path == "/openmausbot-helper.mjs" && r.Method == http.MethodGet {
+			files.ServeHTTP(w, r)
+			return
+		}
+		if r.URL.Path == "/synara-helper.mjs" && r.Method == http.MethodGet {
+			files.ServeHTTP(w, r)
+			return
+		}
+		if r.URL.Path == "/t3-code-helper.mjs" && r.Method == http.MethodGet {
+			files.ServeHTTP(w, r)
+			return
+		}
 		if !strings.HasPrefix(r.URL.Path, "/api/") {
 			if r.Method != "GET" || (r.URL.Path != "/" && r.URL.Path != "/app.js" && r.URL.Path != "/desktop-helper.mjs" && r.URL.Path != "/editor-helper.mjs" && r.URL.Path != "/omp-helper.mjs" && r.URL.Path != "/open-design-helper.mjs" && r.URL.Path != "/xcode-helper.mjs" && r.URL.Path != "/activity-helper.mjs" && r.URL.Path != "/usage-helper.mjs" && r.URL.Path != "/update-helper.mjs" && r.URL.Path != "/account-usage.mjs" && r.URL.Path != "/codex-catalog.mjs" && r.URL.Path != "/model-helper.mjs" && r.URL.Path != "/context-policy.mjs" && r.URL.Path != "/client-config.mjs" && r.URL.Path != "/claude-helper.mjs" && r.URL.Path != "/claude-desktop-helper.mjs" && r.URL.Path != "/i18n.mjs" && r.URL.Path != "/style.css" && r.URL.Path != "/icon.svg") {
 				http.NotFound(w, r)
@@ -70,12 +86,32 @@ func (a *app) adminHandler() http.Handler {
 			jsonError(w, 401, "Abre el panel desde la aplicación para recuperar el acceso.")
 			return
 		}
+		if strings.HasPrefix(r.URL.Path, "/api/chatgpt/") {
+			a.providerAPI(w, r)
+			return
+		}
 		if r.URL.Path == "/api/updates" {
 			a.updatesAPI(w, r)
 			return
 		}
+		if r.URL.Path == "/api/updates/install" {
+			a.installPackageUpdateAPI(w, r)
+			return
+		}
 		if r.URL.Path == "/api/clients/launch" {
 			a.clientsLaunch(w, r)
+			return
+		}
+		if r.URL.Path == openMausBotEndpoint {
+			a.openMausBotProfile(w, r)
+			return
+		}
+		if r.URL.Path == synaraProfileEndpoint {
+			a.synaraProfileAPI(w, r)
+			return
+		}
+		if r.URL.Path == t3CodeProfileEndpoint {
+			a.t3CodeProfileAPI(w, r)
 			return
 		}
 		if r.URL.Path == "/api/omp/profile" {
@@ -100,6 +136,10 @@ func (a *app) adminHandler() http.Handler {
 		}
 		if r.URL.Path == "/api/model-library" {
 			a.modelLibraryAPI(w, r)
+			return
+		}
+		if r.URL.Path == "/api/headless/catalog" {
+			a.headlessCatalogAPI(w, r)
 			return
 		}
 		if strings.HasPrefix(r.URL.Path, "/api/desktop/") {
@@ -151,6 +191,8 @@ func (a *app) adminHandler() http.Handler {
 			return
 		}
 		switch r.URL.Path {
+		case "/api/image-generation":
+			a.imageGenerationSettingsAPI(w, r)
 		case "/api/activity/config":
 			a.activityConfig(w, r)
 		case "/api/billing/refresh":
@@ -170,11 +212,7 @@ func (a *app) adminHandler() http.Handler {
 			a.saveConfig(w, r)
 		case "/api/start":
 			if err := a.start(); err != nil {
-				if errors.Is(err, errMissingCredentials) {
-					jsonError(w, 400, err.Error())
-				} else {
-					jsonError(w, 409, "No se pudo abrir el puerto. Puede estar ocupado por otra instancia; elige otro puerto.")
-				}
+				a.writeProxyStartError(w, err)
 				return
 			}
 			a.state(w)
@@ -203,12 +241,18 @@ func (a *app) state(w http.ResponseWriter) {
 	// The preference may have changed during static executable discovery.
 	imageDependency.Required = normalizeImageTransportSettings(a.config.ImageTransport).Mode == "cloudflare"
 	a.ensureBillingRefreshLocked(false)
+	a.ensureChatGPTQuotaLocked()
+	if identity := a.chatgpt.identity(); identity != a.chatGPTLastIdentity {
+		a.chatGPTLastIdentity = identity
+		a.catalogRevision++
+	}
 	uptime := int64(0)
 	if a.proxyServer != nil {
 		uptime = int64(time.Since(a.started).Seconds())
 	}
 	jsonResponse(w, 200, map[string]any{
-		"claudeDesktopExperimentalModels": a.config.ClaudeDesktopExperimentalModels,
+		"connectionReady": a.connectionReadyLocked(), "kiloReady": a.kiloReadyLocked(), "chatgptReady": a.chatGPTReadyLocked(), "chatgpt": a.chatgpt.snapshot(),
+		"claudeDesktopExperimentalModels": a.claudeDesktopExperimentalLocked(),
 		"imageTransport":                  a.config.ImageTransport,
 		"imageTransportDependency":        imageDependency,
 		"imageUploadWarning":              a.imageUploadWarning,
@@ -222,10 +266,12 @@ func (a *app) state(w http.ResponseWriter) {
 		"running": a.proxyServer != nil, "baseURL": "http://127.0.0.1:" + strconv.Itoa(a.config.Port) + "/v1",
 		"zedBaseURL": zedBaseURL("http://127.0.0.1:"+strconv.Itoa(a.config.Port)+"/v1", a.config.LocalKey),
 		"requests":   a.requests, "failures": a.failures, "active": a.active, "uptime": uptime,
-		"usage":          a.usageSnapshot(),
-		"usageHistory":   a.usageHistorySnapshotLocked(),
-		"billing":        a.billingSnapshotLocked(),
-		"captureEnabled": a.captureEnabled, "activityEpoch": a.activityEpoch,
+		"usage":               a.usageSnapshot(),
+		"usageHistory":        a.usageHistorySnapshotLocked(),
+		"chatgptUsageHistory": a.usageHistory.snapshot(usageAccountID(a.chatgpt.identity(), "chatgpt"), time.Now()),
+		"catalogWarnings":     a.catalogWarnings,
+		"billing":             a.billingSnapshotLocked(),
+		"captureEnabled":      a.captureEnabled, "activityEpoch": a.activityEpoch,
 		"events": a.events, "warning": a.vaultWarning,
 	})
 }
@@ -270,7 +316,7 @@ func (a *app) saveConfig(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, 400, "El puerto debe estar entre 1024 y 65535.")
 		return
 	}
-	if input.OrgID == "" || len(input.OrgID) > 128 || strings.ContainsAny(input.OrgID, "\r\n\t /\\") {
+	if len(input.OrgID) > 128 || strings.ContainsAny(input.OrgID, "\r\n\t /\\") {
 		jsonError(w, 400, "Introduce el ID de organización, no su nombre ni la URL.")
 		return
 	}
@@ -284,6 +330,22 @@ func (a *app) saveConfig(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, 409, "Detén el proxy o cancela el login antes de cambiar la conexión.")
 		return
 	}
+	if input.OrgID == "" && input.APIKey == "" && a.chatGPTReadyLocked() {
+		// Subscription-only port edits must not clear a saved Kilo connection.
+		cfg := a.config
+		cfg.Port = input.Port
+		if err := writeSettings(a.dir, cfg); err != nil {
+			jsonError(w, 500, "Could not save the local port.")
+			return
+		}
+		a.config = cfg
+		jsonResponse(w, 200, map[string]bool{"ok": true})
+		return
+	}
+	if input.OrgID == "" {
+		jsonError(w, 400, "Introduce el ID de organización, no su nombre ni la URL.")
+		return
+	}
 	key := input.APIKey
 	if key == "" {
 		key = a.apiKey
@@ -295,7 +357,7 @@ func (a *app) saveConfig(w http.ResponseWriter, r *http.Request) {
 	cfg := a.config
 	cfg.Port, cfg.OrgID, cfg.Remember = input.Port, input.OrgID, input.Remember
 	if cfg.Remember {
-		if len(key) > 2400 {
+		if len(key) > credentialVaultLimit(a.vault) {
 			jsonError(w, 400, "Esta clave supera el tamaño portable del almacén de credenciales. Desmarca Recordar para usarla durante esta sesión.")
 			return
 		}
@@ -356,10 +418,10 @@ func (a *app) forget(w http.ResponseWriter) {
 // This intentionally reads the catalog only; it does not imply that organization
 // credits or model policy were checked. Inference remains a deliberate client action.
 func (a *app) check(w http.ResponseWriter, r *http.Request) {
-	models, revision, err := a.fetchModels(r.Context(), true)
+	models, revision, complete, err := a.fetchModelsWithCompleteness(r.Context(), true)
 	if err != nil {
 		catalogFailure(w, err)
 		return
 	}
-	jsonResponse(w, 200, map[string]any{"models": len(models), "catalog": models, "revision": revision, "fetchedAt": time.Now().UTC().Format(time.RFC3339), "message": "Gateway accesible. El catálogo no verifica el saldo ni los permisos de generación de tu organización."})
+	jsonResponse(w, 200, map[string]any{"models": len(models), "catalog": models, "revision": revision, "complete": complete, "fetchedAt": time.Now().UTC().Format(time.RFC3339), "message": "Gateway accesible. El catálogo no verifica el saldo ni los permisos de generación de tu organización."})
 }

@@ -184,6 +184,16 @@ const knownReasoning = {
     ],
     "initial": "high"
   },
+  "anthropic/claude-sonnet-5.5": {
+    "levels": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "initial": "high"
+  },
   "anthropic/claude-sonnet-5": {
     "levels": [
       "low",

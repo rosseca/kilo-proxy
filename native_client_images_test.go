@@ -4,7 +4,10 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"image"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -241,4 +244,107 @@ func nativeScrollClientControlIntoView(h *nativePointerHarness, label string, cl
 		nativeMenuWheel(h, image.Pt(h.size.X-60, 250), delta)
 	}
 	h.t.Fatalf("client control %q was not fully visible after bounded scrolling", label)
+}
+
+func TestNativeChatGPTImageProviderSelection(t *testing.T) {
+	u := nativeTestUI(t)
+	u.state["chatgptReady"] = true
+	u.state["kiloReady"] = false
+	s := u.clientState().selection("codex")
+	if err := s.add(nativeClientModelsForTest()[0], 50); err != nil {
+		t.Fatal(err)
+	}
+	s.ImageGeneration = &imageGenerationSettings{Enabled: true, Model: "vendor/saved-image", Provider: "chatgpt"}
+	if !nativeClientImagesReady(s, nil, u.state) {
+		t.Fatal("subscription images required a Kilo image catalog or connection")
+	}
+	payload, err := nativeClientPayload("codex", s)
+	if err != nil || payload.(map[string]any)["imageGeneration"].(imageGenerationSettings).Provider != "chatgpt" {
+		t.Fatal("subscription provider lost from profile payload", err)
+	}
+	nativeEditClientImages(s, func(v *imageGenerationSettings) { v.Model = "" })
+	if _, err := nativeClientPayload("codex", s); err != nil {
+		t.Fatal("built-in tool required an image model", err)
+	}
+	u.state["chatgptReady"] = false
+	if nativeClientImagesReady(s, nativeImagesForTest(), u.state) {
+		t.Fatal("Kilo images masked a disconnected subscription")
+	}
+	nativeEditClientImages(s, func(v *imageGenerationSettings) { v.Enabled = false })
+	if !nativeClientImagesReady(s, nil, u.state) {
+		t.Fatal("disabling images prevented preparing a coding profile")
+	}
+}
+
+func TestNativeChatGPTImagesResponsiveProviderSwitch(t *testing.T) {
+	for _, size := range []image.Point{{1180, 820}, {720, 700}} {
+		for _, language := range []string{"en", "es"} {
+			t.Run(fmtSize(size)+"/"+language, func(t *testing.T) {
+				f := newNativeChatGPTFixture(t, language, size)
+				f.set(map[string]any{"connected": true, "status": "idle"})
+				f.refresh(t)
+				u := f.h.u
+				u.page, u.language = "models", language
+				u.expanded["models.images.toggle"] = true
+				u.models = append(nativeClientModelsForTest(), nativeImagesForTest()...)
+				s := u.sharedClientSelection("codex")
+				s.ImageGeneration = &imageGenerationSettings{Enabled: true, Model: "openai/gpt-5.4-image-2"}
+				h := f.h
+				h.frame()
+				kilo := u.tr("Kilo · account credits", "Kilo · crédito de la cuenta")
+				subscription := u.tr("ChatGPT subscription · Experimental", "Suscripción de ChatGPT · Experimental")
+				nativeScrollClientControlIntoView(h, kilo, semantic.Button)
+				h.click(kilo, semantic.Button)
+				nativeScrollClientControlIntoView(h, subscription, semantic.Button)
+				h.click(subscription, semantic.Button)
+				if s.ImageGeneration.Provider != "chatgpt" || s.ImageGeneration.Model != "openai/gpt-5.4-image-2" || !nativeClientImagesReady(s, nil, u.state) {
+					t.Fatal("provider switch lost the Kilo model or required its catalog")
+				}
+				nativeGridCapture(t, h, "native-chatgpt-images-"+fmtSize(size)+"-"+language)
+				h.click(subscription, semantic.Button)
+				nativeScrollClientControlIntoView(h, kilo, semantic.Button)
+				h.click(kilo, semantic.Button)
+				if s.ImageGeneration.Provider != "kilo" || s.ImageGeneration.Model != "openai/gpt-5.4-image-2" {
+					t.Fatal("returning to Kilo did not restore its selected model")
+				}
+			})
+		}
+	}
+}
+
+func TestNativeSaveImageSettingsWithoutCodexProfile(t *testing.T) {
+	u := nativeTestUI(t)
+	u.owner.mu.Lock()
+	u.owner.apiKey, u.owner.config.OrgID = "", ""
+	u.owner.mu.Unlock()
+	gui, cli := u.clientState().selection("codex"), u.clientState().selection("codex-cli")
+	u.seedClientImages("codex", gui)
+	u.seedClientImages("codex-cli", cli)
+	nativeEditClientImages(gui, func(v *imageGenerationSettings) { v.Enabled = true; v.Provider = "chatgpt"; v.Model = "" })
+	u.saveClientImages(gui)
+	nativeTestWait(t, u, func() bool { return !u.busy["POST/api/image-generation"] })
+	u.owner.mu.Lock()
+	saved := u.owner.config.ImageGeneration
+	u.owner.mu.Unlock()
+	if saved != *gui.ImageGeneration || saved.Provider != "chatgpt" || !saved.Enabled || *cli.ImageGeneration != saved {
+		t.Fatalf("image settings were not saved and shared: %+v notice=%s", saved, u.notice)
+	}
+	if len(gui.Models) != 0 || len(cli.Models) != 0 {
+		t.Fatal("saving images created a coding model selection")
+	}
+	for _, dir := range []string{u.owner.codexProfileDir, u.owner.codexCLIProfileDir} {
+		if _, err := os.Stat(filepath.Join(dir, "config.toml")); !errors.Is(err, os.ErrNotExist) {
+			t.Fatal("saving images unexpectedly prepared a Codex profile", err)
+		}
+	}
+	nativeEditClientImages(gui, func(v *imageGenerationSettings) { v.Enabled = false })
+	u.saveClientImages(gui)
+	nativeEditClientImages(gui, func(v *imageGenerationSettings) { v.Provider = "kilo"; v.Model = "vendor/new-draft" })
+	nativeTestWait(t, u, func() bool { return !u.busy["POST/api/image-generation"] })
+	if gui.ImageGeneration.Provider != "kilo" || gui.ImageGeneration.Model != "vendor/new-draft" {
+		t.Fatal("save response overwrote a newer image draft")
+	}
+	if cli.ImageGeneration.Enabled || cli.ImageGeneration.Provider != "chatgpt" {
+		t.Fatal("untouched sibling did not receive the saved setting")
+	}
 }

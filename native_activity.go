@@ -132,15 +132,28 @@ func nativePretty(raw string) string {
 	return raw
 }
 func (u *nativeUI) coverage(summary usageSummary) string {
-	missing := max(int64(0), summary.Requests-summary.Priced)
-	return fmt.Sprintf(u.tr("Cost reported: %d/%d requests\n%d requests without reported cost", "Coste informado: %d/%d peticiones\n%d peticiones sin coste informado"), summary.Priced, summary.Requests, missing)
+	billable := max(int64(0), summary.Requests-summary.SubscriptionRequests)
+	missing := max(int64(0), billable-summary.Priced)
+	text := fmt.Sprintf(u.tr("Cost reported: %d/%d requests\n%d requests without reported cost", "Coste informado: %d/%d peticiones\n%d peticiones sin coste informado"), summary.Priced, billable, missing)
+	if summary.SubscriptionRequests > 0 {
+		subscription := fmt.Sprintf(u.tr("%d subscription requests · quota shown separately", "%d peticiones de suscripción · cuota mostrada por separado"), summary.SubscriptionRequests)
+		if billable == 0 {
+			return subscription
+		}
+		text += "\n" + subscription
+	}
+	return text
 }
+
 func (u *nativeUI) responseStats(summary usageSummary) string {
 	return fmt.Sprintf(u.tr("Response stats: %d interrupted or limited", "Estadísticas de respuesta: %d interrumpidas o limitadas"), summary.Incomplete)
 }
 func (u *nativeUI) reportedSpend(summary usageSummary) (label, amount string) {
+	if summary.SubscriptionRequests > 0 && summary.Requests == summary.SubscriptionRequests {
+		return u.tr("Subscription usage", "Uso de suscripción"), u.tr("Included in subscription", "Incluido en la suscripción")
+	}
 	label = u.tr("Reported inference cost", "Coste de inferencia informado")
-	if summary.Priced > 0 && summary.Priced < summary.Requests {
+	if summary.Priced > 0 && summary.Priced < summary.Requests-summary.SubscriptionRequests {
 		label = u.tr("Reported subtotal", "Subtotal informado")
 	}
 	amount = "—"
@@ -185,6 +198,11 @@ func (u *nativeUI) activityPanel() layout.Widget {
 	if costValue != "—" {
 		costCaption = nativeMoney(total.CostUSD) + " · " + costCaption
 	}
+	costNote := u.tr("Reported cost is not the same as Kilo charges.", "El coste informado no es lo mismo que los cargos de Kilo.")
+	if total.SubscriptionRequests > 0 && total.Requests == total.SubscriptionRequests {
+		costLabel, costValue = u.tr("Subscription usage", "Uso de suscripción"), fmt.Sprint(total.SubscriptionRequests)
+		costCaption, costNote = u.tr("Requests using ChatGPT quota", "Peticiones que usan la cuota de ChatGPT"), u.tr("Subscription usage is separate from Kilo charges.", "El uso de suscripción es independiente de los cargos de Kilo.")
+	}
 	costMetrics := []layout.Widget{
 		u.topRow(
 			u.activityMetricTile(costLabel, costValue, costCaption),
@@ -192,7 +210,7 @@ func (u *nativeUI) activityPanel() layout.Widget {
 			u.activityMetricTile(u.tr("Tokens", "Tokens"), nativeReportedCount(total.Input+total.Output, total.WithTokens, total.Requests), fmt.Sprintf(u.tr("%s input · %s output", "%s entrada · %s salida"), nativeCount(total.Input), nativeCount(total.Output))),
 		),
 		u.note(u.responseStats(total)),
-		u.note(u.tr("Reported cost is not the same as Kilo charges.", "El coste informado no es lo mismo que los cargos de Kilo.")),
+		u.note(costNote),
 		u.disclosure("activity.costs", u.tr("What's included", "Qué incluye")),
 	}
 	if u.expanded["activity.costs"] {
@@ -305,13 +323,18 @@ func (u *nativeUI) activityRequestRow(request event) layout.Widget {
 			costSource = u.costSourceLabel(request.Usage.CostSource)
 		}
 	}
+	costText := u.tr("Reported cost: ", "Coste informado: ") + cost
+	if request.Usage != nil && request.Usage.Billing == "subscription" {
+		costText = u.tr("Subscription usage", "Uso de suscripción")
+		costSource = ""
+	}
 	children := []layout.Widget{
 		u.topRow(
 			u.statusBadge(tone, fmt.Sprint(request.Status)),
 			u.subheading(model),
 			u.note(fmt.Sprintf("%s · %s %s · %d ms", request.At, request.Method, request.Path, request.Duration)),
 		),
-		u.topRow(u.note(tokens), u.note(u.tr("Reported cost: ", "Coste informado: ")+cost)),
+		u.topRow(u.note(tokens), u.note(costText)),
 	}
 	if costSource != "" {
 		children = append(children, u.note(costSource))

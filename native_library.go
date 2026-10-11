@@ -198,6 +198,9 @@ func (u *nativeUI) sharedClientSelection(key string) *nativeClientSelection {
 	u.initModelLibrary()
 	source := u.library.selection
 	u.syncClientSelection(sharedModelKey, source)
+	if assigned := u.packSelectionForAgent(key); assigned != nil {
+		source = assigned
+	}
 	s := u.clientState().selection(key)
 	if key == "claude-desktop" {
 		s.DesktopExperimentalModels = u.claudeDesktopExperimentalModels()
@@ -213,9 +216,10 @@ func (u *nativeUI) sharedClientSelection(key string) *nativeClientSelection {
 		m := value
 		m.ReasoningLevels = slices.Clone(value.ReasoningLevels)
 		if key == "claude" || key == "xcode-claude" {
-			if validClaudeEffort(m.Model.ID, m.DefaultReasoning) && (u.clientCaps(key).PerModelEffort || m.Model.ID == source.Initial) {
+			caps := u.clientCaps(key)
+			if validClaudeEffort(m.Model.ID, m.DefaultReasoning) && (caps.PerModelEffort || m.Model.ID == source.Initial) && (!claude55ID.MatchString(m.Model.ID) || claudeEffortCompatible(m.Model.ID, caps)) {
 				m.ClaudeEffort = m.DefaultReasoning
-				if m.ClaudeEffort == "xhigh" && !u.clientCaps(key).PerModelEffort {
+				if m.ClaudeEffort == "xhigh" && !caps.PerModelEffort {
 					m.ClaudeEffort = ""
 				}
 			} else {
@@ -272,6 +276,24 @@ func (u *nativeUI) sharedModelSummary() string {
 
 func (u *nativeUI) modelsPanel() layout.Widget {
 	u.initModelLibrary()
+	if u.page == "models" {
+		packs := u.packsState()
+		tabs := u.tabs("models.tab.", []nativeChoice{
+			{Value: "library", Label: u.tr("Library", "Biblioteca")},
+			{Value: "packs", Label: u.tr("Packs", "Packs")},
+			{Value: "mine", Label: u.tr("My packs", "Mis packs")},
+		}, packs.tab, func(value string) { packs.tab = value })
+		if packs.tab != "library" {
+			return u.column(tabs, u.packsPanel())
+		}
+		// The existing library remains the default view; packs never rewrite it.
+		return u.column(tabs, u.libraryModelsPanel())
+	}
+	return u.libraryModelsPanel()
+}
+
+func (u *nativeUI) libraryModelsPanel() layout.Widget {
+	u.initModelLibrary()
 	s := u.library.selection
 	u.syncClientSelection(sharedModelKey, s)
 	status, saved := u.libraryStatus()
@@ -295,12 +317,7 @@ func (u *nativeUI) modelsPanel() layout.Widget {
 	if u.page == "setup" || len(s.Models) == 0 && len(recommended) > 0 {
 		addKind = nativeButtonSecondary
 	}
-	add := u.iconButton("primary.models.add", u.tr("Add models", "Añadir modelos"), addKind, nativeIconAdd, func() {
-		u.expanded["library.catalog"] = true
-		if len(u.models) == 0 {
-			u.refreshModels()
-		}
-	})
+	add := u.iconButton("primary.models.add", u.tr("Add models", "Añadir modelos"), addKind, nativeIconAdd, u.openModelCatalog)
 	top := u.actionRow(u.column(u.heading(u.tr("Your models", "Tus modelos")), u.note(modelCount), u.message(statusTone, statusText)), add)
 	if u.expanded["library.catalog"] {
 		done := u.primaryButton("models.done", u.tr("Done", "Listo"), func() { u.expanded["library.catalog"] = false })
@@ -310,6 +327,13 @@ func (u *nativeUI) modelsPanel() layout.Widget {
 		top = u.actionRow(u.column(u.heading(u.tr("Add models", "Añadir modelos")), u.note(u.tr("Select once. Every agent uses this library.", "Elige una vez. Todos los agentes usan esta biblioteca."))), done)
 	}
 	widgets := []layout.Widget{top}
+	if u.chatGPTConnected() {
+		widgets = append(widgets, u.note(u.tr("One library for both connections. Models marked ChatGPT use subscription quota; other models use Kilo credit.", "Una biblioteca para ambas conexiones. Los modelos marcados ChatGPT usan la cuota de suscripción; los demás usan crédito de Kilo.")))
+	}
+	if len(nativeArray(u.state, "catalogWarnings")) > 0 {
+		widgets = append(widgets, u.message(nativeToneWarning, u.tr("Some models could not be loaded. Check the affected connection and refresh the catalog.", "No se pudieron cargar algunos modelos. Comprueba la conexión afectada y actualiza el catálogo.")))
+	}
+
 	if recovery || failed || u.library.validation != "" {
 		label := u.tr("Retry save", "Reintentar guardado")
 		if recovery {
@@ -377,7 +401,7 @@ func (u *nativeUI) modelsPanel() layout.Widget {
 				u.expanded["models.import.toggle"] = false
 			}), u.button("models.import.cancel", u.tr("Cancel", "Cancelar"), func() { u.library.pendingImport = nil }))))
 		}
-		widgets = append(widgets, u.disclosure("models.images.toggle", u.tr("Image generation for Codex", "Generación de imágenes para Codex")))
+		widgets = append(widgets, u.disclosure("models.images.toggle", u.tr("Image generation", "Generación de imágenes")))
 		if u.expanded["models.images.toggle"] {
 			widgets = append(widgets, u.clientImagesPanel("codex", u.sharedClientSelection("codex")))
 		}

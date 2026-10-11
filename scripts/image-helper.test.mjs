@@ -39,3 +39,20 @@ test('Codex config exports use the local image MCP and an environment reference 
   assert.equal(codexImageMCPConfig(base,{enabled:false,model:''},'invalid'),base);
   for(const url of ['https://example.test:8877/v1','http://localhost:8877/v1','http://127.0.0.1/v1','http://127.0.0.1:99/v1','http://secret@127.0.0.1:8877/v1','file:///tmp/profile'])assert.throws(()=>codexImageMCPConfig(base,images,url));
 });
+
+test('ChatGPT images use the connected subscription without an image catalog model and retain the Kilo choice',()=>{
+  const saved={enabled:true,model:'vendor/z',provider:'chatgpt'},draft=imageGenerationSelection(saved);
+  assert.deepEqual(draft,saved);assert.notEqual(draft,saved);
+  assert.equal(imageGenerationValid(draft,[],{chatgptReady:true,kiloReady:false}),true);
+  assert.equal(imageGenerationValid({...draft,model:''},[],{chatgptReady:true}),true);
+  assert.equal(imageGenerationValid(draft,catalog,{chatgptReady:false,kiloReady:true}),false);
+  assert.equal(imageGenerationValid(draft,catalog,{chatgpt:{connected:true,status:'pending'}}),false);
+  assert.equal(imageGenerationValid(draft,catalog,{chatgpt:{connected:true,status:'idle'}}),true);
+  assert.equal(imageGenerationValid({...draft,provider:'unknown'},catalog),false);
+  draft.provider='kilo';
+  assert.equal(draft.model,'vendor/z');assert.equal(imageGenerationValid(draft,catalog),true);
+  assert.equal(imageGenerationValid(draft,[]),false);
+  assert.equal(imageGenerationValid({...draft,enabled:false},[],{chatgptReady:false}),true);
+  const config=codexImageMCPConfig('model = "chatgpt/gpt-test"\n',saved,'http://127.0.0.1:8877/v1');
+  assert.ok(config.includes('/mcp/images'));assert.ok(!config.includes('vendor/z'));
+});

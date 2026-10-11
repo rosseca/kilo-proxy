@@ -115,6 +115,7 @@ func nativeTestUI(t *testing.T) *nativeUI {
 	u.clients.ClaudeChecked, u.clients.ClaudeDetectStarted = true, true
 	yes := true
 	u.models = []modelInfo{{ID: "vendor/one", Name: "Very Long First Model Name", ContextWindow: 64000, MaxOutputTokens: 4000, ReasoningEfforts: []string{"low", "high"}, Tools: &yes, InputPrice: ptrFloat(1), OutputPrice: ptrFloat(2)}, {ID: "anthropic/claude-sonnet-4.6", Name: "Claude Sonnet", ContextWindow: 128000, Tools: &yes, InputPrice: ptrFloat(3), OutputPrice: ptrFloat(15)}}
+	u.catalogFetchedAt = time.Now().UTC()
 	nativeTestWait(t, u, func() bool { return u.authenticated })
 	return u
 }

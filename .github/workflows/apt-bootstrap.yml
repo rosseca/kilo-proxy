@@ -1,0 +1,30 @@
+name: Bootstrap Ubuntu APT repository
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  publish:
+    # This one-time activation consumes the exact packages already accepted on
+    # all four native Ubuntu/architecture combinations. It never creates a tag
+    # or edits a GitHub release. The validator independently enforces main-only.
+    if: ${{ github.ref == 'refs/heads/main' }}
+    uses: ./.github/workflows/apt-publish.yml
+    permissions:
+      contents: read
+      actions: read
+      pages: write
+      id-token: write
+    with:
+      signing-fingerprint: ${{ vars.KILO_APT_FINGERPRINT }}
+      allow-bootstrap: true
+      source-run-id: '38048361680'
+      source-head-sha: c710faa31aa6665389a40d476d3c42e2234b9261
+      source-artifact-id: '11669190121'
+      source-artifact-digest: sha256:02d47c827d1074be88f0bf57cfd3117e5487764b6f3ab9416c7ba97e532d8160
+    secrets:
+      KILO_APT_SIGNING_KEY: ${{ secrets.KILO_APT_SIGNING_KEY }}

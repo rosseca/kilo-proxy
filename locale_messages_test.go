@@ -11,6 +11,9 @@ import (
 func TestNativeMessagesTranslateBackendWithoutChangingDetails(t *testing.T) {
 	for _, test := range []struct{ source, language, want string }{
 		{"Introduce tu API key personal de Kilo.", "en", "Enter your personal Kilo API key."},
+		{"Instala Synara Beta, Codex CLI y Claude Code y actualiza las aplicaciones instaladas. Extrae la AppImage antes de usarla en Linux.", "en", "Install Synara Beta, Codex CLI and Claude Code, then refresh installed apps. Extract an AppImage before using it on Linux."},
+		{"Cannot verify this Synara Beta package. Install an official Synara Beta release.", "es", "No se pudo verificar este paquete Synara Beta. Instala una versión oficial de Synara Beta."},
+		{"No se pudo verificar esta instalación de Synara Beta. Instala una versión oficial de Synara Beta y actualiza la detección. Extrae la AppImage antes de usarla en Linux.", "en", "Cannot verify this Synara Beta installation. Install an official Synara Beta release and refresh detection. Extract an AppImage before using it on Linux."},
 		{"El código ha caducado. Vuelve a conectar con Kilo.", "en", "The code has expired. Connect with Kilo again."},
 		{"Sesión conectada. Hemos seleccionado tu único equipo; pulsa Guardar y arrancar.", "en", "Signed in. Your only team has been selected; click Save and start."},
 		{"No se pudo leer el almacén de credenciales. Introduce tu API key de nuevo.", "en", "Could not read the credential store. Enter your API key again."},
@@ -41,12 +44,12 @@ func TestNativeMessagesTranslateBackendWithoutChangingDetails(t *testing.T) {
 
 func TestClaudeDesktopLaunchMessagesUseSavedLanguage(t *testing.T) {
 	a := testApp(t)
-	const message = "Claude Desktop opened with its Kilo gateway configuration."
+	const message = "Claude Desktop opened with its separate Kilo profile."
 	a.config.Language = "es"
-	if got := a.clientLaunchMessage(message); got != "Claude Desktop abierto con su configuración de gateway de Kilo." {
+	if got := a.clientLaunchMessage(message); got != "Claude Desktop abierto con su perfil Kilo separado." {
 		t.Fatalf("Desktop launch result was not translated: %s", got)
 	}
-	if got := a.clientLaunchMessage("Quit Claude Desktop, then open it here to load the Kilo configuration. Existing sessions are not closed automatically."); !strings.HasPrefix(got, "Cierra Claude Desktop") {
+	if got := a.clientLaunchMessage("Quit the Kilo Claude Desktop window, then open it here again. Your regular Claude session can stay open."); !strings.HasPrefix(got, "Cierra la ventana Kilo de Claude Desktop") {
 		t.Fatalf("running-app guidance was not translated: %s", got)
 	}
 	a.config.Language = "en"

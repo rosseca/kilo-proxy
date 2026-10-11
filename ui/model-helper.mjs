@@ -9,11 +9,20 @@ export function imageGenerationModels(models) {
 }
 export function imageGenerationSelection(value) {
   if(!value || typeof value.enabled!=='boolean' || typeof value.model!=='string')return null;
-  return {enabled:value.enabled,model:!value.enabled&&!imageModelID(value.model)?'':value.model};
+  return {enabled:value.enabled,model:!value.enabled&&!imageModelID(value.model)?'':value.model,...(value.provider?{provider:value.provider}:{})};
 }
 const imageModelID = id => typeof id==='string' && /^[A-Za-z0-9~][A-Za-z0-9._:/~+-]{0,199}$/.test(id);
-export function imageGenerationValid(value, models) {
-  return !value?.enabled || (imageModelID(value.model) && (!models || imageGenerationModels(models).some(model=>model.id===value.model)));
+export function imageGenerationProvider(value) { return value?.provider || 'kilo'; }
+export function imageGenerationConnectionReady(value, state) {
+  if(!state)return true;
+  if(imageGenerationProvider(value)==='chatgpt')return typeof state.chatgptReady==='boolean'?state.chatgptReady:state.chatgpt?.connected===true&&state.chatgpt?.status!=='pending';
+  return typeof state.kiloReady==='boolean'?state.kiloReady:!!(state.hasKey&&state.orgId);
+}
+export function imageGenerationValid(value, models, state) {
+  if(!value?.enabled)return true;
+  const provider=imageGenerationProvider(value);
+  if(!['kilo','chatgpt'].includes(provider)||(provider==='chatgpt'&&!imageGenerationConnectionReady(value,state)))return false;
+  return provider==='chatgpt'||(imageModelID(value.model) && (!models || imageGenerationModels(models).some(model=>model.id===value.model)));
 }
 export function codexImageMCPConfig(config, images, baseURL) {
   if(!images?.enabled)return config;
@@ -121,6 +130,7 @@ export function formatPrice(value, language = 'en') {
 export function modelPriceDetails(model, language = 'en') {
   const prices=document.createElement('span');
   prices.className='model-option-prices';
+  if(model.id?.startsWith('chatgpt/')){const quota=document.createElement('strong');quota.textContent=language==='es'?'Cuota de suscripción':'Subscription quota';prices.append(quota);return prices;}
   for(const [label,value] of [[language==='es'?'Entrada':'Input',model.inputPrice],[language==='es'?'Salida':'Output',model.outputPrice]]) {
     const item=document.createElement('span'),name=document.createElement('span'),amount=document.createElement('strong');
     item.className='model-price';name.className='model-price-label';name.textContent=label;

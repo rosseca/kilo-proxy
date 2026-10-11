@@ -24,7 +24,7 @@ type claudeDesktopAliasRoute struct{ Alias, Model string }
 func (a *app) resolveClaudeDesktopAlias(alias string) (string, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if !a.config.ClaudeDesktopExperimentalModels {
+	if !a.claudeDesktopExperimentalLocked() {
 		return "", errors.New("Experimental Claude Desktop models are disabled. Enable them in Claude Desktop integration settings and prepare its profile again.")
 	}
 	paths, err := a.claudeDesktopPaths()

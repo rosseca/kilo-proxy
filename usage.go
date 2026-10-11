@@ -20,6 +20,7 @@ const usageBufferLimit = 1 << 20
 const usageSessionLimit = 200
 
 type requestUsage struct {
+	Billing      string  `json:"billing,omitempty"`
 	Session      string  `json:"session"`
 	Source       string  `json:"source"`
 	Model        string  `json:"model,omitempty"`
@@ -44,14 +45,15 @@ type cacheSample struct {
 	Complete bool   `json:"complete"`
 }
 type usageSummary struct {
-	Prompt             int64        `json:"prompt"`
-	WithPrompt         int64        `json:"withPrompt"`
-	WithCacheRead      int64        `json:"withCacheRead"`
-	WithCacheWrite     int64        `json:"withCacheWrite"`
-	CacheRatioRequests int64        `json:"cacheRatioRequests"`
-	CacheRatioInput    int64        `json:"cacheRatioInput"`
-	CacheRatioRead     int64        `json:"cacheRatioRead"`
-	LastCache          *cacheSample `json:"lastCache,omitempty"`
+	SubscriptionRequests int64        `json:"subscriptionRequests,omitempty"`
+	Prompt               int64        `json:"prompt"`
+	WithPrompt           int64        `json:"withPrompt"`
+	WithCacheRead        int64        `json:"withCacheRead"`
+	WithCacheWrite       int64        `json:"withCacheWrite"`
+	CacheRatioRequests   int64        `json:"cacheRatioRequests"`
+	CacheRatioInput      int64        `json:"cacheRatioInput"`
+	CacheRatioRead       int64        `json:"cacheRatioRead"`
+	LastCache            *cacheSample `json:"lastCache,omitempty"`
 
 	ID         string `json:"id"`
 	Label      string `json:"label"`
@@ -281,6 +283,9 @@ func dollars(n int64) string {
 func leftPad(s string, n int) string { return strings.Repeat("0", n-len(s)) + s }
 
 func (u *usageObserver) parseCost(root, usage map[string]any) {
+	if u.usage.Billing == "subscription" {
+		return
+	}
 	// Keep the explicit Kilo microdollar contract first. Otherwise follow Kilo's
 	// inference-cost semantics: an upstream or gateway market cost describes the
 	// inference spend, while usage.cost can be a zero marketplace fee (including
@@ -341,6 +346,9 @@ func (u *usageObserver) parse(data []byte) {
 		payload = message
 	}
 	if model, ok := payload["model"].(string); ok && len(model) <= 256 {
+		if u.usage.Billing == "subscription" && !strings.HasPrefix(model, "chatgpt/") {
+			model = "chatgpt/" + model
+		}
 		u.usage.Model = model
 	}
 	usage := usageObject(payload["usage"])
@@ -375,7 +383,7 @@ func (u *usageObserver) parse(data []byte) {
 	}
 	// Gateway metadata may arrive separately from token usage in Responses SSE.
 	u.parseCost(root, usage)
-	if (!u.sse && root != nil) || kind == "response.completed" || kind == "response.incomplete" || kind == "message_stop" {
+	if (!u.sse && root != nil) || kind == "response.completed" || kind == "response.done" || kind == "response.incomplete" || kind == "message_stop" {
 		u.usage.Complete = true
 	}
 	if kind == "error" || root["error"] != nil {
@@ -399,6 +407,9 @@ func (r *usageReader) Read(p []byte) (int, error) {
 
 func (s *usageSummary) add(u *usageObserver) {
 	s.Requests++
+	if u.usage.Billing == "subscription" {
+		s.SubscriptionRequests++
+	}
 	if u.usage.Cached != nil {
 		s.WithCacheRead++
 	}

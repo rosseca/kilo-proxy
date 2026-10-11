@@ -15,6 +15,8 @@ import (
 
 const collabReportedArguments = `{"fork_context": false, "items": [], "message": "Averigua qué hora es ahora en Europe/Madrid y responde con la hora y la fecha exactas.", "model": "openai/gpt-6-luna", "reasoning_effort": "low"}`
 const collabRepairedArguments = `{"fork_context":false,"message":"Averigua qué hora es ahora en Europe/Madrid y responde con la hora y la fecha exactas.","model":"openai/gpt-6-luna","reasoning_effort":"low"}`
+const collabEmptyMessageArguments = `{"fork_context":false,"items":[{"type":"text","text":"Inspect the repository"}],"message":"","model":"openai/gpt-6-luna","reasoning_effort":"low"}`
+const collabRepairedItemsArguments = `{"fork_context":false,"items":[{"type":"text","text":"Inspect the repository"}],"model":"openai/gpt-6-luna","reasoning_effort":"low"}`
 
 func collabTool(name, namespace string) map[string]any {
 	function := map[string]any{
@@ -121,6 +123,31 @@ func TestCollabInputJSONRepairsOnlyEmptyItemsAcrossProviders(t *testing.T) {
 	}
 }
 
+func TestCollabInputJSONRepairsOnlyEmptyMessageAcrossProviders(t *testing.T) {
+	for _, model := range []string{"openai/gpt-6-luna", "anthropic/claude-fable-5.1", "z-ai/glm-5.3"} {
+		for _, name := range []string{"spawn_agent", "send_input"} {
+			for _, dotted := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/%s/dotted=%t", model, name, dotted), func(t *testing.T) {
+					namespace := "multi_agent_v1"
+					if dotted {
+						name, namespace = namespace+"."+name, ""
+					}
+					b, doc := collabPrepare(t, model, []any{collabTool(name, namespace)}, []any{collabCall("prior", name, namespace, collabEmptyMessageArguments)})
+					if b == nil || object(doc["input"].([]any)[0])["arguments"] != collabEmptyMessageArguments {
+						t.Fatal("missing bridge or historical arguments changed")
+					}
+					body := collabJSON(t, map[string]any{"output": []any{collabCall("new", name, namespace, collabEmptyMessageArguments)}})
+					result, err := decodeObject([]byte(collabAdapt(t, b, body, "application/json")))
+					if err != nil {
+						t.Fatal(err)
+					}
+					collabAssertArguments(t, object(result["output"].([]any)[0])["arguments"], collabRepairedItemsArguments)
+				})
+			}
+		}
+	}
+}
+
 func TestCollabInputPreservesAmbiguousMalformedAndMeaningfulArguments(t *testing.T) {
 	for _, arguments := range []string{
 		`{"message":"task","items":[{"type":"text","text":"another task"}]}`,
@@ -129,7 +156,10 @@ func TestCollabInputPreservesAmbiguousMalformedAndMeaningfulArguments(t *testing
 		`{"message":"task","items":null}`, `{"message":"task","items":{}}`,
 		`{"message":"task","items":"[]"}`, `{"message":"task","items":[null]}`,
 		`{"message":"task"}`, `{"items":[]}`, `{"items":[{"type":"text","text":"task"}]}`,
-		`{"message":"","items":[{"type":"text","text":"task"}]}`,
+		`{"message":" \n\t ","items":[{"type":"text","text":"task"}]}`,
+		`{"message":null,"items":[{"type":"text","text":"task"}]}`,
+		`{"message":"","items":[null]}`, `{"message":"","items":[42]}`,
+		`{"message":"","items":[{}]}`, `{"message":"","items":["text"]}`,
 		`{"message":"first","message":"second","items":[]}`,
 		`{"message":"task","items":[{"type":"text","text":"keep me"}],"items":[]}`,
 		`{"message":"task","items":[],"items":[{"type":"text","text":"keep me"}]}`,
@@ -184,6 +214,17 @@ func TestCollabInputPreservesNumericPrecisionWhenRepairing(t *testing.T) {
 		t.Fatal(err)
 	}
 	collabAssertArguments(t, object(result["output"].([]any)[0])["arguments"], `{"message":"task","exact":9007199254740993,"nested":{"limit":9007199254740995}}`)
+}
+
+func TestCollabInputPreservesNumericPrecisionWhenRepairingEmptyMessage(t *testing.T) {
+	b, _ := collabPrepare(t, "openai/model", []any{collabTool("spawn_agent", "multi_agent_v1")}, nil)
+	arguments := `{"message":"","items":[{"type":"text","text":"task","exact":9007199254740993}],"nested":{"limit":9007199254740995}}`
+	body := collabJSON(t, map[string]any{"output": []any{collabCall("one", "spawn_agent", "multi_agent_v1", arguments)}})
+	result, err := decodeObject([]byte(collabAdapt(t, b, body, "application/json")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	collabAssertArguments(t, object(result["output"].([]any)[0])["arguments"], `{"items":[{"type":"text","text":"task","exact":9007199254740993}],"nested":{"limit":9007199254740995}}`)
 }
 
 func TestCollabInputRecognizesGatewayNamespaceRepresentations(t *testing.T) {
@@ -298,10 +339,11 @@ func TestCollabInputStreamingKeepsEveryArgumentRepresentationConsistent(t *testi
 			calls := []map[string]any{
 				collabCall("spawn", "spawn_agent", "multi_agent_v1", collabReportedArguments),
 				collabCall("send", "send_input", "multi_agent_v1", `{"target":"child","message":"Continue","items":[]}`),
+				collabCall("items", "spawn_agent", "multi_agent_v1", collabEmptyMessageArguments),
 				collabCall("other", "spawn_agent", "other_namespace", collabReportedArguments),
 				collabCall("both", "spawn_agent", "multi_agent_v1", `{"message":"text","items":[{"type":"text","text":"keep me"}]}`),
 			}
-			want := map[string]string{"spawn": collabRepairedArguments, "send": `{"target":"child","message":"Continue"}`, "other": collabReportedArguments, "both": calls[3]["arguments"].(string)}
+			want := map[string]string{"spawn": collabRepairedArguments, "send": `{"target":"child","message":"Continue"}`, "items": collabRepairedItemsArguments, "other": collabReportedArguments, "both": calls[4]["arguments"].(string)}
 			stream := collabAdapt(t, b, collabSSE(t, collabStreamEvents(t, calls)), "text/event-stream")
 			if !strings.Contains(stream, ": keepalive") || !strings.Contains(stream, "data: [DONE]") {
 				t.Fatal("stream framing lost")
@@ -350,7 +392,7 @@ func TestCollabInputStreamingKeepsEveryArgumentRepresentationConsistent(t *testi
 					t.Fatalf("missing completed arguments for %s: %d", id, finished[id])
 				}
 			}
-			if counts["spawn"] != 1 || counts["send"] != 1 || counts["other"] != 2 {
+			if counts["spawn"] != 1 || counts["send"] != 1 || counts["items"] != 1 || counts["other"] != 2 {
 				t.Fatal("repairable calls must buffer fragments without buffering unrelated calls", counts)
 			}
 		})
@@ -459,46 +501,51 @@ func TestCollabInputCoexistsWithAnthropicSchemaEnvelope(t *testing.T) {
 }
 
 func TestCollabInputProxyEndToEnd(t *testing.T) {
-	for _, streaming := range []bool{false, true} {
-		t.Run(fmt.Sprintf("stream=%t", streaming), func(t *testing.T) {
-			call := collabCall("one", "spawn_agent", "multi_agent_v1", collabReportedArguments)
-			upstreamBody, contentType := collabJSON(t, map[string]any{"output": []any{call}}), "application/json"
-			if streaming {
-				upstreamBody, contentType = collabSSE(t, collabStreamEvents(t, []map[string]any{call})), "text/event-stream"
-			}
-			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Type", contentType)
-				io.WriteString(w, upstreamBody)
-			}))
-			defer upstream.Close()
-			target, _ := url.Parse(upstream.URL)
-			a := &app{upstream: target, transport: http.DefaultTransport.(*http.Transport).Clone()}
-			body := collabJSON(t, map[string]any{"model": "openai/model", "tools": []any{collabTool("spawn_agent", "multi_agent_v1")}, "input": "Inspect this repository", "stream": streaming})
-			r := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:8877/v1/responses", bytes.NewBufferString(body))
-			r.Header.Set("Authorization", "Bearer local-key")
-			w := httptest.NewRecorder()
-			a.inferenceHandler("kilo-key", "team", "local-key", "127.0.0.1:8877").ServeHTTP(w, r)
-			if w.Code != http.StatusOK {
-				t.Fatal(w.Code, w.Body.String())
-			}
-			if streaming {
-				for _, line := range strings.Split(w.Body.String(), "\n") {
-					if !strings.HasPrefix(line, "data: {") {
-						continue
-					}
-					event, _ := decodeObject([]byte(strings.TrimPrefix(line, "data: ")))
-					if event["type"] == "response.function_call_arguments.done" {
-						collabAssertArguments(t, event["arguments"], collabRepairedArguments)
-						return
-					}
+	for _, test := range []struct{ name, arguments, expected string }{
+		{"empty-items", collabReportedArguments, collabRepairedArguments},
+		{"empty-message", collabEmptyMessageArguments, collabRepairedItemsArguments},
+	} {
+		for _, streaming := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/stream=%t", test.name, streaming), func(t *testing.T) {
+				call := collabCall("one", "spawn_agent", "multi_agent_v1", test.arguments)
+				upstreamBody, contentType := collabJSON(t, map[string]any{"output": []any{call}}), "application/json"
+				if streaming {
+					upstreamBody, contentType = collabSSE(t, collabStreamEvents(t, []map[string]any{call})), "text/event-stream"
 				}
-				t.Fatal("proxy lost arguments.done")
-			}
-			result, err := decodeObject(w.Body.Bytes())
-			if err != nil {
-				t.Fatal(err)
-			}
-			collabAssertArguments(t, object(result["output"].([]any)[0])["arguments"], collabRepairedArguments)
-		})
+				upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", contentType)
+					io.WriteString(w, upstreamBody)
+				}))
+				defer upstream.Close()
+				target, _ := url.Parse(upstream.URL)
+				a := &app{upstream: target, transport: http.DefaultTransport.(*http.Transport).Clone()}
+				body := collabJSON(t, map[string]any{"model": "openai/model", "tools": []any{collabTool("spawn_agent", "multi_agent_v1")}, "input": "Inspect this repository", "stream": streaming})
+				r := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:8877/v1/responses", bytes.NewBufferString(body))
+				r.Header.Set("Authorization", "Bearer local-key")
+				w := httptest.NewRecorder()
+				a.inferenceHandler("kilo-key", "team", "local-key", "127.0.0.1:8877").ServeHTTP(w, r)
+				if w.Code != http.StatusOK {
+					t.Fatal(w.Code, w.Body.String())
+				}
+				if streaming {
+					for _, line := range strings.Split(w.Body.String(), "\n") {
+						if !strings.HasPrefix(line, "data: {") {
+							continue
+						}
+						event, _ := decodeObject([]byte(strings.TrimPrefix(line, "data: ")))
+						if event["type"] == "response.function_call_arguments.done" {
+							collabAssertArguments(t, event["arguments"], test.expected)
+							return
+						}
+					}
+					t.Fatal("proxy lost arguments.done")
+				}
+				result, err := decodeObject(w.Body.Bytes())
+				if err != nil {
+					t.Fatal(err)
+				}
+				collabAssertArguments(t, object(result["output"].([]any)[0])["arguments"], test.expected)
+			})
+		}
 	}
 }

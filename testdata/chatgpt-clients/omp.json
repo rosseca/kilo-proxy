@@ -1,0 +1,58 @@
+{
+  "path": "/v1/responses",
+  "request": {
+    "input": [
+      {
+        "content": [
+          {
+            "text": "Read sentinel.txt and return its contents.",
+            "type": "input_text"
+          },
+          {
+            "text": "Read sentinel.txt and return its contents.",
+            "type": "input_text"
+          }
+        ],
+        "role": "user"
+      },
+      {
+        "arguments": "{\"path\":\"/fixture/project/sentinel.txt\"}",
+        "call_id": "call_read_sentinel",
+        "name": "read",
+        "type": "function_call"
+      },
+      {
+        "call_id": "call_read_sentinel",
+        "output": "KILO_SUBSCRIPTION_TOOL_ROUNDTRIP_7d692a",
+        "type": "function_call_output"
+      }
+    ],
+    "instructions": "Fixture system instructions.",
+    "max_output_tokens": 8192,
+    "model": "chatgpt/gpt-5.4",
+    "store": false,
+    "stream": true,
+    "tools": [
+      {
+        "name": "read",
+        "parameters": {
+          "additionalProperties": false,
+          "properties": {
+            "i": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "i"
+          ],
+          "type": "object"
+        },
+        "type": "function"
+      }
+    ]
+  }
+}

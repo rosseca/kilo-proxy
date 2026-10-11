@@ -70,8 +70,18 @@ func TestE2EServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	openCodeBinary := syntheticOpenCodeExecutable(t, root)
-	codexBinary := writeOpenDesignCodexFixture(t, filepath.Join(root, "codex-cli"), []byte("synthetic; never executed"))
+	openMausBotBinary := syntheticOpenMausBotExecutable(t, root, "macos")
+	synaraBinary := syntheticSynaraExecutable(t, root, "macos")
+	t3CodeBinary := syntheticT3CodeExecutable(t, root, "macos")
+	t3CodeNightlyBinary := syntheticT3CodeExecutable(t, filepath.Join(root, "nightly"), "macos", t3CodeNightlyVersion)
+	t.Setenv("CODEX_HOME", filepath.Join(root, ".codex"))
+	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(root, ".claude"))
+	codexBinary := writeOpenDesignCodexFixture(t, filepath.Join(root, "codex-cli"), syntheticSynaraNativeHeader("macos"))
+	a.synaraRuntimeDisabled = true
 	a.openDesignCheckRunning = func(string) (bool, error) { return readLaunchControl()["openDesignRunning"] == true, nil }
+	a.openMausBotCheckRunning = func(openMausBotPaths) (bool, error) { return readLaunchControl()["openMausBotRunning"] == true, nil }
+	a.synaraCheckRunning = func(string) (bool, error) { return readLaunchControl()["synaraRunning"] == true, nil }
+	a.t3CodeCheckRunning = func(string) (bool, error) { return readLaunchControl()["t3CodeRunning"] == true, nil }
 	a.claudeDesktopCheckRunning = func(string) (bool, error) { return readLaunchControl()["claudeDesktopRunning"] == true, nil }
 	records := []map[string]string{}
 	a.launcher = &clientLaunchRuntime{
@@ -85,6 +95,18 @@ func TestE2EServer(t *testing.T) {
 			}
 			if client == "open-design" {
 				return openDesignBinary, nil
+			}
+			if client == "openmausbot" {
+				return openMausBotBinary, nil
+			}
+			if client == "synara" {
+				return synaraBinary, nil
+			}
+			if client == "t3-code" {
+				if readLaunchControl()["t3CodeVersion"] == t3CodeNightlyVersion {
+					return t3CodeNightlyBinary, nil
+				}
+				return t3CodeBinary, nil
 			}
 			if client == "opencode" {
 				return openCodeBinary, nil
@@ -122,6 +144,10 @@ func TestE2EServer(t *testing.T) {
 
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case "/backend-api/codex/models":
+			jsonResponse(w, 200, map[string]any{"models": []any{map[string]any{"slug": "gpt-test", "display_name": "Subscription test", "context_window": 128000, "input_modalities": []string{"text", "image"}}}})
+		case "/backend-api/wham/usage":
+			jsonResponse(w, 200, map[string]any{"rate_limit": map[string]any{"primary_window": map[string]any{"used_percent": 15, "limit_window_seconds": 18000, "reset_at": time.Now().Add(time.Hour).Unix()}}})
 		case "/api/profile/balance", "/api/trpc/usageAnalytics.getTable":
 			control := readLaunchControl()
 			if control["billingFailure"] == true || r.Header.Get("Authorization") != "Bearer synthetic-kilo-personal-key" {
@@ -243,6 +269,9 @@ func TestE2EServer(t *testing.T) {
 	a.accountURL = upstream.URL
 	a.modelStatsURL = upstream.URL + "/api/models/stats"
 	a.imageGenerationURL = upstream.URL + "/api/gateway/images"
+	a.chatgpt.backendURL = upstream.URL + "/backend-api"
+	a.chatgpt.authURL = upstream.URL
+	a.chatGPTResponsesURL = upstream.URL + "/backend-api/codex/responses"
 	listener, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -251,6 +280,20 @@ func TestE2EServer(t *testing.T) {
 	admin := a.adminHandler()
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		control := readLaunchControl()
+		if connected, controlled := control["chatgptConnected"].(bool); controlled {
+			a.mu.Lock()
+			a.chatgpt.mu.Lock()
+			if validChatGPTCredentials(a.chatgpt.creds) != connected {
+				a.catalogRevision++
+				a.chatgpt.state = chatGPTState{Status: "idle"}
+				a.chatgpt.creds = chatGPTCredentials{}
+				if connected {
+					a.chatgpt.creds = chatGPTCredentials{Access: "synthetic-chatgpt-access", Refresh: "synthetic-refresh", Account: "synthetic-chatgpt-account", Expires: time.Now().Add(time.Hour).Unix()}
+				}
+			}
+			a.chatgpt.mu.Unlock()
+			a.mu.Unlock()
+		}
 		if r.Method == http.MethodGet && r.URL.Path == "/api/claude/info" {
 			if version, controlled := control["claudeVersion"].(string); controlled {
 				// Keep the real admin authentication/origin checks while avoiding

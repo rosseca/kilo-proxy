@@ -1,6 +1,6 @@
 # Development and release process
 
-The repository is [rosseca/kilo-proxy](https://github.com/rosseca/kilo-proxy). Like [AISI](https://github.com/rosseca/aisi), releases are triggered by pushing a version tag. The production application uses a native Gio window and system tray. Kilo Proxy retains its Python packager for macOS app bundles, Windows GUI executables, and the optional Linux application-menu installer. Gio is pinned to `v0.10.2`, with documented [virtual desktop compatibility patches](../third_party/gio/PATCHES.md). Its controls render directly through operating-system graphics APIs; no embedded browser or WebView runtime is required. Changing the framework version requires the same native checks as an application change.
+The repository is [rosseca/kilo-proxy](https://github.com/rosseca/kilo-proxy). Like [AISI](https://github.com/rosseca/aisi), releases are triggered by pushing a version tag. The desktop application uses a native Gio window and system tray. From 0.55.0, releases also include a separate pure-Go headless executable for macOS and Linux servers. Kilo Proxy retains its Python packager for macOS app bundles, Windows GUI executables, headless archives, and the optional Linux application-menu installer. Gio is pinned to `v0.10.2`, with documented [virtual desktop compatibility patches](../third_party/gio/PATCHES.md). Its controls render directly through operating-system graphics APIs; no embedded browser or WebView runtime is required. Changing the framework version requires the same native checks as an application change.
 
 ## Local checks
 
@@ -17,6 +17,27 @@ python3 -m unittest discover -s scripts -p 'test_*.py'
 
 Run the Node glob from a shell that expands it, such as Bash or zsh. CI uses Bash on all three operating systems.
 
+When changing T3 Code profiles or model selection, also run the installed-client acceptance against each supported Desktop release:
+
+```sh
+KILO_TEST_T3_APP='/absolute/path/to/T3 Code.app' KILO_TEST_T3_PICKER=1 go test -race -run '^TestT3CodeInstalledFourAgents$' -count=1 .
+```
+
+This macOS opt-in check requires installed Codex CLI, Claude Code and Playwright Chromium. It uses disposable homes and synthetic local upstreams, reproduces an old built-in Claude selection, and verifies the exact gateway ID through the packaged frontend and native drivers. Desktop persistence/bootstrap IPC is injected into headless Chromium; this is not a native Electron IPC acceptance test. Existing application windows and account profiles are not used.
+
+When changing Synara profiles or account/model selection, run the installed-client acceptance against the Beta build being validated:
+
+```sh
+go build -o /private/tmp/kilo-synara-adapter .
+KILO_TEST_SYNARA_APP='/absolute/path/to/Synara Beta.app' KILO_TEST_SYNARA_ADAPTER_SOURCE=/private/tmp/kilo-synara-adapter KILO_TEST_SYNARA_PICKER=1 go test -race -run '^TestSynaraInstalledFourAgents$' -count=1 .
+```
+
+This macOS opt-in check requires installed Codex CLI, Claude Code and Playwright Chromium. It uses disposable homes and synthetic local upstreams to exercise the four accounts, the packaged account/model picker and native CLI drivers. Desktop persistence/bootstrap IPC is injected into headless Chromium; this does not verify the native Electron GUI or its IPC. Existing application windows and account profiles are not used.
+
+Use the same app and compiled-adapter variables with `-run '^TestSynaraInstalledCodexVoiceHealth$'` to check real CLI login-status parsing with synthetic ChatGPT, API-key and unsigned-in profiles. It records no microphone audio and requests no inference. The private backend integration points are checked before applying the account-aware delegation correction. Synara Beta versions are not restricted to an allowlist; installed-client acceptance establishes evidence for the tested build.
+
+Add `KILO_TEST_SYNARA_DESKTOP=1` to the same command for a separate native Electron startup check. It uses the production launch plan with disposable storage, verifies the private backend and native snapshot import, then sends SIGTERM only to its own process, confirms a quit dialog if present and checks graceful shutdown. A temporary loopback debugging connection controls only that owned window's quit button; this does not establish native GUI inference coverage.
+
 When changing Codex context presets, also check the installed client's actual model switching and auto-compaction against a disposable synthetic gateway:
 
 ```sh
@@ -24,6 +45,14 @@ python3 scripts/check-codex-context.py /absolute/path/to/codex
 ```
 
 This creates an isolated temporary profile, verifies Recommended/Low usable windows and an automatic compaction event, then removes the profile. It does not contact Kilo or use personal credentials. CI covers preset persistence, exported metadata and native/browser interactions without requiring an installed third-party agent.
+
+When changing Claude profiles or context presets, also check the installed client against a disposable synthetic gateway:
+
+```sh
+python3 scripts/check-claude-profile.py /absolute/path/to/claude
+```
+
+This uses temporary profiles and local synthetic responses to verify the generated settings, exact gateway model IDs, reasoning and context behavior. It does not contact Kilo or use personal credentials or paid inference.
 
 When changing the Codex V1 collaboration compatibility repair, run the installed-client A/B check:
 
@@ -65,7 +94,18 @@ python3 scripts/package.py --checksums-only
 python3 scripts/release.py verify-assets
 ```
 
-`--checksums-only` requires the full six-archive set before replacing the manifest. Each individual packaging invocation writes a manifest only for its selected targets. The final aggregation step creates the complete release manifest.
+`--checksums-only` requires all ten archives from 0.55.0, or the historical six desktop archives for older versions, before replacing the manifest. Each individual packaging invocation writes a manifest only for its selected targets. The final aggregation step creates the complete release manifest.
+
+Headless builds use `CGO_ENABLED=0 go build -tags headless` and can be cross-compiled without graphics development libraries. They emit `kilo-proxy-headless-OS-ARCH`; the macOS/Linux x64 and ARM64 TAR.GZ archives contain the console executable, [headless setup guide](headless.md), README and third-party notices. Build and smoke-test on the native target before packaging the same executable:
+
+```sh
+python3 scripts/package.py --headless --build-only --target linux/amd64 --output dist/headless-binaries
+python3 scripts/smoke_headless.py --binary dist/headless-binaries/kilo-proxy-headless-linux-amd64
+python3 scripts/package.py --headless --binaries-directory dist/headless-binaries --target linux/amd64
+python3 scripts/smoke_headless.py --archive dist/kilo-proxy-headless-0.55.0-linux-amd64.tar.gz
+```
+
+The headless smoke uses a disposable home and private configuration with no display or desktop credential bus. It checks the native binary header (static ELF on Linux; no macOS graphics frameworks), stdin-based credential setup, model import/export, file permissions, authenticated runtime, exclusive profile ownership, all four terminal wrappers with synthetic agents, normal-profile preservation, signal cleanup and restart. It does not contact a paid upstream or exercise real agent inference. User service definitions are covered with injected service managers; tests do not install services on the development machine.
 
 Darwin bundles must be packaged on macOS. The packager signs each completed app bundle with an ad-hoc signature and verifies it before creating the ZIP. Go's executable signature alone does not seal an app bundle's `Info.plist` and resources; distributing that incomplete signature can prevent Finder from launching the downloaded app. The ad-hoc signature ensures bundle integrity but does not identify a trusted publisher or replace Developer ID signing and notarization.
 
@@ -93,18 +133,26 @@ The numbers above are examples; always use the version actually committed in `VE
 The **Release** workflow calls **Test and package**, which:
 
 1. Runs Go race tests, vet, module verification, every Node helper test, and Python release tests on macOS, Linux, and Windows. Release tags must match `VERSION`.
-2. Runs Playwright E2E in Chromium and WebKit against a temporary profile and synthetic gateway. Browser failures retain reports and traces as CI artifacts.
+2. Runs Playwright E2E against temporary profiles and a synthetic gateway in one Chromium job and two WebKit shards. Each job keeps one worker and its own time budget; failures retain reports and traces in shard-specific CI artifacts. Together the WebKit shards run the complete suite.
 3. Runs the Go native control tests, including shared-library restart/recovery/conflict/propagation, Agents preparation-to-open and folder persistence, and saved tray/spend behavior. It renders Agents and Models review screenshots at wide/compact sizes in English and Spanish on all six targets, then builds raw production desktop executables on native Apple Silicon, Intel Mac, Linux x64/ARM64, and Windows x64/ARM64 runners. These jobs create no app bundles or release archives.
 4. Runs the native desktop self-test on every target: rendered Agents/Models/Activity/Settings controls, shared-model save/reload and in-memory client propagation, authenticated backend access, language handling, native clipboard, closing and reopening the window through the tray action, continued proxy operation with the window closed, persisted tray appearance and process-session spend presentation, and graceful quit. Each invocation explicitly selects a temporary test profile and synthetic data; it never needs real Kilo credentials or billed requests.
-5. Only after **all** core, browser, and native tests pass, packages the previously tested executables. No rebuild occurs between the native test and packaging. Both macOS bundles receive complete ad-hoc signatures and strict integrity checks.
-6. Extracts and reruns the native desktop self-test from every release archive. Both macOS ZIPs also receive signature verification and an additional LaunchServices launch check to detect bundle or startup regressions.
-7. Downloads all six archives, creates and verifies the complete SHA-256 manifest, and uploads the single `release-assets` workflow artifact consumed by the publishing job.
+5. Runs headless race tests, pure-Go vet, production builds and console smoke on native macOS and Linux x64/ARM64 runners. These jobs install no desktop session or graphics helpers.
+6. Only after **all** core, browser, desktop and headless tests pass, packages the previously tested executables. No rebuild occurs between the native test and packaging. Both macOS desktop bundles receive complete ad-hoc signatures and strict integrity checks.
+7. Extracts and reruns the native desktop self-test from every desktop release archive, and the headless smoke from all four console archives. Both macOS ZIPs also receive signature verification and an additional LaunchServices launch check to detect bundle or startup regressions.
+8. Packages the exact tested Linux executables as four Debian packages, signs a disposable APT test repository, and tests installation, upgrade, the complete native/console smokes and removal on Ubuntu 24.04 and 26.04 LTS, x64 and ARM64. The production APT signing key is never used in build checks.
+9. Downloads all ten archives, creates and verifies the complete SHA-256 manifest, and uploads the single `release-assets` workflow artifact consumed by the GitHub publishing job. Debian packages are a separate `debian-assets` artifact. The ordinary validation run has 30 jobs; the release build and GitHub publishing stages have 31. Stable releases then run the Homebrew synchronization below and, when explicitly activated, APT publication.
 
 Only after those jobs pass does the publishing job receive `contents: write`. It downloads and rechecks the assets, creates a draft with GitHub-generated notes, uploads all files, and publishes it. Stable versions become the latest release. Alpha/beta/RC tags are marked as prereleases and do not replace the latest stable release. Concurrent runs of the same tag are serialized.
 
-The repository’s built-in `GITHUB_TOKEN` is sufficient; enable GitHub Actions if your organization disables it. No personal access token, Kilo credential, signing certificate, or Homebrew token is required. Main-branch pushes and pull requests run checks and prepare downloadable workflow artifacts without publishing a release.
+GitHub release publication uses the repository’s built-in `GITHUB_TOKEN`; enable GitHub Actions if your organization disables it. No personal access token, Kilo credential, or signing certificate is required. Main-branch pushes and pull requests run checks and prepare downloadable workflow artifacts without publishing a release.
 
-This automates release publishing, not installation or updating on user machines. Publisher certificate signing, macOS notarization, Homebrew distribution, Windows MSI/EXE installers, and Linux package repositories are not configured. macOS bundles have local ad-hoc integrity signatures and may still display an unidentified-developer warning. Windows users receive the standalone GUI application in ZIP for x64 and ARM64.
+After a stable release is published successfully, the Release workflow calls the pinned reusable updater in [rosseca/homebrew-tap](https://github.com/rosseca/homebrew-tap). There is no scheduled polling. The updater independently verifies the latest stable release and all ten archives, then installs and tests the candidate packages on macOS and Linux x64/ARM64 before updating the tap. Prereleases do not trigger Homebrew synchronization. The caller passes `KILO_PROXY_TAP_DEPLOY_KEY`, an encrypted Actions secret containing a dedicated SSH key with write access to the tap alone. It cannot delete or force-push main. The GitHub token for synchronization stays read-only.
+
+A failed Homebrew update does not undo the published GitHub release or change the previous tap version. Inspect the failed Homebrew job, and recover using the tap’s manual **Update Kilo Proxy** workflow after addressing the failure; do not rerun the already-successful GitHub publishing job. An unchanged current release is a no-op. Manual tap runs require the same dedicated secret in the tap repository.
+
+The [Ubuntu APT distribution](ubuntu-apt.md) supports 24.04 and 26.04 LTS, x64 and ARM64, through GitHub Pages and its dedicated GPG signing identity. Its enabled Release job signs and deploys the already-tested Debian packages after successful stable publication, without polling. The initial 0.56.3 repository is bootstrapped from the pinned, successful CI artifacts without creating another release or tag. Existing archive names, the GitHub release manifest and Homebrew verification remain unchanged.
+
+This automates release publishing, not installation or updating on user machines. Homebrew distributes the macOS desktop cask, Linux desktop source formula, and official macOS/Linux headless binaries through rosseca/tap. Publisher certificate signing, macOS notarization and Windows MSI/EXE installers are not configured. macOS bundles have local ad-hoc integrity signatures and may still display an unidentified-developer warning. Windows users receive the standalone GUI application in ZIP for x64 and ARM64.
 
 ## Assets and verification
 
@@ -120,7 +168,7 @@ The guarded fixture first sets Microsoft's supported [DisablePrivacyExperience u
 
 ### Release files
 
-Each release contains:
+Each release from 0.55.0 contains ten archives and their manifest:
 
 - `kilo-proxy-VERSION-darwin-arm64.zip`
 - `kilo-proxy-VERSION-darwin-amd64.zip`
@@ -128,11 +176,15 @@ Each release contains:
 - `kilo-proxy-VERSION-linux-arm64.tar.gz`
 - `kilo-proxy-VERSION-windows-amd64.zip`
 - `kilo-proxy-VERSION-windows-arm64.zip`
+- `kilo-proxy-headless-VERSION-darwin-arm64.tar.gz`
+- `kilo-proxy-headless-VERSION-darwin-amd64.tar.gz`
+- `kilo-proxy-headless-VERSION-linux-amd64.tar.gz`
+- `kilo-proxy-headless-VERSION-linux-arm64.tar.gz`
 - `SHA256SUMS.txt`
 
 Archives include English README/documentation and third-party notices. The source is available through GitHub’s automatically generated source archives. Build output, profiles, keys, environment files, trace files, and common editor caches are ignored by Git. `.gitignore` is not a secret scanner; review the staged file list before committing.
 
-Download all six archives alongside the manifest, then verify on Linux:
+Older releases contain the six desktop archives and their manifest. Download all archives listed in the manifest alongside it, then verify on Linux:
 
 ```sh
 sha256sum -c SHA256SUMS.txt
@@ -151,6 +203,6 @@ python3 scripts/release.py verify-assets
 
 Inspect the failed job under **Actions → Release**. Tests, version mismatch, missing assets, or checksum failures prevent publishing. Correct source issues in a new commit and use a new version/tag rather than moving an existing release tag.
 
-For a transient upload failure, rerun the failed publishing job. An existing draft can be resumed, with its draft assets replaced from the verified build. Already published releases are rejected rather than silently overwritten. If publication succeeded but the job lost its final response, confirm the existing release and its seven assets instead of retagging it.
+For a transient upload failure, rerun the failed publishing job. An existing draft can be resumed, with its draft assets replaced from the verified build. Already published releases are rejected rather than silently overwritten. If publication succeeded but the job lost its final response, confirm the existing release and its expected archives plus manifest instead of retagging it.
 
 Development and test changes must include the relevant automated checks. Native window and tray changes must pass every platform smoke job before bundling. Changes to real SSO or credential-store behavior also need a manual account-based check, since CI deliberately uses synthetic data. Do not add real login credentials, administrative panel URLs, or captured conversations to issues or tests.

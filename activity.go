@@ -22,13 +22,14 @@ type tracePart struct {
 	Truncated        bool        `json:"truncated"`
 }
 type requestTrace struct {
-	Error            string    `json:"error,omitempty"`
-	ID               string    `json:"id"`
-	Request          tracePart `json:"request"`
-	UpstreamRequest  tracePart `json:"upstreamRequest"`
-	UpstreamResponse tracePart `json:"upstreamResponse"`
-	Response         tracePart `json:"response"`
-	UpstreamStatus   int       `json:"upstreamStatus"`
+	ImageTransport   *imageTransportTrace `json:"imageTransport,omitempty"`
+	Error            string               `json:"error,omitempty"`
+	ID               string               `json:"id"`
+	Request          tracePart            `json:"request"`
+	UpstreamRequest  tracePart            `json:"upstreamRequest"`
+	UpstreamResponse tracePart            `json:"upstreamResponse"`
+	Response         tracePart            `json:"response"`
+	UpstreamStatus   int                  `json:"upstreamStatus"`
 }
 type traceBuffer struct {
 	mu       sync.Mutex
@@ -78,6 +79,7 @@ func (r *traceReader) Read(p []byte) (int, error) {
 }
 
 type traceCapture struct {
+	imageTransport                                      *imageTransportTrace
 	mu                                                  sync.Mutex
 	disabled                                            bool
 	traceError                                          string
@@ -96,6 +98,7 @@ func (c *traceCapture) discard() {
 	c.disabled = true
 	c.requestHeaders, c.upRequestHeaders, c.upResponseHeaders = nil, nil, nil
 	c.traceError = ""
+	c.imageTransport = nil
 	for _, b := range []*traceBuffer{&c.request, &c.upRequest, &c.upResponse, &c.response} {
 		b.discard()
 	}
@@ -258,7 +261,7 @@ func (c *traceCapture) finish(id string, headers http.Header) *requestTrace {
 	if c.disabled {
 		return nil
 	}
-	return &requestTrace{Error: c.redact(c.traceError), ID: id, Request: c.part(c.requestHeaders, &c.request), UpstreamRequest: c.part(c.upRequestHeaders, &c.upRequest), UpstreamResponse: c.part(c.upResponseHeaders, &c.upResponse), Response: c.part(headers, &c.response), UpstreamStatus: c.upstreamStatus}
+	return &requestTrace{ImageTransport: c.imageTransportSnapshot(), Error: c.redact(c.traceError), ID: id, Request: c.part(c.requestHeaders, &c.request), UpstreamRequest: c.part(c.upRequestHeaders, &c.upRequest), UpstreamResponse: c.part(c.upResponseHeaders, &c.upResponse), Response: c.part(headers, &c.response), UpstreamStatus: c.upstreamStatus}
 }
 
 type traceTransport struct{ base http.RoundTripper }

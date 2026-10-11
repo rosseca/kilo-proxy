@@ -64,11 +64,11 @@ All selected models must support the gateway's Responses interface. Listing a mo
 
 ## Image generation
 
-Enable image generation in Kilo Proxy and choose an image model, then prepare or open OMP again. The generated `mcp.json` connects OMP to Kilo Proxy's local **Streamable HTTP** image MCP using the local credential. No separate MCP executable is required.
+Enable image generation in Kilo Proxy, choose **Kilo** with an image model or **ChatGPT subscription · Experimental**, and click **Save image settings**. Then prepare or open OMP again. The generated `mcp.json` connects OMP to Kilo Proxy's local **Streamable HTTP** image MCP using the local credential. No separate MCP executable is required.
 
 OMP discovers the `generate_image` tool and can return its image results to a vision-capable model. OMP 18 normally exposes MCP tools through its on-demand `xd://` tool system, so they may not appear as top-level functions on every request; the model receives their device entries and can invoke them through OMP's `read` and `write` tools. Kilo Proxy saves the full-resolution original locally and returns a bounded preview to the conversation. See [image generation and payload limits](codex-images.md).
 
-This integration configures the Kilo MCP. It does not configure OMP's separate built-in image generation providers or their credentials. Image requests follow the selected Kilo account and team, and may incur charges.
+This integration configures the Kilo MCP. It does not configure OMP's separate built-in image generation providers or their credentials. Image requests follow the shared image-provider choice: Kilo uses account/team credit and may incur charges; ChatGPT uses the connected subscription quota. The choice is independent of OMP's coding model and does not fall back between accounts.
 
 ## Validation
 

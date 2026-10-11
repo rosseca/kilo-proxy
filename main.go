@@ -42,6 +42,9 @@ func randomKey(prefix string) string {
 }
 
 func main() {
+	if handled, code := runSynaraCodexNormalShim(); handled {
+		os.Exit(code)
+	}
 	if handled, code := runOpenDesignOpenCodeShim(); handled {
 		os.Exit(code)
 	}
@@ -50,6 +53,12 @@ func main() {
 	}
 	if len(os.Args) > 1 && os.Args[1] == clientLaunchRunnerFlag {
 		os.Exit(runClientLaunchMode(os.Args[2:]))
+	}
+	if len(os.Args) > 1 && os.Args[1] == packageUpdateRunnerFlag {
+		os.Exit(runPackageUpdateMode(os.Args[2:]))
+	}
+	if handled, code := runHeadlessCLI(os.Args[1:]); handled {
+		os.Exit(code)
 	}
 	noBrowser := flag.Bool("no-browser", false, "Start with the window hidden (also suppresses --browser launch)")
 	noTray := flag.Bool("no-tray", false, "Run headlessly without a window or system tray")
@@ -89,6 +98,12 @@ func main() {
 		os.Exit(1)
 	}
 	*configDir = absoluteConfig
+	releaseProfile, err := acquireProfileLock(*configDir)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	defer releaseProfile()
 	app, err := newApp(*configDir, systemVault{})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Cannot load Kilo Proxy:", err)
@@ -96,6 +111,19 @@ func main() {
 	}
 	stopFakeGateway := func() {}
 	app.billingAutoRefresh = *selfTest == ""
+	if *selfTest == "" {
+		var restartArgs []string
+		if *noBrowser {
+			restartArgs = append(restartArgs, "--no-browser")
+		}
+		if *noTray {
+			restartArgs = append(restartArgs, "--no-tray")
+		}
+		if *useBrowser {
+			restartArgs = append(restartArgs, "--browser")
+		}
+		app.configurePackageUpdates(restartArgs)
+	}
 	if *selfTest != "" {
 		app.launcher = &clientLaunchRuntime{home: isolatedProfile}
 		stopFakeGateway = app.desktopTestGateway()
@@ -172,6 +200,11 @@ func main() {
 func (a *app) requestQuit() {
 	a.quitOnce.Do(func() {
 		close(a.quit)
+		// The server drains requests before canceling credential refreshes. A
+		// request already waiting for an expired ChatGPT token can still finish.
+		if a.chatgpt != nil && !a.headless {
+			a.chatgpt.cancel()
+		}
 		if a.updates != nil {
 			a.updates.close()
 		}

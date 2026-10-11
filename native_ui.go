@@ -36,7 +36,9 @@ type nativeUI struct {
 	catalogCache        nativeCatalogCache
 	catalogGeneration   uint64
 	catalogCached       bool
+	catalogFetchedAt    time.Time
 	library             *nativeLibrary
+	packs               *nativePackUI
 	agents              *nativeAgents
 	terminalCommands    *nativeTerminalCommands
 	setupStep           int
@@ -51,12 +53,20 @@ type nativeUI struct {
 	modelMenuViewport   image.Point
 	modelMenuAnchors    map[string]image.Point
 	activeModelMenu     *nativeModelMenuState
+	contextRemovalIDs   []string
+	contextRemovalTag   int
 
-	imageDependencyDismissed bool
-	imageSettingsFocus       bool
-	updateRevision           uint64
-	updateRequestFailed      bool
-	proxyRevision            uint64
+	imageDependencyDismissed    bool
+	imageSettingsFocus          bool
+	updateRevision              uint64
+	updateRequestFailed         bool
+	packageUpdateConfirmVersion string
+	packageUpdateConfirmMethod  string
+	packageUpdateStarted        bool
+	packageUpdateFailed         bool
+	proxyRevision               uint64
+	chatGPTRevision             uint64
+	chatGPTLoginRequested       bool
 
 	owner                          *app
 	invalidate                     func()
@@ -95,7 +105,8 @@ func newNativeUI(owner *app, invalidate func()) *nativeUI {
 	u.language = owner.config.Language
 	u.setValue("connection.org", owner.config.OrgID)
 	u.setValue("connection.port", strconv.Itoa(owner.config.Port))
-	u.models = readNativeCatalogCache(owner.dir, owner.config.OrgID)
+	catalog := readNativeCachedCatalog(owner.dir, owner.catalogScopeLocked())
+	u.models, u.catalogFetchedAt = catalog.Models, catalog.FetchedAt
 	u.catalogCached = len(u.models) > 0
 	u.setChecked("connection.remember", owner.config.Remember)
 	owner.mu.Unlock()
@@ -590,6 +601,10 @@ func (u *nativeUI) call(method, path string, payload any, done func(json.RawMess
 		return
 	}
 	u.busy[key] = true
+	changesChatGPT := method == "POST" && strings.HasPrefix(path, "/api/chatgpt/")
+	if changesChatGPT {
+		u.chatGPTRevision++
+	}
 	changesProxy := method == "POST" && (path == "/api/start" || path == "/api/stop")
 	if changesProxy {
 		u.proxyRevision++
@@ -598,10 +613,16 @@ func (u *nativeUI) call(method, path string, payload any, done func(json.RawMess
 		raw, err := nativeRequest(u.owner, method, path, payload)
 		u.enqueue(func() {
 			delete(u.busy, key)
+			if changesChatGPT {
+				u.chatGPTRevision++
+			}
 			if changesProxy {
 				u.proxyRevision++
 			}
 			if err != nil {
+				if method == "POST" && path == "/api/chatgpt/login" {
+					u.chatGPTLoginRequested = false
+				}
 				u.noticeError(err)
 				return
 			}
@@ -613,8 +634,9 @@ func (u *nativeUI) call(method, path string, payload any, done func(json.RawMess
 }
 func (u *nativeUI) refreshState() {
 	revision, saving := u.languageRevision, u.languageTarget != ""
+	chatGPTRevision, chatGPTSaving := u.chatGPTRevision, u.chatGPTRequestBusy()
 	proxyRevision, proxySaving := u.proxyRevision, u.busy["POST/api/start"] || u.busy["POST/api/stop"]
-	updateRevision, updateSaving := u.updateRevision, u.busy["POST/api/updates"]
+	updateRevision, updateSaving := u.updateRevision, u.busy["POST/api/updates"] || u.busy["POST/api/updates/install"]
 	c := u.clientState()
 	desktopRevision, desktopSaving := c.DesktopExperimentalRevision, c.DesktopExperimentalTarget != nil
 	u.call("GET", "/api/state", nil, func(raw json.RawMessage) {
@@ -624,11 +646,14 @@ func (u *nativeUI) refreshState() {
 		if proxySaving || proxyRevision != u.proxyRevision || u.busy["POST/api/start"] || u.busy["POST/api/stop"] {
 			return
 		}
+		if chatGPTSaving || chatGPTRevision != u.chatGPTRevision || u.chatGPTRequestBusy() {
+			return
+		}
 		desktopExperimental := u.claudeDesktopExperimentalModels()
 		update := u.state["update"]
 		u.acceptState(raw)
 		// A poll captured before a manual check must not restore its old status.
-		if updateSaving || updateRevision != u.updateRevision || u.busy["POST/api/updates"] {
+		if updateSaving || updateRevision != u.updateRevision || u.busy["POST/api/updates"] || u.busy["POST/api/updates/install"] {
 			u.state["update"] = update
 		} else if u.updateRequestFailed {
 			var previous releaseUpdateState
@@ -636,6 +661,12 @@ func (u *nativeUI) refreshState() {
 			current := u.releaseUpdate()
 			if current.Checking || current.CheckedAt != "" && current.CheckedAt != previous.CheckedAt {
 				u.updateRequestFailed = false
+			}
+		}
+		if !updateSaving && updateRevision == u.updateRevision && !u.busy["POST/api/updates"] && !u.busy["POST/api/updates/install"] {
+			current := u.releaseUpdate()
+			if u.packageUpdateStarted && !current.Installing && packageUpdateFailureCode(current.InstallMessage) {
+				u.packageUpdateStarted, u.packageUpdateFailed = false, true
 			}
 		}
 		// Ignore a Desktop option snapshot captured before or during its save.
@@ -664,12 +695,23 @@ func (u *nativeUI) acceptState(raw json.RawMessage) {
 	u.acceptImageDependencyState(state)
 	u.state = state
 	u.authenticated = true
+	if u.chatGPTLoginRequested {
+		account := nativeMap(state["chatgpt"])
+		if nativeString(account, "status") == "pending" && nativeString(account, "verificationUrl") == nativeChatGPTVerificationURL {
+			u.chatGPTLoginRequested = false
+			u.openChatGPTAuthorization()
+		} else if nativeString(account, "status") == "error" || nativeBool(account, "connected") {
+			u.chatGPTLoginRequested = false
+		}
+	}
+
 	if !first && oldEpoch != nativeNumber(state, "activityEpoch") {
 		u.traceGeneration++
 		u.trace = nil
 	}
 	if !first && oldRevision != nativeNumber(state, "catalogRevision") {
 		u.models = nil
+		u.catalogFetchedAt = time.Time{}
 		if u.library != nil {
 			for i := range u.library.selection.Models {
 				choice := &u.library.selection.Models[i]
@@ -718,6 +760,7 @@ func (u *nativeUI) applyModels(raw json.RawMessage, requestedRevision float64, f
 		Models   []modelInfo `json:"models"`
 		Catalog  []modelInfo `json:"catalog"`
 		Revision float64     `json:"revision"`
+		Complete *bool       `json:"complete"`
 	}
 	if json.Unmarshal(raw, &response) != nil {
 		return false
@@ -728,7 +771,7 @@ func (u *nativeUI) applyModels(raw json.RawMessage, requestedRevision float64, f
 		return false
 	}
 	u.owner.mu.Lock()
-	currentRevision, org := u.owner.catalogRevision, u.owner.config.OrgID
+	currentRevision, org := u.owner.catalogRevision, u.owner.catalogScopeLocked()
 	u.owner.mu.Unlock()
 	if response.Revision != float64(currentRevision) {
 		u.modelsPending = true
@@ -740,6 +783,12 @@ func (u *nativeUI) applyModels(raw json.RawMessage, requestedRevision float64, f
 		u.models = response.Catalog
 	}
 	u.catalogCached = false
+	// Missing flags preserve compatibility with older local API responses.
+	// Partial success must also invalidate a previously fresh catalog's date.
+	u.catalogFetchedAt = time.Time{}
+	if response.Complete == nil || *response.Complete {
+		u.catalogFetchedAt = time.Now().UTC()
+	}
 	u.cacheModels(org)
 	return true
 }
@@ -829,7 +878,7 @@ func (u *nativeUI) saveConnection(done func()) {
 		}
 	})
 }
-func (u *nativeUI) connectionPanel() layout.Widget {
+func (u *nativeUI) kiloConnectionPanel() layout.Widget {
 	auth := nativeMap(u.state["auth"])
 	pending := nativeString(auth, "status") == "pending" || nativeString(auth, "status") == "starting"
 	running := nativeBool(u.state, "running")
