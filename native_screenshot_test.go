@@ -115,4 +115,19 @@ func TestNativeScreenshots(t *testing.T) {
 	m.page = "models"
 	m.expanded["library.catalog"] = true
 	shoot(m, "17-models-catalog-selected", 1280, 1400)
+
+	// Onboarding with the published recommendations, as real users see it.
+	r := nativeTestUI(t)
+	if lang != "" {
+		r.language = lang
+	}
+	r.models = nativeGridModels()
+	notes := []string{"Flagship for everyday coding.", "Balanced quality and price.", "Strong reasoning, large context.", "Popular, fast and cheap.", "Among the most used coding models. Very cheap.", "Reference open coding model."}
+	for i := range r.models[:6] {
+		r.models[i].Recommendation = &modelRecommendation{Rank: i + 1, Default: i == 0, NoteEN: notes[i], NoteES: notes[i]}
+	}
+	r.page, r.setupStep = "setup", setupModels
+	shoot(r, "18-setup-recommended", 1280, 1600)
+	r.addRecommendedModels(r.recommendedModels())
+	shoot(r, "19-setup-recommended-added", 1280, 1600)
 }

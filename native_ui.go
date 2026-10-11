@@ -76,9 +76,11 @@ type nativeUI struct {
 	authenticated, laidOut         bool
 	sidebarVisible                 bool
 	settingsTab                    string
-	lastOrg                        string
-	trace                          *requestTrace
-	traceStage                     string
+	// setupContinueWhenSaved advances setup once accepted recommendations are saved.
+	setupContinueWhenSaved bool
+	lastOrg                string
+	trace                  *requestTrace
+	traceStage             string
 }
 
 func newNativeUI(owner *app, invalidate func()) *nativeUI {

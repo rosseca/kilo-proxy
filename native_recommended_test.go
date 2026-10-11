@@ -93,12 +93,19 @@ func TestNativeSetupShowsEveryRecommendedModelAndChoosesDefault(t *testing.T) {
 		t.Fatalf("add all: %v default %s", s.ids(), s.Initial)
 	}
 	h.frame()
-	h.click(u.models[0].Name, semantic.Button)
-	h.click(u.models[2].Name, semantic.Button)
+	// Back on the compact list, the star on a row is the only way to choose the default.
+	h.click("Done", semantic.Button)
+	if _, ok := u.buttons["setup.default:"+u.models[2].ID]; !ok {
+		t.Fatal("setup list offers no default action for a selected model")
+	}
+	u.clickable("setup.default:" + u.models[2].ID).Click()
+	h.frame()
 	if s.Initial != u.models[2].ID {
-		t.Fatalf("setup default picker did not change the default: %s", s.Initial)
+		t.Fatalf("setup default star did not change the default: %s", s.Initial)
 	}
 	// The last recommended card is laid out in the page, not hidden in a nested scroll.
+	u.expanded["library.catalog"] = true
+	h.frame()
 	h.reveal(last.Name, semantic.CheckBox)
 	h.click(last.Name, semantic.CheckBox)
 	if s.choice(last.ID) != nil {
@@ -144,5 +151,27 @@ func TestNativeOnboardingShowsRecommendedModelsAfterConnection(t *testing.T) {
 	h.click("Continue", semantic.Button)
 	if u.setupStep != setupReady {
 		t.Fatal("recommended models did not satisfy the models step")
+	}
+}
+
+// One click accepts the recommendations, keeps the published default and
+// advances once the library is saved.
+func TestNativeSetupUseRecommendedAndContinue(t *testing.T) {
+	u := nativeTestUI(t)
+	u.page, u.setupStep = "setup", setupModels
+	u.models = nativeGridModels()
+	for i := range u.models[:4] {
+		u.models[i].Recommendation = &modelRecommendation{Rank: i + 1, Default: i == 1}
+	}
+	h := &nativePointerHarness{t: t, u: u, size: image.Pt(1180, 820), now: time.Now()}
+	h.frame()
+	h.click("Use recommended & continue", semantic.Button)
+	nativeTestWait(t, u, func() bool {
+		h.frame()
+		return u.setupStep == setupReady
+	})
+	s := u.library.selection
+	if len(s.Models) != 4 || s.Initial != u.models[1].ID {
+		t.Fatalf("recommended set not applied: %v default %s", s.ids(), s.Initial)
 	}
 }

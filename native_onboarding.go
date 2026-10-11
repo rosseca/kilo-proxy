@@ -339,22 +339,13 @@ func (u *nativeUI) setupPanel() layout.Widget {
 	var content layout.Widget
 	switch u.setupStep {
 	case setupModels:
-		count := len(u.library.selection.Models)
-		tone := nativeToneWarning
-		if count > 0 {
-			tone = nativeToneSuccess
+		if u.setupContinueWhenSaved {
+			if _, ready := u.libraryStatus(); ready && len(u.library.selection.Models) > 0 {
+				u.setupContinueWhenSaved = false
+				u.setupModelsContinue()
+			}
 		}
-		badge := u.statusBadge(tone, fmt.Sprintf(u.tr("%d selected", "%d seleccionados"), count))
-		introChildren := []layout.Widget{badge}
-		if count > 0 {
-			introChildren = append(introChildren, u.sharedDefaultPicker())
-		}
-		intro := u.section(u.tr("Choose your models", "Elige tus modelos"), u.tr("Your agents will share this curated model list.", "Tus agentes compartirán esta lista de modelos."), introChildren...)
-		children := []layout.Widget{intro}
-		if count == 0 {
-			children = append(children, u.hint(u.tr("Choose at least one model to continue.", "Elige al menos un modelo para continuar.")))
-		}
-		content = u.column(append(children, u.modelsPanel())...)
+		content = u.setupModelsStep()
 	case setupReady:
 		account := nativeString(u.state, "accountEmail")
 		if account == "" {
@@ -410,6 +401,10 @@ func (u *nativeUI) setupFooter() layout.Widget {
 		back = u.button("setup.back-account", u.tr("Back", "Atrás"), func() { u.setSetupStep(setupConnect) })
 		_, ready := u.libraryStatus()
 		primary = u.disabled(ready && len(u.library.selection.Models) > 0, u.primaryButton("primary.setup.models-next", u.tr("Continue", "Continuar"), u.setupModelsContinue))
+		if len(u.library.selection.Models) == 0 && !u.expanded["library.catalog"] && len(u.recommendedModels()) > 0 {
+			// One click accepts the recommendations and moves on once they are saved.
+			primary = u.disabled(!u.setupContinueWhenSaved, u.primaryButton("primary.setup.use-recommended", u.tr("Use recommended & continue", "Usar recomendados y continuar"), u.setupUseRecommended))
+		}
 	case setupReady:
 		back = u.button("setup.back-models", u.tr("Back", "Atrás"), func() { u.setSetupStep(setupModels) })
 		label := u.tr("Start proxy and go to agents", "Arrancar proxy e ir a agentes")
