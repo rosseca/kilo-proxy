@@ -404,6 +404,9 @@ func (u *nativeUI) pageTop(gtx layout.Context) layout.Dimensions {
 		descriptions["agents"] = [2]string{"Opening an agent starts the proxy automatically. You can also start it here.", "Abrir un agente arranca el proxy automáticamente. También puedes arrancarlo aquí."}
 	}
 	title, description := titles[u.page], descriptions[u.page]
+	if lead, ok := u.uxsPageLead(); ok {
+		description = lead
+	}
 	controls := func(gtx layout.Context) layout.Dimensions { return layout.Dimensions{} }
 	if u.page == "setup" {
 		choices := []nativeChoice{{Value: "en", Label: "English"}, {Value: "es", Label: "Español"}}
@@ -878,38 +881,7 @@ func (u *nativeUI) noticeError(err error) {
 	u.setNotice(nativeToneError, nativeMessage(err.Error(), u.language))
 }
 
-// settingsPanel splits settings into task-based tabs instead of one long page.
+// settingsPanel is one scrollable page with a section index (native_ux_settings.go).
 func (u *nativeUI) settingsPanel() layout.Widget {
-	choices := []nativeChoice{
-		{Value: "account", Label: u.tr("Account & connection", "Cuenta y conexión")},
-		{Value: "images", Label: u.tr("Large images", "Imágenes grandes")},
-		{Value: "preferences", Label: u.tr("Preferences", "Preferencias")},
-		{Value: "terminal", Label: u.tr("Terminal", "Terminal")},
-		{Value: "updates", Label: u.tr("Updates", "Actualizaciones")},
-	}
-	if u.settingsTab == "" {
-		u.settingsTab = "account"
-	}
-	var body layout.Widget
-	switch u.settingsTab {
-	case "images":
-		body = u.imageTransportPanel()
-	case "preferences":
-		body = u.appearancePanel()
-	case "terminal":
-		body = u.terminalCommandsPanel()
-	case "updates":
-		body = u.updatesPanel()
-	default:
-		body = u.imageSettingsConnectionPanel()
-	}
-	tabs := u.tabs("settings.tab.", choices, u.settingsTab, func(tab string) { u.settingsTab = tab })
-	return func(gtx layout.Context) layout.Dimensions {
-		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-			layout.Rigid(tabs),
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions { return nativeRule(gtx, 1) }),
-			layout.Rigid(layout.Spacer{Height: nativeSpace24}.Layout),
-			layout.Rigid(body),
-		)
-	}
+	return u.uxsSettingsPage()
 }

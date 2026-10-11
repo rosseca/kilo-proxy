@@ -4,7 +4,9 @@ package main
 
 import (
 	"encoding/json"
+	"image"
 
+	"gioui.org/font"
 	"gioui.org/layout"
 )
 
@@ -24,32 +26,91 @@ func (u *nativeUI) saveImageTransportSettings(value imageTransportSettings) {
 	})
 }
 
+type uxsImageMethod struct{ value, labelEN, labelES, captionEN, captionES, nameEN, nameES, explainEN, explainES string }
+
+var uxsImageMethods = []uxsImageMethod{
+	{"off", "Off", "Desactivado", "sends images as they are", "envía las imágenes tal cual", "Off", "Desactivado", "Images go out unchanged; very large requests can exceed the model's limit.", "Las imágenes salen tal cual; las peticiones muy grandes pueden superar el límite del modelo."},
+	{"compress", "Compress here", "Comprimir aquí", "lighter copies, without leaving your computer", "copias más ligeras, sin salir de tu equipo", "Compress here", "Comprimir aquí", "Makes lighter copies on this computer; nothing is uploaded.", "Hace copias más ligeras en tu equipo; no se sube nada."},
+	{"cloudflare", "Cloudflare", "Cloudflare", "temporary public link · recommended", "enlace público temporal · recomendado", "Cloudflare · temporary tunnel", "Cloudflare · túnel temporal", "Serves the original image from your computer with a link that is removed when done.", "Sirve la imagen original desde tu ordenador con un enlace que se borra al terminar."},
+	{"tailscale", "Tailscale Funnel", "Tailscale Funnel", "if you already use Tailscale", "si ya usas Tailscale", "Tailscale Funnel", "Tailscale Funnel", "Serves the original image from your computer through Funnel; links are removed when done.", "Sirve la imagen original desde tu ordenador con Funnel; los enlaces se retiran al terminar."},
+	{"litterbox", "Litterbox · experimental", "Litterbox · experimental", "temporary third-party hosting", "alojamiento temporal de terceros", "Litterbox · experimental", "Litterbox · experimental", "Uploads the image to a third-party host; the link expires on its own.", "Sube la imagen a un servicio externo; el enlace caduca solo."},
+	{"upload", "Kilo · experimental", "Kilo · experimental", "Kilo attachment storage", "almacenamiento de adjuntos de Kilo", "Kilo · experimental", "Kilo · experimental", "Uploads the image to Kilo attachment storage and sends a temporary link.", "Sube la imagen al almacenamiento de adjuntos de Kilo y envía un enlace temporal."},
+}
+
+// imageTransportPanel is the Large images block: the chosen method in one row;
+// Change opens the six methods and the chosen method's details.
 func (u *nativeUI) imageTransportPanel() layout.Widget {
 	saving := u.busy["PUT/api/image-transport-settings"]
 	u.owner.mu.Lock()
 	settings := normalizeImageTransportSettings(u.owner.config.ImageTransport)
 	u.owner.mu.Unlock()
-	modeChoices := []nativeChoice{
-		{Value: "off", Label: u.tr("Off", "Desactivado"), Caption: u.tr("Send images unchanged", "Enviar imágenes sin cambios")},
-		{Value: "compress", Label: u.tr("Compress locally", "Comprimir en local"), Caption: u.tr("Smaller outbound copies", "Copias de envío más pequeñas")},
-		{Value: "cloudflare", Label: u.tr("Cloudflare", "Cloudflare"), Caption: u.tr("Local files · public tunnel", "Archivos locales · túnel público")},
-		{Value: "tailscale", Label: u.tr("Tailscale Funnel", "Tailscale Funnel"), Caption: u.tr("Use your existing Tailscale", "Usa tu instalación de Tailscale")},
-		{Value: "litterbox", Label: u.tr("Litterbox · Experimental", "Litterbox · Experimental"), Caption: u.tr("Temporary third-party hosting", "Alojamiento temporal externo")},
-		{Value: "upload", Label: u.tr("Kilo · Experimental", "Kilo · Experimental"), Caption: u.tr("Kilo attachment storage", "Almacenamiento de adjuntos de Kilo")},
+	current := uxsImageMethods[0]
+	modeChoices := []nativeChoice{}
+	for _, method := range uxsImageMethods {
+		if method.value == settings.Mode {
+			current = method
+		}
+		modeChoices = append(modeChoices, nativeChoice{Value: method.value, Label: u.tr(method.labelEN, method.labelES), Caption: u.tr(method.captionEN, method.captionES)})
 	}
-	children := []layout.Widget{
-		u.optionCards("images.mode.", modeChoices, settings.Mode, !saving, func(mode string) { next := settings; next.Mode = mode; u.saveImageTransportSettings(next) }),
+	dependency := u.imageDependency()
+	name := u.uxsPlain(u.tr(current.nameEN, current.nameES))
+	if settings.Mode == "cloudflare" && (dependency.Installed || dependency.Required) {
+		found := dependency.Installed
+		name = func(gtx layout.Context) layout.Dimensions {
+			tone, text, icon := nativeSuccessFG, u.tr("cloudflared found", "cloudflared encontrado"), nativeIconCheck
+			if !found {
+				tone, text, icon = nativeWarningFG, u.tr("cloudflared missing", "falta cloudflared"), nativeIconWarning
+			}
+			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+				layout.Rigid(u.uxsPlain(u.tr(current.nameEN, current.nameES))),
+				layout.Rigid(layout.Spacer{Width: 14}.Layout),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					gtx.Constraints.Min = image.Pt(gtx.Dp(14), gtx.Dp(14))
+					return icon.Layout(gtx, tone)
+				}),
+				layout.Rigid(layout.Spacer{Width: 4}.Layout),
+				layout.Flexed(1, u.textStyle(13, text, tone, font.SemiBold)),
+			)
+		}
 	}
+	value := u.uxsValue(name, u.tr(current.explainEN, current.explainES))
+	open := u.expanded["images.change"]
+	children := []layout.Widget{}
+	// A missing executable is always explained, even with the list closed.
+	if settings.Mode == "cloudflare" && dependency.Required && !dependency.Installed {
+		children = append(children, u.imageDependencyNotice(true))
+	}
+	if warning := nativeString(u.state, "imageUploadWarning"); warning != "" {
+		children = append(children, u.message(nativeToneWarning, u.tr("Image cleanup needs attention", "Revisa la limpieza de imágenes")+": "+nativeMessage(warning, u.language)))
+	}
+	if open {
+		children = append(children, u.uxsRadioList("images.mode.", modeChoices, settings.Mode, !saving, func(mode string) { next := settings; next.Mode = mode; u.saveImageTransportSettings(next) }))
+		children = append(children, u.imageTransportDetails(settings, saving)...)
+		children = append(children, u.pills(
+			u.note(u.tr("Only the chosen method is used; if it fails, no other is tried.", "Solo se usa el método elegido; si falla, no se prueba otro.")),
+			u.learnMore("images.learn-more", "https://github.com/rosseca/kilo-proxy/blob/main/docs/security-and-debugging.md#large-image-handling"),
+		))
+		if saving {
+			children = append(children, u.note(u.tr("Saving…", "Guardando…")))
+		}
+	}
+	var below layout.Widget
+	if len(children) > 0 {
+		below = u.column(children...)
+	}
+	row := u.uxsRow(u.tr("Method", "Método"), "", value, u.uxsToggleLink("images.change", "Change", "Cambiar"), below)
+	return u.uxsBlock(u.tr("Large images", "Imágenes grandes"), u.tr("when a screenshot is bigger than the model accepts", "cuando una captura pesa más de lo que acepta el modelo"), row)
+}
+
+// imageTransportDetails explains the chosen method and holds its options.
+func (u *nativeUI) imageTransportDetails(settings imageTransportSettings, saving bool) []layout.Widget {
+	children := []layout.Widget{}
 	switch settings.Mode {
 	case "compress":
 		profileChoices := []nativeChoice{{Value: "high", Label: u.tr("High quality", "Alta calidad")}, {Value: "balanced", Label: u.tr("Balanced", "Equilibrado")}, {Value: "small", Label: u.tr("Small size", "Tamaño pequeño")}}
 		children = append(children, u.subheading(u.tr("Compression profile", "Perfil de compresión")), u.segmented("images.profile.", profileChoices, settings.Profile, !saving, func(profile string) { next := settings; next.Profile = profile; u.saveImageTransportSettings(next) }), u.note(u.tr("High quality: up to 3072 px / quality 92. Balanced: 2048 px / quality 85. Small size: 1280 px / quality 75. Aspect ratio is preserved.", "Alta calidad: hasta 3072 px / calidad 92. Equilibrado: 2048 px / calidad 85. Tamaño pequeño: 1280 px / calidad 75. Se conserva la proporción.")), u.note(u.tr("Tries lossless optimization first, then your selected profile if needed. Only outbound copies change. If the request still does not fit, it stops with an explanation; it never lowers quality further or uploads images automatically.", "Primero intenta optimizar sin pérdidas y después aplica el perfil elegido si hace falta. Solo cambian las copias enviadas. Si la petición sigue sin caber, se detiene con una explicación; nunca reduce más la calidad ni sube las imágenes automáticamente.")))
 	case "cloudflare":
-		if dependency := u.imageDependency(); dependency.Installed {
-			children = append(children, u.message(nativeToneSuccess, u.tr("cloudflared found", "cloudflared encontrado")))
-		} else if dependency.Required {
-			children = append(children, u.imageDependencyNotice(true))
-		}
+		// The dependency status is in the Method row and, when missing, above the list.
 		children = append(children,
 			u.subheading(u.tr("Cloudflare quick tunnel", "Túnel rápido de Cloudflare")),
 			u.note(u.tr("Requires cloudflared installed on this computer and available on PATH. No Cloudflare account or S3 bucket is needed. The tunnel starts when a large request needs it.", "Requiere cloudflared instalado en este equipo y disponible en PATH. No necesita cuenta de Cloudflare ni un bucket S3. El túnel se inicia cuando lo necesita una petición grande.")),
@@ -82,13 +143,6 @@ func (u *nativeUI) imageTransportPanel() layout.Widget {
 	default:
 		children = append(children, u.note(u.tr("Images pass through unchanged. Large requests can still exceed Kilo's limit and need conversation compaction or fewer attachments.", "Las imágenes se envían sin cambios. Las peticiones grandes pueden superar el límite de Kilo y requerir compactar la conversación o reducir los adjuntos.")))
 	}
-	children = append(children, u.learnMore("images.learn-more", "https://github.com/rosseca/kilo-proxy/blob/main/docs/security-and-debugging.md#large-image-handling"))
-	children = append(children, u.note(u.tr("Cloudflare is the default for new profiles. Your saved choice is kept. Changes save automatically for new requests, without restarting. Only the selected method is used; failures never switch to another backend or upload service. Earlier uploads still receive their scheduled cleanup.", "Cloudflare es la opción predeterminada para perfiles nuevos. Se conserva tu elección guardada. Los cambios se guardan automáticamente para nuevas peticiones, sin reiniciar. Solo se usa el método elegido; los fallos nunca cambian a otro backend o servicio de subida. Las subidas anteriores conservan su limpieza programada.")))
-	if warning := nativeString(u.state, "imageUploadWarning"); warning != "" {
-		children = append(children, u.message(nativeToneWarning, u.tr("Image cleanup needs attention", "Revisa la limpieza de imágenes")+": "+nativeMessage(warning, u.language)))
-	}
-	if saving {
-		children = append(children, u.note(u.tr("Saving image preference…", "Guardando preferencia de imágenes…")))
-	}
-	return nativeSettingsPanelWithGap(u.section(u.tr("Large images", "Imágenes grandes"), u.tr("Choose how oversized image requests are handled.", "Elige cómo se gestionan las peticiones con imágenes grandes."), children...))
+	children = append(children, u.note(u.tr("Changes apply to new requests without restarting. Earlier uploads keep their scheduled cleanup.", "Los cambios se aplican a las peticiones nuevas sin reiniciar. Las subidas anteriores conservan su limpieza programada.")))
+	return children
 }

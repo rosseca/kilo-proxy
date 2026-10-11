@@ -57,7 +57,6 @@ type nativeUI struct {
 	contextRemovalTag   int
 
 	imageDependencyDismissed    bool
-	imageSettingsFocus          bool
 	updateRevision              uint64
 	updateRequestFailed         bool
 	packageUpdateConfirmVersion string
@@ -86,6 +85,7 @@ type nativeUI struct {
 	authenticated, laidOut         bool
 	sidebarVisible                 bool
 	settingsTab                    string
+	uxSettings                     *uxsSettingsState
 	// setupContinueWhenSaved advances setup once accepted recommendations are saved.
 	setupContinueWhenSaved bool
 	lastOrg                string
@@ -878,140 +878,6 @@ func (u *nativeUI) saveConnection(done func()) {
 		}
 	})
 }
-func (u *nativeUI) kiloConnectionPanel() layout.Widget {
-	auth := nativeMap(u.state["auth"])
-	pending := nativeString(auth, "status") == "pending" || nativeString(auth, "status") == "starting"
-	running := nativeBool(u.state, "running")
-	connectionBusy := false
-	for _, path := range []string{"/api/config", "/api/start", "/api/stop", "/api/forget", "/api/auth/start", "/api/auth/cancel", "/api/auth/organizations"} {
-		if u.busy["POST"+path] {
-			connectionBusy = true
-		}
-	}
-	editable := !running && !pending && !connectionBusy
-	hasKey := nativeBool(u.state, "hasKey")
-	account := []layout.Widget{}
-	if hasKey {
-		account = append(account, u.statusBadge(nativeToneSuccess, u.tr("Signed in", "Sesión iniciada")))
-		email := nativeString(u.state, "accountEmail")
-		if email == "" {
-			email = u.tr("Kilo credential connected", "Credencial de Kilo conectada")
-		}
-		account = append(account, u.label(email))
-		teamID := u.value("connection.org")
-		teamName := teamID
-		for _, raw := range nativeArray(u.state, "organizations") {
-			org := nativeMap(raw)
-			if nativeString(org, "id") == teamID && nativeString(org, "name") != "" {
-				teamName = nativeString(org, "name")
-				break
-			}
-		}
-		if teamName != "" {
-			account = append(account, u.note(u.tr("Team: ", "Equipo: ")+teamName))
-		}
-		account = append(account, u.pills(u.disabled(editable, u.dangerButton("connection.forget", u.tr("Sign out", "Cerrar sesión"), func() {
-			u.call("POST", "/api/forget", map[string]any{}, func(json.RawMessage) { u.setValue("connection.key", ""); u.refreshState() })
-		}))))
-	} else {
-		account = append(account, u.disabled(editable, u.primaryButton("connection.login", u.tr("Sign in with Kilo / SSO", "Iniciar sesión con Kilo / SSO"), u.beginKiloLogin)))
-	}
-	if pending {
-		account = append(account,
-			u.label(u.tr("Authorize this device in Kilo:", "Autoriza este dispositivo en Kilo:")+" "+nativeString(auth, "code")),
-			u.pills(
-				u.button("connection.verify", u.tr("Open authorization page", "Abrir autorización"), func() { u.open(nativeString(auth, "verificationUrl")) }),
-				u.button("connection.cancel", u.tr("Cancel login", "Cancelar inicio de sesión"), func() { u.call("POST", "/api/auth/cancel", map[string]any{}, u.acceptState) }),
-			),
-		)
-	}
-	if msg := nativeString(auth, "message"); msg != "" {
-		if nativeString(auth, "status") == "error" || nativeString(auth, "status") == "failed" {
-			account = append(account, u.message(nativeToneError, nativeMessage(msg, u.language)))
-		} else {
-			account = append(account, u.note(nativeMessage(msg, u.language)))
-		}
-	}
-	account = append(account, u.disabled(editable, u.disclosure("connection.reveal", u.tr("Use an API key instead", "Usar una API key"))))
-	if u.expanded["connection.reveal"] {
-		account = append(account, u.disabled(editable, u.field("connection.key", u.tr("Personal API key", "API key personal"), u.tr("Leave blank to keep the current key", "Deja vacío para mantener la clave"), true)))
-	}
-
-	teamChoices := []nativeChoice{}
-	for _, raw := range nativeArray(u.state, "organizations") {
-		org := nativeMap(raw)
-		id, name := nativeString(org, "id"), nativeString(org, "name")
-		if name == "" {
-			name = id
-		}
-		teamChoices = append(teamChoices, nativeChoice{Value: id, Label: name, Caption: id})
-	}
-	if len(teamChoices) > 0 {
-		account = append(account, u.optionCards("team.", teamChoices, u.value("connection.org"), editable, func(id string) { u.setValue("connection.org", id) }))
-	}
-	loadTeams := u.disabled(editable, u.button("connection.teams", u.tr("Load my teams", "Cargar mis equipos"), func() {
-		u.call("POST", "/api/auth/organizations", map[string]any{"apiKey": u.value("connection.key")}, u.acceptState)
-	}))
-	if len(teamChoices) == 0 {
-		account = append(account, u.disabled(editable, u.actionRow(u.field("connection.org", u.tr("Organization ID", "ID de organización"), "org_…", false), loadTeams)))
-	} else {
-		account = append(account, u.pills(loadTeams))
-	}
-	account = append(account,
-		u.disabled(editable, u.disclosure("connection.advanced", u.tr("Advanced", "Avanzado"))),
-	)
-	if u.expanded["connection.advanced"] {
-		account = append(account, u.disabled(editable, u.field("connection.port", u.tr("Local port", "Puerto local"), "8877", false)))
-	}
-	account = append(account,
-		u.disabled(editable, u.check("connection.remember", u.tr("Remember upstream key in the system credential store", "Recordar la clave de Kilo en el almacén del sistema"), nil)),
-		u.hint(u.tr("Turn this off if you want to enter your Kilo key again after quitting.", "Desactívalo si quieres volver a introducir tu clave de Kilo al salir y abrir la aplicación.")),
-		u.pills(
-			u.disabled(editable, u.primaryButton("connection.save-start", u.tr("Save & start", "Guardar y arrancar"), func() { u.submitConnection(true) })),
-			u.disabled(editable, u.button("connection.save", u.tr("Save connection", "Guardar conexión"), func() { u.submitConnection(false) })),
-			u.disabled(running, u.button("connection.stop", u.tr("Stop proxy", "Detener proxy"), func() { u.call("POST", "/api/stop", map[string]any{}, u.acceptState) })),
-		),
-		u.pills(u.button("connection.check", u.tr("Check gateway", "Comprobar gateway"), func() {
-			revision := nativeNumber(u.state, "catalogRevision")
-			u.call("POST", "/api/check", map[string]any{}, func(raw json.RawMessage) {
-				if !u.applyModels(raw, revision, "catalog") {
-					return
-				}
-				u.setNotice(nativeToneSuccess, u.tr("Gateway reached. Model listing does not verify organization credit or generation permissions.", "Gateway accesible. El catálogo no verifica saldo ni permisos de generación."))
-			})
-		})),
-	)
-	if !editable {
-		account = append(account, u.hint(u.tr("Stop the proxy or wait for the current connection action to finish before editing these settings.", "Detén el proxy o espera a que termine la acción de conexión para editar estos ajustes.")))
-	}
-	endpoint := []layout.Widget{
-		u.monoStyle(15, nativeString(u.state, "baseURL"), nativeText, font.Bold),
-		u.pills(
-			u.button("connection.copy-url", u.tr("Copy base URL", "Copiar URL base"), func() { u.copy(nativeString(u.state, "baseURL")) }),
-			u.button("connection.copy-key", u.tr("Copy local API key", "Copiar API key local"), func() { u.copy(nativeString(u.state, "localKey")) }),
-		),
-		u.note(u.tr("The local key authenticates your tools. Your personal Kilo key stays on this device.", "La clave local autentica tus herramientas. Tu clave personal de Kilo permanece en este equipo.")),
-		u.pills(u.buttonWidget("connection.clients", u.tr("Go to agents", "Ir a agentes"), nativeButtonLink, nativeIconChevronRight, true, false, func() {
-			u.page = "agents"
-			if len(u.models) == 0 {
-				u.refreshModels()
-			}
-		})),
-	}
-	return nativeSettingsPanelWithGap(u.column(
-		u.section(
-			u.tr("Kilo account", "Cuenta de Kilo"),
-			u.tr("Sign in and choose the team Kilo Proxy uses for upstream requests.", "Inicia sesión y elige el equipo que Kilo Proxy usará para las peticiones."),
-			account...,
-		),
-		u.section(
-			u.tr("Local endpoint", "Endpoint local"),
-			u.tr("Point any OpenAI-compatible client here. Agents opened from Kilo Proxy are configured automatically.", "Apunta aquí cualquier cliente compatible con OpenAI. Los agentes abiertos desde Kilo Proxy se configuran solos."),
-			endpoint...,
-		),
-	))
-}
-
 func nativeSettingsPanelWithGap(panel layout.Widget) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
 		return layout.Inset{Bottom: 8}.Layout(gtx, panel)

@@ -81,13 +81,18 @@ func TestNativeScreenshots(t *testing.T) {
 	shoot(u, "07-models", 1280, 1100)
 	u.page = "activity"
 	shoot(u, "08-activity", 1280, 1100)
-	u.page = "settings"
-	shoot(u, "09-settings", 1280, 1600)
+	// Settings is one page: the whole page, then each block reached from the
+	// index (Large images with its method list open), then Kilo's Manage area.
+	u.page, u.settingsTab = "settings", "accounts"
+	shoot(u, "09-settings", 1280, 1900)
 	for i, tab := range []string{"images", "preferences", "terminal", "updates"} {
 		u.settingsTab = tab
+		u.expanded["images.change"] = tab == "images"
 		shoot(u, fmt.Sprintf("09%c-settings-%s", 'a'+i, tab), 1280, 1100)
 	}
-	u.settingsTab = ""
+	u.expanded["uxs.kilo"], u.settingsTab = true, "accounts"
+	shoot(u, "09e-settings-kilo-expanded", 1280, 1100)
+	u.expanded["uxs.kilo"], u.settingsTab = false, ""
 	u.page = "connection"
 	shoot(u, "10-connection", 1280, 1100)
 	u.page = "agents"

@@ -169,23 +169,27 @@ func TestNativeUpdateStates(t *testing.T) {
 				en, es  string
 				current bool
 			}{
-				{"unchecked", releaseUpdateState{CurrentVersion: "0.50.0"}, "Not checked yet", "Sin comprobar", false},
-				{"checking", releaseUpdateState{CurrentVersion: "0.50.0", Checking: true}, "Checking for updates…", "Comprobando actualizaciones…", false},
-				{"error", releaseUpdateState{CurrentVersion: "0.50.0", LatestVersion: "0.50.0", CheckedAt: checked, Error: "GitHub unavailable", ReleaseURL: nativeUpdateTestURL}, "Could not check for updates. Try again.", "No se han podido comprobar las actualizaciones. Inténtalo de nuevo.", false},
-				{"current", releaseUpdateState{CurrentVersion: "0.50.0", LatestVersion: "0.50.0", CheckedAt: checked, ReleaseURL: "https://github.com/rosseca/kilo-proxy/releases/tag/v0.50.0"}, "Up to date", "Actualizado", true},
-				{"available", releaseUpdateState{CurrentVersion: "0.50.0", LatestVersion: "0.51.0", Available: true, CheckedAt: checked, ReleaseURL: nativeUpdateTestURL}, "Version 0.51.0 is available", "La versión 0.51.0 está disponible", false},
-				{"invalid-release", releaseUpdateState{CurrentVersion: "0.50.0", LatestVersion: "0.51.0", Available: true, CheckedAt: checked, ReleaseURL: "https://example.test/releases/tag/v0.51.0"}, "Not checked yet", "Sin comprobar", false},
+				{"unchecked", releaseUpdateState{CurrentVersion: "0.50.0"}, "not checked yet", "sin comprobar", false},
+				{"checking", releaseUpdateState{CurrentVersion: "0.50.0", Checking: true}, "checking…", "comprobando…", false},
+				{"error", releaseUpdateState{CurrentVersion: "0.50.0", LatestVersion: "0.50.0", CheckedAt: checked, Error: "GitHub unavailable", ReleaseURL: nativeUpdateTestURL}, "could not check", "no se pudo comprobar", false},
+				{"current", releaseUpdateState{CurrentVersion: "0.50.0", LatestVersion: "0.50.0", CheckedAt: checked, ReleaseURL: "https://github.com/rosseca/kilo-proxy/releases/tag/v0.50.0"}, "up to date", "al día", true},
+				{"available", releaseUpdateState{CurrentVersion: "0.50.0", LatestVersion: "0.51.0", Available: true, CheckedAt: checked, ReleaseURL: nativeUpdateTestURL}, "version 0.51.0 is available", "hay una nueva: 0.51.0", false},
+				{"invalid-release", releaseUpdateState{CurrentVersion: "0.50.0", LatestVersion: "0.51.0", Available: true, CheckedAt: checked, ReleaseURL: "https://example.test/releases/tag/v0.51.0"}, "not checked yet", "sin comprobar", false},
 			} {
 				t.Run(test.name, func(t *testing.T) {
 					f.setState(test.state)
 					f.refresh(t)
-					if !nativeUpdateHasText(h, u.tr(test.en, test.es)) || nativeUpdateHasText(h, u.tr("Up to date", "Actualizado")) != test.current {
+					if !nativeUpdateHasText(h, u.tr(test.en, test.es)) || nativeUpdateHasText(h, u.tr("up to date", "al día")) != test.current {
 						t.Fatalf("wrong update status for %+v", test.state)
 					}
-					if !nativeUpdateHasText(h, u.tr("Current version: 0.50.0", "Versión actual: 0.50.0")) {
+					if !nativeUpdateHasText(h, u.tr("Version 0.50.0", "Versión 0.50.0")) {
 						t.Fatal("current version missing")
 					}
-					if test.state.CheckedAt != "" && !nativeUpdateHasText(h, u.tr("Last checked: ", "Última comprobación: ")+nativeUpdatedAt(checked)) {
+					last := u.tr("Checks on startup and every 6 h. Never installs without asking.", "Se revisa al abrir y cada 6 h. Nunca se instala sin preguntarte.")
+					if test.state.CheckedAt != "" {
+						last = u.tr("Checked ", "Comprobado ") + u.uxsAgo(checked, time.Now()) + u.tr(" · checks on startup and every 6 h. Never installs without asking.", " · se revisa al abrir y cada 6 h. Nunca se instala sin preguntarte.")
+					}
+					if !nativeUpdateHasText(h, last) {
 						t.Fatal("last-check timestamp missing")
 					}
 				})
@@ -203,7 +207,7 @@ func TestNativeUpdateCheckRetryAndRelease(t *testing.T) {
 			t.Run(fmtSize(size)+"-"+language, func(t *testing.T) {
 				f := newNativeUpdateFixture(t, language, size)
 				h, u := f.h, f.h.u
-				check := u.tr("Check for updates", "Comprobar actualizaciones")
+				check := u.tr("Check now", "Buscar ahora")
 				f.mu.Lock()
 				f.failPost = true
 				f.mu.Unlock()
@@ -211,7 +215,7 @@ func TestNativeUpdateCheckRetryAndRelease(t *testing.T) {
 				h.click(check, semantic.Button)
 				nativeTestWait(t, u, func() bool { return !u.busy["POST/api/updates"] && u.updateRequestFailed })
 				h.frame()
-				if !nativeUpdateHasText(h, u.tr("Could not check for updates. Try again.", "No se han podido comprobar las actualizaciones. Inténtalo de nuevo.")) || u.notice != "" {
+				if !nativeUpdateHasText(h, u.tr("could not check", "no se pudo comprobar")) || u.notice != "" {
 					t.Fatal("request failure did not stay in the update section")
 				}
 				nativeGridCapture(t, h, "updates-error-"+fmtSize(size)+"-"+language)
@@ -228,7 +232,7 @@ func TestNativeUpdateCheckRetryAndRelease(t *testing.T) {
 				h.click(check, semantic.Button)
 				nativeTestWait(t, u, func() bool { return f.count() == 2 })
 				h.frame()
-				if !nativeUpdateHasText(h, u.tr("Checking for updates…", "Comprobando actualizaciones…")) {
+				if !nativeUpdateHasText(h, u.tr("checking…", "comprobando…")) {
 					t.Fatal("pending manual request did not show checking")
 				}
 				// Neither another action nor a queued click can duplicate the POST.
@@ -335,7 +339,7 @@ func TestNativeUpdatePollRecoversAfterManualRequestError(t *testing.T) {
 	}
 	f.setState(releaseUpdateState{CurrentVersion: "0.50.0", LatestVersion: "0.50.0", CheckedAt: "2026-09-25T12:30:00Z", ReleaseURL: "https://github.com/rosseca/kilo-proxy/releases/tag/v0.50.0"})
 	f.refresh(t)
-	if u.updateRequestFailed || !nativeUpdateHasText(f.h, "Up to date") {
+	if u.updateRequestFailed || !nativeUpdateHasText(f.h, "up to date") {
 		t.Fatal("a later automatic result retained the old manual request error")
 	}
 }
@@ -396,7 +400,7 @@ func TestNativePackageUpdateConfirmationAndLaunch(t *testing.T) {
 				h.click(confirm, semantic.Button)
 				nativeTestWait(t, u, func() bool { return u.packageUpdateFailed && !u.packageUpdateWorking() })
 				h.frame()
-				if !nativeUpdateHasText(h, u.tr("Could not start the update. Try again or download it manually.", "No se pudo iniciar la actualización. Inténtalo de nuevo o descárgala manualmente.")) || f.installCount() != 1 {
+				if !nativeUpdateHasText(h, u.tr("could not start the update", "no se pudo iniciar la actualización")) || !nativeUpdateHasText(h, u.tr("Try again or download it manually.", "Inténtalo de nuevo o descárgala manualmente.")) || f.installCount() != 1 {
 					t.Fatal("failed update did not remain actionable")
 				}
 				gate := make(chan struct{})
@@ -414,13 +418,13 @@ func TestNativePackageUpdateConfirmationAndLaunch(t *testing.T) {
 				u.installPackageUpdate()
 				u.preparePackageUpdate()
 				h.frame()
-				if !nativeUpdateHasText(h, u.tr("Opening the update terminal…", "Abriendo la terminal de actualización…")) {
+				if !nativeUpdateHasText(h, u.tr("opening the update terminal…", "abriendo la terminal de actualización…")) {
 					t.Fatal("handoff progress missing")
 				}
 				unblock()
 				nativeTestWait(t, u, func() bool { return u.packageUpdateStarted && !u.busy["POST/api/updates/install"] })
 				h.frame()
-				if f.installCount() != 2 || !nativeUpdateHasText(h, u.tr("Waiting for the update terminal…", "Esperando a la terminal de actualización…")) {
+				if f.installCount() != 2 || !nativeUpdateHasText(h, u.tr("waiting for the update terminal…", "esperando a la terminal de actualización…")) {
 					t.Fatal("handoff duplicated or pending guidance missing")
 				}
 				state.Installing, state.InstallMessage = true, "update_starting"

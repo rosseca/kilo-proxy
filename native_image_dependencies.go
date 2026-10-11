@@ -42,28 +42,12 @@ func (u *nativeUI) imageDependencyNoticeVisible() bool {
 	return required && dependency.Required && !dependency.Installed && !u.imageDependencyDismissed
 }
 
+// showImageSettings opens Settings at the Large images block.
+// showImageSettings jumps to Large images with the method list open, so the
+// user can pick another method straight away.
 func (u *nativeUI) showImageSettings() {
 	u.page, u.settingsTab = "settings", "images"
-	u.imageSettingsFocus = true
-	u.list("page.settings").ScrollTo(0)
-}
-
-// Keep the normal Settings order while the notice link scrolls directly to
-// Large images. Apply the offset after the list finishes its current layout.
-func (u *nativeUI) imageSettingsConnectionPanel() layout.Widget {
-	return func(gtx layout.Context) layout.Dimensions {
-		dims := u.connectionPanel()(gtx)
-		if u.imageSettingsFocus {
-			u.imageSettingsFocus = false
-			offset := dims.Size.Y + gtx.Dp(8)
-			u.enqueue(func() {
-				if u.page == "settings" {
-					u.list("page.settings").Position.Offset = offset
-				}
-			})
-		}
-		return dims
-	}
+	u.expanded["images.change"] = true
 }
 
 func (u *nativeUI) imageDependencyNotice(settings bool) layout.Widget {

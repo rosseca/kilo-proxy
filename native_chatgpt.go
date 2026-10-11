@@ -101,6 +101,12 @@ func (u *nativeUI) chatGPTAccountPanel() layout.Widget {
 }
 
 func (u *nativeUI) chatGPTQuotaPanel() layout.Widget {
+	return u.section(u.tr("Subscription usage", "Uso de suscripción"), "", u.chatGPTQuotaWidgets()...)
+}
+
+// chatGPTQuotaWidgets lists subscription quota and local history; Settings
+// shows it under the ChatGPT row and Activity in its own section.
+func (u *nativeUI) chatGPTQuotaWidgets() []layout.Widget {
 	account := nativeMap(u.state["chatgpt"])
 	quota := nativeMap(account["quota"])
 	children := []layout.Widget{u.note(u.tr("Subscription quota is separate from Kilo credit. Token counts describe usage, not a monetary charge.", "La cuota de suscripción es independiente del crédito de Kilo. Los tokens describen el uso, no un cargo monetario."))}
@@ -150,13 +156,64 @@ func (u *nativeUI) chatGPTQuotaPanel() layout.Widget {
 			children = append(children, u.message(nativeToneWarning, u.tr("Subscription history could not be saved.", "No se ha podido guardar el historial de suscripción.")))
 		}
 	}
-	return u.section(u.tr("Subscription usage", "Uso de suscripción"), "", children...)
+	return children
 }
 
-func (u *nativeUI) connectionPanel() layout.Widget {
-	panels := []layout.Widget{u.kiloConnectionPanel(), u.chatGPTAccountPanel()}
-	if u.chatGPTConnected() {
-		panels = append(panels, u.chatGPTQuotaPanel())
+// uxsChatGPT runs a ChatGPT account action, pausing a running proxy first
+// because the local API refuses account changes while it serves requests.
+func (u *nativeUI) uxsChatGPT(action string) {
+	if action == "login" || action == "logout" {
+		u.uxsPauseProxy(func() { u.chatGPTAction(action) })
+		return
 	}
-	return u.column(panels...)
+	u.chatGPTAction(action)
+}
+
+func (u *nativeUI) uxsChatGPTRow() layout.Widget {
+	account := nativeMap(u.state["chatgpt"])
+	status := nativeString(account, "status")
+	pending, connected := status == "pending", nativeBool(account, "connected")
+	failed := status == "error" || nativeString(account, "error") != ""
+	working := u.chatGPTRequestBusy() || u.busy["POST/api/stop"] || u.busy["POST/api/start"]
+	explain := u.tr("ChatGPT models use your subscription quota, not Kilo credit.", "Los modelos de ChatGPT gastan cuota de tu suscripción, no créditos de Kilo.")
+	var line layout.Widget
+	small := []string{explain}
+	actions := []layout.Widget{}
+	switch {
+	case pending:
+		line = u.uxsStatus(nativeToneInfo, u.tr("Waiting for ChatGPT authorization", "Esperando autorización de ChatGPT"), "")
+		if code := nativeString(account, "code"); code != "" {
+			small = append([]string{u.tr("Enter this code: ", "Introduce este código: ") + code}, small...)
+		}
+		if nativeString(account, "verificationUrl") == nativeChatGPTVerificationURL {
+			actions = append(actions, u.button("chatgpt.verify", u.tr("Open ChatGPT authorization", "Abrir autorización de ChatGPT"), u.openChatGPTAuthorization))
+		}
+		actions = append(actions, u.disabled(!working, u.button("chatgpt.cancel", u.tr("Cancel ChatGPT login", "Cancelar login de ChatGPT"), func() { u.uxsChatGPT("cancel") })))
+	case connected && !failed:
+		identity := strings.TrimSpace(nativeString(account, "email"))
+		if plan := nativeString(account, "plan"); plan != "" {
+			identity = strings.TrimPrefix(identity+" · "+plan, " · ")
+		}
+		line = u.uxsStatus(nativeToneSuccess, u.tr("Connected", "Conectado"), identity)
+		actions = append(actions,
+			u.disabled(!working, u.dangerButton("chatgpt.logout", u.tr("Disconnect ChatGPT", "Desconectar ChatGPT"), func() { u.uxsChatGPT("logout") })),
+			u.uxsToggleLink("uxs.chatgpt", "Usage", "Uso"),
+		)
+	default:
+		if failed {
+			line = u.uxsStatus(nativeToneWarning, u.tr("Couldn't connect", "No se pudo conectar"), "")
+			small = append([]string{u.tr("Try signing in again.", "Vuelve a iniciar sesión.")}, small...)
+		} else {
+			line = u.uxsStatus(nativeToneNeutral, u.tr("Not connected", "Sin conectar"), "")
+		}
+		actions = append(actions, u.disabled(!working, u.primaryButton("chatgpt.login", u.tr("Connect ChatGPT", "Conectar con ChatGPT"), func() { u.uxsChatGPT("login") })))
+		if connected {
+			actions = append(actions, u.disabled(!working, u.dangerButton("chatgpt.logout", u.tr("Disconnect ChatGPT", "Desconectar ChatGPT"), func() { u.uxsChatGPT("logout") })))
+		}
+	}
+	var below layout.Widget
+	if connected && !failed && u.expanded["uxs.chatgpt"] {
+		below = u.column(append(u.chatGPTQuotaWidgets(), u.note(u.tr("Your subscription credentials stay on this computer. Harnesses use only the local proxy key.", "Las credenciales de tu suscripción se quedan en este equipo. Los harnesses solo usan la clave local del proxy.")))...)
+	}
+	return u.uxsRow("ChatGPT", u.tr("Optional · uses your subscription", "Opcional · usa tu suscripción"), u.uxsValue(line, small...), u.uxsActions(actions...), below)
 }

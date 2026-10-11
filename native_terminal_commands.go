@@ -170,6 +170,8 @@ func nativeTerminalCommandsMessage(message, language string) string {
 	return nativeMessage(message, language)
 }
 
+// terminalCommandsPanel is the Terminal commands block: one Shortcuts row with
+// install/check, installed details and the manual setup behind a link.
 func (u *nativeUI) terminalCommandsPanel() layout.Widget {
 	s := u.terminalCommandsState()
 	if !s.Started {
@@ -178,61 +180,73 @@ func (u *nativeUI) terminalCommandsPanel() layout.Widget {
 	if !s.ManualStarted {
 		u.requestTerminalManual()
 	}
+	title := u.tr("Terminal commands", "Comandos de terminal")
+	names := strings.Join(nativeTerminalCommandNames, ", ")
 	checking, installing := u.busy["GET"+nativeTerminalCommandsEndpoint], u.busy["POST"+nativeTerminalCommandsEndpoint]
 	if s.Checked && !s.Info.Supported {
-		return nativeSettingsPanelWithGap(u.section(
-			u.tr("Terminal commands", "Comandos de terminal"),
-			u.tr("Shortcuts for using your saved Kilo Proxy connection.", "Accesos directos para usar tu conexión guardada de Kilo Proxy."),
-			u.note(u.tr("kilo-codex, kilo-claude, kilo-omp and kilo-opencode are available on macOS, Windows and Linux.", "kilo-codex, kilo-claude, kilo-omp y kilo-opencode están disponibles en macOS, Windows y Linux.")),
-		))
+		return u.uxsBlock(title, "", u.uxsRow(u.tr("Shortcuts", "Atajos"), names, u.uxsValue(u.uxsPlain(u.tr("Not available here", "No disponibles aquí")), u.tr("They are available on macOS, Windows and Linux.", "Están disponibles en macOS, Windows y Linux.")), nil, nil))
 	}
 	powerShell := s.powerShell()
-	runHelp := u.tr("Run these commands from any project terminal. They pass arguments through and use your latest saved shared models.", "Ejecuta estos comandos desde cualquier terminal de proyecto. Pasan los argumentos y usan los últimos modelos compartidos guardados.")
+	explain := u.tr("Open any CLI from your terminal with your models. They install to ~/.local/bin.", "Abre cualquier CLI desde tu terminal con tus modelos. Se instalan en ~/.local/bin.")
 	if powerShell {
-		runHelp = u.tr("Run these commands from a PowerShell project terminal. They pass arguments through and use your latest saved shared models.", "Ejecuta estos comandos desde una terminal de proyecto de PowerShell. Pasan los argumentos y usan los últimos modelos compartidos guardados.")
+		explain = u.tr("Open any CLI from PowerShell with your models. They're added as functions to your PowerShell profile.", "Abre cualquier CLI desde PowerShell con tus modelos. Se añaden como funciones a tu perfil de PowerShell.")
 	}
-	children := []layout.Widget{
-		u.note(runHelp),
-		u.note(u.tr("Keep Kilo Proxy open. The commands start its saved connection if stopped; install Codex CLI, Claude Code, Oh My Pi or OpenCode separately.", "Mantén Kilo Proxy abierto. Los comandos inician la conexión guardada si está detenida; instala Codex CLI, Claude Code, Oh My Pi u OpenCode por separado.")),
+	status, tone := u.tr("Not installed", "No instalados"), nativeToneNeutral
+	switch {
+	case installing:
+		status, tone = u.tr("Installing…", "Instalando…"), nativeToneInfo
+	case checking:
+		status, tone = u.tr("Checking terminal commands…", "Comprobando comandos de terminal…"), nativeToneInfo
+	case s.Info.Installed:
+		status, tone = u.tr("Installed", "Instalados"), nativeToneSuccess
+	case !s.Checked:
+		status = u.tr("Not checked yet", "Sin comprobar")
 	}
-	label := u.tr("Install terminal commands", "Instalar comandos de terminal")
-	if powerShell {
-		children = append(children,
-			u.note(u.tr("Adds functions to your PowerShell profiles. Existing profile settings are preserved; no PATH change is needed.", "Añade funciones a tus perfiles de PowerShell. Se conservan los ajustes existentes del perfil; no hace falta cambiar el PATH.")),
-			u.note(u.tr("Your execution policy must allow PowerShell profiles; Kilo Proxy does not change it.", "Tu política de ejecución debe permitir los perfiles de PowerShell; Kilo Proxy no la cambia.")),
-		)
-		label = u.tr("Install PowerShell functions", "Instalar funciones de PowerShell")
-		if s.Info.Installed {
-			label = u.tr("Update PowerShell functions", "Actualizar funciones de PowerShell")
-		}
-		if installing {
-			label = u.tr("Installing PowerShell functions…", "Instalando funciones de PowerShell…")
-		}
-	} else {
-		children = append(children, u.note(u.tr("Installs to ~/.local/bin and configures PATH for zsh, bash or fish.", "Se instalan en ~/.local/bin y configuran PATH para zsh, bash o fish.")))
-		if s.Info.Installed {
-			label = u.tr("Update terminal commands", "Actualizar comandos de terminal")
-		}
-		if installing {
-			label = u.tr("Installing terminal commands…", "Instalando comandos de terminal…")
-		}
-	}
-	children = append(children, u.pills(
-		u.disabled(s.Checked && s.Info.Supported && !checking && !installing, u.primaryButton("terminal-commands.install", label, func() { u.requestTerminalCommands("POST") })),
-		u.disabled(!checking && !installing, u.button("terminal-commands.refresh", u.tr("Check installation", "Comprobar instalación"), func() { u.requestTerminalCommands("GET") })),
-	))
-	if checking {
-		children = append(children, u.statusBadge(nativeToneInfo, u.tr("Checking terminal commands…", "Comprobando comandos de terminal…")))
-	}
+	value := []layout.Widget{u.uxsValue(u.uxsStatus(tone, status, ""), explain)}
 	if s.Error != "" {
-		children = append(children, u.message(nativeToneError, nativeTerminalCommandsMessage(s.Error, u.language)))
+		value = append(value, u.message(nativeToneError, nativeTerminalCommandsMessage(s.Error, u.language)))
 	}
-	if s.Checked && s.Info.Directory != "" && !powerShell {
-		prefix := u.tr("Install location: ", "Carpeta de instalación: ")
-		if s.Info.Installed {
-			prefix = u.tr("Installed in: ", "Instalados en: ")
-		}
-		children = append(children, u.note(prefix+s.Info.Directory))
+	ready := s.Checked && s.Info.Supported && !checking && !installing
+	var main layout.Widget
+	if s.Info.Installed {
+		main = u.disabled(!checking && !installing, u.button("terminal-commands.refresh", u.tr("Check", "Comprobar"), func() { u.requestTerminalCommands("GET") }))
+		value = append(value, u.disclosure("terminal-commands.details", u.tr("Commands and paths", "Comandos y rutas")))
+	} else {
+		main = u.disabled(ready, u.primaryButton("terminal-commands.install", u.tr("Install", "Instalar"), func() { u.requestTerminalCommands("POST") }))
+	}
+	actions := u.uxsActions(main, u.uxsLink("terminal-commands.manual.toggle", u.tr("Manual", "Manual"), func() {
+		u.expanded["terminal-commands.manual.toggle"] = !u.expanded["terminal-commands.manual.toggle"]
+	}))
+	below := []layout.Widget{}
+	if s.Info.Installed && u.expanded["terminal-commands.details"] {
+		below = append(below, u.terminalInstalledWidgets(installing, checking)...)
+	}
+	if u.expanded["terminal-commands.manual.toggle"] {
+		below = append(below, u.terminalManualWidgets()...)
+	}
+	var area layout.Widget
+	if len(below) > 0 {
+		area = u.column(below...)
+	}
+	return u.uxsBlock(title, "", u.uxsRow(u.tr("Shortcuts", "Atajos"), names, u.column(value...), actions, area))
+}
+
+// terminalInstalledWidgets lists installed commands with copy buttons, paths
+// and the action that rewrites them for the current app location.
+func (u *nativeUI) terminalInstalledWidgets(installing, checking bool) []layout.Widget {
+	s := u.terminalCommandsState()
+	powerShell := s.powerShell()
+	children := []layout.Widget{u.note(u.tr("Run these from any project terminal. They pass arguments through, use your latest saved models and start the saved connection if the proxy is stopped. Install Codex CLI, Claude Code, Oh My Pi or OpenCode separately.", "Ejecútalos desde cualquier terminal de proyecto. Pasan los argumentos, usan tus últimos modelos guardados e inician la conexión guardada si el proxy está detenido. Instala Codex CLI, Claude Code, Oh My Pi u OpenCode por separado."))}
+	label := u.tr("Update terminal commands", "Actualizar comandos de terminal")
+	if powerShell {
+		label = u.tr("Update PowerShell functions", "Actualizar funciones de PowerShell")
+		children = append(children, u.note(u.tr("Your execution policy must allow PowerShell profiles; Kilo Proxy does not change it.", "Tu política de ejecución debe permitir los perfiles de PowerShell; Kilo Proxy no la cambia.")))
+	}
+	if installing {
+		label = u.tr("Installing terminal commands…", "Instalando comandos de terminal…")
+	}
+	if s.Info.Directory != "" && !powerShell {
+		children = append(children, u.note(u.tr("Installed in: ", "Instalados en: ")+s.Info.Directory))
 	}
 	if powerShell && len(s.Info.StartupFiles) > 0 {
 		children = append(children, u.note(u.tr("PowerShell profiles:", "Perfiles de PowerShell:")))
@@ -240,32 +254,30 @@ func (u *nativeUI) terminalCommandsPanel() layout.Widget {
 			children = append(children, u.note(path))
 		}
 	}
-	if s.Info.Installed {
-		if powerShell {
-			children = append(children, u.note(u.tr("Open a new PowerShell window to load the functions from your profile.", "Abre una ventana nueva de PowerShell para cargar las funciones de tu perfil.")))
-		} else if s.Info.PathConfigured {
-			children = append(children, u.note(u.tr("Open a new terminal to use the commands from PATH.", "Abre una terminal nueva para usar los comandos desde PATH.")))
-		} else {
-			children = append(children, u.note(u.tr("Add the install location to your shell's PATH, or use the full paths below.", "Añade la carpeta de instalación al PATH del shell o usa las rutas completas de abajo.")))
-		}
-		if !powerShell && len(s.Info.StartupFiles) > 0 {
-			children = append(children, u.note(u.tr("Shell startup files: ", "Archivos de inicio del shell: ")+strings.Join(s.Info.StartupFiles, ", ")))
-		}
-		for _, name := range nativeTerminalCommandNames {
-			if path := s.Info.Commands[name]; path != "" {
-				command := name
-				if !powerShell && !s.Info.PathConfigured {
-					command = helperShellQuote(path)
-				}
-				children = append(children, u.actionRow(
-					u.terminalCommandCode("terminal-commands.command."+name, command),
-					u.iconButton("terminal-commands.copy."+name, u.tr("Copy ", "Copiar ")+name, nativeButtonSecondary, nativeIconCopy, func() { u.copyTerminalCommand(command) }),
-				))
+	if powerShell {
+		children = append(children, u.note(u.tr("Open a new PowerShell window to load the functions from your profile.", "Abre una ventana nueva de PowerShell para cargar las funciones de tu perfil.")))
+	} else if s.Info.PathConfigured {
+		children = append(children, u.note(u.tr("Open a new terminal to use the commands from PATH.", "Abre una terminal nueva para usar los comandos desde PATH.")))
+	} else {
+		children = append(children, u.note(u.tr("Add the install location to your shell's PATH, or use the full paths below.", "Añade la carpeta de instalación al PATH del shell o usa las rutas completas de abajo.")))
+	}
+	if !powerShell && len(s.Info.StartupFiles) > 0 {
+		children = append(children, u.note(u.tr("Shell startup files: ", "Archivos de inicio del shell: ")+strings.Join(s.Info.StartupFiles, ", ")))
+	}
+	for _, name := range nativeTerminalCommandNames {
+		if path := s.Info.Commands[name]; path != "" {
+			command := name
+			if !powerShell && !s.Info.PathConfigured {
+				command = helperShellQuote(path)
 			}
+			children = append(children, u.actionRow(
+				u.terminalCommandCode("terminal-commands.command."+name, command),
+				u.iconButton("terminal-commands.copy."+name, u.tr("Copy ", "Copiar ")+name, nativeButtonSecondary, nativeIconCopy, func() { u.copyTerminalCommand(command) }),
+			))
 		}
 	}
-	children = append(children, u.terminalManualWidgets()...)
-	return nativeSettingsPanelWithGap(u.section(u.tr("Terminal commands", "Comandos de terminal"), u.tr("Set up shortcuts for the coding CLIs you use.", "Configura accesos directos para tus CLI de programación."), children...))
+	children = append(children, u.pills(u.disabled(s.Info.Supported && !checking && !installing, u.button("terminal-commands.install", label, func() { u.requestTerminalCommands("POST") }))))
+	return children
 }
 
 func (u *nativeUI) terminalManualWidgets() []layout.Widget {
@@ -280,10 +292,9 @@ func (u *nativeUI) terminalManualWidgets() []layout.Widget {
 		title = u.tr("Manual setup · PowerShell", "Configuración manual · PowerShell")
 		instructions = u.tr("Paste these functions into $PROFILE in the PowerShell edition you use (Windows PowerShell 5.1 or PowerShell 7), then open a new PowerShell window. No installer or PATH changes are needed.", "Pega estas funciones en $PROFILE en la edición de PowerShell que uses (Windows PowerShell 5.1 o PowerShell 7) y abre una ventana nueva de PowerShell. No hace falta usar el instalador ni cambiar el PATH.")
 	}
-	children := []layout.Widget{u.disclosure(toggleID, title)}
-	if !u.expanded[toggleID] {
-		return children
-	}
+	// The row's Manual link (toggleID) opens this section.
+	_ = toggleID
+	children := []layout.Widget{u.subheading(title)}
 	loading := u.busy["GET"+nativeTerminalManualEndpoint]
 	ready := s.ManualChecked && s.Manual.Supported && s.ManualError == "" && !loading
 	children = append(children,

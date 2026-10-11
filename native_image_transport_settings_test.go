@@ -22,7 +22,7 @@ func nativeScrollImageSetting(h *nativePointerHarness, label string) {
 				continue
 			}
 			for _, node := range h.nodes() {
-				if node.Desc.Class == semantic.Button && text.Desc.Bounds.Min.In(node.Desc.Bounds) {
+				if (node.Desc.Class == semantic.Button || node.Desc.Class == semantic.RadioButton) && text.Desc.Bounds.Min.In(node.Desc.Bounds) {
 					y = node.Desc.Bounds.Min.Y
 				}
 			}
@@ -49,6 +49,13 @@ func TestNativeImageTransportSettingsPointerAndPersistence(t *testing.T) {
 				})
 				h := &nativePointerHarness{t: t, u: u, size: size, now: time.Now()}
 				h.frame()
+				// The method list opens from the row's Change link.
+				change := u.tr("Change", "Cambiar")
+				nativeScrollImageSetting(h, change)
+				h.click(change, semantic.Button)
+				if !u.expanded["images.change"] {
+					t.Fatal("Change did not open the image methods")
+				}
 				capture := func(name string) {
 					// Finish the pointer ripple before taking a review screenshot.
 					h.now = h.now.Add(time.Second)
@@ -56,7 +63,14 @@ func TestNativeImageTransportSettingsPointerAndPersistence(t *testing.T) {
 					nativeGridCapture(t, h, name+"-"+fmtSize(size)+"-"+lang)
 				}
 				ttl := "1h"
-				choose := func(label string, mode, profile string) {
+				class := semantic.Button
+				var choose func(label string, mode, profile string)
+				method := func(label string, mode, profile string) {
+					class = semantic.RadioButton
+					defer func() { class = semantic.Button }()
+					choose(label, mode, profile)
+				}
+				choose = func(label string, mode, profile string) {
 					// Exercise the same refresh that the background poll performs,
 					// without depending on the runner taking over one second.
 					u.refreshState()
@@ -66,7 +80,7 @@ func TestNativeImageTransportSettingsPointerAndPersistence(t *testing.T) {
 						t.Fatalf("state refresh changed the test language to %q, want %q", u.language, lang)
 					}
 					nativeScrollImageSetting(h, label)
-					h.click(label, semantic.Button)
+					h.click(label, class)
 					nativeTestWait(t, u, func() bool { return !u.busy["PUT/api/image-transport-settings"] })
 					saved, err := readSettings(u.owner.dir)
 					if err != nil || saved.ImageTransport != (imageTransportSettings{mode, profile, ttl}) {
@@ -76,24 +90,24 @@ func TestNativeImageTransportSettingsPointerAndPersistence(t *testing.T) {
 						t.Fatalf("saving image preferences changed the persisted language to %q, want %q", saved.Language, lang)
 					}
 					h.frame()
-					if !h.selected(label, semantic.Button) {
+					if !h.selected(label, class) {
 						t.Fatalf("image option %q is not semantically selected", label)
 					}
 				}
-				choose(u.tr("Compress locally", "Comprimir en local"), "compress", "high")
+				method(u.tr("Compress here", "Comprimir aquí"), "compress", "high")
 				choose(u.tr("Balanced", "Equilibrado"), "compress", "balanced")
 				choose(u.tr("Small size", "Tamaño pequeño"), "compress", "small")
 				choose(u.tr("High quality", "Alta calidad"), "compress", "high")
-				nativeScrollImageSetting(h, u.tr("Compress locally", "Comprimir en local"))
+				nativeScrollImageSetting(h, u.tr("Compress here", "Comprimir aquí"))
 				capture("image-compression")
-				choose(u.tr("Kilo · Experimental", "Kilo · Experimental"), "upload", "high")
+				method("Kilo · experimental", "upload", "high")
 				capture("experimental-image-uploads")
-				choose("Cloudflare", "cloudflare", "high")
+				method("Cloudflare", "cloudflare", "high")
 				nativeScrollImageSetting(h, "Cloudflare")
 				capture("image-cloudflare")
-				choose("Tailscale Funnel", "tailscale", "high")
+				method("Tailscale Funnel", "tailscale", "high")
 				capture("image-tailscale")
-				choose("Litterbox · Experimental", "litterbox", "high")
+				method("Litterbox · experimental", "litterbox", "high")
 				capture("image-litterbox-experimental")
 				for _, expiry := range []struct{ value, en, es string }{
 					{"12h", "12 hours", "12 horas"}, {"24h", "24 hours", "24 horas"}, {"72h", "72 hours", "72 horas"}, {"1h", "1 hour", "1 hora"},
@@ -103,10 +117,10 @@ func TestNativeImageTransportSettingsPointerAndPersistence(t *testing.T) {
 				}
 				nativeScrollImageSetting(h, u.tr("1 hour", "1 hora"))
 				capture("image-litterbox")
-				choose(u.tr("Off", "Desactivado"), "off", "high")
+				method(u.tr("Off", "Desactivado"), "off", "high")
 				// Layout, scrolling and changing language must never opt in by themselves.
 				nextLanguage := u.tr("es", "en")
-				// Language lives under Preferences; switching tabs keeps image settings intact.
+				// Language lives in the Preferences block; jumping there keeps image settings intact.
 				u.settingsTab = "preferences"
 				h.frame()
 				nativeScrollImageSetting(h, u.tr("Español", "English"))

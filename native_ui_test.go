@@ -144,17 +144,21 @@ func nativeTestWait(t *testing.T, u *nativeUI, predicate func() bool) {
 
 func TestNativeConnectionSaveStartStopAndEditPreservation(t *testing.T) {
 	u := nativeTestUI(t)
+	nativeTestFrame(t, u)
+	u.clickable("uxs.kilo").Click()
+	nativeTestFrame(t, u)
+	if !u.expanded["uxs.kilo"] {
+		t.Fatal("Manage did not open the Kilo account details")
+	}
+	// Settings has no Save button: a field applies on Enter or blur through the
+	// same /api/config path, then a running proxy is started again.
 	u.setValue("connection.org", "e2e-team")
 	u.setValue("connection.key", "synthetic-kilo-personal-key")
-	nativeTestFrame(t, u)
-	u.clickable("connection.advanced").Click()
-	nativeTestFrame(t, u)
-	if !u.expanded["connection.advanced"] {
-		t.Fatal("advanced connection settings did not open")
+	u.uxsApplyConnection()
+	if !u.busy["POST/api/config"] {
+		t.Fatal("applying the connection did not save it")
 	}
-	u.clickable("connection.save-start").Click()
-	nativeTestFrame(t, u)
-	nativeTestWait(t, u, func() bool { return nativeBool(u.state, "running") })
+	nativeUxsSettle(t, u, func() bool { return nativeBool(u.state, "kiloReady") && !u.uxsConnectionBusy() })
 	saved, err := readSettings(u.owner.dir)
 	if err != nil || saved.OrgID != "e2e-team" || saved.Remember {
 		t.Fatalf("settings not saved safely: %v", err)
@@ -162,8 +166,9 @@ func TestNativeConnectionSaveStartStopAndEditPreservation(t *testing.T) {
 	if u.value("connection.key") != "" {
 		t.Fatal("upstream secret retained in input after save")
 	}
-	u.clickable("connection.stop").Click()
-	nativeTestFrame(t, u)
+	u.call("POST", "/api/start", map[string]any{}, u.acceptState)
+	nativeTestWait(t, u, func() bool { return nativeBool(u.state, "running") })
+	u.call("POST", "/api/stop", map[string]any{}, u.acceptState)
 	nativeTestWait(t, u, func() bool { return !nativeBool(u.state, "running") })
 	u.setValue("connection.org", "still-typing")
 	u.refreshState()
@@ -172,15 +177,32 @@ func TestNativeConnectionSaveStartStopAndEditPreservation(t *testing.T) {
 		t.Fatal("polling overwrote unsaved input")
 	}
 	u.setValue("connection.port", "22")
-	u.clickable("connection.save-start").Click()
+	u.uxsApplyConnection()
 	nativeTestFrame(t, u)
-	if !strings.Contains(u.notice, "1024") || nativeBool(u.state, "running") {
+	if !strings.Contains(u.notice, "1024") || nativeBool(u.state, "running") || u.busy["POST/api/config"] {
 		t.Fatal("invalid port was not rejected")
 	}
 	u.clickable("connection.forget").Click()
 	nativeTestFrame(t, u)
 	nativeTestWait(t, u, func() bool { return !u.busy["POST/api/forget"] && !nativeBool(u.state, "hasKey") })
 }
+
+// nativeUxsSettle renders frames until predicate holds; Settings finishes
+// automatic saves and restarts while it lays out.
+func nativeUxsSettle(t *testing.T, u *nativeUI, predicate func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(8 * time.Second)
+	for time.Now().Before(deadline) {
+		u.drain()
+		nativeTestFrame(t, u)
+		if predicate() {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("Settings did not settle: %s", u.notice)
+}
+
 func TestNativeLanguageClipboardTeamsAndLoginCancel(t *testing.T) {
 	u := nativeTestUI(t)
 	u.settingsTab = "preferences"
@@ -200,6 +222,8 @@ func TestNativeLanguageClipboardTeamsAndLoginCancel(t *testing.T) {
 	if bridge.Text != nativeString(u.state, "baseURL") {
 		t.Fatal("clipboard action did not copy actual endpoint")
 	}
+	u.clickable("uxs.team.toggle").Click()
+	nativeTestFrame(t, u)
 	u.clickable("connection.teams").Click()
 	nativeTestFrame(t, u)
 	nativeTestWait(t, u, func() bool { return len(nativeArray(u.state, "organizations")) == 2 })
@@ -209,6 +233,7 @@ func TestNativeLanguageClipboardTeamsAndLoginCancel(t *testing.T) {
 	if u.value("connection.org") != "other-team" {
 		t.Fatal("team button did not update organization")
 	}
+	nativeUxsSettle(t, u, func() bool { return !u.uxsConnectionBusy() })
 	// Start through the real device endpoint without opening an external browser.
 	u.call("POST", "/api/auth/start", map[string]any{}, func(json.RawMessage) { u.refreshState() })
 	nativeTestWait(t, u, func() bool { return nativeString(nativeMap(u.state["auth"]), "status") == "pending" })
