@@ -60,7 +60,7 @@ func TestNativeTerminalCommandsPointerInstallAndUpdate(t *testing.T) {
 				nativeTestWait(t, u, func() bool { return u.terminalCommandsState().Checked })
 				h.frame()
 				nativeMenuWheel(h, image.Pt(size.X-100, size.Y-100), 10000)
-				h.click(u.tr("Install terminal commands", "Instalar comandos de terminal"), semantic.Button)
+				h.click(u.tr("Install", "Instalar"), semantic.Button)
 				nativeTestWait(t, u, func() bool { return !u.busy["POST"+nativeTerminalCommandsEndpoint] })
 				s := u.terminalCommandsState()
 				if !s.Info.Installed || !s.Info.PathConfigured || s.Error != "" {
@@ -85,6 +85,10 @@ func TestNativeTerminalCommandsPointerInstallAndUpdate(t *testing.T) {
 					}
 				}
 				h.frame()
+				// Installed commands, paths and Update live behind the row's details.
+				details := u.tr("Commands and paths", "Comandos y rutas")
+				h.reveal(details, semantic.Button)
+				h.click(details, semantic.Button)
 				h.reveal(u.tr("Update terminal commands", "Actualizar comandos de terminal"), semantic.Button)
 				h.click(u.tr("Update terminal commands", "Actualizar comandos de terminal"), semantic.Button)
 				nativeTestWait(t, u, func() bool { return !u.busy["POST"+nativeTerminalCommandsEndpoint] })
@@ -122,6 +126,9 @@ func TestNativeTerminalCommandsCopyWithAndWithoutPATH(t *testing.T) {
 				h := &nativePointerHarness{t: t, u: u, size: image.Pt(780, 700), now: time.Now()}
 				h.frame()
 				nativeMenuWheel(h, image.Pt(680, 600), 10000)
+				details := u.tr("Commands and paths", "Comandos y rutas")
+				h.reveal(details, semantic.Button)
+				h.click(details, semantic.Button)
 				for _, command := range []string{"kilo-omp", "kilo-opencode"} {
 					label := u.tr("Copy ", "Copiar ") + command
 					h.reveal(label, semantic.Button)
@@ -172,7 +179,7 @@ func TestNativeTerminalCommandsPowerShellInstallUpdateAndCopy(t *testing.T) {
 				t.Fatalf("PowerShell installation status did not describe the test profiles: %+v", s.Info)
 			}
 			h.frame()
-			label := u.tr("Install PowerShell functions", "Instalar funciones de PowerShell")
+			label := u.tr("Install", "Instalar")
 			h.reveal(label, semantic.Button)
 			h.click(label, semantic.Button)
 			nativeTestWait(t, u, func() bool { return !u.busy["POST"+nativeTerminalCommandsEndpoint] })
@@ -193,6 +200,9 @@ func TestNativeTerminalCommandsPowerShellInstallUpdateAndCopy(t *testing.T) {
 				}
 			}
 			h.frame()
+			details := u.tr("Commands and paths", "Comandos y rutas")
+			h.reveal(details, semantic.Button)
+			h.click(details, semantic.Button)
 			label = u.tr("Update PowerShell functions", "Actualizar funciones de PowerShell")
 			h.reveal(label, semantic.Button)
 			h.click(label, semantic.Button)
@@ -412,14 +422,20 @@ func TestNativeTerminalManualPointerClipboardAndPreview(t *testing.T) {
 					h.frame()
 					nativeTestWait(t, u, func() bool { return u.terminalCommandsState().ManualChecked && u.terminalCommandsState().Checked })
 					h.frame()
-					toggle := u.tr("Manual setup · Zsh / Bash", "Configuración manual · Zsh / Bash")
-					if platform == "windows" {
-						toggle = u.tr("Manual setup · PowerShell", "Configuración manual · PowerShell")
-					}
+					// The Shortcuts row's Manual link opens the manual setup.
+					toggle := u.tr("Manual", "Manual")
 					h.reveal(toggle, semantic.Button)
 					h.click(toggle, semantic.Button)
 					if !u.expanded["terminal-commands.manual.toggle"] {
 						t.Fatal("pointer did not expand manual setup")
+					}
+					heading := u.tr("Manual setup · Zsh / Bash", "Configuración manual · Zsh / Bash")
+					if platform == "windows" {
+						heading = u.tr("Manual setup · PowerShell", "Configuración manual · PowerShell")
+					}
+					h.frame()
+					if !nativeUpdateHasText(h, heading) {
+						t.Fatalf("manual setup heading %q missing", heading)
 					}
 					s := u.terminalCommandsState()
 					preview := u.editor("terminal-commands.manual.preview")
@@ -498,8 +514,8 @@ func TestNativeTerminalManualSurvivesInstallerConflict(t *testing.T) {
 	}
 	h := &nativePointerHarness{t: t, u: u, size: image.Pt(780, 700), now: time.Now()}
 	h.frame()
-	h.reveal("Manual setup · Zsh / Bash", semantic.Button)
-	h.click("Manual setup · Zsh / Bash", semantic.Button)
+	h.reveal("Manual", semantic.Button)
+	h.click("Manual", semantic.Button)
 	h.reveal("Copy all", semantic.Button)
 	h.click("Copy all", semantic.Button)
 	bridge := u.owner.desktop.(*nativeRecordingBridge)
@@ -550,8 +566,8 @@ func TestNativeTerminalManualBusyFailureAndPointerRetry(t *testing.T) {
 	}
 	h := &nativePointerHarness{t: t, u: u, size: image.Pt(780, 700), now: time.Now()}
 	h.frame()
-	h.reveal("Manual setup · Zsh / Bash", semantic.Button)
-	h.click("Manual setup · Zsh / Bash", semantic.Button)
+	h.reveal("Manual", semantic.Button)
+	h.click("Manual", semantic.Button)
 	nativeMenuWheel(h, image.Pt(680, 600), 10000)
 	var copyPoint image.Point
 	for _, node := range h.nodes() {

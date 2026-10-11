@@ -157,6 +157,10 @@ func TestNativeChatGPTLoginOnboardingAndQuota(t *testing.T) {
 				h.frame()
 				h.reveal(u.tr("Disconnect ChatGPT", "Desconectar ChatGPT"), semantic.Button)
 				nativeGridCapture(t, h, "chatgpt-connected-"+language+"-"+fmtSize(size))
+				// Subscription usage sits behind the row's Usage link.
+				usage := u.tr("Usage", "Uso")
+				h.reveal(usage, semantic.Button)
+				h.click(usage, semantic.Button)
 				refresh := u.tr("Refresh subscription usage", "Actualizar uso de la suscripción")
 				h.reveal(refresh, semantic.Button)
 				h.click(refresh, semantic.Button)
@@ -238,6 +242,7 @@ func TestNativeChatGPTUnknownQuotaAndSubscriptionCosts(t *testing.T) {
 	f := newNativeChatGPTFixture(t, "en", image.Pt(1180, 2200))
 	u := f.h.u
 	u.page = "connection"
+	u.expanded["uxs.chatgpt"] = true
 	f.set(map[string]any{"connected": true, "status": "idle", "quota": map[string]any{"primary": map[string]any{"usedPercent": nil}}})
 	f.refresh(t)
 	if !nativeUpdateHasText(f.h, "Usage limits unavailable") {

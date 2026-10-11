@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"gioui.org/layout"
 	"gioui.org/widget"
@@ -100,7 +101,7 @@ func (u *nativeUI) preparePackageUpdate() {
 	update := u.releaseUpdate()
 	u.packageUpdateConfirmVersion, u.packageUpdateConfirmMethod = update.LatestVersion, update.InstallMethod
 	u.packageUpdateFailed = false
-	// The confirmation lives in the Updates tab of Settings.
+	// The confirmation lives in the Updates block of Settings; jump there.
 	u.page, u.settingsTab = "settings", "updates"
 }
 
@@ -155,6 +156,8 @@ func (u *nativeUI) updateNotice() layout.Widget {
 	}
 }
 
+// updatesPanel is the Updates block: one Version row with status, last check
+// and "Check now", followed by the confirmed package-update flow.
 func (u *nativeUI) updatesPanel() layout.Widget {
 	update := u.releaseUpdate()
 	if u.packageUpdateConfirmVersion != "" && (!u.canInstallUpdate() || u.packageUpdateConfirmVersion != update.LatestVersion || u.packageUpdateConfirmMethod != update.InstallMethod) {
@@ -162,56 +165,69 @@ func (u *nativeUI) updatesPanel() layout.Widget {
 	}
 	checking := update.Checking || u.busy["POST/api/updates"]
 	working := u.packageUpdateWorking()
-	status, tone := u.tr("Not checked yet", "Sin comprobar"), nativeToneNeutral
+	status, tone := u.tr("not checked yet", "sin comprobar"), nativeToneNeutral
 	switch {
 	case u.busy["POST/api/updates/install"]:
-		status, tone = u.tr("Opening the update terminal…", "Abriendo la terminal de actualización…"), nativeToneInfo
+		status, tone = u.tr("opening the update terminal…", "abriendo la terminal de actualización…"), nativeToneInfo
 	case working:
-		status, tone = u.tr("Waiting for the update terminal…", "Esperando a la terminal de actualización…"), nativeToneInfo
+		status, tone = u.tr("waiting for the update terminal…", "esperando a la terminal de actualización…"), nativeToneInfo
 	case u.packageUpdateFailed:
-		status, tone = u.tr("Could not start the update. Try again or download it manually.", "No se pudo iniciar la actualización. Inténtalo de nuevo o descárgala manualmente."), nativeToneWarning
+		status, tone = u.tr("could not start the update", "no se pudo iniciar la actualización"), nativeToneWarning
 	case checking:
-		status, tone = u.tr("Checking for updates…", "Comprobando actualizaciones…"), nativeToneInfo
+		status, tone = u.tr("checking…", "comprobando…"), nativeToneInfo
 	case update.Error != "" || u.updateRequestFailed:
-		status, tone = u.tr("Could not check for updates. Try again.", "No se han podido comprobar las actualizaciones. Inténtalo de nuevo."), nativeToneWarning
+		status, tone = u.tr("could not check", "no se pudo comprobar"), nativeToneWarning
 	case u.updateAvailable():
-		status, tone = fmt.Sprintf(u.tr("Version %s is available", "La versión %s está disponible"), update.LatestVersion), nativeToneInfo
+		status, tone = fmt.Sprintf(u.tr("version %s is available", "hay una nueva: %s"), update.LatestVersion), nativeToneInfo
 	case !update.Available && update.LatestVersion != "" && validReleaseUpdateURL(update.ReleaseURL) && nativeUpdatedAt(update.CheckedAt) != "":
-		status, tone = u.tr("Up to date", "Actualizado"), nativeToneSuccess
+		status, tone = u.tr("up to date", "al día"), nativeToneSuccess
 	}
-	lastCheck := nativeUpdatedAt(update.CheckedAt)
-	if lastCheck == "" {
-		lastCheck = u.tr("Not checked yet", "Sin comprobar")
+	schedule := u.tr("Checks on startup and every 6 h. Never installs without asking.", "Se revisa al abrir y cada 6 h. Nunca se instala sin preguntarte.")
+	if ago := u.uxsAgo(update.CheckedAt, time.Now()); ago != "" {
+		schedule = u.tr("Checked ", "Comprobado ") + ago + u.tr(" · checks on startup and every 6 h. Never installs without asking.", " · se revisa al abrir y cada 6 h. Nunca se instala sin preguntarte.")
 	}
-	buttons := []layout.Widget{u.disabled(!checking && !working, u.iconButton("updates.check", u.tr("Check for updates", "Comprobar actualizaciones"), nativeButtonSecondary, nativeIconRefresh, u.checkForUpdates))}
+	small := []string{schedule}
+	if u.packageUpdateFailed && !working {
+		small = append(small, u.tr("Try again or download it manually.", "Inténtalo de nuevo o descárgala manualmente."))
+	}
+	versionLine := u.uxsPlain(u.tr("Version ", "Versión ") + update.CurrentVersion)
+	statusLine := u.uxsStatus(tone, status, "")
+	line := func(gtx layout.Context) layout.Dimensions {
+		return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+			layout.Rigid(versionLine),
+			layout.Rigid(layout.Spacer{Width: 10}.Layout),
+			layout.Rigid(statusLine),
+		)
+	}
+	value := u.uxsValue(line, small...)
+	buttons := []layout.Widget{}
 	if u.updateAvailable() {
 		if u.canInstallUpdate() {
 			buttons = append(buttons, u.packageUpdateButton("updates.settings.install"))
 		}
 		buttons = append(buttons, u.updateReleaseButton("updates.settings.open"))
 	}
-	children := []layout.Widget{
-		u.label(fmt.Sprintf(u.tr("Current version: %s", "Versión actual: %s"), update.CurrentVersion)),
-		u.statusBadge(tone, status),
-		u.note(u.tr("Last checked: ", "Última comprobación: ") + lastCheck),
-		u.note(u.tr("Checks on startup and every 6 hours.", "Se comprueba al iniciar y cada 6 horas.")),
-		u.pills(buttons...),
-	}
-	if message := u.packageUpdateMessage(update.InstallMessage); message != "" && !working {
-		children = append(children, u.note(message))
-	}
-	if manager := nativePackageUpdateManager(update.InstallMethod); manager != "" {
-		children = append(children, u.note(fmt.Sprintf(u.tr("Installed with %s. Updates run in a visible terminal after your confirmation.", "Instalado con %s. Las actualizaciones se ejecutan en una terminal visible tras tu confirmación."), manager)))
-		if !update.CanInstall && !working {
-			children = append(children, u.note(u.tr("Package update is unavailable for this installation. Use your package manager manually or download the release.", "La actualización del paquete no está disponible para esta instalación. Usa el gestor manualmente o descarga la versión.")))
-		}
-	}
+	buttons = append(buttons, u.disabled(!checking && !working, u.iconButton("updates.check", u.tr("Check now", "Buscar ahora"), nativeButtonSecondary, nativeIconRefresh, u.checkForUpdates)))
+	below := []layout.Widget{}
 	if u.canInstallUpdate() && !working && u.packageUpdateConfirmVersion == update.LatestVersion && u.packageUpdateConfirmMethod == update.InstallMethod {
 		manager := nativePackageUpdateManager(update.InstallMethod)
-		children = append(children, u.message(nativeToneWarning, fmt.Sprintf(u.tr("Update to %s with %s? This closes Kilo Proxy and interrupts active requests. A terminal opens; APT may ask for your administrator password there. Kilo Proxy restarts after a successful update.", "¿Actualizar a %s con %s? Se cerrará Kilo Proxy y se interrumpirán las peticiones activas. Se abrirá una terminal; APT puede pedirte allí la contraseña de administrador. Kilo Proxy se reiniciará si la actualización termina correctamente."), update.LatestVersion, manager)), u.pills(
+		below = append(below, u.message(nativeToneWarning, fmt.Sprintf(u.tr("Update to %s with %s? This closes Kilo Proxy and interrupts active requests. A terminal opens; APT may ask for your administrator password there. Kilo Proxy restarts after a successful update.", "¿Actualizar a %s con %s? Se cerrará Kilo Proxy y se interrumpirán las peticiones activas. Se abrirá una terminal; APT puede pedirte allí la contraseña de administrador. Kilo Proxy se reiniciará si la actualización termina correctamente."), update.LatestVersion, manager)), u.pills(
 			u.primaryButton("updates.confirm", u.tr("Confirm update and restart", "Confirmar actualización y reinicio"), u.installPackageUpdate),
 			u.button("updates.cancel", u.tr("Cancel", "Cancelar"), func() { u.packageUpdateConfirmVersion = "" }),
 		))
 	}
-	return u.section(u.tr("App updates", "Actualizaciones de la app"), u.tr("Install package updates only when you confirm, or download a release from GitHub.", "Instala las actualizaciones del paquete sólo cuando lo confirmes, o descarga una versión desde GitHub."), children...)
+	if message := u.packageUpdateMessage(update.InstallMessage); message != "" && !working {
+		below = append(below, u.note(message))
+	}
+	if manager := nativePackageUpdateManager(update.InstallMethod); manager != "" {
+		below = append(below, u.note(fmt.Sprintf(u.tr("Installed with %s. Updates run in a visible terminal after your confirmation.", "Instalado con %s. Las actualizaciones se ejecutan en una terminal visible tras tu confirmación."), manager)))
+		if !update.CanInstall && !working {
+			below = append(below, u.note(u.tr("Package update is unavailable for this installation. Use your package manager manually or download the release.", "La actualización del paquete no está disponible para esta instalación. Usa el gestor manualmente o descarga la versión.")))
+		}
+	}
+	var area layout.Widget
+	if len(below) > 0 {
+		area = u.column(below...)
+	}
+	return u.uxsBlock(u.tr("Updates", "Actualizaciones"), "", u.uxsRow(u.tr("Version", "Versión"), "Kilo Proxy", value, u.uxsActions(buttons...), area))
 }

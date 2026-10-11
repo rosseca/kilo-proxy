@@ -266,7 +266,7 @@ func TestNativeImageDependencyOnboardingAndExplicitChoice(t *testing.T) {
 			u.showImageSettings()
 			h.frame()
 			h.frame()
-			h.click(u.tr("Off", "Desactivado"), semantic.Button)
+			h.click(u.tr("Off", "Desactivado"), semantic.RadioButton)
 			nativeTestWait(t, u, func() bool { return !u.busy["PUT/api/image-transport-settings"] && !u.busy["GET/api/state"] })
 			u.refreshState()
 			nativeTestWait(t, u, func() bool { return !u.busy["GET/api/state"] })
@@ -292,7 +292,7 @@ func TestNativeImageDependencyOnboardingAndExplicitChoice(t *testing.T) {
 			u.showImageSettings()
 			h.frame()
 			h.frame()
-			h.click("Cloudflare", semantic.Button)
+			h.click("Cloudflare", semantic.RadioButton)
 			nativeTestWait(t, u, func() bool { return !u.busy["PUT/api/image-transport-settings"] && !u.busy["GET/api/state"] })
 			u.page = "agents"
 			u.list("page.agents").ScrollTo(0)
