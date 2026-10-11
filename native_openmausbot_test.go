@@ -60,35 +60,30 @@ func TestNativeOpenMausBotWideCardAfterDesktopApps(t *testing.T) {
 			h := &nativePointerHarness{t: t, u: u, size: image.Pt(1180, 1700), now: time.Now()}
 			h.frame()
 			codex := h.target(u.tr("Open Codex", "Abrir Codex"), semantic.Button).Desc.Bounds
-			claude := h.target(u.tr("Open Claude Desktop · Kilo", "Abrir Claude Desktop · Kilo"), semantic.Button).Desc.Bounds
+			claude := h.target(u.tr("Open Claude Desktop", "Abrir Claude Desktop"), semantic.Button).Desc.Bounds
 			maus := h.target(u.tr("Open OpenMausBot", "Abrir OpenMausBot"), semantic.Button).Desc.Bounds
-			var code image.Rectangle
+			var code, bots image.Rectangle
 			for _, node := range h.nodes() {
-				if node.Desc.Label == "Claude Code" {
+				if node.Desc.Label == "Claude Code" && node.Desc.Class != semantic.Button {
 					code = node.Desc.Bounds
 				}
-			}
-			if maus.Min.X != codex.Min.X || maus.Min.Y <= claude.Max.Y || maus.Max.Y >= code.Min.Y {
-				t.Fatalf("OpenMausBot not between desktop apps and CLI row: codex=%v claude=%v maus=%v code=%v", codex, claude, maus, code)
-			}
-			// Desktop apps sit in a two-column grid; the OpenMausBot status
-			// badge (the last one above its launch button) must reach the
-			// right edge of the grid, like the right-column cards.
-			var installed []image.Rectangle
-			var mausBadge image.Rectangle
-			right := 0
-			for _, node := range h.nodes() {
-				if node.Desc.Label == u.tr("Installed · Desktop", "Instalado · Escritorio") {
-					b := node.Desc.Bounds
-					installed = append(installed, b)
-					right = max(right, b.Max.X)
-					if b.Min.Y < maus.Min.Y && b.Min.Y > mausBadge.Min.Y {
-						mausBadge = b
-					}
+				if strings.EqualFold(node.Desc.Label, "Bots") {
+					bots = node.Desc.Bounds
 				}
 			}
-			if len(installed) < 3 || mausBadge.Max.X != right || mausBadge.Min.X <= installed[0].Max.X {
-				t.Fatalf("OpenMausBot card is not full width: badge=%v all=%v", mausBadge, installed)
+			// OpenMausBot has its own Bots group between the desktop apps and
+			// the coding harnesses, with Open aligned to the other rows.
+			if maus.Max.X != codex.Max.X || maus.Min.Y <= claude.Max.Y || maus.Max.Y >= code.Min.Y || bots.Empty() || bots.Min.Y <= claude.Max.Y || bots.Min.Y >= maus.Min.Y {
+				t.Fatalf("OpenMausBot not between desktop apps and coding harnesses: codex=%v claude=%v maus=%v bots=%v code=%v", codex, claude, maus, bots, code)
+			}
+			mausInstalled := false
+			for _, node := range h.nodes() {
+				if node.Desc.Label == "● "+u.tr("Installed", "Instalado") && node.Desc.Bounds.Min.Y > bots.Min.Y && node.Desc.Bounds.Min.Y < maus.Max.Y {
+					mausInstalled = true
+				}
+			}
+			if !mausInstalled {
+				t.Fatal("OpenMausBot row does not show its installed status")
 			}
 			if _, exists := u.buttons["agent:openmausbot:folder"]; exists {
 				t.Fatal("OpenMausBot exposes an unsupported project picker")
@@ -105,9 +100,10 @@ func TestNativeOpenMausBotWideCardAfterDesktopApps(t *testing.T) {
 			u.agentSetup("openmausbot")
 			h.size = image.Pt(720, 900)
 			h.frame()
-			h.target(u.tr("Prepare without opening", "Preparar sin abrir"), semantic.Button)
+			h.reveal(u.tr("Prepare", "Preparar"), semantic.Button)
+			h.target(u.tr("Prepare", "Preparar"), semantic.Button)
 			for _, node := range h.nodes() {
-				if node.Desc.Label == u.tr("Project folder", "Carpeta del proyecto") || strings.Contains(node.Desc.Label, u.owner.config.LocalKey) {
+				if node.Desc.Label == u.tr("Folder", "Carpeta") || strings.Contains(node.Desc.Label, u.owner.config.LocalKey) {
 					t.Fatal("integration settings show unsupported project or local credentials")
 				}
 			}

@@ -52,18 +52,19 @@ func TestNativeT3CodeWideCardAndIntegrationSettings(t *testing.T) {
 			u.setValue(agentProjectField("t3-code"), "/does-not-exist/ignored")
 			h := &nativePointerHarness{t: t, u: u, size: image.Pt(1180, 1900), now: time.Now()}
 			h.frame()
-			codex := h.target(u.tr("Open Codex", "Abrir Codex"), semantic.Button).Desc.Bounds
-			claude := h.target(u.tr("Open Claude Desktop · Kilo", "Abrir Claude Desktop · Kilo"), semantic.Button).Desc.Bounds
-			t3 := h.target(u.tr("Open T3 Code · Kilo", "Abrir T3 Code · Kilo"), semantic.Button).Desc.Bounds
+			synara := h.target(u.tr("Open Synara", "Abrir Synara"), semantic.Button).Desc.Bounds
+			claude := h.target(u.tr("Open Claude Desktop", "Abrir Claude Desktop"), semantic.Button).Desc.Bounds
+			t3 := h.target(u.tr("Open T3 Code", "Abrir T3 Code"), semantic.Button).Desc.Bounds
 			maus := h.target(u.tr("Open OpenMausBot", "Abrir OpenMausBot"), semantic.Button).Desc.Bounds
-			if t3.Min.X != codex.Min.X || t3.Min.Y <= claude.Max.Y || t3.Max.Y >= maus.Min.Y {
-				t.Fatalf("T3 card not wide below desktop apps: codex=%v claude=%v t3=%v maus=%v", codex, claude, t3, maus)
+			// T3 Code follows Synara in the multi-agent group, below the desktop apps and above the bots.
+			if t3.Max.X != synara.Max.X || synara.Min.Y <= claude.Max.Y || t3.Min.Y <= synara.Max.Y || t3.Max.Y >= maus.Min.Y {
+				t.Fatalf("T3 row not in the multi-agent group: claude=%v synara=%v t3=%v maus=%v", claude, synara, t3, maus)
 			}
 			if _, exists := u.buttons["agent:t3-code:folder"]; exists {
 				t.Fatal("T3 exposes an unsupported project picker")
 			}
 			nativeGridCapture(t, h, "native-t3-code-agents-"+lang)
-			h.click(u.tr("Open T3 Code · Kilo", "Abrir T3 Code · Kilo"), semantic.Button)
+			h.click(u.tr("Open T3 Code", "Abrir T3 Code"), semantic.Button)
 			nativeTestWait(t, u, func() bool { return u.clientState().Launching == "" })
 			if recorder.count() != 1 || recorder.prepares.Load() != 1 {
 				t.Fatalf("pointer launch did not prepare once: %s", u.notice)
@@ -74,17 +75,20 @@ func TestNativeT3CodeWideCardAndIntegrationSettings(t *testing.T) {
 			u.agentSetup("t3-code")
 			h.size = image.Pt(720, 1500)
 			h.frame()
-			h.target(u.tr("Prepare without opening", "Preparar sin abrir"), semantic.Button)
+			h.reveal(u.tr("Prepare", "Preparar"), semantic.Button)
+			h.target(u.tr("Prepare", "Preparar"), semantic.Button)
+			h.reveal(u.tr("How this works", "Cómo funciona"), semantic.Button)
+			h.click(u.tr("How this works", "Cómo funciona"), semantic.Button)
 			labels := ""
 			for _, node := range h.nodes() {
 				labels += node.Desc.Label + "\n"
 			}
-			for _, expected := range []string{u.tr("Codex · Normal · Existing Codex CLI login", "Codex · Normal · Sesión existente de Codex CLI"), u.tr("Claude · Normal · Existing Claude Code login", "Claude · Normal · Sesión existente de Claude Code"), "Kilo Proxy · Codex", "Kilo Proxy · Claude", u.tr("green KP badge", "insignia verde KP"), u.tr("Choose one of these four options for each new chat.", "Elige una de estas cuatro opciones para cada chat nuevo."), u.tr("Preparation hides the built-in Claude entries", "La preparación oculta las entradas de Claude incluidas en T3"), u.tr("check the selected model before continuing", "revisa el modelo elegido antes de continuar")} {
+			for _, expected := range []string{"Codex · Normal", u.tr("Existing Codex CLI login", "Sesión existente de Codex CLI"), "Claude · Normal", u.tr("Existing Claude Code login", "Sesión existente de Claude Code"), "Kilo Proxy · Codex", "Kilo Proxy · Claude", u.tr("green KP badge", "insignia verde KP"), u.tr("Choose one of these four options for each new chat.", "Elige una de estas cuatro opciones para cada chat nuevo."), u.tr("Preparation hides the built-in Claude entries", "La preparación oculta las entradas de Claude incluidas en T3"), u.tr("check the selected model before continuing", "revisa el modelo elegido antes de continuar")} {
 				if !strings.Contains(labels, expected) {
 					t.Fatalf("missing agent guidance: %q", expected)
 				}
 			}
-			if strings.Contains(labels, u.owner.config.LocalKey) || strings.Contains(labels, u.owner.apiKey) || strings.Contains(labels, u.tr("Project folder", "Carpeta del proyecto")) {
+			if strings.Contains(labels, u.owner.config.LocalKey) || strings.Contains(labels, u.owner.apiKey) || strings.Contains(labels, "\n"+u.tr("Folder", "Carpeta")+"\n") {
 				t.Fatal("integration settings expose credentials or unsupported project picker")
 			}
 			nativeGridCapture(t, h, "native-t3-code-settings-"+lang)
@@ -152,6 +156,7 @@ func TestNativeT3CodeNightlyGuidance(t *testing.T) {
 			nativeTestWait(t, u, func() bool { return u.agentsState().T3Code.Loaded })
 			u.agentsState().T3Code.Info.Version = "9.0.0-beta.2"
 			u.agentsState().T3Code.Info.ProtocolV2 = true
+			u.expanded["client:t3-code:notes"] = true
 			h.frame()
 			labels := ""
 			for _, node := range h.nodes() {

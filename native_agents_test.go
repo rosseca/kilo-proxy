@@ -106,7 +106,7 @@ func TestNativeAgentHomePrimaryLaunchAboveFold(t *testing.T) {
 				u, r := nativeLaunchTestUI(t, "codex", false, false)
 				u.page, u.language = "agents", lang
 				u.setValue(agentProjectField("codex"), "/missing/remembered-project")
-				u.setValue("clients-project-directory", "/missing/advanced-project")
+				u.agentsState().Preferences.Folder = "/missing/general-project"
 				h := &nativePointerHarness{t: t, u: u, size: size, now: time.Now()}
 				h.frame()
 				if _, exists := u.buttons["agent:codex:folder"]; exists {
@@ -133,7 +133,7 @@ func TestNativeAgentHomePrimaryLaunchAboveFold(t *testing.T) {
 				u.agentSetup("codex")
 				h.frame()
 				for _, node := range h.nodes() {
-					if node.Desc.Label == u.tr("Project folder", "Carpeta del proyecto") {
+					if node.Desc.Label == u.tr("Project folder", "Carpeta del proyecto") || node.Desc.Label == u.tr("Folder", "Carpeta") {
 						t.Fatal("Codex Desktop integration still exposes a project field")
 					}
 				}

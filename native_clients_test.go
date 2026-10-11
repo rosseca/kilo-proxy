@@ -223,9 +223,8 @@ func TestNativeClientsWidgetActionsPrepareEveryEditor(t *testing.T) {
 			u.page = "clients"
 			nativeTestFrame(t, u)
 			if key == "codex" {
-				u.clickable("client:codex:queue-mode.toggle").Click()
-				nativeTestFrame(t, u)
-				u.clickable("client:codex:queue-mode.option.steer").Click()
+				// "If you type while Codex works" offers the two modes as option cards.
+				u.clickable("client:codex:queue-mode.steer").Click()
 				nativeTestFrame(t, u)
 			}
 			s := u.sharedClientSelection(key)

@@ -56,7 +56,6 @@ func (u *nativeUI) detectLaunchers() {
 		return
 	}
 	c.LaunchDetectStarted = true
-	before := u.value("clients-project-directory")
 	u.clientRequest("GET", nativeLaunchEndpoint, nil, func(raw json.RawMessage, err error) {
 		var detected nativeLaunchInfo
 		if err == nil {
@@ -67,9 +66,6 @@ func (u *nativeUI) detectLaunchers() {
 			return
 		}
 		c.LaunchInfo = detected
-		if !c.LaunchChecked && before == "" && u.value("clients-project-directory") == before {
-			u.setValue("clients-project-directory", c.LaunchInfo.Directory)
-		}
 		c.LaunchChecked = true
 		c.LaunchError = ""
 	})
@@ -103,7 +99,7 @@ func (u *nativeUI) clientLauncherPanel(key string, s *nativeClientSelection, can
 	if !clientLaunchUsesProject(key) {
 		widgets = append(widgets, u.pills(openButton))
 	} else {
-		widgets = append(widgets, u.actionRow(u.field("clients-project-directory", u.tr("Project folder", "Carpeta del proyecto"), c.LaunchInfo.Directory, false), openButton))
+		widgets = append(widgets, u.actionRow(u.field(agentProjectField(key), u.tr("Project folder (empty = the general one)", "Carpeta del proyecto (vacía = la general)"), u.uxhGlobalFolder(), false), openButton))
 	}
 	widgets = append(widgets,
 		u.pills(u.disabled(!u.busy["GET"+nativeLaunchEndpoint], u.iconButton("clients-launch-detect", u.tr("Refresh installed apps", "Actualizar aplicaciones instaladas"), nativeButtonGhost, nativeIconRefresh, u.detectLaunchers))),
@@ -141,20 +137,28 @@ func (u *nativeUI) clientLauncherPanel(key string, s *nativeClientSelection, can
 }
 
 func (u *nativeUI) launchClient(key string) {
-	u.launchClientFrom(key, "clients-project-directory")
+	u.launchAgent(key)
 }
 
+// launchAgent opens a harness in its own folder override or, when it has none,
+// the general project folder.
 func (u *nativeUI) launchAgent(key string) {
 	u.agentsState()
-	if !clientLaunchUsesProject(key) {
-		u.launchClientFrom(key, "")
-		return
+	u.launchClientFrom(key, agentProjectField(key))
+}
+
+// uxhLaunchDirectory is the folder a launch uses. An empty harness override
+// falls back to the general folder, which is read at launch time so a change
+// made while preparing is detected like any other launch setting.
+func (u *nativeUI) uxhLaunchDirectory(key, directoryField string) string {
+	if !clientLaunchUsesProject(key) || directoryField == "" {
+		return ""
 	}
-	field := agentProjectField(key)
-	if u.value(field) == "" {
-		u.setValue(field, u.agentProject(key))
+	directory := strings.TrimSpace(u.value(directoryField))
+	if directory == "" && directoryField == agentProjectField(key) {
+		directory = u.uxhGlobalFolder()
 	}
-	u.launchClientFrom(key, field)
+	return directory
 }
 
 // Include the saved connection as well as displayed state: a connection save
@@ -181,7 +185,7 @@ func (u *nativeUI) launchSettingsFingerprint(key, directoryField string) [32]byt
 	if key == "codex" {
 		appPath = u.value("clients-launch-app-path")
 	}
-	data, _ := json.Marshal([]any{nativeSelectionFingerprint(key, s, base, local, u.clientCaps(key)), u.modelLibraryValue(), limits, u.value(directoryField), appPath, u.launchConnectionFingerprint()})
+	data, _ := json.Marshal([]any{nativeSelectionFingerprint(key, s, base, local, u.clientCaps(key)), u.modelLibraryValue(), limits, u.uxhLaunchDirectory(key, directoryField), appPath, u.launchConnectionFingerprint()})
 	return sha256.Sum256(data)
 }
 
@@ -241,10 +245,7 @@ func (u *nativeUI) launchClientFrom(key, directoryField string) {
 		}
 		return
 	}
-	directory, appPath := u.value(directoryField), u.value("clients-launch-app-path")
-	if !clientLaunchUsesProject(key) {
-		directory = ""
-	}
+	directory, appPath := u.uxhLaunchDirectory(key, directoryField), u.value("clients-launch-app-path")
 	resolvedDirectory := ""
 	if clientLaunchUsesProject(key) {
 		var err error
@@ -303,9 +304,7 @@ func (u *nativeUI) launchClientFrom(key, directoryField string) {
 				return
 			}
 			finish(nil)
-			if key != "open-design" && key != "claude-desktop" {
-				u.rememberAgentProject(key, resolvedDirectory)
-			}
+			u.uxhNoteOpened(key, resolvedDirectory)
 			u.setNotice(nativeToneWarning, result.Message)
 			if u.notice == "" {
 				u.setNotice(nativeToneSuccess, u.tr("Editor launched.", "Editor abierto."))

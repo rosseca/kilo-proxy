@@ -25,7 +25,7 @@ func TestNativeOpenDesignLaunchPreparesSelectedEngineAndStartsProxy(t *testing.T
 				label = "OpenCode"
 			}
 			u.setValue("open-design-engine", label)
-			u.setValue("clients-project-directory", "/ignored/project")
+			u.agentsState().Preferences.Folder = "/ignored/project"
 			before := u.owner.launcher.start
 			u.owner.launcher.start = func(plan clientLaunchPlan) error {
 				u.owner.mu.Lock()

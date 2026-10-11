@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"gioui.org/font"
 	"gioui.org/layout"
 )
 
@@ -500,9 +501,14 @@ func (u *nativeUI) clientsPanel() layout.Widget {
 			}
 		})
 	}
-	clientNames := map[string]string{"codex": "Codex Desktop", "codex-cli": "Codex CLI", "claude": "Claude Code", "claude-desktop": "Claude Desktop · Kilo", "t3-code": "T3 Code · Kilo", "synara": "Synara · Kilo", "opencode": "OpenCode", "omp": "Oh My Pi", "zed": "Zed", "open-design": "Open Design", "openmausbot": "OpenMausBot", "xcode": "Xcode", "generic": u.tr("Other agents", "Otros agentes")}
+	if key := u.client; key != "xcode" && key != "generic" {
+		s := u.sharedClientSelection(key)
+		u.syncClientSelection(key, s)
+		return u.uxhHarnessPage(key, s, u.uxhClientDetail(key, s))
+	}
+	clientNames := map[string]string{"xcode": "Xcode", "generic": u.tr("Other clients", "Otros clientes")}
 	widgets := []layout.Widget{
-		u.pills(u.iconButton("agents.back", u.tr("All agents", "Todos los agentes"), nativeButtonGhost, nativeIconBack, func() { u.page = "agents" })),
+		u.uxhBackLink(),
 		u.heading(clientNames[u.client]),
 	}
 	key := u.client
@@ -533,86 +539,17 @@ func (u *nativeUI) clientsPanel() layout.Widget {
 	}
 	s := u.sharedClientSelection(key)
 	u.syncClientSelection(key, s)
-	if key == "claude" {
-		if u.value("clients-claude-mode") == "" {
-			u.setValue("clients-claude-mode", "installed")
-		}
-		launchSetup = append(launchSetup, u.row(
-			u.selectField("clients-claude-mode", u.tr("Claude compatibility", "Compatibilidad de Claude"), nativeChoices([]string{"installed", "modern"})),
-			u.iconButton("claude-detect", u.tr("Detect installed version", "Detectar versión instalada"), nativeButtonGhost, nativeIconRefresh, func() {
-				u.call("GET", "/api/claude/info", nil, func(data json.RawMessage) {
-					if json.Unmarshal(data, &c.Claude) == nil {
-						c.ClaudeChecked = true
-					}
-				})
-			}),
-		))
-		version := u.tr("Not checked", "Sin comprobar")
-		if c.ClaudeChecked {
-			version = c.Claude.Version
-			if version == "" {
-				version = u.tr("Not detected; basic aliases", "No detectada; alias básicos")
-			}
-		}
-		launchSetup = append(launchSetup, u.note("Claude Code: "+version+u.tr(" · modern compatibility needs 2.1.251+ for the model picker and per-model effort.", " · la compatibilidad moderna requiere 2.1.251+ para la lista y el razonamiento por modelo.")))
-	}
 	protocol := u.tr("Uses Chat Completions; listing models does not verify generation or tools.", "Usa Chat Completions; mostrar modelos no verifica la generación ni las herramientas.")
-	if key == "codex" || key == "codex-cli" || key == "xcode-codex" {
+	if key == "xcode-codex" {
 		protocol = u.tr("Uses Responses; choose models compatible with their supported reasoning levels.", "Usa Responses; elige modelos compatibles con sus niveles de razonamiento.")
 	}
-	if key == "claude" || key == "xcode-claude" {
+	if key == "xcode-claude" {
 		protocol = u.tr("Uses Anthropic Messages; selected models and task aliases must support it.", "Usa Anthropic Messages; los modelos y alias de tareas deben admitirlo.")
 	}
-	if key == "open-design" {
-		protocol = u.tr("Uses the selected CLI engine with your shared Kilo models.", "Usa el motor CLI seleccionado con tus modelos compartidos de Kilo.")
-	}
-	if key == "omp" {
-		protocol = u.tr("Uses Responses with shared models in an isolated Oh My Pi profile.", "Usa Responses con modelos compartidos en un perfil aislado de Oh My Pi.")
-	}
-	modelSummary := u.sharedModelSummary()
-	if key == "claude-desktop" {
-		modelSummary = u.claudeDesktopModelSummary(s)
-	}
-	if key == "open-design" {
-		modelSummary = u.tr("Your CLI engine uses the shared models and default.", "Tu motor CLI usa los modelos compartidos y el predeterminado.")
-	}
 	modelWidgets := []layout.Widget{
-		u.actionRow(u.column(u.eyebrow(u.tr("SHARED MODELS", "MODELOS COMPARTIDOS")), u.label(modelSummary)), u.button("agents.models.edit", u.tr("Edit shared models", "Editar modelos compartidos"), func() { u.page = "models" })),
-	}
-	if key == "codex" || key == "codex-cli" {
-		modelWidgets = append(modelWidgets, u.disclosure("agents.images.edit", u.tr("Image generation settings", "Ajustes de generación de imágenes")))
-		if u.expanded["agents.images.edit"] {
-			modelWidgets = append(modelWidgets, u.column(u.note(u.tr("Review image generation settings before opening Codex.", "Revisa la generación de imágenes antes de abrir Codex.")), u.ghostButton("agents.images.open", u.tr("Edit image generation settings", "Editar la generación de imágenes"), func() { u.page = "models"; u.expanded["models.images.toggle"] = true })))
-		}
-	}
-	if key == "codex" {
-		if !validCodexQueueMode(s.QueueMode) {
-			s.QueueMode = codexQueueModeQueue
-		}
-		if u.value("client:codex:queue-mode") == "" {
-			u.setValue("client:codex:queue-mode", s.QueueMode)
-		}
-		modelWidgets = append(modelWidgets,
-			u.selectField("client:codex:queue-mode", u.tr("Messages sent while Codex is working", "Mensajes enviados mientras Codex trabaja"), nativeChoices([]string{codexQueueModeQueue, codexQueueModeSteer})),
-			u.note(u.tr("queue waits for the next turn. steer adds the message to the task currently running. Restart Codex after preparing the profile.", "queue espera al siguiente turno. steer añade el mensaje a la tarea que se está ejecutando. Reinicia Codex después de preparar el perfil.")),
-		)
+		u.actionRow(u.column(u.eyebrow(u.tr("Shared models", "Modelos compartidos")), u.label(u.uxhModelsSummary())), u.button("agents.models.edit", u.tr("Edit in Models", "Editar en Modelos"), func() { u.page = "models" })),
 	}
 	widgets = append(widgets, u.section(u.tr("Models", "Modelos"), u.tr("One shared library for this agent.", "Una biblioteca compartida para este agente."), modelWidgets...))
-	if key == "t3-code" {
-		return u.column(append(widgets, u.t3CodeClientPanel(s))...)
-	}
-	if key == "synara" {
-		return u.column(append(widgets, u.synaraClientPanel(s))...)
-	}
-	if key == "openmausbot" {
-		return u.column(append(widgets, u.openMausBotClientPanel(s))...)
-	}
-	if key == "open-design" {
-		return u.column(append(widgets, u.openDesignClientPanel(s))...)
-	}
-	if key == "claude-desktop" {
-		return u.column(append(widgets, u.claudeDesktopClientPanel(s))...)
-	}
 	if key == "generic" {
 		base, local, _ := u.clientBase()
 		id := s.Initial
@@ -621,7 +558,7 @@ func (u *nativeUI) clientsPanel() layout.Widget {
 		advanced := u.section(u.tr("Advanced", "Avanzado"), u.tr("Details for manual client configuration.", "Datos para configurar el cliente manualmente."), u.note(u.tr("The local API key is separate from your upstream Kilo account key.", "La clave API local es distinta de la clave de tu cuenta Kilo.")))
 		return u.column(append(widgets, launch, advanced)...)
 	}
-	if key == "claude" || key == "xcode-claude" {
+	if key == "xcode-claude" {
 		aliases := []layout.Widget{}
 		for _, alias := range []string{"sonnet", "opus", "haiku"} {
 			aliases = append(aliases, u.selectField("client:"+key+":alias:"+alias, alias+u.tr(" alias (empty = initial)", " alias (vacío = inicial)"), nativeChoices(append([]string{""}, s.ids()...))))
@@ -683,48 +620,40 @@ func (u *nativeUI) claudeDesktopSelectionNote(s *nativeClientSelection) string {
 	return text
 }
 
-func (u *nativeUI) claudeDesktopClientPanel(s *nativeClientSelection) layout.Widget {
+// claudeDesktopDetail adds the experimental-models option and profile notes.
+func (u *nativeUI) claudeDesktopDetail(s *nativeClientSelection) uxhDetail {
 	const key = "claude-desktop"
-	base, local, _ := u.clientBase()
 	_, validation := nativeClientPayload(key, s)
-	working := u.busy["POST"+nativeClientEndpoint(key)] || u.busy["GET"+nativeClientEndpoint(key)] || u.busy["POST/api/claude-desktop/options"] || u.clientState().Launching != ""
+	working := u.uxhProfileWorking(key)
 	canPrepare := len(s.Models) > 0 && validation == nil && !working
-	ready := s.Saved != "" && s.Saved == nativeSelectionFingerprint(key, s, base, local, u.clientCaps(key))
-	tone, status := nativeToneNeutral, u.tr("Kilo configuration not prepared", "Configuración Kilo sin preparar")
+	d := uxhDetail{canPrepare: &canPrepare}
+	ready := u.uxhProfileReady(key, s)
+	d.prepareNote = u.tr("Kilo configuration not prepared", "Configuración Kilo sin preparar")
 	if ready {
-		tone, status = nativeToneSuccess, u.tr("Kilo configuration ready", "Configuración Kilo lista")
+		d.prepareNote = u.tr("Kilo configuration ready", "Configuración Kilo lista") + " · " + s.Path
 	} else if s.Saved != "" {
-		tone, status = nativeToneWarning, u.tr("Changes need preparing", "Hay cambios por preparar")
+		d.prepareNote = u.tr("Changes need preparing", "Hay cambios por preparar")
 	}
-	widgets := []layout.Widget{
-		u.note(u.claudeDesktopSelectionNote(s)),
-		u.clientLauncherPanel(key, s, canPrepare),
-		u.pills(u.disabled(canPrepare, u.button("client:claude-desktop:prepare", u.tr("Prepare without opening", "Preparar sin abrir"), func() { u.prepareClient(key) }))),
-		u.statusBadge(tone, status),
-	}
-	if ready {
-		widgets = append(widgets, u.note(s.Path))
-	}
-	if len(s.Models) == 0 {
-		widgets = append(widgets, u.hint(u.claudeDesktopModelSummary(s)))
-	} else if validation != nil {
-		widgets = append(widgets, u.message(nativeToneError, nativeMessage(validation.Error(), u.language)))
+	if len(s.Models) > 0 && validation != nil {
+		d.status = append(d.status, u.message(nativeToneError, nativeMessage(validation.Error(), u.language)))
 	}
 	u.setChecked("client:claude-desktop:experimental", u.claudeDesktopExperimentalModels())
-	experimental := u.section(u.tr("Experimental models", "Modelos experimentales"), u.tr("Off by default. Changes affect only the Kilo Desktop profile; your shared library is preserved.", "Desactivado por defecto. Los cambios solo afectan al perfil Kilo de Desktop; se conserva tu biblioteca compartida."),
-		u.disabled(!working, u.check("client:claude-desktop:experimental", u.tr("Experimental: use models from other providers", "Experimental: usar modelos de otros proveedores"), u.setClaudeDesktopExperimentalModels)))
+	experimental := u.disabled(!working, u.check("client:claude-desktop:experimental", u.tr("Experimental: use models from other providers", "Experimental: usar modelos de otros proveedores"), u.setClaudeDesktopExperimentalModels))
 	if u.chatGPTConnected() {
-		experimental = u.section(u.tr("Experimental models", "Modelos experimentales"), u.tr("Experimental aliases are required for ChatGPT models. This does not change your saved Kilo preference.", "Los alias experimentales son necesarios para los modelos de ChatGPT. No cambia tu preferencia guardada de Kilo."))
+		experimental = u.note(u.tr("Experimental aliases are required for ChatGPT models. This does not change your saved Kilo preference.", "Los alias experimentales son necesarios para los modelos de ChatGPT. No cambia tu preferencia guardada de Kilo."))
 	}
-	return u.column(experimental,
-		u.section(u.tr("Launch", "Arranque"), u.tr("Prepares a separate Kilo profile with your shared models, names and default. Open regular Claude from its usual icon.", "Prepara un perfil Kilo separado con tus modelos compartidos, nombres y modelo inicial. Abre Claude normal desde su icono habitual."), widgets...),
-		u.section(u.tr("Compatibility", "Compatibilidad"), u.agentCompatibility(key),
+	d.onOpen = append(d.onOpen, u.uxhKV(u.tr("Other providers", "Otros proveedores"), u.column(experimental, u.note(u.claudeDesktopSelectionNote(s)))))
+	notesID := "client:claude-desktop:notes"
+	notes := []layout.Widget{u.disclosure(notesID, u.tr("Profile details", "Detalles del perfil"))}
+	if u.expanded[notesID] {
+		notes = append(notes,
 			u.note(u.tr("Context and output limits are managed by Claude Desktop and the model. Shared context presets are not applied.", "Claude Desktop y el modelo gestionan los límites de contexto y salida. Los preajustes de contexto compartidos no se aplican.")),
 			u.note(u.tr("Application data and Code authentication are separate. Existing history and sign-in are not copied. This is a data profile, not an operating-system sandbox.", "Los datos de la app y la autenticación de Code están separados. No se copian el historial ni la sesión existentes. Es un perfil de datos, no un aislamiento del sistema operativo.")),
 			u.note(u.tr("Claude disables Chrome-extension pairing with relocated data. Cowork and updates have not been verified with this profile. A real Windows Desktop session has not been tested.", "Claude desactiva el enlace con la extensión de Chrome al cambiar la ubicación de los datos. Cowork y las actualizaciones no se han verificado con este perfil. No se ha probado una sesión real de Desktop en Windows.")),
-			u.pills(u.iconButton("client:claude-desktop:install", u.tr("Get Claude Desktop", "Obtener Claude Desktop"), nativeButtonGhost, nativeIconOpenInNew, func() { u.open("https://claude.ai/download") })),
-		),
-	)
+		)
+	}
+	d.advanced = append(d.advanced, u.uxhAdvancedRow(u.tr("Separate Kilo profile", "Perfil Kilo aparte"), u.tr("Open regular Claude from its usual icon; both can stay open.", "Abre Claude normal desde su icono habitual; ambos pueden seguir abiertos."), notes))
+	return d
 }
 
 func (u *nativeUI) claudeDesktopExperimentalModels() bool {
@@ -1528,4 +1457,107 @@ func (u *nativeUI) clientExport(key string, s *nativeClientSelection, reveal boo
 	}
 	data, err := json.MarshalIndent(claudeManagedSettings(payload.(claudeSelection), u.clientCaps(key), port, local), "", "  ")
 	return string(data), err
+}
+
+// uxhClientDetail returns what each harness adds to its detail page.
+func (u *nativeUI) uxhClientDetail(key string, s *nativeClientSelection) uxhDetail {
+	switch key {
+	case "t3-code":
+		return u.t3CodeDetail(s)
+	case "synara":
+		return u.synaraDetail(s)
+	case "openmausbot":
+		return u.openMausBotDetail(s)
+	case "open-design":
+		return u.openDesignDetail(s)
+	case "claude-desktop":
+		return u.claudeDesktopDetail(s)
+	}
+	d := uxhDetail{}
+	if key == "codex" || key == "codex-cli" {
+		images := u.tr("Off", "Desactivada")
+		if s.ImageGeneration != nil && s.ImageGeneration.Enabled {
+			images = u.tr("On", "Activada")
+			if s.ImageGeneration.Model != "" {
+				images += " · " + s.ImageGeneration.Model
+			}
+		}
+		d.onOpen = append(d.onOpen, u.uxhKV(u.tr("Image generation", "Generación de imágenes"), u.uxhValue(images),
+			u.buttonWidget("agents.images.open", u.tr("Configure", "Configurar"), nativeButtonLink, nil, false, false, func() { u.page = "models"; u.expanded["models.images.toggle"] = true })))
+	}
+	if key == "codex" {
+		if !validCodexQueueMode(s.QueueMode) {
+			s.QueueMode = codexQueueModeQueue
+		}
+		if u.value("client:codex:queue-mode") == "" {
+			u.setValue("client:codex:queue-mode", s.QueueMode)
+		}
+		choices := []nativeChoice{
+			{Value: codexQueueModeQueue, Label: u.tr("Wait for the next turn", "Esperar al siguiente turno"), Caption: u.tr("Your message is sent when Codex finishes what it is doing.", "Tu mensaje se envía cuando Codex termine lo que está haciendo.")},
+			{Value: codexQueueModeSteer, Label: u.tr("Add to the current task", "Añadir a la tarea actual"), Caption: u.tr("Codex takes it into account without stopping what it is doing.", "Codex lo tiene en cuenta sin parar lo que está haciendo.")},
+		}
+		d.blocks = append(d.blocks, u.uxhBlock(u.tr("If you type while Codex works", "Si escribes mientras Codex trabaja"), "",
+			uxhCell(u.column(
+				u.optionCards("client:codex:queue-mode.", choices, u.value("client:codex:queue-mode"), true, func(mode string) { u.setValue("client:codex:queue-mode", mode) }),
+				u.note(u.tr("Applies after preparing or reopening Codex.", "Se aplica al preparar o volver a abrir Codex.")),
+			))))
+		a := u.agentsState()
+		location := strings.TrimSpace(u.value("clients-launch-app-path"))
+		description := u.tr("Detected: ", "Detectada: ") + u.clientState().LaunchInfo.Clients[key].Path
+		if location != "" {
+			description = u.tr("Custom: ", "Personalizada: ") + location
+		} else if u.clientState().LaunchInfo.Clients[key].Path == "" {
+			description = u.tr("Not detected. Choose where Codex is installed.", "No detectada. Elige dónde está instalado Codex.")
+		}
+		showID := "agent:codex:app-path"
+		extra := []layout.Widget{u.disclosure(showID, u.tr("Type a path", "Escribir una ruta"))}
+		if u.expanded[showID] {
+			extra = append(extra, u.field("clients-launch-app-path", u.tr("Codex application path (empty = detected)", "Ruta de la aplicación Codex (vacía = detectada)"), u.clientState().LaunchInfo.Clients[key].Path, false))
+		}
+		d.advanced = append(d.advanced, u.uxhAdvancedRow(u.tr("App location", "Ubicación de la app"), description, extra,
+			u.disabled(a.FolderBusy == "", u.button("agent:codex:locate-options", u.tr("Change…", "Cambiar…"), u.locateCodexApplication))))
+	}
+	if key == "claude" {
+		rows := []layout.Widget{uxhCell(u.textStyle(14, u.tr("When Claude Code asks for “sonnet”, “opus” or “haiku” (for example in subagents), it will use these models.", "Cuando Claude Code pida «sonnet», «opus» o «haiku» (por ejemplo en subagentes), usará estos modelos."), nativeTextMuted, font.Normal))}
+		initial := s.Initial
+		if choice := s.choice(s.Initial); choice != nil {
+			initial = nativeCodexDisplayName(*choice)
+		}
+		options := []nativeChoice{{Value: "", Label: initial + u.tr(" (default)", " (predeterminado)")}}
+		for _, choice := range s.Models {
+			options = append(options, nativeChoice{Value: choice.Model.ID, Label: nativeCodexDisplayName(choice)})
+		}
+		for _, alias := range []string{"sonnet", "opus", "haiku"} {
+			rows = append(rows, u.uxhKV(alias+" →", u.uxhSelect("client:"+key+":alias:"+alias, options)))
+		}
+		if !u.clientCaps(key).Picker {
+			rows = append(rows, uxhCell(u.note(u.tr("This version uses model aliases; short picker names need a newer Claude.", "Esta versión usa alias; los nombres cortos requieren un Claude más reciente."))))
+		}
+		d.blocks = append(d.blocks, u.uxhBlock(u.tr("Claude Code shortcuts", "Atajos de Claude Code"), u.tr("Optional", "Opcional"), rows...))
+	}
+	if key == "opencode" {
+		d.status = append(d.status, u.note(u.tr("OpenCode opens a terminal in your project; use /models there.", "OpenCode abre un terminal en tu proyecto; usa /models allí.")))
+	}
+	return d
+}
+
+// uxhSelect is a compact dropdown without a separate caption.
+func (u *nativeUI) uxhSelect(id string, options []nativeChoice) layout.Widget {
+	return func(gtx layout.Context) layout.Dimensions {
+		current := u.value(id)
+		selected := options[0]
+		for _, option := range options {
+			if option.Value == current {
+				selected = option
+			}
+		}
+		children := []layout.Widget{u.pills(u.dropdownButton(id+".toggle", selected.Label, func() { u.expanded[id] = !u.expanded[id] }))}
+		if u.expanded[id] {
+			for _, option := range options {
+				option := option
+				children = append(children, u.uxhMenuRow(id+".option."+option.Value, option.Label, "", option.Value == selected.Value, func() { u.setValue(id, option.Value); u.expanded[id] = false }))
+			}
+		}
+		return u.column(children...)(gtx)
+	}
 }

@@ -6,14 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"image"
-	"path/filepath"
 	"strings"
-	"unicode/utf8"
+	"time"
 
-	"gioui.org/font"
 	"gioui.org/layout"
-	"gioui.org/unit"
 )
 
 type nativeAgents struct {
@@ -27,14 +23,20 @@ type nativeAgents struct {
 	Phase             string
 	chooseFolder      func(string) (string, error)
 	chooseApplication func() (string, error)
+	now               func() time.Time
 }
 
+// agentProjectField holds a harness's own folder override. Empty means the
+// harness opens in the global project folder.
 func agentProjectField(key string) string { return "agent:" + key + ":directory" }
+
+// uxhGlobalFolderBusy marks the global folder chooser in FolderBusy.
+const uxhGlobalFolderBusy = "agents:folder"
 
 func (u *nativeUI) agentsState() *nativeAgents {
 	if u.agents == nil {
 		prefs, err := readAgentPreferences(u.owner.dir)
-		u.agents = &nativeAgents{Preferences: prefs, chooseFolder: chooseNativeFolder, chooseApplication: chooseNativeApplication}
+		u.agents = &nativeAgents{Preferences: prefs, chooseFolder: chooseNativeFolder, chooseApplication: chooseNativeApplication, now: time.Now}
 		if err != nil {
 			u.agents.Error = u.tr("Could not load remembered project folders.", "No se pudieron cargar las carpetas recordadas.")
 		}
@@ -74,30 +76,76 @@ func (u *nativeUI) locateCodexApplication() {
 				return
 			}
 			u.setValue("clients-launch-app-path", path)
-			u.rememberAgentProject("codex", u.agentProject("codex"))
+			u.uxhSavePreferences()
 		})
 	}()
 }
 
-func (u *nativeUI) agentProject(key string) string {
-	u.agentsState()
-	if directory := u.value(agentProjectField(key)); directory != "" {
-		return directory
+// uxhGlobalFolder is the folder every harness opens in unless it has its own.
+func (u *nativeUI) uxhGlobalFolder() string {
+	if folder := u.agentsState().Preferences.Folder; folder != "" {
+		return folder
 	}
 	return u.clientState().LaunchInfo.Directory
 }
 
-func (u *nativeUI) rememberAgentProject(key, directory string) {
-	a := u.agentsState()
-	if clientLaunchUsesProject(key) {
-		a.Preferences.rememberProject(key, directory)
+// uxhProjectOverride is the folder chosen for this harness only, if any.
+func (u *nativeUI) uxhProjectOverride(key string) string {
+	u.agentsState()
+	return strings.TrimSpace(u.value(agentProjectField(key)))
+}
+
+// agentProject is the folder a harness opens in: its override, else the global folder.
+func (u *nativeUI) agentProject(key string) string {
+	if directory := u.uxhProjectOverride(key); directory != "" {
+		return directory
 	}
+	return u.uxhGlobalFolder()
+}
+
+func (u *nativeUI) uxhSavePreferences() {
+	a := u.agentsState()
 	a.Preferences.CodexAppPath = strings.TrimSpace(u.value("clients-launch-app-path"))
 	if err := writeAgentPreferences(u.owner.dir, a.Preferences); err != nil {
-		a.Error = u.tr("The project folder could not be remembered. You can still open the agent.", "No se pudo recordar la carpeta. Puedes abrir el agente igualmente.")
+		a.Error = u.tr("The project folder could not be remembered. You can still open the harness.", "No se pudo recordar la carpeta. Puedes abrir el harness igualmente.")
 		return
 	}
 	a.Error = ""
+}
+
+// uxhNoteOpened records a successful launch for "last used" and recent folders.
+func (u *nativeUI) uxhNoteOpened(key, directory string) {
+	a := u.agentsState()
+	if !clientLaunchUsesProject(key) {
+		directory = ""
+	} else if override := u.uxhProjectOverride(key); override != "" && directory != "" {
+		// A folder typed only for this harness becomes its remembered override.
+		a.Preferences.rememberProject(key, directory)
+	}
+	a.Preferences.noteOpened(key, directory, a.now())
+	u.uxhSavePreferences()
+}
+
+// uxhSetProject stores (or, when empty, clears) a harness's own folder.
+func (u *nativeUI) uxhSetProject(key, directory string) {
+	a := u.agentsState()
+	u.setValue(agentProjectField(key), directory)
+	if clientLaunchUsesProject(key) {
+		a.Preferences.rememberProject(key, directory)
+	}
+	u.uxhSavePreferences()
+}
+
+// uxhUseGlobalFolder makes directory the default folder for every harness.
+func (u *nativeUI) uxhUseGlobalFolder(directory string) error {
+	a := u.agentsState()
+	path, err := launchPath(directory, u.clientState().LaunchInfo.Directory)
+	if err != nil {
+		return err
+	}
+	a.Preferences.useFolder(path, a.now())
+	u.uxhSavePreferences()
+	return nil
 }
 
 func (u *nativeUI) chooseAgentProject(key string) {
@@ -127,8 +175,37 @@ func (u *nativeUI) chooseAgentProject(key string) {
 				a.Error = nativeMessage(err.Error(), u.language)
 				return
 			}
-			u.setValue(agentProjectField(key), path)
-			u.rememberAgentProject(key, path)
+			u.uxhSetProject(key, path)
+		})
+	}()
+}
+
+// uxhChooseGlobalFolder opens the system chooser for the default project folder.
+func (u *nativeUI) uxhChooseGlobalFolder() {
+	a := u.agentsState()
+	if a.FolderBusy != "" {
+		return
+	}
+	a.FolderBusy = uxhGlobalFolderBusy
+	before, initial := a.Preferences.Folder, u.uxhGlobalFolder()
+	go func() {
+		path, err := a.chooseFolder(initial)
+		u.enqueue(func() {
+			a.FolderBusy = ""
+			if errors.Is(err, errNativePickerCancelled) {
+				return
+			}
+			if err != nil {
+				a.Error = nativeMessage(err.Error(), u.language)
+				return
+			}
+			if before != a.Preferences.Folder {
+				a.Error = u.tr("The project folder changed while the chooser was open. Choose the folder again.", "La carpeta cambió con el selector abierto. Vuelve a elegirla.")
+				return
+			}
+			if err = u.uxhUseGlobalFolder(path); err != nil {
+				a.Error = nativeMessage(err.Error(), u.language)
+			}
 		})
 	}()
 }
@@ -200,336 +277,40 @@ func (u *nativeUI) agentCompatibility(key string) string {
 	}
 }
 
-func (u *nativeUI) agentModelSummary() layout.Widget {
-	u.initModelLibrary()
-	s := u.library.selection
-	text := u.tr("Add models to your shared library to get started.", "Añade modelos a tu biblioteca compartida para empezar.")
-	if len(s.Models) > 0 {
-		name := s.Initial
-		if choice := s.choice(s.Initial); choice != nil {
-			if choice.DisplayName != "" {
-				name = choice.DisplayName
-			} else if choice.Model.Name != "" {
-				name = choice.Model.Name
-			}
-		}
-		text = fmt.Sprintf(u.tr("%d shared models · Default: %s", "%d modelos compartidos · Predeterminado: %s"), len(s.Models), name)
-		if len(s.Models) == 1 {
-			text = fmt.Sprintf(u.tr("1 shared model · Default: %s", "1 modelo compartido · Predeterminado: %s"), name)
-		}
-	}
-	strip := func(gtx layout.Context) layout.Dimensions {
-		return nativeBox(gtx, nativeIvory, func(gtx layout.Context) layout.Dimensions {
-			gtx.Constraints.Min.X = gtx.Constraints.Max.X
-			return layout.Inset{Top: 12, Bottom: 12, Left: 16, Right: 12}.Layout(gtx, u.actionRow(u.column(u.eyebrow(u.tr("YOUR MODELS", "TUS MODELOS")), u.label(text)), u.buttonWidget("agents:edit-models", u.tr("Edit models", "Editar modelos"), nativeButtonLink, nativeIconChevronRight, true, false, func() { u.page = "models" })))
-		})
-	}
-	widgets := []layout.Widget{strip}
-	if status, ready := u.libraryStatus(); !ready {
-		widgets = append(widgets, u.note(status))
-	}
-	if u.setupNeeded() {
-		setupCard := u.card(u.actionRow(u.column(u.heading(u.tr("Finish setting up your workspace", "Termina de configurar tu espacio")), u.note(u.tr("Connect Kilo or ChatGPT and choose at least one model. We'll guide you through it.", "Conecta Kilo o ChatGPT y elige al menos un modelo. Te guiamos paso a paso."))), u.primaryButton("primary.agents.setup", u.tr("Continue setup", "Continuar configuración"), u.beginSetup)))
-		widgets = append(widgets, setupCard)
-	}
-	return u.column(widgets...)
-}
-
-func agentProjectLabel(path string) string {
-	const maxRunes = 26
-	if utf8.RuneCountInString(path) <= maxRunes {
-		return path
-	}
-	runes := []rune(path)
-	keep := (maxRunes - 1) / 2
-	return string(runes[:keep]) + "…" + string(runes[len(runes)-keep:])
-}
-
-func (u *nativeUI) agentProjectPicker(key string) layout.Widget {
-	a := u.agentsState()
-	label := u.tr("Choose folder", "Elegir carpeta")
-	if a.FolderBusy == key {
-		label = u.tr("Choosing…", "Eligiendo…")
-	}
-	project := u.agentProject(key)
-	projectLabel := u.note(u.tr("Default project folder", "Carpeta de proyecto predeterminada"))
-	if project != "" {
-		projectLabel = u.textStyle(14, agentProjectLabel(project), nativeText, font.Normal)
-	}
-	return u.actionRow(u.column(u.note(u.tr("Project folder", "Carpeta del proyecto")), projectLabel), u.disabled(a.FolderBusy == "", u.iconButton("agent:"+key+":folder", label, nativeButtonSecondary, nativeIconFolder, func() { u.chooseAgentProject(key) })))
-}
-
-func (u *nativeUI) agentMonogram(key string) layout.Widget {
-	// Desktop apps use two letters; terminal agents carry a ">" prompt prefix,
-	// so every agent is distinct and its kind reads at a glance.
-	initials := map[string]string{
-		"codex": "CX", "claude-desktop": "CD", "zed": "ZD", "open-design": "OD",
-		"t3-code": "T3", "synara": "SY", "openmausbot": "MB",
-		"codex-cli": ">CX", "claude": ">CC", "opencode": ">OC", "omp": ">OM",
-	}[key]
-	return func(gtx layout.Context) layout.Dimensions {
-		side := gtx.Dp(40)
-		gtx.Constraints = layout.Constraints{Min: image.Pt(side, side), Max: image.Pt(side, side)}
-		return nativeBox(gtx, nativeInk, func(gtx layout.Context) layout.Dimensions {
-			// Stack children start with a zero minimum; fill the tile so the initials center on it.
-			gtx.Constraints.Min = image.Pt(side, side)
-			size := unit.Sp(16)
-			if utf8.RuneCountInString(initials) > 2 {
-				size = 13
-			}
-			return layout.Center.Layout(gtx, u.monoStyle(size, initials, nativeSurface, font.Bold))
-		})
-	}
-}
-
 func (u *nativeUI) agentPurpose(key string) string {
 	switch key {
-	case "t3-code", "synara":
-		return u.tr("One workspace, four Codex and Claude agent options.", "Un espacio, cuatro opciones de agentes Codex y Claude.")
-	case "openmausbot":
-		return u.tr("Desktop assistant with your shared models.", "Asistente de escritorio con tus modelos compartidos.")
 	case "codex":
-		return u.tr("Desktop app with shared Kilo models.", "App de escritorio con modelos Kilo.")
-	case "codex-cli":
-		return u.tr("Terminal with shared Kilo models.", "Terminal con modelos Kilo compartidos.")
-	case "claude":
-		return u.tr("Claude Code with compatible models.", "Claude Code con modelos compatibles.")
+		return u.tr("OpenAI desktop app", "App de escritorio de OpenAI")
 	case "claude-desktop":
-		return u.tr("Separate Kilo profile; regular Claude can stay open.", "Perfil Kilo separado; Claude normal puede seguir abierto.")
-	case "opencode":
-		return u.tr("OpenCode in your project terminal.", "OpenCode en tu terminal de proyecto.")
+		return u.tr("Chat, Cowork and Code · your regular Claude can stay open", "Chat, Cowork y Code · tu Claude normal puede seguir abierto")
+	case "t3-code", "synara":
+		return u.tr("One workspace, four Codex and Claude agent options", "Un espacio, cuatro opciones de agentes Codex y Claude")
+	case "openmausbot":
+		return u.tr("Desktop assistant with your shared models", "Asistente de escritorio con tus modelos compartidos")
+	case "claude":
+		c := u.clientState()
+		if c.ClaudeChecked && c.Claude.Version != "" {
+			if u.clientCaps("claude").Picker {
+				return fmt.Sprintf(u.tr("Terminal · version %s, compatible", "Terminal · versión %s, compatible"), c.Claude.Version)
+			}
+			return fmt.Sprintf(u.tr("Terminal · version %s, basic aliases", "Terminal · versión %s, alias básicos"), c.Claude.Version)
+		}
+		return u.tr("Terminal", "Terminal")
+	case "codex-cli", "opencode":
+		return u.tr("Terminal", "Terminal")
 	case "omp":
-		return u.tr("Oh My Pi with an isolated profile.", "Oh My Pi con un perfil aislado.")
+		return u.tr("Terminal with an isolated profile", "Terminal con perfil aislado")
 	case "zed":
-		return u.tr("Zed Agent with shared models.", "Zed Agent con modelos compartidos.")
+		return u.tr("Editor with Zed Agent", "Editor con Zed Agent")
 	case "open-design":
-		return u.tr("Visual coding workspace.", "Espacio visual de programación.")
+		return u.tr("Visual coding workspace", "Espacio visual de programación")
 	default:
 		return ""
 	}
 }
 
-func (u *nativeUI) agentOptions(key string) layout.Widget {
-	a, c := u.agentsState(), u.clientState()
-	if key == "t3-code" {
-		return u.column(u.note(u.agentCompatibility(key)), u.pills(
-			u.button("agent:t3-code:setup", u.tr("Integration settings", "Ajustes de integración"), func() { u.agentSetup(key) }),
-			u.button("agent:t3-code:detect", u.tr("Refresh detection", "Actualizar detección"), func() { u.detectLaunchers(); u.refreshT3CodeProfile() }),
-			u.iconButton("agent:t3-code:install", u.tr("Get T3 Code", "Obtener T3 Code"), nativeButtonGhost, nativeIconOpenInNew, func() { u.open(t3CodeDownloadURL) }),
-		))
-	}
-	if key == "synara" {
-		return u.column(u.note(u.agentCompatibility(key)), u.pills(
-			u.button("agent:synara:setup", u.tr("Integration settings", "Ajustes de integración"), func() { u.agentSetup(key) }),
-			u.button("agent:synara:detect", u.tr("Refresh detection", "Actualizar detección"), func() { u.detectLaunchers(); u.refreshSynaraProfile() }),
-			u.iconButton("agent:synara:install", u.tr("Get Synara", "Obtener Synara"), nativeButtonGhost, nativeIconOpenInNew, func() { u.open(synaraDownloadURL) }),
-		))
-	}
-	if key == "open-design" {
-		return u.column(u.note(u.agentCompatibility(key)), u.pills(u.button("agent:open-design:detect", u.tr("Refresh detection", "Actualizar detección"), func() { u.detectLaunchers(); u.detectOpenDesign() }), u.button("agent:open-design:install", u.tr("Installation instructions", "Instrucciones de instalación"), func() { u.open(u.openDesignInstallURL()) })))
-	}
-	if key == "openmausbot" {
-		return u.column(u.note(u.agentCompatibility(key)), u.pills(
-			u.button("agent:openmausbot:setup", u.tr("Integration settings", "Ajustes de integración"), func() { u.agentSetup(key) }),
-			u.button("agent:openmausbot:detect", u.tr("Refresh detection", "Actualizar detección"), func() { u.detectLaunchers(); u.refreshOpenMausBotProfile() }),
-			u.iconButton("agent:openmausbot:install", u.tr("Get OpenMausBot", "Obtener OpenMausBot"), nativeButtonGhost, nativeIconOpenInNew, func() { u.open(openMausBotDownloadURL) }),
-		))
-	}
-	if key == "claude-desktop" {
-		return u.column(u.note(u.claudeDesktopSelectionNote(u.sharedClientSelection(key))), u.note(u.agentCompatibility(key)), u.pills(
-			u.button("agent:claude-desktop:setup", u.tr("Integration settings", "Ajustes de integración"), func() { u.agentSetup(key) }),
-			u.button("agent:claude-desktop:detect", u.tr("Refresh detection", "Actualizar detección"), u.detectLaunchers),
-		))
-	}
-	widgets := []layout.Widget{u.note(u.agentCompatibility(key))}
-	if clientLaunchUsesProject(key) {
-		widgets = append(widgets, u.field(agentProjectField(key), u.tr("Project folder path", "Ruta de la carpeta del proyecto"), c.LaunchInfo.Directory, false))
-	}
-	if clientLaunchUsesProject(key) && len(a.Preferences.Recent) > 0 {
-		recent := []layout.Widget{}
-		for i, directory := range a.Preferences.Recent {
-			directory := directory
-			recent = append(recent, u.button(fmt.Sprintf("agent:%s:recent:%d", key, i), filepath.Base(directory), func() {
-				u.setValue(agentProjectField(key), directory)
-				u.rememberAgentProject(key, directory)
-			}))
-		}
-		widgets = append(widgets, u.note(u.tr("Recent folders", "Carpetas recientes")), u.pills(recent...))
-	}
-	if key == "codex" {
-		widgets = append(widgets, u.field("clients-launch-app-path", u.tr("Codex application path (optional)", "Ruta de la aplicación Codex (opcional)"), c.LaunchInfo.Clients[key].Path, false))
-		widgets = append(widgets, u.disabled(a.FolderBusy == "", u.button("agent:codex:locate-options", u.tr("Locate Codex", "Localizar Codex"), u.locateCodexApplication)))
-	}
-	if terminalClientSupported(key) {
-		widgets = append(widgets, u.button("agent:"+key+":terminal-commands", u.tr("Terminal commands in Settings", "Comandos de terminal en Ajustes"), func() { u.page, u.settingsTab = "settings", "terminal" }))
-	}
-	widgets = append(widgets, u.pills(u.button("agent:"+key+":setup", u.tr("Integration settings", "Ajustes de integración"), func() { u.agentSetup(key) }), u.button("agent:"+key+":detect", u.tr("Refresh detection", "Actualizar detección"), func() { u.refreshAgentInstallation(key) })))
-	if !u.nativeLaunchAvailable(key) {
-		if reason := nativeMessage(c.LaunchInfo.Clients[key].Reason, u.language); reason != "" {
-			widgets = append(widgets, u.note(reason))
-		}
-		// CLI installation guidance is already visible in the card, and a
-		// missing terminal must never suggest reinstalling an existing CLI.
-		url := map[string]string{"codex": "https://openai.com/codex/", "zed": "https://zed.dev/download"}[key]
-		if url != "" {
-			widgets = append(widgets, u.button("agent:"+key+":install", u.tr("Installation instructions", "Instrucciones de instalación"), func() { u.open(url) }))
-		}
-	}
-	return u.column(widgets...)
-}
-
-func (u *nativeUI) agentCard(key string) layout.Widget {
-	a, c := u.agentsState(), u.clientState()
-	name, kind := launchClientIdentity(key)
-	if key == "codex" {
-		name = "Codex"
-	} else if key == "claude-desktop" {
-		name = "Claude Desktop · Kilo"
-	}
-	available := u.nativeLaunchAvailable(key)
-	cli := terminalClientSupported(key)
-	installed := nativeLaunchClientInstalled(c.LaunchInfo.Clients[key])
-	missingCLI := cli && c.LaunchChecked && !installed
-	status, statusTone := u.tr("Checking installation…", "Comprobando instalación…"), nativeToneInfo
-	if c.LaunchChecked {
-		if available {
-			statusTone = nativeToneSuccess
-			status = u.tr("Installed · Desktop", "Instalado · Escritorio")
-			if kind == "terminal" {
-				status = u.tr("Installed · Terminal", "Instalado · Terminal")
-			}
-			if key == "codex" && !c.LaunchInfo.Clients[key].Available {
-				status = u.tr("Installed · Custom path", "Instalado · Ruta personalizada")
-			}
-		} else {
-			status, statusTone = u.tr("Not found", "No encontrado"), nativeToneNeutral
-		}
-		if cli {
-			if installed {
-				status, statusTone = u.tr("CLI installed", "CLI instalado"), nativeToneSuccess
-			} else {
-				status, statusTone = u.tr("CLI not found", "CLI no encontrado"), nativeToneNeutral
-			}
-		}
-	}
-	s := u.sharedClientSelection(key)
-	packName := u.assignedPackName(key)
-	packIssue := u.packReadinessError(key)
-	_, validation := nativeClientPayload(key, s)
-	libraryStatus, libraryReady := u.libraryStatus()
-	connectionReady := u.agentConnectionReady() && !u.connectionWorking() && !u.setupConnectionNeeded()
-	canOpen := available && libraryReady && connectionReady && len(s.Models) > 0 && validation == nil && packIssue == nil && c.Launching == "" && !u.busy["POST"+nativeClientEndpoint(key)]
-	if key == "claude-desktop" {
-		canOpen = canOpen && !u.busy["POST/api/claude-desktop/options"]
-	}
-	if key == "codex" || key == "codex-cli" {
-		canOpen = canOpen && nativeClientImagesReady(s, u.models, u.state)
-	}
-	if key == "claude" && (!c.ClaudeChecked || u.busy["GET/api/claude/info"]) {
-		canOpen = false
-	}
-	if key == "open-design" {
-		canOpen = canOpen && u.openDesignEngineAvailable()
-	}
-	disabledReason := ""
-	switch {
-	case !c.LaunchChecked:
-		disabledReason = u.tr("Wait for installation detection to finish.", "Espera a que termine la detección de la instalación.")
-	case missingCLI:
-		disabledReason = u.tr("Install the CLI, then check again to open it with your Kilo models.", "Instala el CLI y vuelve a comprobarlo para abrirlo con tus modelos de Kilo.")
-	case !available:
-		disabledReason = nativeMessage(c.LaunchInfo.Clients[key].Reason, u.language)
-		if disabledReason == "" {
-			disabledReason = u.tr("Install this app, then refresh installed apps.", "Instala esta aplicación y actualiza las aplicaciones instaladas.")
-		}
-	case !connectionReady:
-		disabledReason = u.tr("Finish setting up a connection first.", "Termina de configurar una conexión.")
-	case !libraryReady:
-		disabledReason = libraryStatus
-	case packIssue != nil:
-		disabledReason = packIssue.Error()
-	case key == "claude" && (!c.ClaudeChecked || u.busy["GET/api/claude/info"]):
-		disabledReason = u.tr("Wait for Claude Code version detection to finish.", "Espera a que termine la detección de la versión de Claude Code.")
-	case key == "open-design" && !c.OpenDesignChecked:
-		disabledReason = u.tr("Wait for CLI engine detection to finish.", "Espera a que termine la detección del motor CLI.")
-	case key == "open-design" && !u.openDesignEngineAvailable():
-		disabledReason = nativeMessage(c.OpenDesign.Engines[u.openDesignEngine()].Reason, u.language)
-		if disabledReason == "" {
-			disabledReason = u.tr("Install the selected CLI engine before opening Open Design.", "Instala el motor CLI seleccionado antes de abrir Open Design.")
-		}
-	case len(s.Models) == 0 && key == "claude-desktop":
-		disabledReason = u.claudeDesktopModelSummary(s)
-	case len(s.Models) == 0:
-		disabledReason = u.tr("Add at least one shared model before opening this agent.", "Añade al menos un modelo compartido antes de abrir este agente.")
-	case validation != nil:
-		disabledReason = nativeMessage(validation.Error(), u.language)
-	case (key == "codex" || key == "codex-cli") && !nativeClientImagesReady(s, u.models, u.state):
-		disabledReason = u.tr("Review image generation settings in Models before opening Codex.", "Revisa la generación de imágenes en Modelos antes de abrir Codex.")
-	case c.Launching != "" || u.busy["POST"+nativeClientEndpoint(key)] || key == "claude-desktop" && u.busy["POST/api/claude-desktop/options"]:
-		disabledReason = u.tr("Wait for the current agent operation to finish.", "Espera a que termine la operación actual del agente.")
-	}
-	label := u.tr("Open ", "Abrir ") + name
-	if key == "open-design" {
-		label = u.tr("Launch Open Design", "Abrir Open Design")
-	}
-	if c.Launching == key {
-		label = a.Phase
-	}
-	optionsID := "agent:" + key + ":options"
-	controls := []layout.Widget{
-		u.disabled(canOpen, u.primaryButton("agent:"+key+":launch", label, func() { u.launchAgent(key) })),
-	}
-	if missingCLI {
-		controls = []layout.Widget{u.iconButton("agent:"+key+":install", u.tr("Installation guide", "Guía de instalación"), nativeButtonPrimary, nativeIconOpenInNew, func() { u.open(launchClientInstallURL(key)) })}
-	}
-	if cli && c.LaunchChecked && !available {
-		controls = append(controls, u.disabled(!u.busy["GET"+nativeLaunchEndpoint], u.iconButton("agent:"+key+":detect-visible", u.tr("Check again", "Comprobar de nuevo"), nativeButtonGhost, nativeIconRefresh, func() { u.refreshAgentInstallation(key) })))
-	}
-	controls = append(controls, u.disclosure(optionsID, u.tr("Options", "Opciones")))
-	if _, supported := packAgentNames[key]; supported {
-		controls = append(controls, u.button("agent:"+key+":pack", u.tr("Choose model pack", "Elegir pack de modelos"), func() {
-			u.page = "models"
-			u.packsState().tab = "packs"
-			u.setValue("packs.agent", key)
-		}))
-	}
-	if key == "codex" && !available && c.LaunchChecked {
-		controls = append(controls, u.disabled(a.FolderBusy == "", u.button("agent:codex:locate", u.tr("Locate Codex", "Localizar Codex"), u.locateCodexApplication)))
-	}
-	widgets := []layout.Widget{
-		u.actionRow(u.topRow(u.agentMonogram(key), u.column(u.subheading(name), u.note(u.agentPurpose(key)))), u.statusBadge(statusTone, status)),
-		layout.Spacer{Height: 4}.Layout,
-	}
-	if packName != "" {
-		widgets = append(widgets, u.note(fmt.Sprintf(u.tr("Model pack: %s · applied on next open", "Pack de modelos: %s · se aplicará al volver a abrir"), packName)))
-	}
-	if key == "open-design" {
-		engineName, _ := launchClientIdentity(u.openDesignEngine())
-		widgets = append(widgets, u.actionRow(u.column(u.note(u.tr("Engine", "Motor")), u.label(engineName)), u.ghostButton("agent:open-design:setup", u.tr("Engine settings", "Ajustes del motor"), func() { u.agentSetup(key) })))
-	} else if clientLaunchUsesProject(key) && !missingCLI {
-		widgets = append(widgets, u.agentProjectPicker(key))
-	}
-	if key == "claude-desktop" {
-		widgets = append(widgets, u.note(u.claudeDesktopModelSummary(s)))
-	}
-	widgets = append(widgets, layout.Spacer{Height: 4}.Layout, u.pills(controls...))
-	if disabledReason != "" {
-		widgets = append(widgets, u.hint(disabledReason))
-	}
-	if key == "claude" && a.ClaudeError != "" {
-		widgets = append(widgets, u.message(nativeToneError, a.ClaudeError))
-	}
-	if len(s.Models) > 0 && validation != nil {
-		widgets = append(widgets, u.message(nativeToneError, nativeMessage(validation.Error(), u.language)))
-	}
-	if u.expanded[optionsID] {
-		widgets = append(widgets, u.agentOptions(key))
-	}
-	return u.card(widgets...)
-}
-
 func (u *nativeUI) agentsPanel() layout.Widget {
-	a, c := u.agentsState(), u.clientState()
+	c := u.clientState()
 	if !c.LaunchDetectStarted {
 		u.detectLaunchers()
 	}
@@ -537,28 +318,5 @@ func (u *nativeUI) agentsPanel() layout.Widget {
 	if !c.OpenDesignDetectStarted {
 		u.detectOpenDesign()
 	}
-	// Desktop apps first, then terminal agents. T3 Code, Synara and
-	// OpenMausBot span the full width: their cards explain several agent
-	// options and read poorly in a half-width column.
-	widgets := []layout.Widget{
-		u.agentModelSummary(),
-		u.eyebrow(u.tr("Desktop apps", "Apps de escritorio")),
-		u.topRow(u.agentCard("codex"), u.agentCard("claude-desktop")),
-		u.agentCard("t3-code"),
-		u.agentCard("synara"),
-		u.agentCard("openmausbot"),
-		u.topRow(u.agentCard("zed"), u.agentCard("open-design")),
-		layout.Spacer{Height: nativeSpace8}.Layout,
-		u.eyebrow(u.tr("Terminal agents · open in your project folder", "Agentes de terminal · se abren en la carpeta del proyecto")),
-		u.topRow(u.agentCard("claude"), u.agentCard("codex-cli")),
-		u.topRow(u.agentCard("opencode"), u.agentCard("omp")),
-	}
-	if a.Error != "" {
-		widgets = append([]layout.Widget{u.message(nativeToneError, a.Error)}, widgets...)
-	}
-	if c.LaunchError != "" {
-		widgets = append([]layout.Widget{u.message(nativeToneError, c.LaunchError)}, widgets...)
-	}
-	widgets = append(widgets, layout.Spacer{Height: nativeSpace8}.Layout, u.section(u.tr("More integrations", "Más integraciones"), "", u.pills(u.button("agents:xcode", u.tr("Set up Xcode", "Configurar Xcode"), func() { u.agentSetup("xcode-chat") }), u.button("agents:other", u.tr("Other clients", "Otros clientes"), func() { u.agentSetup("other") })), u.note(u.tr("Xcode needs provider setup. Other clients can use the local OpenAI-compatible endpoint.", "Xcode requiere configurar el proveedor. Otros clientes pueden usar el endpoint local compatible con OpenAI."))))
-	return u.column(widgets...)
+	return u.uxhListPage()
 }

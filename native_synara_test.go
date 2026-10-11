@@ -59,17 +59,18 @@ func TestNativeSynaraWideCardAndIntegrationSettings(t *testing.T) {
 			h := &nativePointerHarness{t: t, u: u, size: image.Pt(1180, 2200), now: time.Now()}
 			h.frame()
 			codex := h.target(u.tr("Open Codex", "Abrir Codex"), semantic.Button).Desc.Bounds
-			claude := h.target(u.tr("Open T3 Code · Kilo", "Abrir T3 Code · Kilo"), semantic.Button).Desc.Bounds
-			t3 := h.target(u.tr("Open Synara · Kilo", "Abrir Synara · Kilo"), semantic.Button).Desc.Bounds
+			t3 := h.target(u.tr("Open T3 Code", "Abrir T3 Code"), semantic.Button).Desc.Bounds
+			synara := h.target(u.tr("Open Synara", "Abrir Synara"), semantic.Button).Desc.Bounds
 			maus := h.target(u.tr("Open OpenMausBot", "Abrir OpenMausBot"), semantic.Button).Desc.Bounds
-			if t3.Min.X != codex.Min.X || t3.Min.Y <= claude.Max.Y || t3.Max.Y >= maus.Min.Y {
-				t.Fatalf("Synara card not wide below desktop apps: codex=%v claude=%v t3=%v maus=%v", codex, claude, t3, maus)
+			// Synara leads the multi-agent group, after the desktop apps and before T3 Code and the bots.
+			if synara.Max.X != codex.Max.X || synara.Min.Y <= codex.Max.Y || synara.Max.Y >= t3.Min.Y || t3.Max.Y >= maus.Min.Y {
+				t.Fatalf("Synara row not in the multi-agent group: codex=%v synara=%v t3=%v maus=%v", codex, synara, t3, maus)
 			}
 			if _, exists := u.buttons["agent:synara:folder"]; exists {
 				t.Fatal("Synara exposes an unsupported project picker")
 			}
 			nativeGridCapture(t, h, "native-synara-agents-"+lang)
-			h.click(u.tr("Open Synara · Kilo", "Abrir Synara · Kilo"), semantic.Button)
+			h.click(u.tr("Open Synara", "Abrir Synara"), semantic.Button)
 			nativeTestWait(t, u, func() bool { return u.clientState().Launching == "" })
 			if recorder.count() != 1 || recorder.prepares.Load() != 1 {
 				t.Fatalf("pointer launch did not prepare once: %s", u.notice)
@@ -81,17 +82,20 @@ func TestNativeSynaraWideCardAndIntegrationSettings(t *testing.T) {
 			u.agentSetup("synara")
 			h.size = image.Pt(720, 2200)
 			h.frame()
-			h.target(u.tr("Prepare without opening", "Preparar sin abrir"), semantic.Button)
+			h.reveal(u.tr("Prepare", "Preparar"), semantic.Button)
+			h.target(u.tr("Prepare", "Preparar"), semantic.Button)
+			h.reveal(u.tr("How this works", "Cómo funciona"), semantic.Button)
+			h.click(u.tr("How this works", "Cómo funciona"), semantic.Button)
 			labels := ""
 			for _, node := range h.nodes() {
 				labels += node.Desc.Label + "\n"
 			}
-			for _, expected := range []string{u.tr("Codex · Normal · Existing Codex CLI login", "Codex · Normal · Sesión existente de Codex CLI"), u.tr("Claude · Normal · Existing Claude Code login", "Claude · Normal · Sesión existente de Claude Code"), "Kilo Proxy · Codex", "Kilo Proxy · Claude", u.tr("green account indicators", "indicadores verdes de cuenta"), u.tr("Choose one of these four options for each new chat.", "Elige una de estas cuatro opciones para cada chat nuevo."), u.tr("exact gateway ID", "ID exacto del gateway"), u.tr("check the selected model before continuing", "revisa el modelo elegido antes de continuar"), u.tr("Supports Synara Beta. Requires native Codex CLI and Claude Code.", "Admite Synara Beta. Requiere Codex CLI nativo y Claude Code."), u.tr("Detected: 9.4.2-beta.8", "Detectado: 9.4.2-beta.8"), "Claude Code 2.1.251", "keyring/auto"} {
+			for _, expected := range []string{"Codex · Normal", u.tr("Existing Codex CLI login", "Sesión existente de Codex CLI"), "Claude · Normal", u.tr("Existing Claude Code login", "Sesión existente de Claude Code"), "Kilo Proxy · Codex", "Kilo Proxy · Claude", u.tr("green account indicators", "indicadores verdes de cuenta"), u.tr("Choose one of these four options for each new chat.", "Elige una de estas cuatro opciones para cada chat nuevo."), u.tr("exact gateway ID", "ID exacto del gateway"), u.tr("check the selected model before continuing", "revisa el modelo elegido antes de continuar"), u.tr("Supports Synara Beta. Requires native Codex CLI and Claude Code.", "Admite Synara Beta. Requiere Codex CLI nativo y Claude Code."), u.tr("Detected: 9.4.2-beta.8", "Detectado: 9.4.2-beta.8"), "Claude Code 2.1.251", "keyring/auto"} {
 				if !strings.Contains(labels, expected) {
 					t.Fatalf("missing agent guidance: %q", expected)
 				}
 			}
-			if strings.Contains(labels, u.owner.config.LocalKey) || strings.Contains(labels, u.owner.apiKey) || strings.Contains(labels, u.tr("Project folder", "Carpeta del proyecto")) {
+			if strings.Contains(labels, u.owner.config.LocalKey) || strings.Contains(labels, u.owner.apiKey) || strings.Contains(labels, "\n"+u.tr("Folder", "Carpeta")+"\n") {
 				t.Fatal("integration settings expose credentials or unsupported project picker")
 			}
 			if lang == "es" && (strings.Contains(labels, "Synara opened with") || strings.Contains(labels, "Synara prepared with")) {

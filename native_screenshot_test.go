@@ -130,4 +130,45 @@ func TestNativeScreenshots(t *testing.T) {
 	shoot(r, "18-setup-recommended", 1280, 1600)
 	r.addRecommendedModels(r.recommendedModels())
 	shoot(r, "19-setup-recommended-added", 1280, 1600)
+
+	// Harnesses redesign: list, folder menu and detail pages with detection done.
+	hu, _ := nativeLaunchTestUI(t, "codex", false, false)
+	if lang != "" {
+		hu.language = lang
+	}
+	// Async settings loads may reset the language; reapply it before each shot.
+	hshoot := func(name string, w, h int) {
+		if lang != "" {
+			hu.language = lang
+		}
+		shoot(hu, name, w, h)
+	}
+	hu.detectLaunchers()
+	hu.detectAgentCapabilities()
+	hu.detectOpenDesign()
+	nativeTestWait(t, hu, func() bool {
+		c := hu.clientState()
+		return c.LaunchChecked && !hu.busy["GET"+nativeLaunchEndpoint] && !hu.busy["GET/api/claude/info"]
+	})
+	ha := hu.agentsState()
+	now := time.Now()
+	ha.Preferences.noteOpened("codex", "", now.Add(-2*time.Hour))
+	ha.Preferences.noteOpened("synara", "", now.Add(-30*time.Second))
+	ha.Preferences.noteOpened("openmausbot", "", now.Add(-26*time.Hour))
+	ha.Preferences.noteRecent(filepath.Join(hu.owner.editorTestRoot, "website"), now.Add(-72*time.Hour))
+	ha.Preferences.noteRecent(filepath.Join(hu.owner.editorTestRoot, "notes"), now.Add(-25*time.Hour))
+	ha.Preferences.useFolder(hu.owner.editorTestRoot, now)
+	hu.page = "agents"
+	hshoot("40-harnesses-list", 1280, 1300)
+	hu.expanded[uxhFolderMenuID] = true
+	hshoot("41-harnesses-folder", 1280, 900)
+	hu.expanded[uxhFolderMenuID] = false
+	hu.page, hu.client = "clients", "claude"
+	hshoot("42-harnesses-claude", 1280, 1300)
+	hu.client = "codex"
+	hshoot("43-harnesses-codex", 1280, 1300)
+	hu.page = "agents"
+	hshoot("44-harnesses-narrow", 720, 1300)
+	hu.page, hu.client = "clients", "synara"
+	hshoot("45-harnesses-synara", 1280, 1500)
 }
