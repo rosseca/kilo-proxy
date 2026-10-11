@@ -23,7 +23,7 @@ This integration uses **Codex CLI and Claude Code**, rather than either Desktop 
 
 The preparation step checks the installed T3 Code contract before writing its private settings. An incompatible or incomplete installation produces an explicit error instead of modifying your usual T3 Code workspace.
 
-The launcher recognizes channel names in the system and user application directories, including alpha, beta and nightly. Known nightly installations take priority, followed by stable and other installed channels. Linux also checks the installed `t3code` / `t3-code` executable and extracted app directories. Integration settings show the detected version.
+The launcher recognizes channel names in the system and user application directories, including alpha, beta and nightly. Known nightly installations take priority, followed by stable and other installed channels. Linux also checks the installed `t3code` / `t3-code` executable and extracted app directories. The settings page shows the detected version.
 
 After updating T3 or installing Kilo Proxy 0.57.0, close **T3 Code · Kilo**, refresh detection and prepare or open it again. Your private chats are retained. Preparation records the installed desktop and backend source digests, so an in-place rebuild with the same version also requires preparation again. These structural checks catch incompatible settings or isolation contracts; they cannot guarantee compatibility with every future upstream change.
 
@@ -35,7 +35,7 @@ T3 builds using Orchestrator V2 have their own database migration. On first open
 2. Select **Open T3 Code · Kilo**. Kilo Proxy prepares the four agents with the saved shared models and starts the proxy first.
 3. Create a new chat in T3 Code and select an agent.
 
-**Integration settings → Prepare without opening** performs the same preparation without starting T3 Code. The local web interface also offers a **T3 Code · Kilo** integration tab.
+On the T3 Code settings page, **Advanced → Prepare without opening** performs the same preparation without starting T3 Code. The local web interface also offers a **T3 Code · Kilo** integration tab.
 
 Your regular T3 Code workspace can remain open. Its preferences, projects and chat history are separate and are not imported. The normal agents in the Kilo workspace refer to the usual CLI homes so they use the existing CLI login; Kilo Proxy does not copy login data or sign you out.
 
@@ -61,7 +61,7 @@ The supported Orchestrator V2 contract resolves Claude effort through its built-
 
 ## Troubleshooting
 
-- **T3 Code was not found:** install the Desktop application, then use **Options → Refresh detection**. Installing a CLI or the source repository alone is not the Desktop installation.
+- **T3 Code was not found:** install the Desktop application, then use **Check again** on the Harnesses list. Installing a CLI or the source repository alone is not the Desktop installation.
 - **Incompatible T3 settings contract:** update T3 or Kilo Proxy and prepare again. A new channel or version is not rejected merely for its version number; an incompatible private-workspace, provider, secret-store or model-picker structure is rejected before changing private settings.
 - **Codex or Claude Code was not found:** install the missing CLI and refresh detection. On Windows, the Microsoft Store Codex app and Claude Desktop are separate from the CLI executables used here.
 - **Normal agent needs login:** sign in using that CLI normally. Avoid entering provider credentials into the Kilo agent configuration.

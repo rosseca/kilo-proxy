@@ -80,8 +80,8 @@ Release binaries need no Go, Node or Docker. Linux Desktop needs [system graphic
 ## First launch
 
 1. **Connect your account:** follow the sign-in guide and choose your Kilo organization, or connect ChatGPT.
-2. **Choose models:** add the models you want to use in the shared library.
-3. **Open your agent:** start the proxy and open an installed editor or agent from **Agents**. Keep Kilo Proxy running while you use it.
+2. **Choose models:** start with the recommended models or a curated pack, then adjust the shared library.
+3. **Open your agent:** start the proxy and open an installed editor or agent from **Harnesses**. Keep Kilo Proxy running while you use it.
 
 For the terminal edition, follow the [headless setup guide](docs/headless.md).
 

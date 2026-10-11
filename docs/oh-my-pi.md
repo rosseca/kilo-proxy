@@ -8,7 +8,7 @@
 2. In Kilo Proxy, choose your models in **Models**, including their display names, default and supported reasoning preferences.
 3. Go to **Agents → Oh My Pi**, choose a project folder, and click **Open Oh My Pi**. Kilo Proxy prepares its dedicated profile and starts the saved proxy connection before opening the terminal.
 
-The terminal opens in Terminal on macOS, a console on Windows, or an installed desktop terminal on Linux. Use **Options → Refresh detection** after installing OMP if the card still reports it missing.
+The terminal opens in Terminal on macOS, a console on Windows, or an installed desktop terminal on Linux. Use **Check again** on the Harnesses list after installing OMP if the card still reports it missing.
 
 Inside OMP, `/model` opens its model picker and `Ctrl+P` cycles the enabled models. Both use the shared library exported by Kilo Proxy. Your ordinary `omp` sessions retain their normal profile; the generated Kilo profile is used by the Kilo launcher, `kilo-omp` or an exported launch command.
 
@@ -64,7 +64,7 @@ All selected models must support the gateway's Responses interface. Listing a mo
 
 ## Image generation
 
-Enable image generation in Kilo Proxy, choose **Kilo** with an image model or **ChatGPT subscription · Experimental**, and click **Save image settings**. Then prepare or open OMP again. The generated `mcp.json` connects OMP to Kilo Proxy's local **Streamable HTTP** image MCP using the local credential. No separate MCP executable is required.
+Enable image generation in Kilo Proxy, choose **Kilo** with an image model or **ChatGPT subscription · Experimental**, and change the setting (it saves automatically). Then prepare or open OMP again. The generated `mcp.json` connects OMP to Kilo Proxy's local **Streamable HTTP** image MCP using the local credential. No separate MCP executable is required.
 
 OMP discovers the `generate_image` tool and can return its image results to a vision-capable model. OMP 18 normally exposes MCP tools through its on-demand `xd://` tool system, so they may not appear as top-level functions on every request; the model receives their device entries and can invoke them through OMP's `read` and `write` tools. Kilo Proxy saves the full-resolution original locally and returns a bounded preview to the conversation. See [image generation and payload limits](codex-images.md).
 

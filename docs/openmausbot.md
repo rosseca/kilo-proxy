@@ -1,12 +1,12 @@
 # OpenMausBot
 
-OpenMausBot appears as a full-width card below Codex and Claude Desktop on **Agents**. Its desktop application connects directly to Kilo Proxy using its built-in OpenAI-compatible engine; no Codex or Claude CLI is needed.
+OpenMausBot appears as a full-width card below Codex and Claude Desktop on **Harnesses**. Its desktop application connects directly to Kilo Proxy using its built-in OpenAI-compatible engine; no Codex or Claude CLI is needed.
 
 ## Open a workspace
 
 1. Install [OpenMausBot](https://github.com/milind-soni/OpenMausBot/releases/latest) 0.1.92 or later with the compatible desktop engine, and connect Kilo or ChatGPT in Kilo Proxy.
 2. Choose your shared models, default and per-model reasoning preferences in **Models**.
-3. Click **Open OpenMausBot** on **Agents**. Kilo Proxy prepares its private configuration, starts the proxy and launches the installed application. A preparation or proxy startup error leaves the application closed.
+3. Click **Open OpenMausBot** on **Harnesses**. Kilo Proxy prepares its private configuration, starts the proxy and launches the installed application. A preparation or proxy startup error leaves the application closed.
 4. Complete OpenMausBot's welcome flow if shown. New bots use the **Kilo Proxy** engine and shared default; choose another shared model in OpenMausBot's picker. Existing bots retain their own model selections.
 
 The card shows whether the desktop application is installed. If it is missing, use its download link, install it separately and refresh detection. Choose project folders inside OpenMausBot.
@@ -15,7 +15,7 @@ The card shows whether the desktop application is installed. If it is missing, u
 
 The managed engine receives an explicit list of shared model IDs, including both Kilo IDs and `chatgpt/<slug>` subscription models. It sends authenticated **Chat Completions** requests to the local proxy; the ID determines which connected account serves the request. It does not silently fall back between accounts.
 
-OpenMausBot 0.1.92's OpenAI-compatible driver displays exact model IDs and has no native reasoning selector. Starting with Kilo Proxy 0.52.1, its dedicated local connection applies each model's prepared reasoning level before forwarding requests. Choose the level in **Models**, quit the Kilo OpenMausBot workspace, then open it again to prepare the change. **Integration settings** shows the prepared levels; unprepared or changed selections must be prepared before they can be shown as applied.
+OpenMausBot 0.1.92's OpenAI-compatible driver displays exact model IDs and has no native reasoning selector. Starting with Kilo Proxy 0.52.1, its dedicated local connection applies each model's prepared reasoning level before forwarding requests. Choose the level in **Models**, quit the Kilo OpenMausBot workspace, then open it again to prepare the change. The settings page shows the prepared levels; unprepared or changed selections must be prepared before they can be shown as applied.
 
 Preparation resolves supported reasoning levels from the shared library and model capabilities. Unknown models, models without reasoning support and an explicitly empty level override do not acquire an invented level. **Automatic** leaves the provider's default unchanged. Explicit reasoning supplied by a future client takes precedence over the prepared default. The setting follows the exact model ID when switching models and applies to subsequent tool turns as well. Changing OpenMausBot's initial model for new bots does not invalidate inference or change these prepared levels. Custom display names remain unsupported by the current driver.
 

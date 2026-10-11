@@ -5,7 +5,7 @@ Run Open Design in **Local CLI** mode with **Codex CLI**, **Claude Code** or **O
 ## Choose an engine and launch
 
 1. Install [Open Design v0.22.2 or later](https://github.com/nexu-io/open-design/releases/latest) and your preferred CLI separately. Save your Kilo account and team connection, then choose your shared models in Kilo Proxy.
-2. Open **Agents → Open Design → Engine settings**. Choose **Codex CLI**, **Claude Code** or **OpenCode** under **Engine**. If an installation is missing, install it and use **Options → Refresh detection** on the agent card.
+2. Open the Open Design settings page from **Harnesses**. Under **When opening → CLI engine**, choose **Codex CLI**, **Claude Code** or **OpenCode**. If an installation is missing, install it and use **Check again** on the Harnesses list.
 3. Click **Launch Open Design**. Kilo Proxy prepares that engine's private profile and Open Design preferences, starts the saved proxy, and launches the installed app. A preparation or proxy startup error leaves the app closed and shows the problem in Kilo Proxy.
 4. Complete Open Design's own first-run and privacy choices if prompted. Use **Local CLI** with the engine you selected and leave the model at **CLI default** to use your shared default. Create or open your project inside Open Design; the launcher does not hand off Kilo Proxy's project folder.
 5. Try a request and check Kilo Proxy's **Activity** to verify the model and connection. Keep Kilo Proxy running while you work.

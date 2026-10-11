@@ -21,7 +21,7 @@ The backend uses the existing individual Kilo credential. It sends `Authorizatio
 - Balance and usage fail independently. Missing permissions, rejected credentials, rate limits and malformed responses remain visible. Previous values are marked stale on failure or after two minutes without a successful refresh. Switching credentials or organization immediately removes the previous account's values and rejects late responses from its old requests.
 - Account responses are held in memory, not written to the local history file. Requests have bounded timeouts and sizes; redirects are refused. These account APIs follow Kilo's current implementation and may change.
 
-**Settings → Appearance → Account balance** shows the K icon plus the remaining amount on macOS. Windows uses the icon tooltip and tray menu; Linux also shows a title where supported by the desktop. An unavailable or stale balance is a dash, with its status in the menu/tooltip. **K icon** and **Session cost** remain available.
+**Settings → Preferences → Account balance** shows the K icon plus the remaining amount on macOS. Windows uses the icon tooltip and tray menu; Linux also shows a title where supported by the desktop. An unavailable or stale balance is a dash, with its status in the menu/tooltip. **K icon** and **Session cost** remain available.
 
 Official API references: [Kilo OpenAPI schema](https://api.kilo.ai/api/openapi.json) and [Kilo gateway profile implementation](https://github.com/Kilo-Org/kilocode/blob/main/packages/kilo-gateway/src/api/profile.ts).
 

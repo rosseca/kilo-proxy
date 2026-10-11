@@ -1,6 +1,6 @@
 # Updating Kilo Proxy
 
-Desktop checks the latest stable GitHub release at startup and every six hours. **Settings → App updates** also lets you check manually. Checking uses no Kilo, ChatGPT or GitHub credentials and does not install anything.
+Desktop checks the latest stable GitHub release at startup and every six hours. **Settings → Updates** also lets you check manually. Checking uses no Kilo, ChatGPT or GitHub credentials and does not install anything.
 
 ## Installed with Homebrew or APT
 

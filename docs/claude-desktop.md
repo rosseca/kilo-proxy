@@ -1,12 +1,12 @@
 # Claude Desktop · Kilo
 
-**Claude Desktop · Kilo** opens the official Claude Desktop application with a private Kilo profile. Its full-width card sits immediately below Codex on **Agents**, separately from Claude Code CLI. Install the official Claude Desktop application separately. Open ordinary Claude from its usual icon; it can stay open while you use the Kilo instance.
+**Claude Desktop · Kilo** opens the official Claude Desktop application with a private Kilo profile. Its full-width card sits immediately below Codex on **Harnesses**, separately from Claude Code CLI. Install the official Claude Desktop application separately. Open ordinary Claude from its usual icon; it can stay open while you use the Kilo instance.
 
 ## Setup
 
 1. Add at least one Claude model to the shared **Models** library. Keep the exact Kilo model ID; a short display name is optional.
 2. If **Claude Desktop · Kilo** is already running, quit only that instance before opening it again or changing its profile. Ordinary Claude can remain open. Existing conversations are never closed automatically.
-3. Click **Open Claude Desktop · Kilo**. Kilo Proxy prepares the private gateway profile, starts the proxy if needed, and opens the Kilo instance. **Options → Integration settings** also offers preparation without launching.
+3. Click **Open Claude Desktop · Kilo**. Kilo Proxy prepares the private gateway profile, starts the proxy if needed, and opens the Kilo instance. **Advanced → Prepare without opening** on its settings page prepares it without launching.
 
 The configuration points to `http://127.0.0.1:<port>` using the local proxy key. Desktop adds `/v1/messages`; do not append `/v1` to this gateway base URL. Your Kilo API key and organization header stay in Kilo Proxy. No Anthropic account sign-in is needed for the configured third-party gateway.
 
@@ -24,7 +24,7 @@ The inspected Desktop configuration supports a model name, a display label and c
 
 ### Experimental models from other providers
 
-In **Claude Desktop · Kilo → Options → Integration settings**, enable **Experimental: use models from other providers**. The choice is saved in Kilo Proxy settings and applies to the next preparation/open. The native helper includes all real model IDs from the shared library, keeping its names, order and default. The browser helper has the same opt-in for its own selection.
+In **Claude Desktop settings → Advanced**, enable **Experimental: use models from other providers**. The choice is saved in Kilo Proxy settings and applies to the next preparation/open. The native helper includes all real model IDs from the shared library, keeping its names, order and default. The browser helper has the same opt-in for its own selection.
 
 Claude's configuration receives a stable internal alias for each non-Claude model and a display label showing the real model name. Kilo Proxy translates only the request's `model` to its actual Kilo ID and restores the internal alias in the client-facing JSON response or streamed `message_start`. Native Claude IDs keep their normal route. Prompts, tools, tool results, thinking blocks, caching controls and provider usage metadata are not renamed or stripped.
 

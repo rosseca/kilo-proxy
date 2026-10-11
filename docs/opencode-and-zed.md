@@ -8,8 +8,8 @@ The optional browser helper remains a separate interface with independent per-cl
 
 1. Install OpenCode separately and configure Kilo Proxy in **Settings**.
 2. Choose models, names, a default and any token limits in **Models**. These library changes save automatically.
-3. On **Agents**, use OpenCode's **Options** to choose its project folder, then **Open OpenCode**. It prepares `~/.opencode-kilo/opencode.json` and `kilo-models.json` (`%USERPROFILE%\.opencode-kilo` on Windows), then opens an interactive terminal.
-4. Use `/models` to switch models. Edit the common library and reopen the agent to apply changes. Manual preparation is under **Options → Integration settings → Prepare without launching**.
+3. On **Harnesses**, use the general **Project folder** or OpenCode's settings page under **When opening → Folder** to override it, then **Open OpenCode**. It prepares `~/.opencode-kilo/opencode.json` and `kilo-models.json` (`%USERPROFILE%\.opencode-kilo` on Windows), then opens an interactive terminal.
+4. Use `/models` to switch models. Edit the common library and reopen the agent to apply changes. Manual preparation is under **Advanced → Prepare without opening** on that harness's settings page.
 
 The launcher selects the profile through `OPENCODE_CONFIG`, clears an inherited inline configuration override for this child, and pins the initial model with `--model`.
 
@@ -22,7 +22,7 @@ The optional configuration export contains the local key; keep it private. The l
 ## Zed
 
 1. Edit models, names, limits and the default in **Models**.
-2. On **Agents**, click **Open Zed**. It saves the local proxy key in your system credential store, prepares the `kilo-local` OpenAI-compatible provider and Agent default model in your user settings, then opens Zed. Other providers, settings and open projects are retained.
+2. On **Harnesses**, click **Open Zed**. It saves the local proxy key in your system credential store, prepares the `kilo-local` OpenAI-compatible provider and Agent default model in your user settings, then opens Zed. Other providers, settings and open projects are retained.
 3. Select a model in Zed's Agent panel. No key paste is needed for normal setup. Generation still depends on the model and gateway.
 
 Preparation uses macOS Keychain, Windows Credential Manager or the Linux Secret Service. Only the **local proxy key** is stored; the upstream Kilo credential stays in Kilo Proxy. The operating system may ask you to unlock or allow access to its credential store. A credential-store failure stops preparation and shows an error instead of opening an unconfigured provider.
@@ -37,7 +37,7 @@ The optional **Copy configuration** export contains the same managed URL and mod
 
 Click **Open Zed** again to prepare the current connection and models. Zed hides models from providers without credentials, so **Credentials Missing** and an empty model selector can have the same cause. See Zed's [model selector authentication filter](https://github.com/zed-industries/zed/blob/v1.18.1/crates/agent_ui/src/language_model_selector.rs#L432).
 
-If Zed still reports missing credentials after preparation, open its **Settings → AI → LLM Providers → kilo-local** to retry loading the saved key. This matters after a denied credential-store request: preparing an unchanged key and port does not change the URL again. Close settings and reopen the model selector after loading. **Options → Integration settings → Copy key for Zed (recovery)** remains available if you need to enter the local key manually in that provider's settings. Do not paste your upstream Kilo API key there.
+If Zed still reports missing credentials after preparation, open its **Settings → AI → LLM Providers → kilo-local** to retry loading the saved key. This matters after a denied credential-store request: preparing an unchanged key and port does not change the URL again. Close settings and reopen the model selector after loading. **Zed settings page → Advanced → Copy key for Zed (recovery)** remains available if you need to enter the local key manually in that provider's settings. Do not paste your upstream Kilo API key there.
 
 If you previously launched Zed with `KILO_LOCAL_API_KEY`, that environment value takes precedence over its credential store. Remove a stale override and restart Zed once; updating the keychain cannot change an existing process's environment. This is only needed for such manual overrides, not the normal **Open Zed** flow. Zed documents this [environment precedence](https://zed.dev/docs/ai/use-api-access#api-keys-and-environment-variables).
 

@@ -5,7 +5,7 @@
 ## Install once
 
 1. Open Kilo Proxy, save your account and organization under **Settings**, and choose your shared library in **Models**. Install the CLI you want to use separately: Codex CLI, Claude Code, OpenCode or Oh My Pi (`omp`).
-2. Open **Settings → Terminal commands** and click **Install terminal commands** on macOS/Linux or **Install PowerShell functions** on Windows. The Codex CLI, Claude Code, OpenCode and Oh My Pi cards also link here from **Options → Terminal commands in Settings**.
+2. Open **Settings → Terminal commands** and click **Install terminal commands** on macOS/Linux or **Install PowerShell functions** on Windows. The Codex CLI, Claude Code, OpenCode and Oh My Pi cards also link here from the **Terminal commands** row on that harness's settings page (**Open in Settings**).
 3. Open a new terminal so it reads the updated shell configuration. Change to your project folder and run the command for your installed CLI.
 
 On macOS/Linux, the installer writes all four commands into `~/.local/bin` for your user. It requires zsh, bash or fish as your login shell and manages a marked PATH block in that shell's startup files. You can install the commands even if you only use one of those agents. Settings shows the install location and startup files. Existing shell settings outside the marked block are preserved.

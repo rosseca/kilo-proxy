@@ -7,15 +7,15 @@ The Kilo image tool is available in **v0.23.0 and later**. The ChatGPT provider 
 ## Enable the tool
 
 1. Connect the account you want to use for images: Kilo credentials and organization, or [ChatGPT subscription sign-in](chatgpt-subscription.md).
-2. Choose coding models in the native **Models** library. Open **Models → Image generation**.
+2. Choose coding models in the native **Models** library. Open **Models → Add models**.
 3. Enable **Image generation** and choose an **Image provider**. With **Kilo · account credits**, choose an **Image model** whose catalog metadata advertises image output; image input alone does not qualify, and coding-tool support is not required. With **ChatGPT subscription · Experimental**, the built-in image tool is selected automatically: no image model or separate OpenAI API key is required.
-4. Click **Save image settings**. This saves the shared image choice without requiring a coding-model selection, a Codex profile, or a connected image account. Connect the chosen account before using the tool.
-5. On **Agents**, use **Open Codex** for Desktop or **Open Codex CLI** for a terminal. This prepares the selected profile and applies the saved image settings. Manual **Prepare without opening** is under that agent's **Options → Integration settings**. Restart an already open Codex instance so it reloads the MCP configuration.
+4. Image settings save automatically. This saves the shared image choice without requiring a coding-model selection, a Codex profile, or a connected image account. Connect the chosen account before using the tool.
+5. On **Harnesses**, use **Open Codex** for Desktop or **Open Codex CLI** for a terminal. This prepares the selected profile and applies the saved image settings. Manual **Prepare without opening** is under **Advanced** on that harness's settings page. Restart an already open Codex instance so it reloads the MCP configuration.
 6. Ask Codex to use `generate_image`, for example: “Use the Kilo image tool to create a small illustration of a lighthouse at sunset.”
 
 Keep Kilo Proxy running while using the tool. **Kilo** image requests use the configured organization and its gateway/provider billing, including BYOK; choosing a catalog model does not verify access, balance or editing support. **ChatGPT** image requests use the connected subscription and its quota, subject to account eligibility and backend availability. They do not use Kilo credit or the separately billed OpenAI API. Requests never fall back to the other provider if generation fails or quota is exhausted.
 
-The image setting belongs to Kilo Proxy and is shared by agents using its image MCP, including Codex, OMP and supported Open Design engines. **Save image settings** persists it separately from the automatically saved coding-model library. Opening/preparing a Codex profile also saves any pending image draft. The optional browser helper retains its image controls inside the Codex tabs. Preparing another Codex profile applies the current setting there too. Changing the coding model does not change the image provider. Switching image providers preserves the saved Kilo image-model choice so you can switch back. Both account connections may remain active.
+The image setting belongs to Kilo Proxy and is shared by agents using its image MCP, including Codex, OMP and supported Open Design engines. The image setting saves automatically, separately from the automatically saved coding-model library. Opening/preparing a Codex profile also saves any pending image draft. The optional browser helper retains its image controls inside the Codex tabs. Preparing another Codex profile applies the current setting there too. Changing the coding model does not change the image provider. Switching image providers preserves the saved Kilo image-model choice so you can switch back. Both account connections may remain active.
 
 ## What is configured
 
@@ -66,8 +66,8 @@ Conversation attribution depends on a recognized session header reaching the MCP
 
 ## Disable or troubleshoot
 
-- To disable the feature, clear its toggle and click **Save image settings**. Reopening/preparing an agent removes the MCP entry managed by Kilo Proxy from its profile. Restart Codex to refresh its tool list.
-- With **ChatGPT**, sign in through **Settings → Connection** before preparing the image tool. The provider does not require an image-model catalog entry. If ChatGPT is disconnected, the saved provider choice remains visible so you can reconnect or disable images.
+- To disable the feature, clear its toggle and change the image setting (it saves automatically). Reopening/preparing an agent removes the MCP entry managed by Kilo Proxy from its profile. Restart Codex to refresh its tool list.
+- With **ChatGPT**, sign in through **Settings → Accounts** before preparing the image tool. The provider does not require an image-model catalog entry. If ChatGPT is disconnected, the saved provider choice remains visible so you can reconnect or disable images.
 - With **Kilo**, if no image model is listed, refresh the catalog. A coding model or a model that only accepts images as input cannot be selected for this tool.
 - If a saved model no longer appears in the image catalog, the helper keeps the saved ID visible as unavailable. Choose a listed image model or disable the feature before preparing again.
 - If Codex cannot connect to `kilo_images`, confirm Kilo Proxy is running and reopen Codex through its **Open** action on Agents so it receives the local-key environment variable. Changing the proxy port also requires preparing the profile again.

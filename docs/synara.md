@@ -26,7 +26,7 @@ You can disable accounts you do not use in Synara's provider settings. Disabling
 2. Select **Open Synara · Kilo**. Kilo Proxy prepares the four accounts and starts the proxy before opening Synara.
 3. Start a new chat, choose its account and check the selected model.
 
-**Integration settings → Prepare without opening** performs the same preparation without launching Synara. The local web interface also has a **Synara · Kilo** tab.
+On the Synara settings page, **Advanced → Prepare without opening** performs the same preparation without launching Synara. The local web interface also has a **Synara · Kilo** tab.
 
 Close only **Synara · Kilo** before changing the shared models or proxy connection, then reopen it from Kilo Proxy. Its app data and Kilo CLI profiles are private. The normal accounts refer to your usual CLI homes; Kilo Proxy does not read or copy their login credentials or change the normal account. Synara's own CLI drivers may write session metadata and link `auth.json` into a normal Codex overlay, or copy that file if linking fails.
 
@@ -56,7 +56,7 @@ The private Codex Normal adapter makes the CLI's ChatGPT login status readable b
 
 ## Troubleshooting
 
-- **Synara or a CLI was not found:** install Synara Beta, native Codex CLI and Claude Code, then use **Options → Refresh detection**.
+- **Synara or a CLI was not found:** install Synara Beta, native Codex CLI and Claude Code, then use **Check again** on the Harnesses list.
 - **A Claude model is unavailable:** check that the composer selected the exact prepared gateway ID rather than a built-in Claude entry.
 - **Close Synara · Kilo first:** quit its private window and prepare again. Your normal Synara window can remain open.
 - **Models or credentials changed:** close and reopen the private workspace so the prepared profiles receive the current settings.

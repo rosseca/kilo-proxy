@@ -23,18 +23,20 @@ The native frontend uses the existing authenticated loopback API, keeping config
 
 ## Native workflow
 
-The main navigation is **Agents**, **Models**, **Activity** and **Settings**. An unconfigured launch opens a three-step guide: **Account & team → Models → Start**. Existing installations with a connected account, selected organization and saved model library open Agents directly.
+The main navigation is **Harnesses**, **Models**, **Activity** and **Settings**. An unconfigured launch opens a three-step guide: **Account & team → Models → Start**. Existing installations with a connected account, selected organization and saved model library open Harnesses directly.
 
 Wide windows use an icon sidebar; compact windows use tabs. Outside setup, the header shows proxy status and controls. The setup guide hides the normal navigation and proxy control, with language selection at the top right.
 
 The guide opens Kilo's device authorization page for the usual login or SSO, shows the authorization code while waiting, and lets the user select a team. API key and organization ID entry is available as an alternative. **Save & choose models** saves the connection before continuing; **Remember my login in the system credential store** controls whether the credential survives quitting. With Remember off, a later launch asks the user to sign in again while retaining saved models.
 
-After selecting at least one model and letting its automatic save complete, **Start proxy and go to agents** starts the listener and opens Agents only after success. Startup errors remain visible, with connection settings available to fix an occupied port. Leaving the guide early is allowed: Agents offers **Continue setup**, and the next launch resumes from the stored account and model configuration. Completing SSO alone does not skip the connection save.
+The Models step asks **Which models do you start with?**: **Recommended** (the default) or one of the curated task packs. Choosing a pack copies its models and roles into the shared library and records it as the starting point; it does not assign the pack to any harness.
 
-- **Agents:** installed-agent cards, direct Open actions, project-folder choosers and recent folders. **Start proxy** and **Stop proxy** sit beside the connection status. Opening an agent also starts the proxy first; failed startup prevents dispatching the agent. Codex Desktop and Codex CLI have distinct actions. Options contains installation guidance, integration setup and exports.
-- **Models:** one automatically saved library with names, order, a default model and supported reasoning preferences. Agent exports apply only settings supported by that client. Image generation is under **Image generation**, with a separate **Kilo / ChatGPT** provider selector and **Save image settings** action. This shared tool setting can be saved without a Codex profile; reopen an agent to apply it.
-- **Activity:** requests, conversation breakdowns, observed costs and cache reuse.
-- **Settings:** Kilo account and organization, local connection, language, tray appearance, terminal commands and **App updates**.
+After selecting at least one model and letting its automatic save complete, **Start proxy and go to agents** starts the listener and opens Harnesses only after success. Startup errors remain visible, with connection settings available to fix an occupied port. Leaving the guide early is allowed: Harnesses offers **Continue setup**, and the next launch resumes from the stored account and model configuration. Completing SSO alone does not skip the connection save.
+
+- **Harnesses:** one list grouped into desktop apps, multi-agent workspaces, bots and coding harnesses, with installation status, last use and a direct **Open** action. The top bar shows the models they will use and the general **Project folder**, with recent folders and a path field. **Start proxy** and **Stop proxy** sit in the sidebar; opening a harness also starts the proxy first, and failed startup prevents dispatching it. Each row's settings button opens that harness's page: **When opening** (folder, which can be overridden for this harness only, and models or model pack) and **Advanced** (preparing without opening, launch commands and exports, terminal commands, installation and compatibility).
+- **Models:** three tabs. **Your models** is the automatically saved shared library as a table with default star, reasoning, context and price, and a menu on each row; a banner shows the pack it started from, with an option to switch the whole list to another pack (with undo). **Add models** opens a searchable catalog with filters. **Packs** lists curated packs with roles, prices and optional models; **Use in…** assigns a pack to a harness and **Copy and edit** creates a personal copy under **My packs**, where packs can be renamed, duplicated, edited and deleted.
+- **Activity:** a period selector and **Summary**, **Requests** and **Conversations** tabs. Summary shows Kilo balance, spend, requests and cache savings, spend per day, spend by model and cache reuse, using your Kilo account's billed usage. Requests opens an inspector for each request.
+- **Settings:** one page with a section index (**Accounts**, **Connection**, **Preferences**, **Large images**, **Terminal commands** and **Updates**). Changes save automatically; settings that need it restart a running proxy.
 
 The library is `models.json` in the application configuration directory; project choices live in `agent-preferences.json`. Neither is a generated agent credential file. See [shared-model paths, recovery and propagation limits](shared-models.md).
 
@@ -46,7 +48,7 @@ These images are rendered by Gio with synthetic test data, using the same layout
 
 ![First-run sign-in guide](images/native-onboarding.png)
 
-![Native Agents home](images/native-agents.png)
+![Native Harnesses home](images/native-agents.png)
 
 ![Native shared model library](images/native-models.png)
 
@@ -58,7 +60,7 @@ These images are rendered by Gio with synthetic test data, using the same layout
 - The tray menu shows the team, endpoint, request counts, reported cost coverage and connection state. **Start proxy** and **Stop proxy** control the same backend as the window.
 - **Stop proxy** cancels active requests. **Quit Kilo Proxy** stops the application and proxy.
 
-**Settings → Appearance** saves **K icon**, **Session cost**, or **Account balance** without restarting the proxy. On macOS, **Session cost** shows the K icon and the current amount together; **K icon** shows just the icon. Windows retains the K icon with the amount in its tooltip/menu; Linux shows the K icon and, where the shell supports a title, the amount beside it, with tooltip/menu as the fallback. The menu remains usable in either mode.
+**Settings → Preferences** saves **K icon**, **Session cost**, or **Account balance** without restarting the proxy. On macOS, **Session cost** shows the K icon and the current amount together; **K icon** shows just the icon. Windows retains the K icon with the amount in its tooltip/menu; Linux shows the K icon and, where the shell supports a title, the amount beside it, with tooltip/menu as the fallback. The menu remains usable in either mode.
 
 Spend covers the current Kilo Proxy process, across all conversations and image calls. It survives hiding the window, stopping/restarting the proxy, changing organizations and clearing request captures. Quitting resets it. The display uses `$0.00` before any requests, `—` when requests have no reported costs, `<$0.01` for a positive sub-cent amount, and `*` for a subtotal with missing costs. The menu shows reported/total request coverage. These observations are not your organization's invoice or remaining balance. Choose **Account balance** to display Kilo's shared team credits instead; stale or unavailable balance data is shown as a dash. Activity also shows your billed daily usage from Kilo and persistent local daily totals. See [account data and history](billing.md).
 
@@ -140,7 +142,7 @@ Validation separates the native interface from the optional browser frontend:
 1. **Core:** Go race tests, `go vet`, module verification, JavaScript helper tests and Python packaging/release tests on macOS, Linux and Windows.
 2. **Native controls:** tests built with `-tags desktop` exercise Gio controls and backend effects using temporary profiles and a synthetic gateway. Real pointer and keyboard tests verify navigation and its wrapping, focus, typing and model selection at wide, compact and minimum-width window sizes. Model-grid checks cover separate column hit targets, expanded-card settings, scrolling and resize anchoring; a large catalog verifies that off-screen rows remain virtualized. Shared Go helper tests compare catalogs, reasoning, launch commands and guides with the existing browser implementations; executable shell tests verify quoting and environment isolation. Shared-library tests cover restart persistence, names/default/order/reasoning propagation, atomic saves, damaged-file recovery, external/concurrent changes and save failures. Agent launch tests use fake processes and temporary profiles to verify preparation, dispatch, remembered per-agent folders, chooser cancellation/failure, duplicate clicks, configuration edits during preparation and failure recovery. Tray tests cover persisted appearance and zero, sub-cent, missing and partial cost display across the whole process session. Platform tests verify private terminal tickets, inherited interactive input/output, environment isolation and Windows console handles.
 3. **Optional browser:** Playwright runs Chromium and WebKit against an isolated local backend. These tests verify browser-mode behavior, not the native renderer.
-4. **Real desktop:** `scripts/smoke_desktop.py` launches the production executable. It checks rendered Agents/Models/Activity/Settings content, shared-library persistence and in-memory client propagation, authenticated backend access, window/tray language changes, OS clipboard, proxy startup, saved tray appearance, close/reopen behavior, tray stop and clean process exit.
+4. **Real desktop:** `scripts/smoke_desktop.py` launches the production executable. It checks rendered Harnesses/Models/Activity/Settings content, shared-library persistence and in-memory client propagation, authenticated backend access, window/tray language changes, OS clipboard, proxy startup, saved tray appearance, close/reopen behavior, tray stop and clean process exit.
 5. **Packaging:** the workflow requires its core, browser and native jobs to pass before creating bundles. It packages the tested executable, then exercises the extracted archive. macOS also receives full bundle-signature and LaunchServices checks. The aggregate job validates six archives and their checksums.
 
 Every tag-triggered release is gated on the reusable build workflow. Core, browser and native tests must pass before packaging, and each extracted archive must pass its platform smoke test before publication. Check the workflow run for a release tag to see its validation results.
@@ -183,8 +185,8 @@ that another Kilo Proxy instance is listening. To inspect excluded TCP ranges:
 netsh interface ipv4 show excludedportrange protocol=tcp
 ```
 
-While the proxy is stopped, its port can be changed in **Settings → Advanced →
-Local port**. Open managed agents again from Kilo Proxy to prepare their profiles
+While the proxy is stopped, its port can be changed in **Settings → Accounts → Kilo → Manage →
+Advanced → Local port**. Open managed agents again from Kilo Proxy to prepare their profiles
 with the new address. Investigate the reported system error before changing
 security settings. See Microsoft's [Winsock error reference](https://learn.microsoft.com/en-us/windows/win32/winsock/windows-sockets-error-codes-2)
 and [Get-NetTCPConnection reference](https://learn.microsoft.com/en-us/powershell/module/nettcpip/get-nettcpconnection).

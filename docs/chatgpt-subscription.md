@@ -6,7 +6,7 @@ This is an **experimental direct connection** to the subscription backend used b
 
 ## Connect and choose models
 
-1. Stop the proxy before changing ChatGPT authentication. In the first-run connection page or **Settings → Connection**, choose **Sign in with ChatGPT**.
+1. Stop the proxy before changing ChatGPT authentication. In the first-run connection page or **Settings → Accounts**, choose **Sign in with ChatGPT**.
 2. Enter the displayed device code on `https://auth.openai.com/codex/device` and complete authorization. The app updates when sign-in finishes; **Cancel ChatGPT login** ends a pending attempt.
 3. Open **Models** and add models labelled **ChatGPT**. The catalog comes from the connected account. You can keep Kilo and ChatGPT models together, including models with the same underlying slug.
 4. Save your default, names and supported preferences in the shared library, then open an agent. Reopen an existing agent after changing its selected models so its generated profile is refreshed.
@@ -31,7 +31,7 @@ Subscription requests go directly to ChatGPT with the account's subscription aut
 
 The app refreshes quota periodically while open, and **Refresh subscription usage** requests a fresh reading. A reading older than five minutes is marked out of date. Offline or unavailable quota checks do not themselves disconnect the account.
 
-In **Settings → Appearance**, select **ChatGPT quota** to show the remaining percentage of the **primary** window in the menu bar or tray tooltip. An unavailable or stale reading shows `—`. The secondary window remains visible in the usage panel; there is no setting to choose it for the tray. The existing **Kilo balance** and **Session cost** display choices remain separate.
+In **Settings → Preferences**, select **ChatGPT quota** to show the remaining percentage of the **primary** window in the menu bar or tray tooltip. An unavailable or stale reading shows `—`. The secondary window remains visible in the usage panel; there is no setting to choose it for the tray. The existing **Kilo balance** and **Session cost** display choices remain separate.
 
 Activity records subscription requests and any returned token/cache usage. Subscription token counts are not converted to a dollar charge and do not count as missing Kilo price reports. Local daily subscription totals are kept separately from Kilo's account history. Models from this catalog do not carry an invented per-token price.
 
@@ -44,7 +44,7 @@ The upstream connection uses Responses with `store=false` and streaming. Kilo Pr
 - Supported reasoning effort comes from the account's model catalog and the client adapter. Visible models marked `tool_mode: "code_mode_only"` remain available: this metadata describes Codex's tool orchestration, not subscription access. Kilo Proxy forwards Responses tools or translates the client's function calls; tools still execute in that client. Hidden account models are excluded.
 - This is not full API equivalence. For example, the Chat Completions/Messages adapters reject unsupported audio output, stop sequences, log probabilities and multiple response choices instead of silently emulating them.
 - Image inputs depend on the selected model. ChatGPT requests do not use Kilo Proxy's Kilo image-upload pipeline. The local 32 MiB request limit still applies.
-- The optional image-generation MCP has its own **Kilo / ChatGPT** provider selector. Choose **ChatGPT subscription · Experimental** in **Models → Image generation** to use the connected subscription's built-in image tool. Click **Save image settings**; no Codex profile, separate image-model ID or OpenAI API key is needed. Reopen your agent to apply it. The image connection is independent of the conversation model; it never falls back to Kilo credits. Generated originals stay local and editing accepts previously generated files. See [image setup and limits](codex-images.md).
+- The optional image-generation MCP has its own **Kilo / ChatGPT** provider selector. Choose **ChatGPT subscription · Experimental** in **Models → Add models** to use the connected subscription's built-in image tool. Click image settings save automatically; no Codex profile, separate image-model ID or OpenAI API key is needed. Reopen your agent to apply it. The image connection is independent of the conversation model; it never falls back to Kilo credits. Generated originals stay local and editing accepts previously generated files. See [image setup and limits](codex-images.md).
 
 Errors or exhausted quota stay on the chosen connection. To change which account pays or supplies quota, explicitly select a model from the other connection.
 
