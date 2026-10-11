@@ -60,10 +60,14 @@ func (u *nativeUI) modelSearchField(id, placeholder string) layout.Widget {
 					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							gtx.Constraints.Min = image.Pt(gtx.Dp(16), gtx.Dp(16))
+							gtx.Constraints.Max.Y = gtx.Constraints.Min.Y
 							return nativeIconSearch.Layout(gtx, nativeTextMuted)
 						}),
 						layout.Rigid(layout.Spacer{Width: 8}.Layout),
 						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+							// A taller field must not stretch the editor, or its
+							// text sits at the top instead of beside the icon.
+							gtx.Constraints.Min.Y = 0
 							semantic.LabelOp(placeholder).Add(gtx.Ops)
 							style := material.Editor(u.theme, e, placeholder)
 							style.Color, style.HintColor, style.TextSize = nativeText, nativeTextSubtle, 14
