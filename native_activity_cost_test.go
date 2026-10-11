@@ -44,7 +44,7 @@ func TestNativeReportedSpendCaptionFitsMetric(t *testing.T) {
 		for _, width := range []int{220, 280} {
 			theme := material.NewTheme()
 			theme.Shaper = text.NewShaper(text.WithCollection(nativeFonts()))
-			theme.TextSize, theme.Face = 14, "Inter"
+			theme.TextSize, theme.Face = 14, nativeSansFace
 			u := &nativeUI{language: language, theme: theme}
 			summary := usageSummary{Requests: 38, Priced: 2, Incomplete: 19, CostUSD: "0.000000000"}
 			label, amount := u.reportedSpend(summary)
@@ -64,7 +64,7 @@ func TestNativeReportedSpendCaptionFitsMetric(t *testing.T) {
 			firstText := strings.SplitN(u.coverage(summary), "\n", 2)[0]
 			first := u.note(firstText)(gtx)
 			// Font line advance can be smaller than a glyph bounding box:
-			// Inter has 14px for one line and 27px for two at this scale.
+			// two lines are less than twice one glyph box at this scale.
 			// Compare to real two-line typography, not twice a rounded box.
 			twoLines := u.note(firstText + "\n" + firstText)(gtx)
 			caption := u.note(u.coverage(summary))(gtx)

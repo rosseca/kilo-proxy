@@ -357,7 +357,7 @@ func (u *nativeUI) terminalCommandCode(id, value string) layout.Widget {
 		return nativeBox(gtx, nativeSurfaceAlt, func(gtx layout.Context) layout.Dimensions {
 			return layout.UniformInset(12).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				style := material.Editor(u.theme, e, "")
-				style.Font.Typeface = "Go Mono"
+				style.Font.Typeface = nativeMonoFace
 				style.TextSize = 13
 				return style.Layout(gtx)
 			})

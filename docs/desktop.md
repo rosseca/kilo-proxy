@@ -17,7 +17,7 @@ Kilo Proxy's desktop interface is written in Go with **Gio v0.10.2**. Forms, mod
 
 These are six desktop targets. This project does not provide Android, iOS or tablet packages. Windows ships as a standalone GUI executable that uses Windows' existing APIs; it does not need a WebView2 installer, Go, Node or an additional UI runtime.
 
-The interface embeds the unmodified Regular, Medium and SemiBold fonts from [Inter 4.1](https://github.com/rsms/inter/releases/tag/v4.1), with Go fonts as a fallback. Nothing is installed into the user’s system font collection. The full font license is included in `THIRD-PARTY-NOTICES.txt`.
+The interface embeds the unmodified Regular, Medium, SemiBold and Bold fonts from [Geist and Geist Mono 1.7.2](https://github.com/vercel/geist-font/releases/tag/v1.7.2), with Go fonts as a fallback. Nothing is installed into the user’s system font collection. The full font license is included in `THIRD-PARTY-NOTICES.txt`.
 
 The native frontend uses the existing authenticated loopback API, keeping configuration validation, safe file updates, credentials and proxy accounting in one backend. External HTTPS links, including Kilo's sign-in page, open in the system browser. Copy controls use the OS clipboard. Agent **Open** controls use the authenticated backend to prepare profiles from the shared library and open installed agents on this computer, with a remembered folder for each agent. See [client launch behavior](clients.md#launch-installed-clients). The optional browser interface retains its older per-client model pickers and explicit preparation. It does not edit the native shared library.
 

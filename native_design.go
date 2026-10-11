@@ -159,12 +159,12 @@ func nativeHardShadowSized(gtx layout.Context, size unit.Dp, content layout.Widg
 	return layout.Dimensions{Size: dims.Size.Add(shift), Baseline: dims.Baseline}
 }
 
-// monoStyle sets display text (titles, headings, labels) in Go Mono, the brutalist typeface.
+// monoStyle sets display text (titles, headings, labels) in Geist Mono, the brutalist typeface.
 func (u *nativeUI) monoStyle(size unit.Sp, s string, c color.NRGBA, weight font.Weight) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
 		l := material.Label(u.theme, size, s)
 		l.Color = c
-		l.Font.Typeface = "Go Mono"
+		l.Font.Typeface = nativeMonoFace
 		l.Font.Weight = weight
 		return l.Layout(gtx)
 	}

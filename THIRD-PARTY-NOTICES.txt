@@ -1051,10 +1051,10 @@ Source: https://raw.githubusercontent.com/tdewolff/canvas/master/LICENSE.md
 
 
 ======================================================================
-Inter 4.1 — unmodified Inter-Regular.otf, Inter-Medium.otf and Inter-SemiBold.otf / desktop_assets/LICENSE.txt
-Source: https://github.com/rsms/inter/releases/tag/v4.1
+Geist and Geist Mono 1.7.2 — unmodified Geist-{Regular,Medium,SemiBold,Bold}.otf and GeistMono-{Regular,Medium,SemiBold,Bold}.otf / desktop_assets/LICENSE.txt
+Source: https://github.com/vercel/geist-font/releases/tag/v1.7.2
 
-Copyright (c) 2016 The Inter Project Authors (https://github.com/rsms/inter)
+Copyright (c) 2023 Vercel, in collaboration with basement.studio
 
 This Font Software is licensed under the SIL Open Font License, Version 1.1.
 This license is copied below, and is also available with a FAQ at:

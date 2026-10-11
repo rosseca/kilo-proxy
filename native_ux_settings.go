@@ -255,7 +255,7 @@ func (u *nativeUI) uxsPlain(text string) layout.Widget {
 	return u.textStyle(15, text, nativeText, font.Medium)
 }
 
-// uxsMono is a value set in Go Mono (addresses, versions).
+// uxsMono is a value set in Geist Mono (addresses, versions).
 func (u *nativeUI) uxsMono(text string) layout.Widget {
 	return u.monoStyle(14, text, nativeText, font.Bold)
 }

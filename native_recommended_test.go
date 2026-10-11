@@ -68,6 +68,7 @@ func TestNativeRecommendedModelsKeepChosenDefault(t *testing.T) {
 	}
 	// Unchecking a recommendation removes only that model.
 	h.frame()
+	h.reveal("Claude Sonnet 4.6", semantic.CheckBox)
 	h.click("Claude Sonnet 4.6", semantic.CheckBox)
 	if s.choice("anthropic/claude-sonnet-4.6") != nil || len(s.Models) != 3 {
 		t.Fatalf("unchecking did not remove the recommendation: %v", s.ids())

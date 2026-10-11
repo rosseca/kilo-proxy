@@ -47,7 +47,7 @@ func (u *nativeUI) uxaText(size unit.Sp, s string, c color.NRGBA, weight font.We
 		l := material.Label(u.theme, size, s)
 		l.Color, l.Font.Weight, l.MaxLines, l.Alignment = c, weight, 1, alignment
 		if mono {
-			l.Font.Typeface = "Go Mono"
+			l.Font.Typeface = nativeMonoFace
 		}
 		return l.Layout(gtx)
 	}

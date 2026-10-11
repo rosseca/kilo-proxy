@@ -101,7 +101,7 @@ func uxmLeftBar(width unit.Dp, c color.NRGBA, content layout.Widget) layout.Widg
 	}
 }
 
-// uxmMono is a Go Mono label (headings, eyebrows, counts and badges).
+// uxmMono is a Geist Mono label (headings, eyebrows, counts and badges).
 func (u *nativeUI) uxmMono(size unit.Sp, s string, c color.NRGBA) layout.Widget {
 	return u.monoStyle(size, s, c, font.Bold)
 }

@@ -99,7 +99,7 @@ func newNativeUI(owner *app, invalidate func()) *nativeUI {
 	t := material.NewTheme()
 	t.Shaper = text.NewShaper(text.WithCollection(nativeFonts()))
 	t.TextSize = 14
-	t.Face = "Inter"
+	t.Face = nativeSansFace
 	t.Bg, t.Fg = nativeBg, nativeText
 	t.ContrastBg, t.ContrastFg = nativeInk, nativeSurface
 	u := &nativeUI{owner: owner, invalidate: invalidate, theme: t, updates: make(chan func(), 128), editors: map[string]*widget.Editor{}, buttons: map[string]*widget.Clickable{}, checks: map[string]*widget.Bool{}, lists: map[string]*widget.List{}, expanded: map[string]bool{}, busy: map[string]bool{}, state: map[string]any{}, client: "codex", page: "agents", traceStage: "request"}
@@ -198,7 +198,7 @@ func (u *nativeUI) note(s string) layout.Widget {
 	return u.textStyle(13, s, nativeTextMuted, font.Normal)
 }
 
-// heading is the section title (Inter); Go Mono is reserved for page titles,
+// heading is the section title (Geist); Geist Mono is reserved for page titles,
 // eyebrows, disclosures and status so each typeface has one job.
 func (u *nativeUI) heading(s string) layout.Widget {
 	return u.textStyle(18, s, nativeText, font.SemiBold)
@@ -291,7 +291,7 @@ func (u *nativeUI) buttonWidget(id, label string, kind nativeButtonKind, icon *w
 			if expanded {
 				sign = "− "
 			}
-			// Short labels read as brutalist tags; long phrases stay legible in Inter.
+			// Short labels read as brutalist tags; long phrases stay legible in Geist.
 			if utf8.RuneCountInString(label) <= 16 {
 				text = u.monoStyle(13, sign+strings.ToUpper(label), foreground, font.Bold)
 			} else {
@@ -515,7 +515,7 @@ func (u *nativeUI) code(id, value string) layout.Widget {
 		gtx.Constraints.Max.Y = gtx.Dp(300)
 		return widget.Border{Color: nativeBorderStrong, Width: 1}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			style := material.Editor(u.theme, e, "")
-			style.Font.Typeface = "Go Mono"
+			style.Font.Typeface = nativeMonoFace
 			style.TextSize = 12
 			return layout.UniformInset(12).Layout(gtx, style.Layout)
 		})
