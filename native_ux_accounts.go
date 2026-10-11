@@ -137,15 +137,7 @@ func (u *nativeUI) uxsConnectionBlock() layout.Widget {
 	return u.uxsBlock(u.tr("Connection", "Conexión"), u.tr("for clients you set up by hand", "para clientes que configuras a mano"), row)
 }
 
-func (u *nativeUI) uxsTeamName(id string) string {
-	for _, raw := range nativeArray(u.state, "organizations") {
-		org := nativeMap(raw)
-		if nativeString(org, "id") == id && nativeString(org, "name") != "" {
-			return nativeString(org, "name")
-		}
-	}
-	return id
-}
+func (u *nativeUI) uxsTeamName(id string) string { return u.teamName(id) }
 
 // uxsChooseTeam saves a team picked from the dropdown immediately.
 func (u *nativeUI) uxsChooseTeam(id string) {
@@ -211,7 +203,7 @@ func (u *nativeUI) uxsKiloRow() layout.Widget {
 		if !nativeBool(u.state, "kiloReady") {
 			tone, label = nativeToneInfo, u.tr("Saving…", "Guardando…")
 		}
-		status = u.uxsStatus(tone, label, u.uxsTeamName(orgID))
+		status = u.uxsStatus(tone, label, "")
 		small = append(small, u.uxsKiloIdentity())
 	case hasKey:
 		status = u.uxsStatus(nativeToneWarning, u.tr("Choose a team", "Elige un equipo"), "")
@@ -226,7 +218,7 @@ func (u *nativeUI) uxsKiloRow() layout.Widget {
 		if team == "" {
 			team = u.tr("choose", "elegir")
 		}
-		actions = append(actions, u.disabled(!busy, u.dropdownButton("uxs.team.toggle", u.tr("Team: ", "Equipo: ")+team, func() { u.expanded["uxs.team"] = !u.expanded["uxs.team"] })))
+		actions = append(actions, u.disabled(!busy, u.dropdownButton("uxs.team.toggle", u.tr("Team: ", "Equipo: ")+nativeEllipsis(team, 28), func() { u.expanded["uxs.team"] = !u.expanded["uxs.team"] })))
 	}
 	actions = append(actions, u.uxsToggleLink("uxs.kilo", "Manage", "Gestionar"))
 	value := []layout.Widget{u.uxsValue(status, small...)}

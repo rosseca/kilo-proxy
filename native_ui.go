@@ -37,6 +37,7 @@ type nativeUI struct {
 	catalogGeneration   uint64
 	catalogCached       bool
 	catalogFetchedAt    time.Time
+	teamNameAsked       string // team whose name was already requested in the background
 	library             *nativeLibrary
 	packs               *nativePackUI
 	agents              *nativeAgents

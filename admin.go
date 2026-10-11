@@ -208,6 +208,8 @@ func (a *app) adminHandler() http.Handler {
 			a.state(w)
 		case "/api/auth/organizations":
 			a.loadOrganizations(w, r)
+		case "/api/auth/team-name":
+			a.refreshTeamName(w, r)
 		case "/api/config":
 			a.saveConfig(w, r)
 		case "/api/start":
@@ -260,7 +262,7 @@ func (a *app) state(w http.ResponseWriter) {
 		"trayDisplay":                     normalizeTrayDisplay(a.config.TrayDisplay),
 		"language":                        a.config.Language, "catalogRevision": a.catalogRevision,
 		"auth": a.login, "organizations": a.organizations, "accountEmail": a.accountEmail, "keySaved": a.keySaved,
-		"version": version, "desktop": a.desktop != nil, "port": a.config.Port, "orgId": a.config.OrgID,
+		"version": version, "desktop": a.desktop != nil, "port": a.config.Port, "orgId": a.config.OrgID, "orgName": a.orgNameLocked(a.config.OrgID),
 		"update":   a.updateSnapshot(),
 		"localKey": a.config.LocalKey, "hasKey": a.apiKey != "", "remember": a.config.Remember,
 		"running": a.proxyServer != nil, "baseURL": "http://127.0.0.1:" + strconv.Itoa(a.config.Port) + "/v1",
@@ -356,6 +358,7 @@ func (a *app) saveConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	cfg := a.config
 	cfg.Port, cfg.OrgID, cfg.Remember = input.Port, input.OrgID, input.Remember
+	cfg.OrgName = a.orgNameLocked(input.OrgID)
 	if cfg.Remember {
 		if len(key) > credentialVaultLimit(a.vault) {
 			jsonError(w, 400, "Esta clave supera el tamaño portable del almacén de credenciales. Desmarca Recordar para usarla durante esta sesión.")

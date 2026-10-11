@@ -319,14 +319,58 @@ func (u *nativeUI) proxyState() (nativeTone, string) {
 
 // proxyTeam names the organization that pays for requests.
 func (u *nativeUI) proxyTeam() string {
-	teamID := nativeString(u.state, "orgId")
+	return u.teamName(nativeString(u.state, "orgId"))
+}
+
+// teamName names a Kilo team from the loaded list or the name saved with the
+// current team. An unknown name shows a shortened ID and asks Kilo for it once
+// in the background, so a remembered login does not leave a raw ID on screen.
+func (u *nativeUI) teamName(id string) string {
+	if id == "" {
+		return ""
+	}
 	for _, raw := range nativeArray(u.state, "organizations") {
 		org := nativeMap(raw)
-		if nativeString(org, "id") == teamID && nativeString(org, "name") != "" {
+		if nativeString(org, "id") == id && nativeString(org, "name") != "" {
 			return nativeString(org, "name")
 		}
 	}
-	return teamID
+	if id == nativeString(u.state, "orgId") {
+		if name := nativeString(u.state, "orgName"); name != "" {
+			return name
+		}
+	}
+	r := []rune(id)
+	if len(r) <= 12 {
+		return id
+	}
+	if id == nativeString(u.state, "orgId") {
+		u.requestTeamName(id)
+	}
+	return string(r[:8]) + "…"
+}
+
+// nativeEllipsis cuts s to at most n characters, ending in "…".
+func nativeEllipsis(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return strings.TrimSpace(string(r[:n-1])) + "…"
+}
+
+func (u *nativeUI) requestTeamName(id string) {
+	if u.teamNameAsked == id || !nativeBool(u.state, "hasKey") || u.owner == nil {
+		return
+	}
+	u.teamNameAsked = id
+	go func() {
+		raw, err := nativeRequest(u.owner, "POST", "/api/auth/team-name", map[string]any{})
+		if err != nil {
+			return // offline or signed out: keep the short ID, no notice
+		}
+		u.enqueue(func() { u.acceptState(raw) })
+	}()
 }
 
 // proxyStatusBlock keeps the proxy state, billed team, local endpoint and the
@@ -367,7 +411,7 @@ func (u *nativeUI) proxyStatusBlock() layout.Widget {
 		}
 		children := []layout.Widget{u.monoStyle(11, u.tr("PROXY", "PROXY"), nativeTextSubtle, font.Bold), pill}
 		if team := u.proxyTeam(); team != "" {
-			children = append(children, u.column(u.textStyle(11, u.tr("Billed to", "Se factura a"), nativeTextSubtle, font.Normal), u.textStyle(13, team, nativeInk, font.SemiBold)))
+			children = append(children, u.column(u.textStyle(11, u.tr("Billed to", "Se factura a"), nativeTextSubtle, font.Normal), u.textStyle(13, nativeEllipsis(team, 40), nativeInk, font.SemiBold)))
 		}
 		if base := nativeString(u.state, "baseURL"); base != "" {
 			children = append(children, u.column(

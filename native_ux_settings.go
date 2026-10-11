@@ -160,7 +160,13 @@ func (u *nativeUI) uxsRow(label, sublabel string, value, actions, below layout.W
 				}),
 			}
 			if actions != nil {
-				children = append(children, layout.Rigid(layout.Spacer{Width: 16}.Layout), layout.Rigid(actions))
+				// Long action labels (a team name, say) must never squeeze the value
+				// column into a one-letter-per-line strip.
+				children = append(children, layout.Rigid(layout.Spacer{Width: 16}.Layout), layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					gtx.Constraints.Max.X = max(0, gtx.Constraints.Max.X-gtx.Dp(200))
+					gtx.Constraints.Min.X = min(gtx.Constraints.Min.X, gtx.Constraints.Max.X)
+					return actions(gtx)
+				}))
 			}
 			return layout.Flex{Alignment: layout.Middle}.Layout(gtx, children...)
 		})

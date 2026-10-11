@@ -96,6 +96,11 @@ func TestNativeScreenshots(t *testing.T) {
 	u.expanded["uxs.kilo"], u.settingsTab = true, "accounts"
 	shoot(u, "09e-settings-kilo-expanded", 1280, 1100)
 	u.expanded["uxs.kilo"], u.settingsTab = false, ""
+	// A long team name must not squeeze the status column.
+	savedTeams := u.state["organizations"]
+	u.state["organizations"] = []any{map[string]any{"id": nativeString(u.state, "orgId"), "name": "Leadtech · Plataforma de desarrollo e inteligencia artificial"}}
+	shoot(u, "09f-settings-long-team", 1280, 1100)
+	u.state["organizations"] = savedTeams
 	u.page = "connection"
 	shoot(u, "10-connection", 1280, 1100)
 	u.page = "agents"

@@ -182,3 +182,21 @@ func TestUxsChatGPTChangePausesAndRestartsProxy(t *testing.T) {
 		t.Fatal("the proxy restart is still pending")
 	}
 }
+
+// An unknown team name shows a short ID instead of the full UUID; a saved
+// name wins as soon as the state carries it.
+func TestUxsTeamNameFallsBackToShortID(t *testing.T) {
+	u := nativeTestUI(t)
+	id := "f9733db8-31ff-4096-8136-841b2502f280"
+	u.state["orgId"], u.state["hasKey"], u.state["organizations"], u.state["orgName"] = id, false, []any{}, ""
+	if got := u.proxyTeam(); got != "f9733db8…" {
+		t.Fatalf("short id = %q", got)
+	}
+	u.state["orgName"] = "Rosseca"
+	if got, menu := u.proxyTeam(), u.uxsTeamName(id); got != "Rosseca" || menu != "Rosseca" {
+		t.Fatalf("saved name = %q / %q", got, menu)
+	}
+	if got := u.teamName("short-id"); got != "short-id" {
+		t.Fatalf("short ids stay whole: %q", got)
+	}
+}

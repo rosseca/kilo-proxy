@@ -280,3 +280,54 @@ func (a *app) loadOrganizations(w http.ResponseWriter, r *http.Request) {
 	a.mu.Unlock()
 	a.state(w)
 }
+
+// orgNameLocked names an organization from the loaded team list, falling back
+// to the name saved with the current team; it is empty when unknown.
+func (a *app) orgNameLocked(id string) string {
+	for _, org := range a.organizations {
+		if org.ID == id && org.Name != "" {
+			return org.Name
+		}
+	}
+	if id != "" && id == a.config.OrgID {
+		return a.config.OrgName
+	}
+	return ""
+}
+
+// refreshTeamName reloads the team list to name the saved team. Unlike
+// loadOrganizations it never changes the selected team, so it is allowed while
+// the proxy runs, and it saves the name so later launches show it immediately.
+func (a *app) refreshTeamName(w http.ResponseWriter, r *http.Request) {
+	a.mu.Lock()
+	key, org := a.apiKey, a.config.OrgID
+	a.mu.Unlock()
+	if key == "" || org == "" {
+		a.state(w)
+		return
+	}
+	profile, err := a.fetchOrganizations(r.Context(), key)
+	if err != nil {
+		jsonError(w, 502, "No se pudieron cargar tus equipos. Revisa la conexión o vuelve a iniciar sesión.")
+		return
+	}
+	a.mu.Lock()
+	if a.apiKey == key && a.config.OrgID == org && !a.authPending() {
+		a.organizations = profile.Organizations
+		if a.accountEmail == "" {
+			a.accountEmail = profile.User.Email
+			if a.accountEmail == "" {
+				a.accountEmail = profile.Email
+			}
+		}
+		if name := a.orgNameLocked(org); name != "" && name != a.config.OrgName {
+			cfg := a.config
+			cfg.OrgName = name
+			if writeSettings(a.dir, cfg) == nil {
+				a.config = cfg
+			}
+		}
+	}
+	a.mu.Unlock()
+	a.state(w)
+}

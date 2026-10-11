@@ -232,3 +232,36 @@ func TestDeviceLoginStatusJSONContainsNoPrivateFields(t *testing.T) {
 		t.Fatal("private cancellation leaked into JSON", err)
 	}
 }
+
+// A remembered login knows only the team ID; the name is fetched once, without
+// changing the team or stopping the proxy, and saved for later launches.
+func TestTeamNameRefreshPersistsWithoutChangingTeam(t *testing.T) {
+	a := testApp(t)
+	a.apiKey = "saved-key"
+	a.config.OrgID = "f9733db8-31ff-4096-8136-841b2502f280"
+	authServer(t, a, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/profile" {
+			t.Error("unexpected auth URL")
+			w.WriteHeader(404)
+			return
+		}
+		jsonResponse(w, 200, map[string]any{"organizations": []organization{{ID: "other", Name: "Other"}, {ID: "f9733db8-31ff-4096-8136-841b2502f280", Name: "Rosseca"}}})
+	})
+	if state := adminRequest(a, "state", "").Body.String(); strings.Contains(state, `"orgName":"Rosseca"`) {
+		t.Fatal("name known before refresh")
+	}
+	w := adminRequest(a, "auth/team-name", `{}`)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"orgName":"Rosseca"`) {
+		t.Fatalf("refresh: %d %s", w.Code, w.Body.String())
+	}
+	saved, err := readSettings(a.dir)
+	if err != nil || saved.OrgName != "Rosseca" || saved.OrgID != "f9733db8-31ff-4096-8136-841b2502f280" {
+		t.Fatalf("saved %+v %v", saved, err)
+	}
+	a.mu.Lock()
+	a.organizations = nil // a restart forgets the list but keeps the saved name
+	a.mu.Unlock()
+	if state := adminRequest(a, "state", "").Body.String(); !strings.Contains(state, `"orgName":"Rosseca"`) {
+		t.Fatal("saved name missing after restart")
+	}
+}

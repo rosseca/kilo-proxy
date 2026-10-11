@@ -39,6 +39,7 @@ type settings struct {
 	Language                        string                  `json:"language,omitempty"`
 	Port                            int                     `json:"port"`
 	OrgID                           string                  `json:"orgId"`
+	OrgName                         string                  `json:"orgName,omitempty"`
 	LocalKey                        string                  `json:"localKey"`
 	Remember                        bool                    `json:"remember"`
 	VaultID                         string                  `json:"vaultId"`
