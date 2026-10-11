@@ -184,6 +184,26 @@ func TestNativeScreenshots(t *testing.T) {
 		c := hu.clientState()
 		return c.LaunchChecked && !hu.busy["GET"+nativeLaunchEndpoint] && !hu.busy["GET/api/claude/info"]
 	})
+	// Point detected apps at real bundles on this Mac so the shots show their icons.
+	c := hu.clientState()
+	for key, bundle := range map[string]string{"claude-desktop": "/Applications/Claude.app", "synara": "/Applications/Synara Beta.app", "t3-code": "/Applications/T3 Code (Nightly).app", "openmausbot": "/Applications/OpenMausBot.app", "zed": "/Applications/Zed.app", "open-design": "/Applications/Open Design.app", "xcode-chat": "/Applications/Xcode.app", "codex": "/Applications/Codex.app"} {
+		if _, err := os.Stat(bundle); err == nil {
+			info := c.LaunchInfo.Clients[key]
+			info.Path = bundle
+			c.LaunchInfo.Clients[key] = info
+		}
+	}
+	for key := range uxhIconSources {
+		hu.uxhAppIcon(key)
+	}
+	nativeTestWait(t, hu, func() bool {
+		for _, icon := range hu.appIcons {
+			if icon.loading {
+				return false
+			}
+		}
+		return true
+	})
 	ha := hu.agentsState()
 	now := time.Now()
 	ha.Preferences.noteOpened("codex", "", now.Add(-2*time.Hour))

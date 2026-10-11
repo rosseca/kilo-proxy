@@ -156,9 +156,15 @@ func (u *nativeUI) uxhModelsSummary() string {
 	return fmt.Sprintf(u.tr("%d models · starts with %s", "%d modelos · empieza con %s"), len(s.Models), name)
 }
 
-// uxhMonogram is a harness's square badge: solid black when installed, a
-// dashed grey outline when it is not.
+// uxhMonogram is a harness's square badge: the installed app's own icon when
+// it can be read, otherwise solid black when installed and a dashed grey
+// outline when it is not.
 func (u *nativeUI) uxhMonogram(key string, size unit.Dp, installed bool) layout.Widget {
+	if installed {
+		if icon, ok := u.uxhAppIcon(key); ok {
+			return u.uxhAppIconLayout(key, icon, size)
+		}
+	}
 	return func(gtx layout.Context) layout.Dimensions {
 		side := gtx.Dp(size)
 		box := image.Pt(side, side)
