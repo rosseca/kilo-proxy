@@ -247,6 +247,8 @@ func TestNativeActivityCacheCaptureAndClearKeepAccounting(t *testing.T) {
 	u.refreshState()
 	nativeTestWait(t, u, func() bool { return nativeNumber(u.state, "requests") == 2 })
 	u.page = "activity"
+	// Request rows, the inspector and the capture controls live in the Requests tab.
+	u.uxa().tab = "requests"
 	nativeTestFrame(t, u)
 	var total usageSummary
 	nativeDecode(nativeMap(u.state["usage"])["total"], &total)
@@ -285,6 +287,7 @@ func TestNativeActivityCacheCaptureAndClearKeepAccounting(t *testing.T) {
 func TestNativeCaptureChoiceStaysVisibleWhileSaving(t *testing.T) {
 	u := nativeTestUI(t)
 	u.page = "activity"
+	u.uxa().tab = "requests"
 	u.state["captureEnabled"] = false
 	u.setChecked("activity.capture", true)
 	u.busy["POST/api/activity/config"] = true

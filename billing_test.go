@@ -170,7 +170,8 @@ func TestBillingCacheTTLStalenessAndAccountSwitch(t *testing.T) {
 	a.mu.Lock()
 	a.ensureBillingRefreshLocked(false)
 	a.mu.Unlock()
-	if calls.Load() != 2 {
+	// Balance, daily usage and the per-model breakdown: three calls, no more.
+	if calls.Load() != 3 {
 		t.Fatal("state read bypassed refresh interval")
 	}
 	status.Store(401)
@@ -262,5 +263,90 @@ func TestBillingNoRedirectsAndAdminOnlyRefresh(t *testing.T) {
 		if w.Code != 401 && w.Code != 403 {
 			t.Fatalf("unauthorized billing refresh: %d", w.Code)
 		}
+	}
+}
+
+func billingTestModelRow(date, model, cost string) string {
+	return `{"datetime":"` + date + `","dimensions":{"model":` + model + `},"costMicrodollars":` + cost + `,"requestCount":3}`
+}
+
+func TestBillingModelBreakdownIsFetchedAndParsedTolerantly(t *testing.T) {
+	var grouped atomic.Int32
+	transport := usageMemoryTransport(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path == "/api/profile/balance" {
+			return billingTestResponse(200, `{"balance":5}`), nil
+		}
+		var input map[string]any
+		if err := json.Unmarshal([]byte(r.URL.Query().Get("input")), &input); err != nil {
+			t.Error(err)
+		}
+		groupBy, _ := input["groupBy"].([]any)
+		if len(groupBy) == 0 {
+			return billingTestResponse(200, billingTestUsage(billingTestRow("2026-09-21T00:00:00Z", "2000000"))), nil
+		}
+		grouped.Add(1)
+		if len(groupBy) != 1 || groupBy[0] != "model" || input["granularity"] != "day" || input["viewAs"] != "self" || input["organizationId"] != "team" {
+			t.Errorf("wrong per-model query: %+v", input)
+		}
+		rows := strings.Join([]string{
+			billingTestModelRow("2026-09-21T00:00:00Z", `"anthropic/claude-sonnet-4.6"`, "1500000"),
+			billingTestModelRow("2026-09-21T00:00:00Z", `"anthropic/claude-sonnet-4.6"`, "250000"), // duplicate: summed
+			billingTestModelRow("2026-09-20T00:00:00Z", `" z-ai/glm-5 "`, "500000"),
+			billingTestModelRow("2026-09-21T00:00:00Z", `""`, "100"),                   // empty model
+			billingTestModelRow("2026-09-21T00:00:00Z", `42`, "100"),                   // not a string
+			billingTestModelRow("2026-09-21T00:00:00Z", `"bad\u0007model"`, "100"),     // control character
+			billingTestModelRow("2026-07-01T00:00:00Z", `"too/old"`, "100"),            // outside the period
+			billingTestModelRow("not a date", `"no/date"`, "100"),                      // bad date
+			billingTestModelRow("2026-09-21T00:00:00Z", `"negative/cost"`, "-5"),       // negative cost
+			billingTestModelRow("2026-09-21T00:00:00Z", `"invalid/cost"`, `"NaN"`),     // invalid cost
+			`{"datetime":"2026-09-21T00:00:00Z","dimensions":{},"costMicrodollars":7}`, // no model dimension
+		}, ",")
+		return billingTestResponse(200, billingTestUsage(rows)), nil
+	})
+	result := fetchBilling(context.Background(), "https://api.kilo.ai", transport, "secret", "team", billingTestNow)
+	if result.Usage.Status != "ready" || grouped.Load() != 1 {
+		t.Fatalf("per-model breakdown not requested once after daily usage: %+v", result.Usage)
+	}
+	want := []accountUsageModel{
+		{Date: "2026-09-21", Model: "anthropic/claude-sonnet-4.6", CostUSD: "1.750000000", Requests: 6},
+		{Date: "2026-09-20", Model: "z-ai/glm-5", CostUSD: "0.500000000", Requests: 3},
+	}
+	if len(result.Usage.Models) != len(want) {
+		t.Fatalf("models: %+v", result.Usage.Models)
+	}
+	for i := range want {
+		if result.Usage.Models[i] != want[i] {
+			t.Fatalf("model row %d: %+v, want %+v", i, result.Usage.Models[i], want[i])
+		}
+	}
+}
+
+func TestBillingModelBreakdownFailureKeepsDailyUsage(t *testing.T) {
+	for name, grouped := range map[string]func() *http.Response{
+		"http error": func() *http.Response { return billingTestResponse(400, `{"error":"invalid groupBy"}`) },
+		"malformed":  func() *http.Response { return billingTestResponse(200, `{"result":`) },
+		"no rows":    func() *http.Response { return billingTestResponse(200, billingTestUsage("")) },
+		"wrong granularity": func() *http.Response {
+			return billingTestResponse(200, `{"result":{"data":{"rows":[`+billingTestModelRow("2026-09-21T00:00:00Z", `"m"`, "1")+`],"effectiveGranularity":"week"}}}`)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			transport := usageMemoryTransport(func(r *http.Request) (*http.Response, error) {
+				if r.URL.Path == "/api/profile/balance" {
+					return billingTestResponse(200, `{"balance":5}`), nil
+				}
+				if strings.Contains(r.URL.Query().Get("input"), `"groupBy":["model"]`) {
+					return grouped(), nil
+				}
+				return billingTestResponse(200, billingTestUsage(billingTestRow("2026-09-21T00:00:00Z", "2000000"))), nil
+			})
+			result := fetchBilling(context.Background(), "https://api.kilo.ai", transport, "secret", "", billingTestNow)
+			if result.Status != "ready" || result.Usage.Status != "ready" || result.Usage.Error != "" || *result.Usage.TodayUSD != "2.000000000" {
+				t.Fatalf("optional breakdown broke daily usage: %+v", result.Usage)
+			}
+			if result.Usage.Models != nil {
+				t.Fatalf("unusable breakdown produced rows: %+v", result.Usage.Models)
+			}
+		})
 	}
 }

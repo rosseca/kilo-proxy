@@ -38,14 +38,17 @@ func TestNativeAccountUsageLayoutAndDailyDetails(t *testing.T) {
 				// copy. Real one-second refreshes can run during a slow GPU
 				// screenshot and must preserve the synthetic account and locale.
 				now := time.Now()
-				balance, todayCost, yesterdayCost, monthCost := "248.623145000", "1.203456000", "8.956780000", "72.068192000"
-				remoteDate := now.UTC().AddDate(0, 0, -1).Format("2006-01-02")
+				balance, todayCost, yesterdayCost, monthCost := "248.623145000", "1.203456000", "8.956780000", "10.160236000"
+				todayDate, remoteDate := now.UTC().Format("2006-01-02"), now.UTC().AddDate(0, 0, -1).Format("2006-01-02")
 				u.owner.mu.Lock()
 				u.owner.config.Language = lang
 				u.owner.syncBillingIdentityLocked()
 				u.owner.billing.snapshot = billingSnapshot{
 					Status: "ready", Scope: "organization", OrgID: u.owner.config.OrgID, BalanceUSD: &balance, FetchedAt: now.Format(time.RFC3339),
-					Usage: accountUsageSnapshot{Status: "ready", Scope: "self", TimeZone: "UTC", TodayUSD: &todayCost, YesterdayUSD: &yesterdayCost, Last30DaysUSD: &monthCost, FetchedAt: now.Format(time.RFC3339), PeriodEnd: now.UTC().Format(time.RFC3339), Days: []accountUsageDay{{Date: remoteDate, CostUSD: yesterdayCost, Requests: 124, Input: 53012, Output: 600, Cached: 44000}}},
+					Usage: accountUsageSnapshot{Status: "ready", Scope: "self", TimeZone: "UTC", TodayUSD: &todayCost, YesterdayUSD: &yesterdayCost, Last30DaysUSD: &monthCost, FetchedAt: now.Format(time.RFC3339), PeriodEnd: now.UTC().Format(time.RFC3339), Days: []accountUsageDay{
+						{Date: todayDate, CostUSD: todayCost, Requests: 31, Input: 10000, Output: 200, Cached: 5000},
+						{Date: remoteDate, CostUSD: yesterdayCost, Requests: 124, Input: 53012, Output: 600, Cached: 44000},
+					}},
 				}
 				u.owner.usageHistory.mu.Lock()
 				u.owner.usageHistory.disk.Scopes[usageAccountID(u.owner.apiKey, u.owner.config.OrgID)] = usageHistoryScope{
@@ -66,49 +69,48 @@ func TestNativeAccountUsageLayoutAndDailyDetails(t *testing.T) {
 				h.target(u.tr("Refresh balance and usage", "Actualizar saldo y uso"), semantic.Button)
 				nativeGridCapture(t, h, "account-usage-"+fmtSize(size)+"-"+lang)
 				// Exercise the same refresh that used to erase the fixture on
-				// slower CI runners before using the daily-history controls.
+				// slower CI runners before checking the summary.
 				u.refreshState()
 				nativeTestWait(t, u, func() bool { return !u.busy["GET/api/state"] })
 				h.frame()
-				for _, amount := range []string{"$248.623145", "$1.203456", "$8.95678"} {
-					found := false
+				hasLabel := func(want string, exact bool) bool {
 					for _, node := range h.nodes() {
-						if strings.Contains(node.Desc.Label, amount) {
-							found = true
+						if exact && node.Desc.Label == want || !exact && (strings.Contains(node.Desc.Label, want) || strings.Contains(node.Desc.Description, want)) {
+							return true
 						}
 					}
-					if !found {
-						t.Fatalf("precise account metric %q absent from layout", amount)
-					}
+					return false
 				}
-				for _, amount := range []string{"$248.62", "$1.20", "$8.96"} {
-					found := false
-					for _, node := range h.nodes() {
-						if node.Desc.Label == amount {
-							found = true
-						}
-					}
-					if !found {
+				// Short balance and period spend in the KPI row.
+				for _, amount := range []string{"$248.62", "$10.16"} {
+					if !hasLabel(amount, true) {
 						t.Fatalf("short account metric %q absent from layout", amount)
 					}
 				}
-				// The expander must expose the authoritative daily records while
-				// keeping the daily local inference totals in a separate section.
-				nativeMenuWheel(h, image.Pt(size.X-100, size.Y-140), 330)
-				h.click(u.tr("Daily Kilo usage", "Uso diario en Kilo"), semantic.Button)
-				if !u.expanded["billing.daily"] {
-					t.Fatal("daily history did not open")
-				}
-				found := false
-				for _, node := range h.nodes() {
-					if strings.Contains(node.Desc.Label, remoteDate+" · $8.95678") {
-						found = true
+				// Each Kilo day is reachable through its bar: date, short cost and requests.
+				for _, day := range []string{uxaDayLabel(lang, remoteDate) + " · $8.96 · 124", uxaDayLabel(lang, todayDate) + " · $1.20 · 31"} {
+					if !hasLabel(day, false) {
+						t.Fatalf("daily Kilo usage %q missing from the chart", day)
 					}
 				}
-				if !found {
-					t.Fatal("daily Kilo usage row missing")
+				// The sources footnote expands to the exact amounts.
+				nativeMenuWheel(h, image.Pt(size.X-100, size.Y-140), 3000)
+				h.click(u.tr("Where this data comes from", "De dónde salen estos datos"), semantic.Button)
+				if !u.expanded["activity.sources"] {
+					t.Fatal("sources note did not open")
+				}
+				for _, amount := range []string{"$248.623145", "$10.160236"} {
+					if !hasLabel(amount, false) {
+						t.Fatalf("precise account metric %q absent from layout", amount)
+					}
 				}
 				nativeGridCapture(t, h, "account-usage-daily-"+fmtSize(size)+"-"+lang)
+				// Local device totals stay separate, in the Conversations tab.
+				nativeMenuWheel(h, image.Pt(size.X-100, size.Y-140), -3000)
+				h.click(u.tr("Conversations", "Conversaciones"), semantic.Button)
+				if !hasLabel(u.tr("Observed on this device", "Observado en este dispositivo"), false) || hasLabel("$248.623145", false) {
+					t.Fatal("local history is not shown separately from Kilo data")
+				}
 			})
 		}
 	}

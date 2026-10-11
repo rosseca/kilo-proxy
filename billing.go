@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -41,9 +42,13 @@ type accountUsageSnapshot struct {
 	YesterdayUSD  *string           `json:"yesterdayUSD"`
 	Last30DaysUSD *string           `json:"last30DaysUSD"`
 	Days          []accountUsageDay `json:"days"`
-	FetchedAt     string            `json:"fetchedAt,omitempty"`
-	Error         string            `json:"error,omitempty"`
-	Stale         bool              `json:"stale"`
+	// Models is Kilo's spend per model and UTC day. It is optional: the
+	// grouped query is unverified against every account type, so a failed or
+	// unusable response leaves it empty and the UI hides the breakdown.
+	Models    []accountUsageModel `json:"models,omitempty"`
+	FetchedAt string              `json:"fetchedAt,omitempty"`
+	Error     string              `json:"error,omitempty"`
+	Stale     bool                `json:"stale"`
 }
 
 type accountUsageDay struct {
@@ -55,6 +60,15 @@ type accountUsageDay struct {
 	Cached     int64  `json:"cached"`
 	CacheWrite int64  `json:"cacheWrite"`
 	Errors     int64  `json:"errors"`
+}
+
+// Model names come from Kilo and stay in memory with the billing snapshot;
+// they are never written to the local usage history.
+type accountUsageModel struct {
+	Date     string `json:"date"`
+	Model    string `json:"model"`
+	CostUSD  string `json:"costUSD"`
+	Requests int64  `json:"requests"`
 }
 
 type billingCache struct {
@@ -379,5 +393,105 @@ func fetchAccountUsage(ctx context.Context, endpoint string, transport http.Roun
 	totalUSD := dollars(total)
 	result.Status, result.FetchedAt = "ready", now.Format(time.RFC3339)
 	result.TodayUSD, result.YesterdayUSD, result.Last30DaysUSD = &result.Days[0].CostUSD, &result.Days[1].CostUSD, &totalUSD
+	result.Models = fetchAccountUsageModels(ctx, endpoint, transport, key, org, input, start, today)
+	return result
+}
+
+// fetchAccountUsageModels asks the same usage table for one row per UTC day
+// and model. Any failure returns nil: the breakdown is an optional extra and
+// must never invent data or make the daily totals unavailable.
+func fetchAccountUsageModels(ctx context.Context, endpoint string, transport http.RoundTripper, key, org string, daily map[string]any, start, today time.Time) []accountUsageModel {
+	input := make(map[string]any, len(daily))
+	for name, value := range daily {
+		input[name] = value
+	}
+	input["groupBy"], input["limit"] = []string{"model"}, 5000
+	encoded, _ := json.Marshal(input)
+	var raw json.RawMessage
+	if billingGet(ctx, endpoint, transport, key, org, "/api/trpc/usageAnalytics.getTable?"+url.Values{"input": {string(encoded)}}.Encode(), &raw) != nil {
+		return nil
+	}
+	return parseAccountUsageModels(raw, start, today)
+}
+
+// parseAccountUsageModels tolerates rows it cannot use (missing model, bad
+// date, invalid cost) by skipping them, unlike the strict daily parser. Rows
+// for the same day and model are summed. Unusable responses return nil.
+func parseAccountUsageModels(raw []byte, start, today time.Time) []accountUsageModel {
+	var response struct {
+		Result *struct {
+			Data *struct {
+				Rows []struct {
+					Datetime         string                     `json:"datetime"`
+					Dimensions       map[string]json.RawMessage `json:"dimensions"`
+					CostMicrodollars json.RawMessage            `json:"costMicrodollars"`
+					RequestCount     *int64                     `json:"requestCount"`
+				} `json:"rows"`
+				EffectiveGranularity string `json:"effectiveGranularity"`
+			} `json:"data"`
+		} `json:"result"`
+	}
+	if json.Unmarshal(raw, &response) != nil || response.Result == nil || response.Result.Data == nil {
+		return nil
+	}
+	data := response.Result.Data
+	if data.EffectiveGranularity != "" && data.EffectiveGranularity != "day" {
+		return nil
+	}
+	type key struct{ date, model string }
+	costs, requests, order := map[key]int64{}, map[key]int64{}, []key{}
+	for _, row := range data.Rows {
+		var at time.Time
+		parsed := false
+		for _, format := range []string{time.RFC3339Nano, "2006-01-02 15:04:05", "2006-01-02"} {
+			if value, err := time.Parse(format, row.Datetime); err == nil {
+				at, parsed = value.UTC(), true
+				break
+			}
+		}
+		if !parsed {
+			continue
+		}
+		day := time.Date(at.Year(), at.Month(), at.Day(), 0, 0, 0, 0, time.UTC)
+		if day.Before(start) || day.After(today) {
+			continue
+		}
+		var model string
+		if json.Unmarshal(row.Dimensions["model"], &model) != nil {
+			continue
+		}
+		model = strings.TrimSpace(model)
+		if model == "" || len(model) > 200 || strings.IndexFunc(model, func(r rune) bool { return r < 32 || r == 127 }) >= 0 {
+			continue
+		}
+		amount, ok := billingMoney(row.CostMicrodollars, true)
+		if !ok || amount < 0 {
+			continue
+		}
+		k := key{day.Format("2006-01-02"), model}
+		if costs[k] > 1e17-amount {
+			continue
+		}
+		if _, seen := costs[k]; !seen {
+			order = append(order, k)
+		}
+		costs[k] += amount
+		if row.RequestCount != nil && *row.RequestCount > 0 {
+			requests[k] += *row.RequestCount
+		}
+	}
+	if len(order) == 0 {
+		return nil
+	}
+	result := make([]accountUsageModel, 0, len(order))
+	for _, k := range order {
+		result = append(result, accountUsageModel{Date: k.date, Model: k.model, CostUSD: dollars(costs[k]), Requests: requests[k]})
+	}
+	sort.SliceStable(result, func(i, j int) bool {
+		if result[i].Date != result[j].Date {
+			return result[i].Date > result[j].Date
+		}
+		return result[i].Model < result[j].Model
+	})
 	return result
 }
