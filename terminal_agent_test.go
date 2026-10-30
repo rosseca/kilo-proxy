@@ -88,6 +88,67 @@ func TestTerminalPrepareUsesSharedLibraryAndLocalProfiles(t *testing.T) {
 	}
 }
 
+func TestTerminalPrepareClaude55ReasoningDefaults(t *testing.T) {
+	a := terminalTestApp(t)
+	library := modelLibrary{
+		SchemaVersion: 1, DefaultModel: "openai/gpt-6.1-sol",
+		Models: []modelLibraryItem{
+			{ID: "openai/gpt-6.1-sol", ContextWindow: 200000},
+			{ID: "anthropic/claude-sonnet-5.5", ReasoningEffort: "high", ContextWindow: 200000},
+			{ID: "anthropic/claude-opus-5.5", ReasoningEffort: "xhigh", ContextWindow: 200000},
+		},
+	}
+	if _, err := a.modelLibrary.save(library, a.modelLibrary.snapshot().Revision, false); err != nil {
+		t.Fatal(err)
+	}
+	request, err := json.Marshal(terminalPrepareRequest{Client: "claude", Directory: a.launcher.home, ClaudeVersion: "2.1.314"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := adminRequest(a, "terminal/prepare", string(request))
+	if w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	var plan clientLaunchPlan
+	if err := json.Unmarshal(w.Body.Bytes(), &plan); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(a.claudeProfileDir, "settings.json")
+	if plan.Executable != "" || plan.Directory != a.launcher.home || plan.Env["CLAUDE_CONFIG_DIR"] != a.claudeProfileDir || !reflect.DeepEqual(plan.Args, []string{"--settings", path}) || !reflect.DeepEqual(plan.Unset, nativeClaudeResetEnv) {
+		t.Fatal("invalid isolated Claude console plan")
+	}
+	data, err := os.ReadFile(filepath.Join(a.claudeProfileDir, "kilo-models.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var selection claudeSelection
+	if err := json.Unmarshal(data, &selection); err != nil {
+		t.Fatal(err)
+	}
+	if selection.Initial != library.DefaultModel || len(selection.Models) != len(library.Models) {
+		t.Fatal("terminal preparation changed the selected models")
+	}
+	for i, model := range library.Models {
+		if selection.Models[i].ID != model.ID || selection.Models[i].Effort != model.ReasoningEffort {
+			t.Fatal("terminal preparation lost exact gateway IDs or reasoning defaults")
+		}
+	}
+	data, err = os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var settings map[string]any
+	if err := json.Unmarshal(data, &settings); err != nil {
+		t.Fatal(err)
+	}
+	if object(object(settings["modelSettings"])["claude-sonnet-5"])["effortLevel"] != "high" || object(object(settings["modelSettings"])["claude-opus-5"])["effortLevel"] != "xhigh" {
+		t.Fatal("terminal preparation lost native reasoning defaults")
+	}
+	if a.proxyListener == nil {
+		t.Fatal("successful preparation did not start the proxy")
+	}
+}
+
 func TestTerminalPrepareRejectsUnauthenticatedAndInvalidRequests(t *testing.T) {
 	a := terminalTestApp(t)
 	for _, body := range []string{`{"client":"codex"}`, `{"client":"codex-cli","directory":"relative"}`, `{"client":"claude","command":"evil"}`, `{"client":"claude","claudeVersion":"bad\nheader"}`} {

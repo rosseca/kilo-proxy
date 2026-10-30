@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -118,6 +119,94 @@ func TestClientLaunchRejectsMissingStaleAndUnsafeProfiles(t *testing.T) {
 		t.Fatal("nonregular profile accepted")
 	}
 }
+func TestClientLaunchClaude55SavedProfile(t *testing.T) {
+	selection := claudeSelection{
+		Mode: "installed", Initial: "openai/gpt-6.1-sol",
+		Models: []claudeModel{
+			{ID: "openai/gpt-6.1-sol", Context: 200000, Maximum: 1000000},
+			{ID: "anthropic/claude-sonnet-5.5", Effort: "high", Context: 200000, Maximum: 1000000},
+			{ID: "anthropic/claude-opus-5.5", Effort: "xhigh", Context: 200000, Maximum: 1000000},
+		},
+	}
+	for _, item := range []struct {
+		name   string
+		mutate func(*app, map[string]any)
+	}{
+		{name: "fresh"},
+		{"changed effort", func(_ *app, settings map[string]any) {
+			object(object(settings["modelSettings"])["claude-sonnet-5"])["effortLevel"] = "low"
+		}},
+		{"missing effort", func(_ *app, settings map[string]any) {
+			delete(object(object(settings["modelSettings"])["claude-opus-5"]), "effortLevel")
+		}},
+		{"missing model settings", func(_ *app, settings map[string]any) {
+			delete(settings, "modelSettings")
+		}},
+		{"changed initial model", func(_ *app, settings map[string]any) {
+			settings["model"] = "anthropic/claude-sonnet-5.5[1m]"
+		}},
+		{"changed proxy URL", func(_ *app, settings map[string]any) {
+			object(settings["env"])["ANTHROPIC_BASE_URL"] = "http://127.0.0.1:1"
+		}},
+		{"changed proxy token", func(_ *app, settings map[string]any) {
+			object(settings["env"])["ANTHROPIC_AUTH_TOKEN"] = "different-synthetic"
+		}},
+		{"stale port", func(a *app, _ map[string]any) { a.config.Port++ }},
+		{"rotated key", func(a *app, _ map[string]any) { a.config.LocalKey = "rotated-synthetic" }},
+	} {
+		t.Run(item.name, func(t *testing.T) {
+			a := launchTestApp(t)
+			if _, err := saveClaudeProfile(a.claudeProfileDir, selection, claudeCaps("2.1.314"), a.config.Port, a.config.LocalKey); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(a.claudeProfileDir, "settings.json")
+			before, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var settings map[string]any
+			if err := json.Unmarshal(before, &settings); err != nil {
+				t.Fatal(err)
+			}
+			if settings["model"] != "openai/gpt-6.1-sol[1m]" || object(object(settings["modelSettings"])["claude-sonnet-5"])["effortLevel"] != "high" || object(object(settings["modelSettings"])["claude-opus-5"])["effortLevel"] != "xhigh" {
+				t.Fatal("prepared profile lost gateway identity or reasoning defaults")
+			}
+			if item.mutate != nil {
+				item.mutate(a, settings)
+				before, err = json.Marshal(settings)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, before, 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			choicesPath := filepath.Join(a.claudeProfileDir, "kilo-models.json")
+			choices, err := os.ReadFile(choicesPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			plan, err := a.planClientLaunch(clientLaunchRequest{Client: "claude"}, a.launchRuntime())
+			if item.mutate == nil {
+				if err != nil {
+					t.Fatalf("fresh valid 5.5 profile rejected: %v", err)
+				}
+				if plan.Env["CLAUDE_CONFIG_DIR"] != a.claudeProfileDir || !reflect.DeepEqual(plan.Args, []string{"--settings", path}) || !reflect.DeepEqual(plan.Unset, nativeClaudeResetEnv) {
+					t.Fatal("Claude launch lost isolated settings or authentication reset")
+				}
+			} else if err == nil {
+				t.Fatal("modified or stale 5.5 profile accepted")
+			}
+			for file, want := range map[string][]byte{path: before, choicesPath: choices} {
+				got, err := os.ReadFile(file)
+				if err != nil || string(got) != string(want) {
+					t.Fatalf("validation changed %s: %v", filepath.Base(file), err)
+				}
+			}
+		})
+	}
+}
+
 func TestCodexDesktopLaunchLeavesProjectSelectionToDesktop(t *testing.T) {
 	a := launchTestApp(t)
 	launchPrepareFixture(t, a, "codex")

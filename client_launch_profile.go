@@ -111,8 +111,8 @@ func (a *app) launchProfile(p *clientLaunchPlan, home string) error {
 			return fail
 		}
 		valid := false
-		// Match any supported saved compatibility mode without executing a client to inspect its version.
-		for _, caps := range []claudeCapabilities{{}, {Picker: true}, {Picker: true, PerModelEffort: true}} {
+		// Match supported saved settings formats; preparation verifies the actual client version.
+		for _, caps := range []claudeCapabilities{{}, {Picker: true}, {Version: claude55EffortMinVersion, Picker: true, PerModelEffort: true}} {
 			updated, e := mergeClaudeSettings(old, s, caps, a.config.Port, a.config.LocalKey)
 			if e == nil && launchEqualJSON(old, updated) {
 				valid = true
