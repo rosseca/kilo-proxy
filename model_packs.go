@@ -66,6 +66,7 @@ type modelPacksFile struct {
 var packAgentNames = map[string]string{
 	"codex": "Codex Desktop", "codex-cli": "Codex CLI", "claude": "Claude Code",
 	"claude-desktop": "Claude Desktop", "opencode": "OpenCode", "omp": "Oh My Pi", "zed": "Zed",
+	"t3-code": "T3 Code",
 }
 
 // packAgentKey returns the model-pack assignment key for a client. OpenCode 2

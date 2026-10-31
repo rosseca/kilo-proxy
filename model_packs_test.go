@@ -16,6 +16,25 @@ func packFixture() personalModelPack {
 	}
 }
 
+func TestT3CodePackAssignmentSurvivesRestart(t *testing.T) {
+	dir := t.TempDir()
+	store := newModelPacksStore(dir)
+	file := emptyModelPacksFile()
+	file.Personal = []personalModelPack{packFixture()}
+	file.Assignments["t3-code"] = "mine-example"
+	if err := store.save(file, false); err != nil {
+		t.Fatal(err)
+	}
+	reopened := newModelPacksStore(dir)
+	if reopened.value.Assignments["t3-code"] != "mine-example" {
+		t.Fatal("T3 Code lost its model pack assignment after restart")
+	}
+	library, err := modelPackLibrary(reopened.value, "mine-example", nil)
+	if err != nil || library.DefaultModel != "vendor/test" || len(library.Models) != 1 {
+		t.Fatalf("T3 Code lost its assigned models: %+v, %v", library, err)
+	}
+}
+
 func TestCuratedPacksHaveValidDistinctDefaultModels(t *testing.T) {
 	catalog, err := decodeCuratedPacks(embeddedModelPacks)
 	if err != nil || len(catalog.Packs) != 5 {

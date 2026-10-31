@@ -41,6 +41,10 @@ These five built-in packs are **candidate starting points**, reviewed on Septemb
 
 This pack is **experimental**: Claude Sonnet 5.5 for the first draft, GPT-6 Luna for inexpensive variants, Gemini 3.8 Flash for multimodal reference material, and Qwen3.8 Max 0902 as an optional localization candidate. It must pass blind human brand-voice, accuracy, and cultural-localization reviews before being presented as a quality recommendation.
 
+## Assign packs to T3 Code
+
+The desktop **Use in…** menu includes **T3 Code**. An assigned pack supplies the models for its private Kilo workspace on the next preparation or open, with the existing per-account model filters and limits. See [T3 Code](t3-code.md#assign-a-model-pack) for the settings and reopen steps. Assigning a pack does not enable Kilo accounts or replace native provider accounts.
+
 ## Personal packs and updates
 
 Built-ins are read-only, embedded templates and change with an app release. Under **Models → My packs**, a user can make an independent copy, create a new pack, add/remove catalog models, reorder them, change the default, name models' roles, and assign the result per supported agent. The copy is stored in private `model-packs.json`, separately from the existing shared `models.json`; built-in updates cannot overwrite it. Editing or switching a personal pack does **not** require reinstalling Kilo Proxy. Reopen an agent to load its changed profile; terminal launchers read the same saved assignment at their next invocation. Xcode and Open Design remain on the shared library in this first version.

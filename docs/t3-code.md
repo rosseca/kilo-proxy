@@ -37,6 +37,12 @@ After updating T3 or installing Kilo Proxy 0.63.3, close **T3 Code · Kilo**, re
 
 T3 builds using Orchestrator V2 have their own database migration. On first opening the private Kilo workspace, T3 makes a one-time copy of its V1 database into a separate V2 database. The V1 database is retained, but new chats and changes do not synchronize between them. This applies only to Kilo's private workspace; the launcher does not open your regular T3 data directory. Use web/mobile clients compatible with the installed T3 server protocol.
 
+## Assign a model pack
+
+In the desktop app, choose **Models → Packs** or **My packs**, open **Use in…**, and select **T3 Code**. Preparation uses that pack instead of the shared library for the private T3 workspace. Selecting T3 Code again returns it to the shared library. Other apps keep their own assignments.
+
+The saved T3 account and model filters still apply. Choose **All shared models** for a Kilo account to expose the complete assigned pack; official-model filters keep their existing behavior. T3 supports at most 32 models per account. Close the private T3 workspace and reopen it from Kilo Proxy after changing the assignment or editing the pack. Your normal T3 workspace and native provider accounts stay separate.
+
 ## Open the workspace
 
 1. In Kilo Proxy, open **Agents → T3 Code · Kilo**.
