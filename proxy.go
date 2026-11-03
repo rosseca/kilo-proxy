@@ -196,6 +196,8 @@ func validRoute(method, path string) bool {
 
 type schemaBridgeContextKey struct{}
 
+type responsesNamespaceContextKey struct{}
+
 // responseAdaptationError identifies failures after Kilo returned response headers.
 // Do not expose the wrapped error to API clients: it may contain private data.
 type responseAdaptationError struct{ cause error }
@@ -234,6 +236,13 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 			normalizeMessagesToolStop(r)
 			if err := adaptClaudeDesktopAliasResponse(r); err != nil {
 				return responseAdaptationError{err}
+			}
+			// Restore client tool identity before decoding schema envelopes or
+			// normalizing collaboration arguments.
+			if bridge, ok := r.Request.Context().Value(responsesNamespaceContextKey{}).(*responsesNamespaceBridge); ok {
+				if err := bridge.adaptResponse(r); err != nil {
+					return responseAdaptationError{err}
+				}
 			}
 			if bridge, ok := r.Request.Context().Value(schemaBridgeContextKey{}).(*schemaBridge); ok {
 				if err := bridge.adaptResponse(r); err != nil {
@@ -493,6 +502,10 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 			}
 			return
 		}
+		// identity carries plain JSON; normalize it before every Responses adapter.
+		if r.URL.Path == "/v1/responses" && strings.EqualFold(strings.TrimSpace(r.Header.Get("Content-Encoding")), "identity") {
+			r.Header.Del("Content-Encoding")
+		}
 		if err := prepareResponsesInput(r); err != nil {
 			var oversized *http.MaxBytesError
 			if errors.As(err, &oversized) {
@@ -559,6 +572,20 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 		}
 		if bridge != nil {
 			r = r.WithContext(context.WithValue(r.Context(), schemaBridgeContextKey{}, bridge))
+		}
+
+		namespaceBridge, err := prepareResponsesNamespaceBridge(r)
+		if err != nil {
+			var oversized *http.MaxBytesError
+			if errors.As(err, &oversized) {
+				jsonError(recorder, http.StatusRequestEntityTooLarge, "La petición supera 32 MiB.")
+			} else {
+				jsonError(recorder, http.StatusBadRequest, "Could not adapt Responses namespaces: "+err.Error())
+			}
+			return
+		}
+		if namespaceBridge != nil {
+			r = r.WithContext(context.WithValue(r.Context(), responsesNamespaceContextKey{}, namespaceBridge))
 		}
 
 		imageRequest, cleanupImages, err := a.prepareResponseImageUploads(r, key, orgID)

@@ -1,0 +1,13 @@
+# Namespaced client tools through Kilo (0.68.1)
+
+Codex and other Responses clients can group client-executed functions and custom tools in a `namespace`. Some Kilo Gateway BYOK routes remove that container while filtering paid server features, making the grouped tools unavailable to the model.
+
+Kilo Proxy translates grouped client tools into unique flat wire names on the Kilo `/v1/responses` route. It restores their original name and namespace in client-facing tool calls, including JSON and streaming responses. The mapping belongs to one request, keeps call IDs and tool-result contents unchanged, and does not change the requested model, account or BYOK credentials. Requests without declared namespace groups pass through this adapter unchanged, including standalone Codex delegation notifications. The separate `chatgpt/*` subscription route does not use it.
+
+Only client-executed `function` and `custom` children can be flattened. Hosted tools remain hosted tools and stay subject to the Gateway's policy. Namespace and child descriptions, including the original qualified tool name, remain visible to the model. Invalid groups, duplicate or ambiguous identities, and unsupported dynamic/stateful forms are reported before forwarding rather than silently dropping tools or choosing another tool.
+
+The adapter is designed for explicit tool declarations and full conversation history. Adapted requests using `previous_response_id`, server-side `conversation`, or dynamic tool-search loading require a compatible stateless/full-history form; they are rejected with an explanatory error. It does not create a global conversation cache or guess tool identities from alias-looking strings. Historical calls with no namespace keep their flat identity, even if their names contain dots.
+
+The namespace adapter runs after the existing Anthropic schema envelope and Codex collaboration-input preparation; response identity restoration runs before those adapters decode tool arguments. Existing schema-envelope behavior is retained. Schema contents, argument strings, tool results, reasoning settings, and unrelated text are not rewritten as tool identities. Plain JSON marked with `Content-Encoding: identity` uses the same adapters; this change does not add gzip request support.
+
+Validation uses an isolated Cua environment with the real proxy, the unchanged hash-pinned public Gateway filter, and a loopback synthetic upstream. The same regression expectations demonstrate tool loss on 0.68.0 and tool preservation with the adapter. This checks protocol compatibility; it is not a claim of paid Bedrock inference, actual model tool selection, or real subagent execution.

@@ -85,3 +85,8 @@ Codex V1's `multi_agent_v1.spawn_agent` and `multi_agent_v1.send_input` declare 
 Kilo Proxy adds omission hints to these declared tools. The original 0.30.0 repair removes an empty `items` array when the call also has a non-blank string `message`. The follow-up repair also removes an empty string `message` when `items` is a non-empty array. These narrow repairs preserve the substantive input, model, reasoning and fork settings. Calls containing two substantive inputs, two empty inputs, invalid JSON or wrong-shaped message/items, unrelated tools and V2 tools are left unchanged; the proxy does not choose between competing instructions. Existing conversation history is not rewritten by either correction. The follow-up is included in v0.51.0 and later; the v0.50.0 binary does not include it.
 
 The correction applies to `/v1/responses` across model providers routed through Kilo Gateway, including namespaced and qualified tool names. The separate `chatgpt/*` subscription route does not apply this repair. JSON responses and streaming argument fragments, completed arguments, output items and final responses use the same adaptation. For the affected calls, argument deltas are withheld until the complete arguments arrive; unrelated calls and response events continue streaming. Anthropic's schema envelope is removed before this correction. Run the updated proxy to enable it; no profile change is required.
+
+
+## Namespaced tools through BYOK (0.68.1)
+
+Kilo Proxy preserves grouped client tools across Gateway routes that filter out Responses namespace containers. See [the compatibility adapter and its limits](responses-namespace-compatibility.md). No account or profile change is required.
