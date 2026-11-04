@@ -560,6 +560,15 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 			jsonError(w, status, err.Error())
 			return
 		}
+		if err := prepareGeminiToolSchemas(r, model); err != nil {
+			var oversized *http.MaxBytesError
+			if errors.As(err, &oversized) {
+				jsonError(recorder, http.StatusRequestEntityTooLarge, "La petición supera 32 MiB.")
+			} else {
+				jsonError(recorder, http.StatusBadRequest, "Could not adapt Gemini tool schemas: "+err.Error())
+			}
+			return
+		}
 		bridge, err := prepareSchemaBridge(r)
 		if err != nil {
 			var oversized *http.MaxBytesError

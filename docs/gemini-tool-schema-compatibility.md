@@ -1,0 +1,11 @@
+# Gemini tool schema compatibility (0.68.2)
+
+Some Google schema converters expand a JSON Schema multi-type union into `anyOf` but leave array constraints on the untyped parent. For example, a tool's `body` parameter accepting either a string or an array can reach Google with `items` outside an `ARRAY` node and without `items` inside its array alternative. Google rejects the tool declarations before inference.
+
+Kilo Proxy prepares these unions on the Kilo `/v1/responses` route for `google/gemini-*` models, including their `~google/gemini-*` variants. It makes the alternatives explicit and places type-specific constraints on the corresponding branch. It does not invent an item type, select a different model, drop a tool, execute a tool, or change tool-call arguments or conversation history. Existing JSON and streaming namespace restoration continues to apply.
+
+For example, `{"type":["string","array"],"items":{"type":"string"},"minItems":1}` becomes `{"anyOf":[{"type":"string"},{"type":"array","items":{"type":"string"},"minItems":1}]}`. The string and array alternatives retain their meaning. Common constraints and annotations remain part of the request. This adaptation does not claim that every downstream SDK implements every JSON Schema keyword.
+
+Only schema positions are visited: values inside examples, defaults, enums and constants are data. Requests that do not need this adaptation keep their original bytes. Other model providers and the separate ChatGPT subscription route retain their existing behavior. Unsupported combinations that cannot be rewritten safely receive an explanatory local error instead of silently weakening the schema.
+
+Validation uses an isolated Cua environment, the real proxy, an unchanged hash-pinned converter from the official Google JavaScript SDK, and an explicitly synthetic validator for the two Google array-schema rules. The same fixture demonstrates the invalid conversion before the repair and the valid conversion after it. HTTP tests cover JSON, streaming, namespaced tools, raw tool arguments, history and other-provider controls. This is protocol validation; it is not a paid Gemini inference call or a claim that the deployed Gateway uses the tested SDK version. The user's original request payload and the cause of the separate 404 Activity rows were not available.
