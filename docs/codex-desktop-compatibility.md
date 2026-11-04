@@ -90,3 +90,7 @@ The correction applies to `/v1/responses` across model providers routed through 
 ## Namespaced tools through BYOK (0.68.1)
 
 Kilo Proxy preserves grouped client tools across Gateway routes that filter out Responses namespace containers. See [the compatibility adapter and its limits](responses-namespace-compatibility.md). No account or profile change is required.
+
+## Gemini tool schema unions (0.68.2)
+
+Kilo Proxy prepares affected multi-type tool schemas for Google Gemini before the Gateway converts them to Google declarations. Array constraints stay with the array alternative; tool arguments and conversation history keep their client format. See [the compatibility adapter and validation limits](gemini-tool-schema-compatibility.md).
