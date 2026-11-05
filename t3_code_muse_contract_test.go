@@ -90,6 +90,121 @@ func TestT3CodeMuseKiloContractRequiresLiveScopedEnvironment(t *testing.T) {
 	}
 }
 
+func TestT3CodeMuseKiloContractAcceptsNormalizedMergeKey(t *testing.T) {
+	source := t3CodeMuseKiloContractFixture()
+	normalized := strings.Replace(source, "for (const variable of environment) next[variable.name] = variable.value;", `for (const variable of environment) {
+    if (typeof variable.value !== "string") continue;
+    const name = windows ? variable.name.toUpperCase() : variable.name;
+    if (windows) {
+      for (const inherited of Object.keys(next)) if (inherited.toUpperCase() === name) delete next[inherited];
+    }
+    next[name] = name === "CODEX_HOME" || name === "CLAUDE_CONFIG_DIR" ? expandHomePath(variable.value, home) : variable.value;
+  }`, 1)
+	normalized = strings.Replace(normalized, "const next = { ...baseEnv };", `const home = yield* HomeDirectory;
+ const windows = platform === "win32";
+ const next = { ...baseEnv };`, 1)
+	if normalized == source {
+		t.Fatal("invalid fixture")
+	}
+	if !t3CodeMuseKiloSupported(normalized) {
+		t.Fatal("normalized environment key rejected")
+	}
+	for _, declaration := range []string{"let", "var"} {
+		t.Run("declaration-"+declaration, func(t *testing.T) {
+			changed := strings.Replace(normalized, "const name = windows ?", declaration+" name = windows ?", 1)
+			if changed == normalized || !t3CodeMuseKiloSupported(changed) {
+				t.Fatal("normalized key declaration form rejected")
+			}
+		})
+	}
+
+	withCandidate := strings.Replace(normalized, "    const name = windows ?", `    next[inherited] = "ignored";
+    const other = "CONSTANT";
+    next[other] = "ignored";
+    const name = windows ?`, 1)
+	if withCandidate == normalized || !t3CodeMuseKiloSupported(withCandidate) {
+		t.Fatal("unrelated candidate key hid the live normalized key")
+	}
+
+	ordered := strings.Replace(normalized, `    const name = windows ? variable.name.toUpperCase() : variable.name;
+    if (windows) {
+      for (const inherited of Object.keys(next)) if (inherited.toUpperCase() === name) delete next[inherited];
+    }
+    next[name] = name === "CODEX_HOME" || name === "CLAUDE_CONFIG_DIR" ? expandHomePath(variable.value, home) : variable.value;`, `    if (windows) {
+      for (const inherited of Object.keys(next)) if (inherited.toUpperCase() === name) delete next[inherited];
+    }
+    next[name] = name === "CODEX_HOME" || name === "CLAUDE_CONFIG_DIR" ? expandHomePath(variable.value, home) : variable.value;
+    const name = windows ? variable.name.toUpperCase() : variable.name;`, 1)
+	if ordered == normalized || t3CodeMuseKiloSupported(ordered) {
+		t.Fatal("forward-reference normalized key accepted")
+	}
+
+	for _, tc := range []struct{ name, old, next string }{
+		{"constant-key", "const name = windows ? variable.name.toUpperCase() : variable.name;", `const name = "MUSE_API_KEY";`},
+		{"value-key", "const name = windows ? variable.name.toUpperCase() : variable.name;", "const name = variable.value;"},
+		{"mixed-key", "const name = windows ? variable.name.toUpperCase() : variable.name;", "const name = windows ? variable.name : variable.value;"},
+		{"renamed-key", "const name = windows ? variable.name.toUpperCase() : variable.name;", `const name = false ? variable.name : "OTHER_KEY";`},
+		{"value", ": variable.value;", `: "fallback";`},
+		{"env-name", `"CLAUDE_CONFIG_DIR"`, `"META_API_KEY"`},
+		{"return", "return next;", "return baseEnv;"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			changed := strings.Replace(normalized, tc.old, tc.next, 1)
+			if changed == normalized {
+				t.Fatal("invalid negative fixture")
+			}
+			if t3CodeMuseKiloSupported(changed) {
+				t.Fatal("non-derived or incomplete normalized merge accepted")
+			}
+		})
+	}
+
+	simple := strings.Replace(source, "for (const variable of environment) next[variable.name] = variable.value;", `for (const variable of environment) {
+ const name = variable.name;
+ next[name] = variable.value;
+}`, 1)
+	if simple == source || !t3CodeMuseKiloSupported(simple) {
+		t.Fatal("simple normalized environment key rejected")
+	}
+	compact := strings.Replace(simple, "next[name] = variable.value;", "", 1)
+	compact = strings.Replace(compact, "const name = variable.name;", "const name = variable.name;next[name] = variable.value;", 1)
+	if compact == simple || !t3CodeMuseKiloSupported(compact) {
+		t.Fatal("semicolon-adjacent normalized environment key rejected")
+	}
+	for _, tc := range []struct{ name, old, next string }{
+		{"value", "next[name] = variable.value;", `next[name] = "fallback";`},
+		{"comparison", "next[name] = variable.value;", "next[name] === variable.value;"},
+		{"return", "return next;", "return baseEnv;"},
+	} {
+		t.Run("simple-"+tc.name, func(t *testing.T) {
+			changed := strings.Replace(simple, tc.old, tc.next, 1)
+			if changed == simple {
+				t.Fatal("invalid negative fixture")
+			}
+			if t3CodeMuseKiloSupported(changed) {
+				t.Fatal("incomplete normalized merge accepted")
+			}
+		})
+	}
+	for name, tc := range map[string]struct{ source, old, next string }{
+		"normalized-longer-identifier": {simple, "next[name] = variable.value;", "mergednext[name] = variable.value;"},
+		"direct-longer-identifier":     {source, "next[variable.name] = variable.value;", "mergednext[variable.name] = variable.value;"},
+		"unrelated-target":             {simple, "next[name] = variable.value;", "other.next[name] = variable.value;"},
+		"spaced-unrelated-target":      {simple, "next[name] = variable.value;", "other . next[name] = variable.value;"},
+		"commented-value":              {normalized, `next[name] = name === "CODEX_HOME" || name === "CLAUDE_CONFIG_DIR" ? expandHomePath(variable.value, home) : variable.value;`, `next[name] = "fallback"; // next[name] = name === "CODEX_HOME" || name === "CLAUDE_CONFIG_DIR" ? expandHomePath(variable.value, home) : variable.value;`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			changed := strings.Replace(tc.source, tc.old, tc.next, 1)
+			if changed == tc.source {
+				t.Fatal("invalid negative fixture")
+			}
+			if t3CodeMuseKiloSupported(changed) {
+				t.Fatal("prefixed merge target accepted")
+			}
+		})
+	}
+}
+
 func TestT3CodeMuseKiloInstalledSourceContract(t *testing.T) {
 	sourcePath := os.Getenv("KILO_TEST_T3_SERVER_SOURCE")
 	if sourcePath == "" {
