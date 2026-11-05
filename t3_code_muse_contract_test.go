@@ -90,6 +90,41 @@ func TestT3CodeMuseKiloContractRequiresLiveScopedEnvironment(t *testing.T) {
 	}
 }
 
+func TestT3CodeMuseKiloContractAcceptsNormalizedMergeKey(t *testing.T) {
+	source := t3CodeMuseKiloContractFixture()
+	normalized := strings.Replace(source, "for (const variable of environment) next[variable.name] = variable.value;", `for (const variable of environment) {
+    const windows = platform === "win32";
+    const name = windows ? variable.name.toUpperCase() : variable.name;
+    if (windows) {
+      for (const inherited of Object.keys(next)) if (inherited.toUpperCase() === name) delete next[inherited];
+    }
+    next[name] = name === "CODEX_HOME" || name === "CLAUDE_CONFIG_DIR" ? expandHomePath(variable.value, home) : variable.value;
+  }`, 1)
+	if normalized == source {
+		t.Fatal("invalid fixture")
+	}
+	if !t3CodeMuseKiloSupported(normalized) {
+		t.Fatal("normalized environment key rejected")
+	}
+	for _, tc := range []struct{ name, old, next string }{
+		{"constant-key", "const name = windows ? variable.name.toUpperCase() : variable.name;", `const name = "MUSE_API_KEY";`},
+		{"value-key", "const name = windows ? variable.name.toUpperCase() : variable.name;", "const name = variable.value;"},
+		{"value", ": variable.value;", `: "fallback";`},
+		{"env-name", `"CLAUDE_CONFIG_DIR"`, `"META_API_KEY"`},
+		{"return", "return next;", "return baseEnv;"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			changed := strings.Replace(normalized, tc.old, tc.next, 1)
+			if changed == normalized {
+				t.Fatal("invalid negative fixture")
+			}
+			if t3CodeMuseKiloSupported(changed) {
+				t.Fatal("non-derived or incomplete normalized merge accepted")
+			}
+		})
+	}
+}
+
 func TestT3CodeMuseKiloInstalledSourceContract(t *testing.T) {
 	sourcePath := os.Getenv("KILO_TEST_T3_SERVER_SOURCE")
 	if sourcePath == "" {

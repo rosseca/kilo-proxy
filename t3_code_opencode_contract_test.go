@@ -89,6 +89,61 @@ func TestT3CodeOpenCodeKiloContractAcceptsBundledSymbolSuffixes(t *testing.T) {
 	}
 }
 
+func TestT3CodeOpenCodeKiloContractAcceptsNormalizedMergeKey(t *testing.T) {
+	source := t3CodeOpenCodeKiloContractFixture()
+	normalized := strings.Replace(source, "for (const variable of environment) next[variable.name] = variable.value;", `for (const variable of environment) {
+    const windows = platform === "win32";
+    const name = windows ? variable.name.toUpperCase() : variable.name;
+    if (windows) {
+      for (const inherited of Object.keys(next)) if (inherited.toUpperCase() === name) delete next[inherited];
+    }
+    next[name] = name === "CODEX_HOME" || name === "CLAUDE_CONFIG_DIR" ? expandHomePath(variable.value, home) : variable.value;
+  }`, 1)
+	if normalized == source {
+		t.Fatal("invalid fixture")
+	}
+	if !t3CodeOpenCodeKiloSupported(normalized) {
+		t.Fatal("normalized environment key rejected")
+	}
+	for _, tc := range []struct{ name, old, next string }{
+		{"constant-key", "const name = windows ? variable.name.toUpperCase() : variable.name;", `const name = "KILO_API_KEY";`},
+		{"value-key", "const name = windows ? variable.name.toUpperCase() : variable.name;", "const name = variable.value;"},
+		{"return", "return next;", "return baseEnv;"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			changed := strings.Replace(normalized, tc.old, tc.next, 1)
+			if changed == normalized {
+				t.Fatal("invalid negative fixture")
+			}
+			if t3CodeOpenCodeKiloSupported(changed) {
+				t.Fatal("non-derived or incomplete normalized key accepted")
+			}
+		})
+	}
+
+	simple := strings.Replace(source, "for (const variable of environment) next[variable.name] = variable.value;", `for (const variable of environment) {
+    const name = variable.name;
+    next[name] = variable.value;
+  }`, 1)
+	if simple == source || !t3CodeOpenCodeKiloSupported(simple) {
+		t.Fatal("simple normalized environment key rejected")
+	}
+	for _, tc := range []struct{ name, old, next string }{
+		{"value", "next[name] = variable.value;", `next[name] = "fallback";`},
+		{"return", "return next;", "return baseEnv;"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			changed := strings.Replace(simple, tc.old, tc.next, 1)
+			if changed == simple {
+				t.Fatal("invalid negative fixture")
+			}
+			if t3CodeOpenCodeKiloSupported(changed) {
+				t.Fatal("incomplete normalized merge accepted")
+			}
+		})
+	}
+}
+
 // Opt-in package/source inspection only; it never launches T3 or its providers.
 func TestT3CodeOpenCodeKiloInstalledSourceContract(t *testing.T) {
 	path := os.Getenv("KILO_TEST_T3_SERVER_SOURCE")

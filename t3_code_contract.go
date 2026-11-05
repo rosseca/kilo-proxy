@@ -397,7 +397,32 @@ func t3CodeOpenCodeKiloSupported(source string) bool {
 		return false
 	}
 	next, variable := regexp.QuoteMeta(copy[1]), regexp.QuoteMeta(loop[1])
-	return regexp.MustCompile(next+`\[`+variable+`\.name\]\s*=`).MatchString(mergeBody) && regexp.MustCompile(variable+`\.value\b`).MatchString(mergeBody) && regexp.MustCompile(`\breturn\s+`+next+`\b`).MatchString(mergeBody)
+	key, ok := t3CodeContractMergeKey(mergeBody, copy[1], loop[1])
+	if !ok {
+		return false
+	}
+	return regexp.MustCompile(next+`\[`+regexp.QuoteMeta(key)+`\]\s*=`).MatchString(mergeBody) && regexp.MustCompile(variable+`\.value\b`).MatchString(mergeBody) && regexp.MustCompile(`\breturn\s+`+next+`\b`).MatchString(mergeBody)
+}
+
+// t3CodeContractMergeKey returns the expression used to index the merged
+// environment. T3 0.1.7 normalizes environment names on Windows and then
+// assigns through that local key, while earlier builds indexed directly with
+// the loop variable's name. Both forms still copy the instance's own values;
+// unrelated or non-derived keys remain unavailable.
+func t3CodeContractMergeKey(mergeBody, next, variable string) (string, bool) {
+	nextPattern, variablePattern := regexp.QuoteMeta(next), regexp.QuoteMeta(variable)
+	if regexp.MustCompile(nextPattern + `\[` + variablePattern + `\.name\]\s*=`).MatchString(mergeBody) {
+		return variable + ".name", true
+	}
+	assignments := regexp.MustCompile(nextPattern+`\[([A-Za-z_$][A-Za-z0-9_$]*)\]\s*=`).FindAllStringSubmatchIndex(mergeBody, -1)
+	for _, assignment := range assignments {
+		key := mergeBody[assignment[2]:assignment[3]]
+		declaration := regexp.MustCompile(`(?:const|let|var)\s+` + regexp.QuoteMeta(key) + `\s*=\s*[^;]*\b` + variablePattern + `\.name\b[^;]*;`).FindStringIndex(mergeBody)
+		if len(declaration) == 2 && declaration[0] < assignment[0] {
+			return key, true
+		}
+	}
+	return "", false
 }
 
 // Extract one bounded brace body after masking strings and comments. The
@@ -605,11 +630,16 @@ func t3CodeMuseKiloSupported(source string) bool {
 		return false
 	}
 	next, variable := regexp.QuoteMeta(copy[1]), regexp.QuoteMeta(loop[1])
-	assignment := regexp.MustCompile(next + `\[` + variable + `\.name\]\s*=\s*` + variable + `\.value\b`).MatchString(mergeBody)
+	key, keyOK := t3CodeContractMergeKey(mergeBody, copy[1], loop[1])
+	if !keyOK {
+		return false
+	}
+	keyPattern := regexp.QuoteMeta(key)
+	assignment := regexp.MustCompile(next + `\[` + keyPattern + `\]\s*=\s*` + variable + `\.value\b`).MatchString(mergeBody)
 	// Current T3 expands only the two native CLI homes before assigning every
 	// other instance variable unchanged. An unrelated variable.value is not proof.
 	rawBody := source[mergers[0][1]-1 : mergers[0][1]-1+len(mergeBody)]
-	conditional := regexp.MustCompile(next+`\[`+variable+`\.name\]\s*=\s*`+variable+`\.name\s*===\s*"CODEX_HOME"\s*\|\|\s*`+variable+`\.name\s*===\s*"CLAUDE_CONFIG_DIR"\s*\?\s*expandHomePath\(`+variable+`\.value,\s*home\)\s*:\s*`+variable+`\.value\s*;`).FindAllStringIndex(rawBody, -1)
+	conditional := regexp.MustCompile(next+`\[`+keyPattern+`\]\s*=\s*`+keyPattern+`\s*===\s*"CODEX_HOME"\s*\|\|\s*`+keyPattern+`\s*===\s*"CLAUDE_CONFIG_DIR"\s*\?\s*expandHomePath\(`+variable+`\.value,\s*home\)\s*:\s*`+variable+`\.value\s*;`).FindAllStringIndex(rawBody, -1)
 	for _, match := range conditional {
 		if strings.HasPrefix(mergeBody[match[0]:], copy[1]+"[") {
 			assignment = true
