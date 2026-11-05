@@ -218,6 +218,9 @@ func prepareResponsesNamespaceBridge(r *http.Request) (*responsesNamespaceBridge
 			break
 		}
 	}
+	if err := b.rewriteChoice(doc["tool_choice"], false); err != nil {
+		return nil, err
+	}
 	flattened := make([]any, 0, len(tools))
 	for _, value := range tools {
 		tool := object(value)
@@ -227,13 +230,31 @@ func prepareResponsesNamespaceBridge(r *http.Request) (*responsesNamespaceBridge
 		}
 		namespace := stringValue(tool["name"])
 		children, _ := tool["tools"].([]any)
-		for _, value := range children {
+		shared := stringValue(tool["description"])
+		carrier := 0
+		// Preserve shared guidance once, on an explicitly selectable tool
+		// when there is one. Keep it at the tool-description trust level.
+		if shared != "" && len(children) > 1 && len(b.choiceRefs) != 0 {
+			for i, value := range children {
+				child := object(value)
+				entry := b.tools[namespaceToolID(stringValue(child["type"]), namespace, stringValue(child["name"]))]
+				if b.choiceRefs[entry.alias] != nil {
+					carrier = i
+					break
+				}
+			}
+		}
+		for i, value := range children {
 			child := namespaceCopyObject(object(value))
 			entry := b.tools[namespaceToolID(stringValue(child["type"]), namespace, stringValue(child["name"]))]
 			child["name"] = entry.alias
 			context := "Client tool: " + namespace + "." + entry.name + ". Tool namespace: " + namespace + "."
-			if description := stringValue(tool["description"]); description != "" {
-				context += " " + description
+			if i == carrier && shared != "" {
+				if len(children) == 1 {
+					context += " " + shared
+				} else {
+					context += "\nShared guidance for all tools in this namespace: " + shared
+				}
 			}
 			if description := stringValue(child["description"]); description != "" {
 				context += "\n" + description
@@ -261,9 +282,6 @@ func prepareResponsesNamespaceBridge(r *http.Request) (*responsesNamespaceBridge
 			item["name"] = entry.alias
 			delete(item, "namespace")
 		}
-	}
-	if err := b.rewriteChoice(doc["tool_choice"], false); err != nil {
-		return nil, err
 	}
 	changed, err := json.Marshal(doc)
 	if err != nil {
