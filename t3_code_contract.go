@@ -396,8 +396,48 @@ func t3CodeOpenCodeKiloSupported(source string) bool {
 	if len(copy) != 2 || len(loop) != 2 {
 		return false
 	}
-	next, variable := regexp.QuoteMeta(copy[1]), regexp.QuoteMeta(loop[1])
-	return regexp.MustCompile(next+`\[`+variable+`\.name\]\s*=`).MatchString(mergeBody) && regexp.MustCompile(variable+`\.value\b`).MatchString(mergeBody) && regexp.MustCompile(`\breturn\s+`+next+`\b`).MatchString(mergeBody)
+	rawBody := source[mergers[0][1]-1 : mergers[0][1]-1+len(mergeBody)]
+	return t3CodeContractCopiesInstanceEnvironment(mergeBody, rawBody, copy[1], loop[1])
+}
+
+// Match an assignment on the copied environment, including the Windows key
+// normalization used by T3 0.1.7. A key or value mentioned elsewhere is not
+// enough to prove that the instance's environment reaches the provider.
+func t3CodeContractCopiesInstanceEnvironment(body, rawBody, next, variable string) bool {
+	nextPattern, variablePattern := regexp.QuoteMeta(next), regexp.QuoteMeta(variable)
+	if !regexp.MustCompile(`\breturn\s+` + nextPattern + `\b`).MatchString(body) {
+		return false
+	}
+	// RE2 has no lookbehind. The boundary excludes longer identifiers and
+	// property accesses such as other.next.
+	const boundary = `(?:^|[^.A-Za-z0-9_$\s])\s*`
+	keySource := variablePattern + `\.name`
+	assignments := regexp.MustCompile(boundary + `(` + nextPattern + `\[(` + keySource + `|[A-Za-z_$][A-Za-z0-9_$]*)\]\s*=\s*)`)
+	for _, match := range assignments.FindAllStringSubmatchIndex(body, -1) {
+		key := body[match[4]:match[5]]
+		keyPattern := regexp.QuoteMeta(key)
+		if key != variable+".name" {
+			initializer := `(?:` + keySource + `|[A-Za-z_$][A-Za-z0-9_$]*\s*\?\s*` + keySource + `\.toUpperCase\(\)\s*:\s*` + keySource + `)`
+			declaration := regexp.MustCompile(boundary + `(?:const|let|var)\s+` + keyPattern + `\s*=\s*` + initializer + `\s*;`)
+			if !declaration.MatchString(body[:match[2]]) {
+				continue
+			}
+		}
+
+		value := variablePattern + `\.value`
+		homeExpansion := keyPattern + `\s*===\s*"CODEX_HOME"\s*\|\|\s*` +
+			keyPattern + `\s*===\s*"CLAUDE_CONFIG_DIR"\s*\?\s*expandHomePath\(` +
+			value + `,\s*home\)\s*:\s*` + value
+		start := match[1]
+		// Read the exact home-name literals from the raw body. The assignment
+		// prefix was matched in live code, and masking the RHS must agree with
+		// the same bytes in the surrounding code.
+		rhs := regexp.MustCompile(`^(?:` + value + `|` + homeExpansion + `)\s*;`).FindString(rawBody[start:])
+		if rhs != "" && body[start:start+len(rhs)] == t3CodeContractCode(rhs) {
+			return true
+		}
+	}
+	return false
 }
 
 // Extract one bounded brace body after masking strings and comments. The
@@ -604,16 +644,6 @@ func t3CodeMuseKiloSupported(source string) bool {
 	if len(copy) != 2 || len(loop) != 2 {
 		return false
 	}
-	next, variable := regexp.QuoteMeta(copy[1]), regexp.QuoteMeta(loop[1])
-	assignment := regexp.MustCompile(next + `\[` + variable + `\.name\]\s*=\s*` + variable + `\.value\b`).MatchString(mergeBody)
-	// Current T3 expands only the two native CLI homes before assigning every
-	// other instance variable unchanged. An unrelated variable.value is not proof.
 	rawBody := source[mergers[0][1]-1 : mergers[0][1]-1+len(mergeBody)]
-	conditional := regexp.MustCompile(next+`\[`+variable+`\.name\]\s*=\s*`+variable+`\.name\s*===\s*"CODEX_HOME"\s*\|\|\s*`+variable+`\.name\s*===\s*"CLAUDE_CONFIG_DIR"\s*\?\s*expandHomePath\(`+variable+`\.value,\s*home\)\s*:\s*`+variable+`\.value\s*;`).FindAllStringIndex(rawBody, -1)
-	for _, match := range conditional {
-		if strings.HasPrefix(mergeBody[match[0]:], copy[1]+"[") {
-			assignment = true
-		}
-	}
-	return assignment && regexp.MustCompile(`\breturn\s+`+next+`\b`).MatchString(mergeBody)
+	return t3CodeContractCopiesInstanceEnvironment(mergeBody, rawBody, copy[1], loop[1])
 }
