@@ -401,24 +401,35 @@ func t3CodeOpenCodeKiloSupported(source string) bool {
 	if !ok {
 		return false
 	}
-	return regexp.MustCompile(next+`\[`+regexp.QuoteMeta(key)+`\]\s*=`).MatchString(mergeBody) && regexp.MustCompile(variable+`\.value\b`).MatchString(mergeBody) && regexp.MustCompile(`\breturn\s+`+next+`\b`).MatchString(mergeBody)
+	return regexp.MustCompile(t3CodeContractIdentifierBoundary+next+`\[`+regexp.QuoteMeta(key)+`\]\s*=`).MatchString(mergeBody) && regexp.MustCompile(variable+`\.value\b`).MatchString(mergeBody) && regexp.MustCompile(`\breturn\s+`+next+`\b`).MatchString(mergeBody)
 }
+
+// RE2 has no lookbehind. Require a non-identifier byte before an indexed
+// assignment so a longer identifier cannot impersonate the merge target.
+const t3CodeContractIdentifierBoundary = `(?:^|[^A-Za-z0-9_$])`
 
 // t3CodeContractMergeKey returns the expression used to index the merged
 // environment. T3 0.1.7 normalizes environment names on Windows and then
 // assigns through that local key, while earlier builds indexed directly with
 // the loop variable's name. Both forms still copy the instance's own values;
-// unrelated or non-derived keys remain unavailable.
+// keys that are not derived solely from the instance name remain unavailable.
 func t3CodeContractMergeKey(mergeBody, next, variable string) (string, bool) {
 	nextPattern, variablePattern := regexp.QuoteMeta(next), regexp.QuoteMeta(variable)
-	if regexp.MustCompile(nextPattern + `\[` + variablePattern + `\.name\]\s*=`).MatchString(mergeBody) {
+	if regexp.MustCompile(t3CodeContractIdentifierBoundary + nextPattern + `\[` + variablePattern + `\.name\]\s*=`).MatchString(mergeBody) {
 		return variable + ".name", true
 	}
-	assignments := regexp.MustCompile(nextPattern+`\[([A-Za-z_$][A-Za-z0-9_$]*)\]\s*=`).FindAllStringSubmatchIndex(mergeBody, -1)
+	assignments := regexp.MustCompile(t3CodeContractIdentifierBoundary+nextPattern+`\[([A-Za-z_$][A-Za-z0-9_$]*)\]\s*=`).FindAllStringSubmatchIndex(mergeBody, -1)
 	for _, assignment := range assignments {
 		key := mergeBody[assignment[2]:assignment[3]]
-		declaration := regexp.MustCompile(`(?:const|let|var)\s+` + regexp.QuoteMeta(key) + `\s*=\s*[^;]*\b` + variablePattern + `\.name\b[^;]*;`).FindStringIndex(mergeBody)
-		if len(declaration) == 2 && declaration[0] < assignment[0] {
+		declarations := regexp.MustCompile(`(?:const|let|var)\s+`+regexp.QuoteMeta(key)+`\s*=\s*([^;]+);`).FindAllStringSubmatchIndex(mergeBody, -1)
+		for _, declaration := range declarations {
+			if declaration[0] >= assignment[0] {
+				continue
+			}
+			initializer := mergeBody[declaration[2]:declaration[3]]
+			if !regexp.MustCompile(`\b`+variablePattern+`\.name\b`).MatchString(initializer) || regexp.MustCompile(`\b`+variablePattern+`\.value\b`).MatchString(initializer) {
+				continue
+			}
 			return key, true
 		}
 	}
@@ -635,15 +646,10 @@ func t3CodeMuseKiloSupported(source string) bool {
 		return false
 	}
 	keyPattern := regexp.QuoteMeta(key)
-	assignment := regexp.MustCompile(next + `\[` + keyPattern + `\]\s*=\s*` + variable + `\.value\b`).MatchString(mergeBody)
+	assignment := regexp.MustCompile(t3CodeContractIdentifierBoundary + next + `\[` + keyPattern + `\]\s*=\s*` + variable + `\.value\b`).MatchString(mergeBody)
 	// Current T3 expands only the two native CLI homes before assigning every
 	// other instance variable unchanged. An unrelated variable.value is not proof.
 	rawBody := source[mergers[0][1]-1 : mergers[0][1]-1+len(mergeBody)]
-	conditional := regexp.MustCompile(next+`\[`+keyPattern+`\]\s*=\s*`+keyPattern+`\s*===\s*"CODEX_HOME"\s*\|\|\s*`+keyPattern+`\s*===\s*"CLAUDE_CONFIG_DIR"\s*\?\s*expandHomePath\(`+variable+`\.value,\s*home\)\s*:\s*`+variable+`\.value\s*;`).FindAllStringIndex(rawBody, -1)
-	for _, match := range conditional {
-		if strings.HasPrefix(mergeBody[match[0]:], copy[1]+"[") {
-			assignment = true
-		}
-	}
-	return assignment && regexp.MustCompile(`\breturn\s+`+next+`\b`).MatchString(mergeBody)
+	conditional := regexp.MustCompile(t3CodeContractIdentifierBoundary + next + `\[` + keyPattern + `\]\s*=\s*` + keyPattern + `\s*===\s*"CODEX_HOME"\s*\|\|\s*` + keyPattern + `\s*===\s*"CLAUDE_CONFIG_DIR"\s*\?\s*expandHomePath\(` + variable + `\.value,\s*home\)\s*:\s*` + variable + `\.value\s*;`).MatchString(rawBody)
+	return (assignment || conditional) && regexp.MustCompile(`\breturn\s+`+next+`\b`).MatchString(mergeBody)
 }

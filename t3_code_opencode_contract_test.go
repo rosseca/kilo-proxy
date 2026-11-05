@@ -92,22 +92,56 @@ func TestT3CodeOpenCodeKiloContractAcceptsBundledSymbolSuffixes(t *testing.T) {
 func TestT3CodeOpenCodeKiloContractAcceptsNormalizedMergeKey(t *testing.T) {
 	source := t3CodeOpenCodeKiloContractFixture()
 	normalized := strings.Replace(source, "for (const variable of environment) next[variable.name] = variable.value;", `for (const variable of environment) {
-    const windows = platform === "win32";
+    if (typeof variable.value !== "string") continue;
     const name = windows ? variable.name.toUpperCase() : variable.name;
     if (windows) {
       for (const inherited of Object.keys(next)) if (inherited.toUpperCase() === name) delete next[inherited];
     }
     next[name] = name === "CODEX_HOME" || name === "CLAUDE_CONFIG_DIR" ? expandHomePath(variable.value, home) : variable.value;
   }`, 1)
+	normalized = strings.Replace(normalized, "const next = { ...baseEnv };", `const home = yield* HomeDirectory;
+  const windows = platform === "win32";
+  const next = { ...baseEnv };`, 1)
 	if normalized == source {
 		t.Fatal("invalid fixture")
 	}
 	if !t3CodeOpenCodeKiloSupported(normalized) {
 		t.Fatal("normalized environment key rejected")
 	}
+	for _, declaration := range []string{"let", "var"} {
+		t.Run("declaration-"+declaration, func(t *testing.T) {
+			changed := strings.Replace(normalized, "const name = windows ?", declaration+" name = windows ?", 1)
+			if changed == normalized || !t3CodeOpenCodeKiloSupported(changed) {
+				t.Fatal("normalized key declaration form rejected")
+			}
+		})
+	}
+
+	withCandidate := strings.Replace(normalized, "    const name = windows ?", `    next[inherited] = "ignored";
+    const other = "CONSTANT";
+    next[other] = "ignored";
+    const name = windows ?`, 1)
+	if withCandidate == normalized || !t3CodeOpenCodeKiloSupported(withCandidate) {
+		t.Fatal("unrelated candidate key hid the live normalized key")
+	}
+
+	ordered := strings.Replace(normalized, `    const name = windows ? variable.name.toUpperCase() : variable.name;
+    if (windows) {
+      for (const inherited of Object.keys(next)) if (inherited.toUpperCase() === name) delete next[inherited];
+    }
+    next[name] = name === "CODEX_HOME" || name === "CLAUDE_CONFIG_DIR" ? expandHomePath(variable.value, home) : variable.value;`, `    if (windows) {
+      for (const inherited of Object.keys(next)) if (inherited.toUpperCase() === name) delete next[inherited];
+    }
+    next[name] = name === "CODEX_HOME" || name === "CLAUDE_CONFIG_DIR" ? expandHomePath(variable.value, home) : variable.value;
+    const name = windows ? variable.name.toUpperCase() : variable.name;`, 1)
+	if ordered == normalized || t3CodeOpenCodeKiloSupported(ordered) {
+		t.Fatal("forward-reference normalized key accepted")
+	}
+
 	for _, tc := range []struct{ name, old, next string }{
 		{"constant-key", "const name = windows ? variable.name.toUpperCase() : variable.name;", `const name = "KILO_API_KEY";`},
 		{"value-key", "const name = windows ? variable.name.toUpperCase() : variable.name;", "const name = variable.value;"},
+		{"mixed-key", "const name = windows ? variable.name.toUpperCase() : variable.name;", "const name = windows ? variable.name : variable.value;"},
 		{"return", "return next;", "return baseEnv;"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -139,6 +173,20 @@ func TestT3CodeOpenCodeKiloContractAcceptsNormalizedMergeKey(t *testing.T) {
 			}
 			if t3CodeOpenCodeKiloSupported(changed) {
 				t.Fatal("incomplete normalized merge accepted")
+			}
+		})
+	}
+	for name, tc := range map[string]struct{ source, old, next string }{
+		"normalized-longer-identifier": {simple, "next[name] = variable.value;", "mergednext[name] = variable.value;"},
+		"direct-longer-identifier":     {source, "next[variable.name] = variable.value;", "mergednext[variable.name] = variable.value;"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			changed := strings.Replace(tc.source, tc.old, tc.next, 1)
+			if changed == tc.source {
+				t.Fatal("invalid negative fixture")
+			}
+			if t3CodeOpenCodeKiloSupported(changed) {
+				t.Fatal("prefixed merge target accepted")
 			}
 		})
 	}
