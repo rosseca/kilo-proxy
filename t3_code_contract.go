@@ -370,7 +370,7 @@ func t3CodeOpenCodeKiloSupported(source string) bool {
 		return false
 	}
 	env := regexp.QuoteMeta(merged[1])
-	if !regexp.MustCompile(`probeOpenCodeRuntime\([^,]+,\s*` + env + `\)`).MatchString(body) {
+	if !t3CodeOpenCodeProbesInstanceEnvironment(source, code, body, env) {
 		return false
 	}
 	for _, runtime := range []string{"serverOwner", "openCode2Server"} {
@@ -383,27 +383,72 @@ func t3CodeOpenCodeKiloSupported(source string) bool {
 			return false
 		}
 	}
-	mergers := regexp.MustCompile(`const\s+`+regexp.QuoteMeta(merged[2])+`\s*=\s*(?:[A-Za-z_$][A-Za-z0-9_$]*\.)?fn[A-Za-z0-9_$]*\(function\*\s*\(environment,\s*baseEnv\s*=\s*process\.env\)\s*\{`).FindAllStringIndex(code, -1)
+	return t3CodeContractCopiesInstanceEnvironment(source, code, merged[2])
+}
+
+// Verify the direct legacy probe or the newer status-probe wrapper and
+// per-instance fallback. The status wrapper only adds MISE_OFFLINE.
+func t3CodeOpenCodeProbesInstanceEnvironment(source, code, body, env string) bool {
+	if regexp.MustCompile(`probeOpenCodeRuntime\([^,]+,\s*` + env + `\)`).MatchString(body) {
+		return true
+	}
+	probes := regexp.MustCompile(`\bconst\s+probeRuntime\s*=\s*`).FindAllStringIndex(body, -1)
+	if len(probes) != 1 || !regexp.MustCompile(`^\(probeEnv\)\s*=>\s*probeOpenCodeRuntime\(effectiveConfig,\s*probeEnv\)\.pipe\(`).MatchString(body[probes[0][1]:]) {
+		return false
+	}
+	wrapped := regexp.MustCompile(`\bmakeOpenCodeRuntimeProbe\(\s*probeRuntime\(\s*(providerProbeEnvironment(?:\$[0-9]+)?)\(\s*`+env+`\s*\)\s*\)\s*\)`).FindAllStringSubmatch(body[probes[0][1]:], -1)
+	if len(wrapped) != 1 || !regexp.MustCompile(`\bonNone:\s*\(\)\s*=>\s*probeRuntime\(\s*`+env+`\s*\)\.pipe\(`).MatchString(body[probes[0][1]:]) {
+		return false
+	}
+	helpers := regexp.MustCompile(`(?m)^function\s+`+regexp.QuoteMeta(wrapped[0][1])+`\s*\(`).FindAllStringIndex(code, -1)
+	if len(helpers) != 1 {
+		return false
+	}
+	start := helpers[0][1]
+	match := regexp.MustCompile(`^environment\)\s*\{\s*return\s*\{\s*\.\.\.environment,\s*MISE_OFFLINE:\s*"1"\s*,?\s*\}\s*;\s*\}`).FindString(source[start:])
+	return match != "" && code[start:start+len(match)] == t3CodeContractCode(match)
+}
+
+// Verify the newer home expansion helper, including the exact native-home
+// allowlist. All other environment keys must pass through unchanged.
+func t3CodeContractHomeVariableForwarded(source, code, helper string) bool {
+	helpers := regexp.MustCompile(`(?m)^function\s+`+regexp.QuoteMeta(helper)+`\s*\(`).FindAllStringIndex(code, -1)
+	if len(helpers) != 1 {
+		return false
+	}
+	definition := regexp.MustCompile(`^name,\s*value,\s*home\)\s*\{\s*return\s+([A-Za-z_$][A-Za-z0-9_$]*)\.has\(name\)\s*\?\s*expandHomePath(?:\$[0-9]+)?\(value,\s*home\)\s*:\s*value\s*;\s*\}`).FindStringSubmatch(code[helpers[0][1]:])
+	if len(definition) != 2 {
+		return false
+	}
+	set := regexp.QuoteMeta(definition[1])
+	sets := regexp.MustCompile(`(?m)^const\s+`+set+`\s*=\s*`).FindAllStringIndex(code, -1)
+	references := regexp.MustCompile(`(?:^|[^A-Za-z0-9_$])`+set+`(?:$|[^A-Za-z0-9_$])`).FindAllStringIndex(code, -1)
+	if len(sets) != 1 || sets[0][0] >= helpers[0][0] || len(references) != 2 {
+		return false
+	}
+	start := sets[0][1]
+	match := regexp.MustCompile(`^new Set\(\[\s*"CODEX_HOME",\s*"CLAUDE_CONFIG_DIR",\s*"GROK_HOME"\s*,?\s*\]\)\s*;`).FindString(source[start:])
+	return match != "" && code[start:start+len(match)] == t3CodeContractCode(match)
+}
+
+// Require an assignment on the copied instance environment. Match direct
+// forwarding, the inline native-home expansion, or the verified helper.
+func t3CodeContractCopiesInstanceEnvironment(source, code, merger string) bool {
+	mergers := regexp.MustCompile(`const\s+`+regexp.QuoteMeta(merger)+`\s*=\s*(?:[A-Za-z_$][A-Za-z0-9_$]*\.)?fn[A-Za-z0-9_$]*\(function\*\s*\(environment,\s*baseEnv\s*=\s*process\.env\)\s*\{`).FindAllStringIndex(code, -1)
 	if len(mergers) != 1 {
 		return false
 	}
-	mergeBody, ok := t3CodeContractBody(code, mergers[0][1]-1)
+	body, ok := t3CodeContractBody(code, mergers[0][1]-1)
 	if !ok {
 		return false
 	}
-	copy := regexp.MustCompile(`const\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*\{\s*\.\.\.baseEnv\s*\}`).FindStringSubmatch(mergeBody)
-	loop := regexp.MustCompile(`for\s*\(const\s+([A-Za-z_$][A-Za-z0-9_$]*)\s+of\s+environment\)`).FindStringSubmatch(mergeBody)
+	copy := regexp.MustCompile(`const\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*\{\s*\.\.\.baseEnv\s*\}`).FindStringSubmatch(body)
+	loop := regexp.MustCompile(`for\s*\(const\s+([A-Za-z_$][A-Za-z0-9_$]*)\s+of\s+environment\)`).FindStringSubmatch(body)
 	if len(copy) != 2 || len(loop) != 2 {
 		return false
 	}
-	rawBody := source[mergers[0][1]-1 : mergers[0][1]-1+len(mergeBody)]
-	return t3CodeContractCopiesInstanceEnvironment(mergeBody, rawBody, copy[1], loop[1])
-}
-
-// Match an assignment on the copied environment, including the Windows key
-// normalization used by T3 0.1.7. A key or value mentioned elsewhere is not
-// enough to prove that the instance's environment reaches the provider.
-func t3CodeContractCopiesInstanceEnvironment(body, rawBody, next, variable string) bool {
+	rawBody := source[mergers[0][1]-1 : mergers[0][1]-1+len(body)]
+	next, variable := copy[1], loop[1]
 	nextPattern, variablePattern := regexp.QuoteMeta(next), regexp.QuoteMeta(variable)
 	if !regexp.MustCompile(`\breturn\s+` + nextPattern + `\b`).MatchString(body) {
 		return false
@@ -434,6 +479,10 @@ func t3CodeContractCopiesInstanceEnvironment(body, rawBody, next, variable strin
 		// the same bytes in the surrounding code.
 		rhs := regexp.MustCompile(`^(?:` + value + `|` + homeExpansion + `)\s*;`).FindString(rawBody[start:])
 		if rhs != "" && body[start:start+len(rhs)] == t3CodeContractCode(rhs) {
+			return true
+		}
+		call := regexp.MustCompile(`^(expandHomeVariable(?:\$[0-9]+)?)\(\s*` + keyPattern + `,\s*` + value + `,\s*home\s*\)\s*;`).FindStringSubmatch(body[start:])
+		if len(call) == 2 && t3CodeContractHomeVariableForwarded(source, code, call[1]) {
 			return true
 		}
 	}
@@ -487,13 +536,24 @@ func t3CodeContractCode(source string) string {
 			}
 		case quote != 0:
 			code[i] = ' '
-			if ch == quote {
+			// An ordinary JavaScript string cannot cross an unescaped line
+			// ending. Recover here if a quote inside a regular expression
+			// looked like a string, while preserving templates and continuations.
+			lineEnd := quote != '`' && (ch == '\r' || ch == '\n')
+			if ch == quote || lineEnd {
+				j := i - 1
+				if ch == '\n' && j >= 0 && source[j] == '\r' {
+					j--
+				}
 				escapes := 0
-				for j := i - 1; j >= 0 && source[j] == '\\'; j-- {
+				for ; j >= 0 && source[j] == '\\'; j-- {
 					escapes++
 				}
 				if escapes%2 == 0 {
 					quote = 0
+					if lineEnd {
+						code[i] = ch
+					}
 				}
 			}
 		case ch == '"' || ch == '\'' || ch == '`':
@@ -631,19 +691,5 @@ func t3CodeMuseKiloSupported(source string) bool {
 			return false
 		}
 	}
-	mergers := regexp.MustCompile(`const\s+`+regexp.QuoteMeta(merged[2])+`\s*=\s*(?:[A-Za-z_$][A-Za-z0-9_$]*\.)?fn[A-Za-z0-9_$]*\(function\*\s*\(environment,\s*baseEnv\s*=\s*process\.env\)\s*\{`).FindAllStringIndex(code, -1)
-	if len(mergers) != 1 {
-		return false
-	}
-	mergeBody, ok := t3CodeContractBody(code, mergers[0][1]-1)
-	if !ok {
-		return false
-	}
-	copy := regexp.MustCompile(`const\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*\{\s*\.\.\.baseEnv\s*\}`).FindStringSubmatch(mergeBody)
-	loop := regexp.MustCompile(`for\s*\(const\s+([A-Za-z_$][A-Za-z0-9_$]*)\s+of\s+environment\)`).FindStringSubmatch(mergeBody)
-	if len(copy) != 2 || len(loop) != 2 {
-		return false
-	}
-	rawBody := source[mergers[0][1]-1 : mergers[0][1]-1+len(mergeBody)]
-	return t3CodeContractCopiesInstanceEnvironment(mergeBody, rawBody, copy[1], loop[1])
+	return t3CodeContractCopiesInstanceEnvironment(source, code, merged[2])
 }

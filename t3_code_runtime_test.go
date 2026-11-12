@@ -97,6 +97,33 @@ func TestT3CodeRuntimeProviderAssetNames(t *testing.T) {
 	}
 }
 
+func TestT3CodeRuntimeModelsCardAsset(t *testing.T) {
+	const route = "assets/_chat.settings.providers-Fixture.js"
+	const dialog = "assets/AddProviderInstanceDialog-Fixture.js"
+	const importDialog = `import{n as card}from"./AddProviderInstanceDialog-Fixture.js";`
+	for _, test := range []struct {
+		name   string
+		source string
+		want   string
+	}{
+		{"inline", t3CodeRuntimeFixtureProvidersSource, route},
+		{"imported", importDialog + t3CodeRuntimeFixturePanel, dialog},
+		{"unreferenced", t3CodeRuntimeFixturePanel, ""},
+		{"missing", strings.ReplaceAll(importDialog, "-Fixture", "-Missing"), ""},
+		{"ambiguous", importDialog + importDialog, ""},
+		{"commented", "// " + importDialog, ""},
+		{"quoted", "const sample = ' " + importDialog + " ';", ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			files := map[string][]byte{route: []byte(test.source), dialog: []byte(t3CodeRuntimeFixtureProvidersSource)}
+			got, err := t3CodeRuntimeModelsCardAsset(files, route)
+			if got != test.want || (err != nil) != (test.want == "") {
+				t.Fatalf("Models card asset = %q, %v; want %q", got, err, test.want)
+			}
+		})
+	}
+}
+
 func TestT3CodeRuntimePatchKeepsAccountsAndOtherProviders(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
