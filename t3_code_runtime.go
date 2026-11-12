@@ -22,7 +22,9 @@ import (
 
 const t3CodeRuntimeRevision = 6
 const t3CodeRuntimeFileLimit int64 = 32 << 20
-const t3CodeRuntimeTotalLimit int64 = 128 << 20
+
+// T3 Code bundles office rendering WebAssembly and fonts in its web assets.
+const t3CodeRuntimeTotalLimit int64 = 192 << 20
 
 // The original Electron executable, ASAR, server and conversations stay intact.
 // Its official development-assets contract serves these private public files
@@ -330,6 +332,26 @@ func patchT3CodeModelsCardWithMuse(source []byte, policy map[string][]string, in
 	return append(result, source[m[1]:]...), nil
 }
 
+// T3 can bundle the Models card in the Providers route or its imported dialog chunk.
+var t3CodeRuntimeModelsCardImport = regexp.MustCompile(`\bimport\s*\{[^;\r\n]*\}\s*from\s*["']\./(AddProviderInstanceDialog-[A-Za-z0-9_-]+\.js)["']\s*;`)
+
+func t3CodeRuntimeModelsCardAsset(files map[string][]byte, providersAsset string) (string, error) {
+	source := files[providersAsset]
+	if t3CodeRuntimeModelsCard.Match(source) {
+		return providersAsset, nil
+	}
+	imports := t3CodeRuntimeModelsCardImport.FindAllSubmatchIndex(source, -1)
+	if len(imports) == 1 {
+		match := imports[0]
+		code := t3CodeContractCode(string(source))
+		name := "assets/" + string(source[match[2]:match[3]])
+		if strings.HasPrefix(code[match[0]:], "import") && t3CodeRuntimeModelsCard.Match(files[name]) {
+			return name, nil
+		}
+	}
+	return "", errors.New("This T3 Code Models settings interface has an incompatible contract.")
+}
+
 func t3CodeRuntimeIdentity(record t3CodePrivateRuntime) []byte {
 	identity, _ := json.Marshal([]any{record.Revision, record.SourceDigest, record.SourceArchive, record.SourceFiles, record.ModelAllowlist, record.ModelDefaults, record.OpenCodeVariants, record.MuseReasoningLevels, record.MuseReasoningDefaults})
 	return identity
@@ -519,16 +541,21 @@ func prepareT3CodeRuntimeWithMuse(privateRoot, executable, platform string, inpu
 			if err != nil {
 				return t3CodePrivateRuntime{}, err
 			}
-			if len(policy) > 0 {
-				patched, err = patchT3CodeModelsCardWithMuse(patched, policy, defaults, variants, muse)
-				if err != nil {
-					return t3CodePrivateRuntime{}, err
-				}
-			}
 			files[name], result.ProvidersAsset = patched, name
 		}
 	}
+	if result.ProvidersAsset == "" {
+		return t3CodePrivateRuntime{}, errors.New("Cannot locate the installed T3 Code Providers interface.")
+	}
 	if len(policy) > 0 {
+		cardAsset, err := t3CodeRuntimeModelsCardAsset(files, result.ProvidersAsset)
+		if err != nil {
+			return t3CodePrivateRuntime{}, err
+		}
+		files[cardAsset], err = patchT3CodeModelsCardWithMuse(files[cardAsset], policy, defaults, variants, muse)
+		if err != nil {
+			return t3CodePrivateRuntime{}, err
+		}
 		for name, data := range files {
 			if !strings.HasPrefix(name, "assets/") || !strings.HasSuffix(name, ".js") || !t3CodeRuntimeModelsProjection.Match(data) {
 				continue
@@ -545,9 +572,6 @@ func prepareT3CodeRuntimeWithMuse(privateRoot, executable, platform string, inpu
 		if result.ModelsAsset == "" {
 			return t3CodePrivateRuntime{}, errors.New("Cannot locate the installed T3 Code instance model projection.")
 		}
-	}
-	if result.ProvidersAsset == "" {
-		return t3CodePrivateRuntime{}, errors.New("Cannot locate the installed T3 Code Providers interface.")
 	}
 	identity := t3CodeRuntimeIdentity(result)
 	cache := filepath.Join(privateRoot, "runtime-web")
@@ -677,6 +701,13 @@ func t3CodeRuntimeReady(runtime t3CodePrivateRuntime, executable, platform strin
 		return false
 	}
 	muse := t3CodeMuseRuntimePolicy{Levels: runtime.MuseReasoningLevels, Defaults: runtime.MuseReasoningDefaults}
+	cardAsset := ""
+	if len(runtime.ModelAllowlist) > 0 {
+		cardAsset, err = t3CodeRuntimeModelsCardAsset(files, runtime.ProvidersAsset)
+		if err != nil {
+			return false
+		}
+	}
 	for name, data := range files {
 		if openDesignHash(data) != runtime.SourceFiles[name] {
 			return false
@@ -684,9 +715,12 @@ func t3CodeRuntimeReady(runtime t3CodePrivateRuntime, executable, platform strin
 		expected := data
 		if name == runtime.ProvidersAsset {
 			expected, err = patchT3CodeProvidersAsset(data)
-			if err == nil && len(runtime.ModelAllowlist) > 0 {
-				expected, err = patchT3CodeModelsCardWithMuse(expected, runtime.ModelAllowlist, runtime.ModelDefaults, runtime.OpenCodeVariants, muse)
+			if err != nil {
+				return false
 			}
+		}
+		if name == cardAsset {
+			expected, err = patchT3CodeModelsCardWithMuse(expected, runtime.ModelAllowlist, runtime.ModelDefaults, runtime.OpenCodeVariants, muse)
 			if err != nil {
 				return false
 			}
