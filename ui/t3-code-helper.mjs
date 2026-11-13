@@ -3,6 +3,13 @@ import {translate} from './i18n.mjs';
 import {openMausBotLibraryReady} from './openmausbot-helper.mjs';
 
 const librarySignature = library => JSON.stringify(library);
+const emptyLibrary = {schemaVersion:1,defaultModel:'',models:[]};
+const availableLibrary = saved => !saved?.warning && openMausBotLibraryReady(saved) ? saved.library : null;
+function catalogLibrary(saved) {
+ const library = saved?.library;
+ if (!saved?.warning && !saved?.recoveryRequired && library?.schemaVersion === 1 && Array.isArray(library.models) && library.models.length === 0 && library.defaultModel === '') return library;
+ return availableLibrary(saved) ?? emptyLibrary;
+}
 const openCodeConnection = value => value?.openCodeConnection || 'native';
 const museConnection = value => value?.museConnection || 'native';
 const museModelPolicy = value => value?.museModels ?? (museConnection(value) === 'kilo' ? 'shared' : 'official');
@@ -17,9 +24,13 @@ export function t3CodePreferencesValid(value) {
 export function t3CodeNativeOnly(value) {
  return t3CodePreferencesValid(value) && !value.kiloCodex && !value.kiloClaude && !openCodeUsesKilo(value) && !museUsesKilo(value);
 }
+const usesGatewayCatalog = value => Boolean(value?.kiloClaude && value.claudeModels === 'official' || museUsesKilo(value) && museModelPolicy(value) === 'official');
+const requiresSharedLibrary = value => !value || Boolean(value.kiloCodex || openCodeUsesKilo(value) || value.kiloClaude && value.claudeModels === 'shared' || museUsesKilo(value) && museModelPolicy(value) === 'shared');
 export function t3CodePrepared(saved, profile, preferences) {
- if (t3CodeNativeOnly(preferences)) return Boolean(profile?.prepared === true && preferencesSignature(preferences) === preferencesSignature(profile.preferences));
- return Boolean(openMausBotLibraryReady(saved) && profile?.prepared === true && librarySignature(saved.library) === librarySignature(profile.library) && (!preferences || preferencesSignature(preferences) === preferencesSignature(profile.preferences)));
+ if (profile?.prepared !== true || preferences && preferencesSignature(preferences) !== preferencesSignature(profile.preferences)) return false;
+ if (t3CodeNativeOnly(preferences)) return true;
+ const library = requiresSharedLibrary(preferences) ? availableLibrary(saved) : catalogLibrary(saved);
+ return !!library && librarySignature(library) === librarySignature(profile.library);
 }
 
 // Settings and launch snapshots belong to the separate Kilo workspace.
@@ -28,15 +39,19 @@ export function createT3CodeHelper({api, onChange}) {
  let ctx = {state:null, language:'en'}, saved = null, profile = null, preferences = null, capabilities = [];
  let loaded = false, loading = false, working = false, saving = false, error = '', preferencesError = '', pendingPreferences = null, profileConnection = '', requiresPreparation = false, openCode2Supported = false, openCodeKiloSupported = false, museKiloSupported = false, generation = 0;
  const L = (en, es) => ctx.language === 'en' ? en : es;
- const connectionSignature = () => JSON.stringify([ctx.state?.baseURL, ctx.state?.localKey, ctx.state?.orgId, ctx.state?.connectionReady, ctx.state?.chatgpt?.connected]);
+ const connectionSignature = () => JSON.stringify([ctx.state?.baseURL, ctx.state?.localKey, ctx.state?.orgId, ctx.state?.usageAccountScope, ctx.state?.catalogRevision, ctx.state?.kiloReady, ctx.state?.connectionReady, ctx.state?.chatgpt?.connected]);
  const nativeOnly = () => t3CodeNativeOnly(preferences);
- const prepared = () => !saving && !pendingPreferences && (nativeOnly() || profileConnection === connectionSignature()) && t3CodePrepared(saved, profile, preferences);
+ const catalogMode = () => usesGatewayCatalog(preferences);
+ const selectedLibrary = source => requiresSharedLibrary(preferences) ? availableLibrary(source) : catalogLibrary(source);
+ const connected = () => nativeOnly() || (catalogMode() ? ctx.state?.kiloReady === true : connectionReady(ctx.state));
+ const prepared = () => connected() && !saving && !pendingPreferences && (nativeOnly() || profileConnection === connectionSignature()) && t3CodePrepared(saved, profile, preferences);
  const tooManyModels = () => (saved?.library?.models?.length || 0) > 32 && (preferences?.kiloCodex && preferences.codexModels === 'shared' || preferences?.kiloClaude && preferences.claudeModels === 'shared');
  const openCodeKiloUnavailable = () => openCodeUsesKilo(preferences) && !openCodeKiloSupported;
  const museKiloUnavailable = () => museUsesKilo(preferences) && !museKiloSupported;
- const ready = () => !museKiloUnavailable() && !openCodeKiloUnavailable() && loaded && (nativeOnly() || openMausBotLibraryReady(saved)) && t3CodePreferencesValid(preferences) && !tooManyModels() && !pendingPreferences && !saving;
- const signature = () => JSON.stringify([nativeOnly() ? null : connectionSignature(), nativeOnly() ? null : saved?.library, preferences]);
- const reason = () => museKiloUnavailable() ? L('This T3 build cannot use the Kilo Muse connection. Choose your Meta account, disable Muse or install a compatible T3 build.','Esta compilación de T3 no admite la conexión Kilo de Muse. Elige tu cuenta de Meta, desactiva Muse o instala una compilación T3 compatible.') : openCodeKiloUnavailable() ? L('This T3 build cannot use the Kilo OpenCode connection. Choose your own OpenCode account, disable OpenCode or install a compatible T3 build.', 'Esta compilación de T3 no admite la conexión Kilo de OpenCode. Elige tu cuenta propia de OpenCode, desactiva OpenCode o instala una compilación T3 compatible.') : !nativeOnly() && !connectionReady(ctx.state) ? L('Connect your selected provider first.', 'Conecta primero el proveedor seleccionado.') : preferencesError || error || (loading ? L('Loading T3 Code settings…', 'Cargando ajustes de T3 Code…') : tooManyModels() ? L('T3 Code supports up to 32 shared models per account. Reduce your selection in Models or choose official models.', 'T3 Code admite hasta 32 modelos compartidos por cuenta. Reduce la selección en Modelos o elige modelos oficiales.') : saving ? L('Wait for T3 Code settings to finish saving.', 'Espera a que termine el guardado de los ajustes de T3 Code.') : !ready() ? L('Add and save models in the native app’s Models page, then refresh here.', 'Añade y guarda modelos en la página Modelos de la app nativa y actualiza aquí.') : '');
+ const ready = () => !museKiloUnavailable() && !openCodeKiloUnavailable() && loaded && t3CodePreferencesValid(preferences) && (!requiresSharedLibrary(preferences) || !!availableLibrary(saved)) && !tooManyModels() && !pendingPreferences && !saving;
+ const signature = () => JSON.stringify([nativeOnly() ? null : connectionSignature(), nativeOnly() ? null : selectedLibrary(saved), preferencesSignature(preferences)]);
+ const reason = () => museKiloUnavailable() ? L('This T3 build cannot use the Kilo Muse connection. Choose your Meta account, disable Muse or install a compatible T3 build.','Esta compilación de T3 no admite la conexión Kilo de Muse. Elige tu cuenta de Meta, desactiva Muse o instala una compilación T3 compatible.') : openCodeKiloUnavailable() ? L('This T3 build cannot use the Kilo OpenCode connection. Choose your own OpenCode account, disable OpenCode or install a compatible T3 build.', 'Esta compilación de T3 no admite la conexión Kilo de OpenCode. Elige tu cuenta propia de OpenCode, desactiva OpenCode o instala una compilación T3 compatible.') : !connected() ? catalogMode() ? L('Connect Kilo to use the Claude or Meta catalog in T3 Code.', 'Conecta Kilo para usar el catálogo de Claude o Meta en T3 Code.') : L('Connect your selected provider first.', 'Conecta primero el proveedor seleccionado.') : preferencesError || error || (loading ? L('Loading T3 Code settings…', 'Cargando ajustes de T3 Code…') : tooManyModels() ? L('T3 Code supports up to 32 shared models per account. Reduce your selection in Models or choose official models.', 'T3 Code admite hasta 32 modelos compartidos por cuenta. Reduce la selección en Modelos o elige modelos oficiales.') : saving ? L('Wait for T3 Code settings to finish saving.', 'Espera a que termine el guardado de los ajustes de T3 Code.') : !ready() ? L('Add and save models in the native app’s Models page, then refresh here.', 'Añade y guarda modelos en la página Modelos de la app nativa y actualiza aquí.') : '');
+ const currentProfile = () => (!catalogMode() || profileConnection === connectionSignature()) && preferencesSignature(preferences) === preferencesSignature(profile?.preferences) ? profile : null;
  const visibleProviders = value => [...capabilities.map(row=>({...row,supported:true})),...(value?.providers||[]).filter(id=>knownProviders[id]&&!capabilities.some(row=>row.id===id)).map(id=>({id,label:knownProviders[id],supported:false}))];
  const acceptPreferences = response => {
   if (!t3CodePreferencesValid(response?.preferences)) throw new Error(L('Could not read T3 Code preferences. Refresh to try again.', 'No se pudieron leer las preferencias de T3 Code. Actualiza para reintentarlo.'));
@@ -59,12 +74,12 @@ export function createT3CodeHelper({api, onChange}) {
   $('t3-code-codex-models-label').textContent = L('Codex Kilo models', 'Modelos de Codex Kilo');
   $('t3-code-claude-models-label').textContent = L('Claude Kilo models', 'Modelos de Claude Kilo');
   $('t3-code-codex-official').textContent = L('OpenAI and ChatGPT', 'OpenAI y ChatGPT');
-  $('t3-code-claude-official').textContent = L('Opus 5.5, Sonnet 5.5 and Fable 5.1', 'Opus 5.5, Sonnet 5.5 y Fable 5.1');
+  $('t3-code-claude-official').textContent = L('Claude models', 'Modelos de Claude');
   for (const kind of ['codex','claude']) {
    $('t3-code-'+kind+'-shared').textContent = L('All shared models', 'Todos los modelos compartidos');
    const select = $('t3-code-'+kind+'-models'); select.value = displayed?.[kind+'Models'] ?? 'official'; select.disabled = !editable || !displayed?.[kind === 'codex' ? 'kiloCodex' : 'kiloClaude'];
   }
-  $('t3-code-reasoning-help').textContent = L('Choose reasoning in T3 for its native Claude models. Shared models depend on the installed driver and provider.', 'Elige el razonamiento en T3 para sus modelos nativos de Claude. Los modelos compartidos dependen del driver y proveedor instalados.');
+  $('t3-code-reasoning-help').textContent = L('The Claude catalog includes models available through Kilo that work with your installed versions. Shared models come from your saved list in Models. Reasoning options vary by model and installed versions.', 'El catálogo de Claude incluye los modelos disponibles en Kilo compatibles con tus versiones instaladas. Los modelos compartidos salen de tu lista guardada en Modelos. Las opciones de razonamiento dependen del modelo y de las versiones instaladas.');
   $('t3-code-extra-providers-label').textContent = L('Other providers', 'Otros proveedores');
   $('t3-code-provider-options').replaceChildren();
   const visible = visibleProviders(displayed);
@@ -91,7 +106,7 @@ export function createT3CodeHelper({api, onChange}) {
   $('t3-code-muse-shared').textContent=L('All shared models','Todos los modelos compartidos');
   $('t3-code-muse-models').value=museModelPolicy(displayed);
   $('t3-code-muse-models').disabled=!editable||!museUsesKilo(displayed)||!capabilities.some(row=>row.id==='muse');
-  $('t3-code-muse-models-help').textContent=L('Use the Meta models saved in Models, or choose every shared model. Both options use your Kilo connection.','Usa los modelos de Meta guardados en Modelos o elige todos los modelos compartidos. Ambas opciones usan tu conexión Kilo.');
+  $('t3-code-muse-models-help').textContent=L('Meta models come from your Kilo catalog. Shared models come from your saved list in Models. Both options use Kilo.','Los modelos de Meta salen de tu catálogo de Kilo. Los modelos compartidos salen de tu lista guardada en Modelos. Ambas opciones usan Kilo.');
   const hasOpenCode = visible.some(row=>row.id === 'opencode');
   $('t3-code-opencode-connection-field').hidden = !hasOpenCode;
   $('t3-code-opencode-connection-help').hidden = !hasOpenCode;
@@ -120,9 +135,10 @@ export function createT3CodeHelper({api, onChange}) {
  function render(next = ctx) {
   ctx = next;
   $('t3-code-intro').textContent = L('A separate T3 Code workspace with the accounts and models you choose. Green KP badges on T3’s provider rail and composer identify Kilo accounts.', 'Un espacio T3 Code separado con las cuentas y modelos que elijas. Las marcas KP verdes en los iconos del selector y el compositor de T3 identifican las cuentas Kilo.');
-  const codexModels = profile?.effectiveCodexModels ?? [], claudeModels = profile?.effectiveClaudeModels ?? [];
-  const museModels=museUsesKilo(preferences) && preferencesSignature(preferences)===preferencesSignature(profile?.preferences) ? profile?.effectiveMuseModels??[]:[];
-  const openCodeModels = openCodeUsesKilo(preferences) && preferencesSignature(preferences) === preferencesSignature(profile?.preferences) ? profile?.effectiveOpenCodeModels ?? [] : [];
+  const current = currentProfile();
+  const codexModels = current?.effectiveCodexModels ?? [], claudeModels = current?.effectiveClaudeModels ?? [];
+  const museModels = museUsesKilo(preferences) ? current?.effectiveMuseModels ?? [] : [];
+  const openCodeModels = openCodeUsesKilo(preferences) ? current?.effectiveOpenCodeModels ?? [] : [];
   $('t3-code-summary').textContent = `Kilo Proxy · Codex: ${codexModels.length} · Kilo Proxy · Claude: ${claudeModels.length}`+(openCodeUsesKilo(preferences) ? ` · Kilo Proxy · OpenCode: ${openCodeModels.length}` : '')+(museUsesKilo(preferences)?` · Kilo Proxy · Muse Code: ${museModels.length}`:'');
   $('t3-code-models').replaceChildren();
   for (const [name, models] of [['Kilo Proxy · Codex', codexModels], ['Kilo Proxy · Claude', claudeModels], ['Kilo Proxy · OpenCode', openCodeModels],['Kilo Proxy · Muse Code',museModels]]) {
@@ -146,10 +162,10 @@ export function createT3CodeHelper({api, onChange}) {
   $('t3-code-options').textContent = L('Advanced', 'Avanzado');
   $('t3-code-requirements').textContent = L('Detects installed T3 Code release channels, including alpha, beta and nightly. Preparation checks the installed contract and CLIs required by your enabled accounts. Existing accounts use CLI sessions, not Desktop app logins.', 'Detecta canales instalados de T3 Code, incluidos alpha, beta y nightly. La preparación comprueba el contrato instalado y los CLI que requieren las cuentas activadas. Las cuentas existentes usan sesiones CLI, no los inicios de sesión de las apps Desktop.') + (profile?.version ? L(' Detected: ', ' Detectado: ') + profile.version + '.' : '');
   const chat = profile?.protocolV2 ? L('This T3 build can change agents between turns in the same chat. T3 transfers a summary when switching providers; previous reasoning, tool results and attachments are not transferred.', 'Esta compilación de T3 permite cambiar de agente entre turnos en el mismo chat. T3 transfiere un resumen al cambiar de proveedor; no transfiere el razonamiento anterior, los resultados de herramientas ni los adjuntos.') : L('Start a new chat to switch accounts when this T3 build keeps an existing chat’s agent.', 'Inicia un chat nuevo para cambiar de cuenta si esta compilación de T3 conserva el agente de un chat existente.');
-  $('t3-code-compatibility').textContent = chat+' '+L('Claude Kilo offers Opus 5.5, Sonnet 5.5 and Fable 5.1 by default, with T3’s native reasoning selector. Available levels depend on the installed T3 and Claude Code versions. Check the selected account and model before continuing an older chat.', 'Claude Kilo ofrece Opus 5.5, Sonnet 5.5 y Fable 5.1 por defecto, con el selector nativo de razonamiento de T3. Los niveles disponibles dependen de las versiones instaladas de T3 y Claude Code. Revisa la cuenta y el modelo elegidos antes de continuar un chat antiguo.');
+  $('t3-code-compatibility').textContent = chat+' '+L('Check the selected account and model before continuing an older chat.', 'Revisa la cuenta y el modelo elegidos antes de continuar un chat antiguo.');
   $('t3-code-privacy').textContent = L('Your regular T3 Code workspace and chats stay separate and can remain open. Existing accounts use their CLI sessions without copying login data. Close only T3 Code · Kilo, prepare again and reopen it after changing accounts, models or the connection. Your chats are kept.', 'Tu espacio T3 Code habitual y sus chats siguen separados y pueden permanecer abiertos. Las cuentas existentes usan sus sesiones CLI sin copiar datos de inicio de sesión. Cierra solo T3 Code · Kilo, prepara de nuevo y vuelve a abrir tras cambiar cuentas, modelos o la conexión. Tus chats se conservan.');
   $('t3-code-reload').textContent = loading ? L('Loading…', 'Cargando…') : L('Refresh models', 'Actualizar modelos'); $('t3-code-reload').disabled = loading || working || saving;
-  $('t3-code-prepare').textContent = working ? L('Preparing…', 'Preparando…') : L('Prepare without opening', 'Preparar sin abrir'); $('t3-code-prepare').disabled = working || loading || !ready() || !nativeOnly() && !connectionReady(ctx.state);
+  $('t3-code-prepare').textContent = working ? L('Preparing…', 'Preparando…') : L('Prepare without opening', 'Preparar sin abrir'); $('t3-code-prepare').disabled = working || loading || !ready() || !connected();
   $('t3-code-install').textContent = L('Get T3 Code ↗', 'Obtener T3 Code ↗');
   $('t3-code-prepared').textContent = prepared() ? L('Your saved T3 accounts and models are prepared.', 'Las cuentas y modelos guardados de T3 están preparados.') : L('Prepare or open T3 Code · Kilo to apply your saved accounts and models.', 'Prepara o abre T3 Code · Kilo para aplicar las cuentas y modelos guardados.');
   $('t3-code-status').textContent = translate(error || (working ? L('Preparing T3 Code accounts…', 'Preparando cuentas de T3 Code…') : profile?.message || ''), ctx.language); $('t3-code-status').classList.toggle('error', !!error);
@@ -165,7 +181,7 @@ export function createT3CodeHelper({api, onChange}) {
    if (preferencesResult.status !== 'fulfilled') throw preferencesResult.reason;
    if (profileResult.status !== 'fulfilled') throw profileResult.reason;
    acceptPreferences(preferencesResult.value);
-   if (libraryResult.status !== 'fulfilled' && !nativeOnly()) throw libraryResult.reason;
+   if (libraryResult.status !== 'fulfilled' && requiresSharedLibrary(preferences)) throw libraryResult.reason;
    saved = libraryResult.status === 'fulfilled' ? libraryResult.value : null; profile = profileResult.value; profileConnection = connection; pendingPreferences = null;
   } catch (failure) { if (generation === currentGeneration) { saved = null; profile = null; preferences = null; error = failure.message; preferencesError = failure.message; } }
   finally { if (generation === currentGeneration) { loaded = true; loading = false; render(); } }
@@ -179,23 +195,31 @@ export function createT3CodeHelper({api, onChange}) {
    if (generation !== currentGeneration) return;
    if (preferencesSignature(response?.preferences) !== preferencesSignature(snapshot)) throw new Error(L('T3 Code did not confirm the saved preferences. Reload settings before preparing.', 'T3 Code no confirmó las preferencias guardadas. Carga los ajustes antes de preparar.'));
    acceptPreferences(response); requiresPreparation = true; pendingPreferences = null;
+   const connection = connectionSignature();
    const nextProfile = await api('clients/t3-code');
-   if (generation === currentGeneration) { profile = nextProfile; profileConnection = connectionSignature(); }
+   if (generation === currentGeneration) { profile = nextProfile; profileConnection = connection; }
   } catch (failure) { if (generation === currentGeneration) preferencesError = failure.message; }
   finally { if (generation === currentGeneration) { saving = false; render(); } }
  }
  async function prepare() {
-  if (working || loading || !ready() || !nativeOnly() && !connectionReady(ctx.state)) throw new Error(reason());
+  if (working || loading || !ready() || !connected()) throw new Error(reason());
   const native = nativeOnly();
-  working = true; error = ''; const snapshot = native ? null : structuredClone(saved.library), preferencesSnapshot = structuredClone(preferences), connection = connectionSignature(); render();
+  const shared = requiresSharedLibrary(preferences);
+  const snapshot = native ? null : structuredClone(selectedLibrary(saved));
+  const preferencesSnapshot = structuredClone(preferences), connection = connectionSignature();
+  const readLibrary = () => native ? Promise.resolve(null) : shared ? api('model-library') : api('model-library').catch(() => null);
+  working = true; error = ''; render();
   try {
-   const [latest, settings] = await Promise.all([native ? Promise.resolve(null) : api('model-library'), api('clients/t3-code/preferences')]);
-   if (!native && (!openMausBotLibraryReady(latest) || librarySignature(latest.library) !== librarySignature(snapshot))) { saved = latest; throw new Error(L('The shared models changed. Review the refreshed list and open again.', 'Los modelos compartidos han cambiado. Revisa la lista actualizada y vuelve a abrir.')); }
+   const [latest, settings] = await Promise.all([readLibrary(), api('clients/t3-code/preferences')]);
+   if (!native && librarySignature(selectedLibrary(latest)) !== librarySignature(snapshot)) { saved = latest; throw new Error(L('The shared models changed. Review the refreshed list and open again.', 'Los modelos compartidos han cambiado. Revisa la lista actualizada y vuelve a abrir.')); }
    if (preferencesSignature(settings.preferences) !== preferencesSignature(preferencesSnapshot)) { acceptPreferences(settings); throw new Error(L('T3 Code settings changed. Review them and open again.', 'Los ajustes de T3 Code han cambiado. Revísalos y vuelve a abrir.')); }
-   profile = await api('clients/t3-code', native ? {preferences:preferencesSnapshot} : {library:snapshot, preferences:preferencesSnapshot}); profileConnection = connection;
-   const [current, currentSettings] = await Promise.all([native ? Promise.resolve(null) : api('model-library'), api('clients/t3-code/preferences')]);
-   if (!native && (!openMausBotLibraryReady(current) || librarySignature(current.library) !== librarySignature(snapshot))) { saved = current; throw new Error(L('The shared models changed while preparing. Review the refreshed list and open again.', 'Los modelos compartidos cambiaron durante la preparación. Revisa la lista actualizada y vuelve a abrir.')); }
+   if (!native && connectionSignature() !== connection) throw new Error(L('The T3 Code connection changed. Review it and open again.', 'La conexión de T3 Code ha cambiado. Revísala y vuelve a abrir.'));
+   const nextProfile = await api('clients/t3-code', {preferences:preferencesSnapshot, ...(shared ? {library:snapshot} : {})});
+   const [current, currentSettings] = await Promise.all([readLibrary(), api('clients/t3-code/preferences')]);
+   if (!native && librarySignature(selectedLibrary(current)) !== librarySignature(snapshot)) { saved = current; throw new Error(L('The shared models changed while preparing. Review the refreshed list and open again.', 'Los modelos compartidos cambiaron durante la preparación. Revisa la lista actualizada y vuelve a abrir.')); }
    if (preferencesSignature(currentSettings.preferences) !== preferencesSignature(preferencesSnapshot) || !native && connectionSignature() !== connection) { acceptPreferences(currentSettings); throw new Error(L('T3 Code settings or connection changed while preparing. Review them and open again.', 'Los ajustes o la conexión de T3 Code cambiaron durante la preparación. Revísalos y vuelve a abrir.')); }
+   if (!native && !shared && !t3CodePrepared(current, nextProfile, preferencesSnapshot)) throw new Error(L('T3 Code did not confirm the prepared catalog. Refresh and try again.', 'T3 Code no confirmó el catálogo preparado. Actualiza y vuelve a intentarlo.'));
+   profile = nextProfile; profileConnection = connection;
    requiresPreparation = false; return profile;
   } catch (failure) { error = failure.message; throw failure; }
   finally { working = false; render(); }
@@ -209,5 +233,9 @@ export function createT3CodeHelper({api, onChange}) {
  $('t3-code-settings-reload').addEventListener('click', () => { void reload(); });
  $('t3-code-reload').addEventListener('click', () => { void reload(); });
  $('t3-code-prepare').addEventListener('click', () => { void prepare().catch(() => {}); });
- return {render, reload, savePreferences, preferences:() => preferences && structuredClone(preferences), launchState:() => ({id:'t3-code', nativeOnly:nativeOnly(), count:(profile?.effectiveCodexModels?.length ?? 0)+(profile?.effectiveClaudeModels?.length ?? 0)+(openCodeUsesKilo(preferences) && preferencesSignature(preferences) === preferencesSignature(profile?.preferences) ? profile?.effectiveOpenCodeModels?.length ?? 0 : 0)+(museUsesKilo(preferences)&&preferencesSignature(preferences)===preferencesSignature(profile?.preferences)?profile?.effectiveMuseModels?.length??0:0), ready:false, valid:ready() && (nativeOnly() || connectionReady(ctx.state)), reason:reason(), working:working || loading || saving, fingerprint:signature(), prepare})};
+ return {render, reload, savePreferences, preferences:() => preferences && structuredClone(preferences), launchState:() => {
+  const current = currentProfile();
+  const count = (current?.effectiveCodexModels?.length ?? 0) + (current?.effectiveClaudeModels?.length ?? 0) + (openCodeUsesKilo(preferences) ? current?.effectiveOpenCodeModels?.length ?? 0 : 0) + (museUsesKilo(preferences) ? current?.effectiveMuseModels?.length ?? 0 : 0);
+  return {id:'t3-code', nativeOnly:nativeOnly(), count, canPrepareWithoutModelSummary:catalogMode(), ready:false, valid:ready() && connected(), reason:reason(), working:working || loading || saving, fingerprint:signature(), prepare};
+ }};
 }

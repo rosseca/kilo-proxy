@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {createT3CodeHelper, t3CodeNativeOnly, t3CodePrepared, t3CodePreferencesValid} from '../ui/t3-code-helper.mjs';
 
 const saved = () => ({revision:2,library:{schemaVersion:1,defaultModel:'vendor/second',models:[{id:'vendor/first',displayName:'Friendly',reasoningEffort:'high'},{id:'vendor/second'}]}});
+const emptyLibrary = () => ({schemaVersion:1,defaultModel:'',models:[]});
 const preferences = () => ({version:1,codex:true,claude:true,kiloCodex:true,kiloClaude:true,codexModels:'shared',claudeModels:'shared',providers:[],openCode2:false,openCodeConnection:'native',museConnection:'native',museModels:'official'});
 const preferencesResponse = () => ({preferences:preferences(),supportedProviders:[],openCode2Supported:false,requiresPreparation:false});
 const tick = () => new Promise(resolve => setImmediate(resolve));
@@ -12,7 +13,7 @@ function fixture(t, api, options = {}) {
  globalThis.document={getElementById(id){if(!nodes.has(id))nodes.set(id,element());return nodes.get(id);},createElement:element};
  t.after(()=>{globalThis.document=previous;});
  const helper=createT3CodeHelper({api:async(path,body)=>path==='clients/t3-code/preferences'?(options.preferencesAPI ? options.preferencesAPI(body) : preferencesResponse()):api(path,body),onChange(){}});
- helper.render({state:{connectionReady:true,baseURL:'http://127.0.0.1:8877/v1',localKey:'private-local-secret'},language:'en'});
+ helper.render({state:{connectionReady:true,kiloReady:true,baseURL:'http://127.0.0.1:8877/v1',localKey:'private-local-secret'},language:'en'});
  return {helper,nodes};
 }
 
@@ -356,6 +357,7 @@ test('an externally changed OpenCode connection invalidates the profile snapshot
 
 test('legacy Muse remains native but explicit Kilo Muse alone requires Models and gateway',async t=>{
  const old={...preferences(),kiloCodex:false,kiloClaude:false,providers:['muse']};delete old.museConnection;
+ delete old.museModels;
  assert.equal(t3CodeNativeOnly(old),true);
  assert.equal(t3CodeNativeOnly({...old,museConnection:'kilo'}),false);
  for(const invalid of [null,'other'])assert.equal(t3CodePreferencesValid({...old,museConnection:invalid}),false);
@@ -429,4 +431,141 @@ test('Muse policy changes invalidate preparation and omitted response cannot con
  assert.equal(t3CodePreferencesValid({...current,museModels:'all'}),false);
  omit=false;nodes.get('t3-code-settings-retry').dispatch('click');await tick();
  assert.equal(helper.preferences().museModels,'official');
+});
+
+test('Claude and Meta catalogs can prepare from a cold cache and empty library', async t => {
+ const current = {...preferences(),kiloCodex:false,claudeModels:'official',providers:['muse'],museConnection:'kilo',museModels:'official'};
+ const effectiveClaudeModels = [{id:'anthropic/claude-haiku-5.5',name:'Claude Haiku 5.5'}];
+ const effectiveMuseModels = [{id:'meta/muse-fixture',name:'Muse Fixture'}];
+ const writes = [];
+ const {helper,nodes} = fixture(t,async (path,body) => {
+  if (path === 'model-library') return {library:emptyLibrary()};
+  if (!body) return {prepared:false,preferences:current,library:emptyLibrary()};
+  writes.push(structuredClone(body));
+  return {prepared:true,preferences:current,library:emptyLibrary(),effectiveClaudeModels,effectiveMuseModels};
+ },{preferencesAPI:async () => ({preferences:structuredClone(current),supportedProviders:[{id:'muse',label:'Muse Code'}],museKiloSupported:true})});
+ await tick();
+ assert.equal(helper.launchState().count,0);
+ assert.equal(helper.launchState().canPrepareWithoutModelSummary,true);
+ assert.equal(helper.launchState().valid,true);
+ assert.equal(nodes.get('t3-code-prepare').disabled,false);
+ assert.equal(nodes.get('t3-code-claude-official').textContent,'Claude models');
+ assert.match(nodes.get('t3-code-muse-models-help').textContent,/from your Kilo catalog/);
+ const fingerprint = helper.launchState().fingerprint;
+ await helper.launchState().prepare();
+ assert.deepEqual(writes,[{preferences:current}]);
+ assert.equal(helper.launchState().fingerprint,fingerprint);
+ assert.equal(helper.launchState().count,2);
+ assert.match(nodes.get('t3-code-prepared').textContent,/saved T3 accounts and models are prepared/);
+ helper.render({state:{connectionReady:true,kiloReady:false},language:'es'});
+ assert.equal(nodes.get('t3-code-claude-official').textContent,'Modelos de Claude');
+ assert.equal(nodes.get('t3-code-muse-official').textContent,'Modelos de Meta');
+ assert.equal(helper.launchState().count,0);
+ assert.equal(helper.launchState().valid,false);
+ assert.match(helper.launchState().reason,/Conecta Kilo/);
+ await assert.rejects(helper.launchState().prepare(),/Conecta Kilo/);
+ assert.equal(writes.length,1);
+});
+
+test('an optional library is rechecked but not sent for Claude models', async t => {
+ const current = {...preferences(),kiloCodex:false,claudeModels:'official'};
+ let source = saved();
+ let reads = 0;
+ const writes = [];
+ const {helper,nodes} = fixture(t,async (path,body) => {
+  if (path === 'model-library') {
+   reads++;
+   if (source === null) throw new Error('unreadable library');
+   return structuredClone(source);
+  }
+  if (body) writes.push(structuredClone(body));
+  const library = source && !source.recoveryRequired ? source.library : emptyLibrary();
+  return {prepared:!!body,preferences:current,library:structuredClone(library)};
+ },{preferencesAPI:async () => ({preferences:structuredClone(current)})});
+ await tick();
+ source.library.models[0].reasoningEffort = 'low';
+ await assert.rejects(helper.launchState().prepare(),/shared models changed/);
+ assert.equal(writes.length,0);
+ await helper.launchState().prepare();
+ assert.deepEqual(writes,[{preferences:current}]);
+ assert.match(nodes.get('t3-code-prepared').textContent,/saved T3 accounts and models are prepared/);
+ source = {...source,recoveryRequired:true,warning:'last good backup'};
+ await helper.reload();
+ assert.equal(helper.launchState().valid,true);
+ await helper.launchState().prepare();
+ source = null;
+ await helper.reload();
+ assert.equal(helper.launchState().valid,true);
+ await helper.launchState().prepare();
+ assert.equal(reads,10);
+ assert.deepEqual(writes,[{preferences:current},{preferences:current},{preferences:current}]);
+ assert.match(nodes.get('t3-code-prepared').textContent,/saved T3 accounts and models are prepared/);
+});
+
+test('an official Claude catalog still requires Models when another Kilo account uses Shared', async t => {
+ const current = {...preferences(),kiloCodex:false,claudeModels:'official',providers:['muse'],museConnection:'kilo',museModels:'shared'};
+ const writes = [];
+ const {helper} = fixture(t,async (path,body) => {
+  if (path === 'model-library') return {library:emptyLibrary()};
+  if (body) writes.push(body);
+  return {prepared:false,preferences:current,library:emptyLibrary()};
+ },{preferencesAPI:async () => ({preferences:current,supportedProviders:[{id:'muse',label:'Muse Code'}],museKiloSupported:true})});
+ await tick();
+ assert.equal(helper.launchState().valid,false);
+ assert.match(helper.launchState().reason,/Add and save models/);
+ await assert.rejects(helper.launchState().prepare(),/Add and save models/);
+ assert.deepEqual(writes,[]);
+});
+
+test('official catalogs invalidate prepared summaries when the Kilo account changes', async t => {
+ const current = {...preferences(),kiloCodex:false,claudeModels:'official'};
+ const initialState = {connectionReady:true,kiloReady:true,usageAccountScope:'account-a',catalogRevision:7};
+ const nextState = {...initialState,usageAccountScope:'account-b',catalogRevision:8};
+ let switchBeforeWrite = false;
+ let switchAfterWrite = false;
+ const writes = [];
+ const {helper,nodes} = fixture(t,async (path,body) => {
+  if (path === 'model-library') {
+   if (switchBeforeWrite) helper.render({state:nextState,language:'en'});
+   return {library:emptyLibrary()};
+  }
+  if (body) {
+   writes.push(body);
+   if (switchAfterWrite) helper.render({state:nextState,language:'en'});
+  }
+  return {prepared:true,preferences:current,library:emptyLibrary(),effectiveClaudeModels:[{id:'anthropic/claude-opus-5.5'}]};
+ },{preferencesAPI:async () => ({preferences:current})});
+ await tick();
+ helper.render({state:initialState,language:'en'});
+ await helper.reload();
+ assert.equal(helper.launchState().count,1);
+ const original = helper.launchState().fingerprint;
+ switchBeforeWrite = true;
+ await assert.rejects(helper.launchState().prepare(),/connection changed/);
+ assert.equal(writes.length,0);
+ assert.notEqual(helper.launchState().fingerprint,original);
+ assert.equal(helper.launchState().count,0);
+ assert.match(nodes.get('t3-code-prepared').textContent,/Prepare or open/);
+ switchBeforeWrite = false;
+ switchAfterWrite = true;
+ helper.render({state:initialState,language:'en'});
+ await assert.rejects(helper.launchState().prepare(),/settings or connection changed while preparing/);
+ assert.equal(writes.length,1);
+ assert.equal(helper.launchState().count,0);
+});
+
+test('an official preparation verifies the canonical library returned by the server', async t => {
+ const current = {...preferences(),kiloCodex:false,claudeModels:'official'};
+ const source = {library:{...emptyLibrary(),startingPack:'recommended'}};
+ let confirm = false;
+ const {helper,nodes} = fixture(t,async (path,body) => {
+  if (path === 'model-library') return structuredClone(source);
+  return {prepared:!!body,preferences:current,library:confirm ? structuredClone(source.library) : emptyLibrary()};
+ },{preferencesAPI:async () => ({preferences:current})});
+ await tick();
+ await assert.rejects(helper.launchState().prepare(),/did not confirm the prepared catalog/);
+ assert.match(nodes.get('t3-code-prepared').textContent,/Prepare or open/);
+ confirm = true;
+ await helper.launchState().prepare();
+ assert.match(nodes.get('t3-code-prepared').textContent,/saved T3 accounts and models are prepared/);
 });

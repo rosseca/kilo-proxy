@@ -25,6 +25,7 @@ func (a *app) headlessCatalogAPI(w http.ResponseWriter, r *http.Request) {
 	}
 	a.mu.Lock()
 	scope, revision := a.catalogScopeLocked(), a.catalogRevision
+	account := usageAccountID(a.apiKey, a.config.OrgID)
 	cache := readNativeCachedCatalog(a.dir, scope)
 	a.mu.Unlock()
 	if cache.Models == nil {
@@ -49,7 +50,7 @@ func (a *app) headlessCatalogAPI(w http.ResponseWriter, r *http.Request) {
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.catalogScopeLocked() != scope || a.catalogRevision != fetchedRevision {
+	if a.catalogScopeLocked() != scope || fetchedRevision != revision || a.catalogRevision != revision || usageAccountID(a.apiKey, a.config.OrgID) != account {
 		jsonError(w, http.StatusConflict, "A connection changed while loading models. Refresh the catalog.")
 		return
 	}
@@ -61,7 +62,7 @@ func (a *app) headlessCatalogAPI(w http.ResponseWriter, r *http.Request) {
 			seen[model.ID] = true
 		}
 		for _, model := range cache.Models {
-			if !seen[model.ID] {
+			if !seen[model.ID] && (model.Connection == "chatgpt" || cache.KiloAccount == account) {
 				// Cached-only rows retain capabilities, but BYOK availability
 				// must come from the current connection's catalog response.
 				model.HasUserByokAvailable = nil
@@ -83,7 +84,7 @@ func (a *app) headlessCatalogAPI(w http.ResponseWriter, r *http.Request) {
 	if complete {
 		fetchedAt = time.Now().UTC()
 	}
-	data, err := json.Marshal(nativeCachedCatalog{SchemaVersion: 1, OrgID: scope, Models: models, FetchedAt: fetchedAt})
+	data, err := json.Marshal(nativeCachedCatalog{SchemaVersion: 1, OrgID: scope, KiloAccount: account, Models: models, FetchedAt: fetchedAt, KiloFetchedAt: fetchedAt})
 	if err != nil || len(data) > 4<<20 {
 		jsonError(w, http.StatusBadGateway, "The model catalog exceeds the size limit.")
 		return

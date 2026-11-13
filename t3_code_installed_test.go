@@ -160,7 +160,7 @@ func t3CodeInstalledAgents(t *testing.T, officialClaude bool) {
 	if _, err := a.modelLibrary.save(library, 0, false); err != nil {
 		t.Fatal(err)
 	}
-	cache, _ := json.Marshal(nativeCachedCatalog{SchemaVersion: 1, OrgID: a.catalogScopeLocked(), Models: catalog, FetchedAt: time.Now().UTC()})
+	cache, _ := json.Marshal(nativeCachedCatalog{SchemaVersion: 1, OrgID: a.catalogScopeLocked(), KiloAccount: usageAccountID(a.apiKey, a.config.OrgID), KiloFetchedAt: time.Now().UTC(), Models: catalog, FetchedAt: time.Now().UTC()})
 	if err := os.WriteFile(filepath.Join(a.dir, "model-catalog.json"), cache, 0600); err != nil {
 		t.Fatal(err)
 	}

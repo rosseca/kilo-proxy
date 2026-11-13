@@ -213,14 +213,19 @@ func (u *nativeUI) launchSettingsFingerprintWithPreferences(key, directoryField 
 		data, _ := json.Marshal([]any{paths.Loaded, paths.Preferences, paths.Pending, paths.Generation, u.value(nativeCLIPathField("codex-cli")), u.value(nativeCLIPathField("claude")), u.value(nativeCLIPathField("omnigent")), u.clientState().LaunchInfo.Clients[key].Path, prefs.Loaded, prefs.Preferences, prefs.Pending, prefs.Generation})
 		return sha256.Sum256(data)
 	}
-	if key == "t3-code" && includePreferences && u.t3CodeNativeOnly() {
+	if key == "t3-code" && includePreferences && !u.t3CodeNeedsSavedLibrary() {
 		paths := &u.clientState().CLIPreferences
 		openCode := &u.clientState().OpenCodePreferences
 		prefs := &u.agentsState().T3Code.PreferencesState
-		data, _ := json.Marshal([]any{paths.Loaded, paths.Preferences, paths.Pending, paths.Generation,
+		values := []any{paths.Loaded, paths.Preferences, paths.Pending, paths.Generation,
 			u.value(nativeCLIPathField("codex-cli")), u.value(nativeCLIPathField("claude")), u.value(nativeCLIPathField("muse")),
 			openCode.Loaded, openCode.Preferences, openCode.Pending, openCode.Generation, u.value(nativeOpenCodePathField(1)), u.value(nativeOpenCodePathField(2)),
-			prefs.Loaded, prefs.Preferences, prefs.Pending, prefs.Generation})
+			prefs.Loaded, prefs.Preferences, prefs.Pending, prefs.Generation}
+		if !u.t3CodeNativeOnly() {
+			connection := u.owner.readUIProjection()
+			values = append(values, connection.Fingerprint, connection.KiloReady, t3CodeOptionalSavedLibrary(u.owner.modelLibrary.snapshot()))
+		}
+		data, _ := json.Marshal(values)
 		return sha256.Sum256(data)
 	}
 	if key == "synara" && includePreferences && u.synaraNativeOnly() {
@@ -444,6 +449,10 @@ func (u *nativeUI) launchClientFrom(key, directoryField string) {
 		}
 	}
 	if key == "t3-code" {
+		if err := u.t3CodeProviderCatalogConnectionError(); err != nil {
+			u.noticeError(err)
+			return
+		}
 		if err := u.t3CodeOpenCodeConnectionError(); err != nil {
 			u.noticeError(err)
 			return
@@ -459,15 +468,15 @@ func (u *nativeUI) launchClientFrom(key, directoryField string) {
 			return
 		}
 	}
-	nativeAccounts := key == "t3-code" && u.t3CodeNativeOnly() || key == "synara" && u.synaraNativeOnly() || key == "omnigent" && u.omnigentNativeOnly()
-	if err := u.packReadinessError(key); !nativeAccounts && err != nil {
+	needsSavedModels := !(key == "t3-code" && !u.t3CodeNeedsSavedLibrary() || key == "synara" && u.synaraNativeOnly() || key == "omnigent" && u.omnigentNativeOnly())
+	if err := u.packReadinessError(key); needsSavedModels && err != nil {
 		u.noticeError(err)
 		return
 	}
-	if !nativeAccounts {
+	if needsSavedModels {
 		u.persistLibraryEdits()
 	}
-	if status, ready := u.libraryStatus(); !nativeAccounts && !ready {
+	if status, ready := u.libraryStatus(); needsSavedModels && !ready {
 		w := u.library.writer
 		w.mu.Lock()
 		saving := w.running
@@ -506,7 +515,7 @@ func (u *nativeUI) launchClientFrom(key, directoryField string) {
 	}
 	s := u.sharedClientSelection(key)
 	u.syncClientSelection(key, s)
-	if _, err := nativeClientPayload(key, s); !nativeAccounts && (err != nil || len(s.Models) == 0) {
+	if _, err := nativeClientPayload(key, s); needsSavedModels && (err != nil || len(s.Models) == 0) {
 		u.setNotice(nativeToneWarning, u.tr("Choose valid models before launching.", "Elige modelos válidos antes de abrir."))
 		if err != nil {
 			u.noticeError(err)
@@ -539,7 +548,7 @@ func (u *nativeUI) launchClientFrom(key, directoryField string) {
 			return
 		}
 		current := u.sharedClientSelection(key)
-		if !nativeAccounts && current != s || prepared != u.launchSettingsFingerprint(key, directoryField) {
+		if needsSavedModels && current != s || prepared != u.launchSettingsFingerprint(key, directoryField) {
 			finish(errors.New(u.launchSettingsChangedMessage()))
 			return
 		}
@@ -583,8 +592,8 @@ func (u *nativeUI) launchClientFrom(key, directoryField string) {
 			u.refreshState()
 		})
 	}
-	// A managed profile can be edited externally between launches. Reapply the
-	// shared library each time; the backend preserves unrelated preferences.
+	// Reapply the current model and account settings each time because a
+	// managed profile can be edited externally between launches.
 	u.prepareClientAfter(key, launch)
 }
 

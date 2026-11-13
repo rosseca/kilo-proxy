@@ -79,7 +79,9 @@ func (u *nativeUI) uxhHarnessPage(key string, s *nativeClientSelection, d uxhDet
 		summary = u.claudeDesktopModelSummary(s)
 	}
 	if key == "t3-code" && u.t3CodeNativeOnly() {
-		onOpen = append(onOpen, u.uxhKV(u.tr("Models", "Modelos"), u.column(u.uxhValue(u.tr("Native provider catalogs", "Catálogos nativos de los proveedores")), u.note(u.tr("Choose models in T3 using each account's native catalog. Shared Kilo models are only needed when a Kilo account is enabled.", "Elige modelos en T3 desde el catálogo nativo de cada cuenta. Los modelos compartidos de Kilo solo se necesitan si activas una cuenta Kilo.")))))
+		onOpen = append(onOpen, u.uxhKV(u.tr("Models", "Modelos"), u.column(u.uxhValue(u.tr("Native provider catalogs", "Catálogos nativos de los proveedores")), u.note(u.tr("Choose models in T3 using each account's native catalog.", "Elige modelos en T3 desde el catálogo nativo de cada cuenta.")))))
+	} else if key == "t3-code" && !u.t3CodeNeedsSavedLibrary() {
+		onOpen = append(onOpen, u.uxhKV(u.tr("Models", "Modelos"), u.column(u.uxhValue(u.tr("Connected provider catalogs", "Catálogos de los proveedores conectados")), u.note(u.tr("T3 offers the Claude or Meta models available through your Kilo connection.", "T3 ofrece los modelos de Claude o Meta disponibles a través de tu conexión Kilo.")))))
 	} else if key == "synara" && u.synaraNativeOnly() {
 		onOpen = append(onOpen, u.uxhKV(u.tr("Models", "Modelos"), u.column(u.uxhValue(u.tr("Native provider catalogs", "Catálogos nativos de los proveedores")), u.note(u.tr("Choose models in Synara using each account's native catalog. Shared Kilo models are only needed when a Kilo account is enabled.", "Elige modelos en Synara desde el catálogo nativo de cada cuenta. Los modelos compartidos de Kilo solo se necesitan si activas una cuenta Kilo.")))))
 	} else if key == "omnigent" && u.omnigentNativeOnly() {

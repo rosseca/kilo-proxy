@@ -86,7 +86,7 @@ func (a *app) prepareT3CodeRequest(r *http.Request) (*http.Request, error) {
 	ready := resolveErr == nil && readErr == nil
 	if ready {
 		installation, inspectErr := inspectT3CodeInstallation(binary, rt.platform)
-		ready = inspectErr == nil && t3CodeReadyFrom(input, saved, binary, installation, readNativeCatalogCache(input.Dir, input.CatalogScope), rt)
+		ready = inspectErr == nil && t3CodeReadyFrom(input, saved, binary, installation, input.catalog(), rt, true)
 	}
 	if ready {
 		for key, previous := range routes {

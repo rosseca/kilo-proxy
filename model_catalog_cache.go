@@ -13,8 +13,10 @@ const modelCatalogTTL = time.Hour
 type nativeCachedCatalog struct {
 	SchemaVersion int         `json:"schemaVersion"`
 	OrgID         string      `json:"orgId"`
+	KiloAccount   string      `json:"kiloAccount,omitempty"`
 	Models        []modelInfo `json:"models"`
 	FetchedAt     time.Time   `json:"fetchedAt,omitempty"`
+	KiloFetchedAt time.Time   `json:"kiloFetchedAt,omitempty"`
 }
 
 func modelCatalogNeedsRefresh(fetchedAt, now time.Time) bool {

@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -10,11 +11,36 @@ import (
 )
 
 func deriveSynaraModelPolicy(prefs synaraPreferences, library modelLibrary, catalog []modelInfo) (t3CodeModelPolicy, error) {
-	policy, err := deriveT3CodeModelPolicy(synaraT3Preferences(prefs), library, catalog)
+	policy, err := deriveT3CodeModelPolicyWithClaude(synaraT3Preferences(prefs), library, catalog, nil, func() (modelLibrary, error) {
+		return synaraOfficialClaudeLibrary(library, catalog)
+	})
 	if err != nil {
 		return policy, errors.New(strings.ReplaceAll(err.Error(), "T3 Code", "Synara"))
 	}
 	return policy, nil
+}
+
+func synaraOfficialClaudeLibrary(library modelLibrary, catalog []modelInfo) (modelLibrary, error) {
+	result := emptyModelLibrary()
+	for _, official := range t3CodeOfficialClaudeModels {
+		var match *modelInfo
+		for i := range catalog {
+			parts := t3CodeClaudeGatewayID.FindStringSubmatch(catalog[i].ID)
+			if parts == nil || strings.ReplaceAll(parts[1], ".", "-") != official.Slug {
+				continue
+			}
+			if match != nil && match.ID != catalog[i].ID {
+				return result, fmt.Errorf("T3 Code Claude has multiple gateway IDs for %s. Choose an exact shared selection instead.", official.Name)
+			}
+			match = &catalog[i]
+		}
+		if match == nil {
+			return result, fmt.Errorf("%s is unavailable in the connected catalog. Refresh the catalog, choose shared models, or disable Claude · Kilo.", official.Name)
+		}
+		result.Models = append(result.Models, t3CodeCatalogLibraryItem(*match, library))
+	}
+	result.DefaultModel = t3CodeEffectiveDefault(result, library.DefaultModel)
+	return result, nil
 }
 
 func synaraOptionsPolicy(options synaraProfileOptions) t3CodeModelPolicy {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -26,7 +27,45 @@ var t3CodeOfficialClaudeModels = []struct{ Slug, Name string }{
 
 // Effective selections belong to individual T3 instances. Deriving them never
 // rewrites the shared library or the selections used by other integrations.
-func deriveT3CodeModelPolicy(prefs t3CodePreferences, library modelLibrary, catalog []modelInfo) (t3CodeModelPolicy, error) {
+func deriveT3CodeModelPolicy(prefs t3CodePreferences, library modelLibrary, catalog []modelInfo, installed ...t3CodeInstallation) (t3CodeModelPolicy, error) {
+	var installation t3CodeInstallation
+	if len(installed) > 0 {
+		installation = installed[0]
+	}
+	return deriveT3CodeCatalogPolicy(prefs, library, catalog, installation, nil)
+}
+
+func deriveT3CodeCatalogPolicy(prefs t3CodePreferences, library modelLibrary, catalog []modelInfo, installation t3CodeInstallation, prepared *t3CodePrepared) (t3CodeModelPolicy, error) {
+	slugs := installation.ClaudeCatalogSlugs
+	if len(slugs) == 0 {
+		slugs = t3CodeClaudeBuiltinModelSlugs
+	}
+	return deriveT3CodeModelPolicyWithClaude(prefs, library, catalog, prepared, func() (modelLibrary, error) {
+		claudeCatalog := catalog
+		if prepared != nil {
+			claudeCatalog = t3CodePreparedCatalog(catalog, prepared.ClaudeLibrary)
+		}
+		return t3CodeClaudeCatalogLibrary(library, claudeCatalog, slugs)
+	})
+}
+
+// Select current metadata for the exact prepared IDs. An additive catalog
+// refresh must not expand or interrupt a running T3 workspace.
+func t3CodePreparedCatalog(catalog []modelInfo, library modelLibrary) []modelInfo {
+	ids := make(map[string]bool, len(library.Models))
+	for _, model := range library.Models {
+		ids[model.ID] = true
+	}
+	models := make([]modelInfo, 0, len(ids))
+	for _, model := range catalog {
+		if ids[model.ID] {
+			models = append(models, model)
+		}
+	}
+	return models
+}
+
+func deriveT3CodeModelPolicyWithClaude(prefs t3CodePreferences, library modelLibrary, catalog []modelInfo, prepared *t3CodePrepared, officialClaude func() (modelLibrary, error)) (t3CodeModelPolicy, error) {
 	result := t3CodeModelPolicy{CodexLibrary: emptyModelLibrary(), ClaudeLibrary: emptyModelLibrary(), OpenCodeLibrary: emptyModelLibrary(), MuseLibrary: emptyModelLibrary(), ClaudeRoutes: map[string]string{}, OpenCodeVariantLevels: map[string][]string{}, MuseReasoningLevels: map[string][]string{}, MuseReasoningDefaults: map[string]string{}}
 	prefs = normalizeT3CodePreferences(prefs)
 	if err := validateT3CodePreferences(prefs); err != nil {
@@ -46,27 +85,23 @@ func deriveT3CodeModelPolicy(prefs t3CodePreferences, library modelLibrary, cata
 		}
 	}
 	if t3CodeMuseKiloEnabled(prefs) {
-		if len(library.Models) == 0 {
-			return result, errors.New("Choose shared models before preparing Muse Code with Kilo Proxy.")
-		}
-		result.MuseLibrary = cloneModelLibrary(library)
 		if prefs.MuseModels == "official" {
-			result.MuseLibrary.Models = nil
-			for _, model := range library.Models {
-				// Match the original gateway publisher, never Muse's provider_id
-				// transport shim or a user-facing model name.
-				if !strings.HasPrefix(model.ID, "meta/") && !strings.HasPrefix(model.ID, "meta-llama/") {
-					continue
-				}
-				model.ReasoningLevels = append([]string(nil), model.ReasoningLevels...)
-				result.MuseLibrary.Models = append(result.MuseLibrary.Models, model)
+			metaCatalog := catalog
+			if prepared != nil {
+				metaCatalog = t3CodePreparedCatalog(catalog, prepared.MuseLibrary)
 			}
-			result.MuseLibrary.DefaultModel = t3CodeEffectiveDefault(result.MuseLibrary, library.DefaultModel)
+			result.MuseLibrary = t3CodeMetaCatalogLibrary(library, metaCatalog)
 			if len(result.MuseLibrary.Models) == 0 {
-				return result, errors.New("Select at least one Meta model in Models, choose all shared models, or disable Muse Code · Kilo.")
+				return result, errors.New("No Meta models are available in the connected Kilo catalog. Refresh the catalog, choose all shared models, or disable Muse Code · Kilo.")
 			}
-			// Roles refer to the original shared selection, not this account.
-			result.MuseLibrary.Roles = nil
+			if err := validateModelLibrary(result.MuseLibrary); err != nil {
+				return result, err
+			}
+		} else {
+			if len(library.Models) == 0 {
+				return result, errors.New("Choose shared models before preparing Muse Code with Kilo Proxy.")
+			}
+			result.MuseLibrary = cloneModelLibrary(library)
 		}
 		for _, choice := range terminalLibraryChoices(result.MuseLibrary, catalog) {
 			levels, initial := nativeReasoningFor(choice)
@@ -98,24 +133,14 @@ func deriveT3CodeModelPolicy(prefs t3CodePreferences, library modelLibrary, cata
 		if prefs.ClaudeModels == "shared" {
 			result.ClaudeLibrary = cloneModelLibrary(library)
 		} else {
-			for _, official := range t3CodeOfficialClaudeModels {
-				var match *modelInfo
-				for i := range catalog {
-					parts := t3CodeClaudeGatewayID.FindStringSubmatch(catalog[i].ID)
-					if parts == nil || strings.ReplaceAll(parts[1], ".", "-") != official.Slug {
-						continue
-					}
-					if match != nil && match.ID != catalog[i].ID {
-						return result, fmt.Errorf("T3 Code Claude has multiple gateway IDs for %s. Choose an exact shared selection instead.", official.Name)
-					}
-					match = &catalog[i]
-				}
-				if match == nil {
-					return result, fmt.Errorf("%s is unavailable in the connected catalog. Refresh the catalog, choose shared models, or disable Claude · Kilo.", official.Name)
-				}
-				result.ClaudeLibrary.Models = append(result.ClaudeLibrary.Models, t3CodeCatalogLibraryItem(*match, library))
+			var err error
+			result.ClaudeLibrary, err = officialClaude()
+			if err != nil {
+				return result, err
 			}
-			result.ClaudeLibrary.DefaultModel = t3CodeEffectiveDefault(result.ClaudeLibrary, library.DefaultModel)
+			if len(result.ClaudeLibrary.Models) == 0 {
+				return result, errors.New("No Claude models are available in both T3 Code and the connected Kilo catalog. Refresh the catalog, choose shared models, or disable Claude · Kilo.")
+			}
 		}
 		if err := validateT3CodeEffectiveLibrary(result.ClaudeLibrary, "Claude", prefs.ClaudeModels); err != nil {
 			return result, err
@@ -127,6 +152,71 @@ func deriveT3CodeModelPolicy(prefs t3CodePreferences, library modelLibrary, cata
 		}
 	}
 	return result, nil
+}
+
+// Keep T3's native model order and expose only exact gateway identities
+// that the installed driver can present. Prefer a single undated ID over
+// dated snapshots of that version when choosing a native route.
+func t3CodeClaudeCatalogLibrary(library modelLibrary, catalog []modelInfo, slugs []string) (modelLibrary, error) {
+	result := emptyModelLibrary()
+	matches := make(map[string][]modelInfo)
+	for _, model := range catalog {
+		if model.Connection != "" && model.Connection != "kilo" {
+			continue
+		}
+		if slug := t3CodeNativeClaudeModelID(model.ID); slug != "" {
+			matches[slug] = append(matches[slug], model)
+		}
+	}
+	for _, slug := range slugs {
+		candidates := matches[slug]
+		if len(candidates) == 0 {
+			continue
+		}
+		if len(candidates) > 1 {
+			var undated []modelInfo
+			for _, model := range candidates {
+				if t3CodeClaudeGatewayID.FindStringSubmatch(model.ID)[2] == "" {
+					undated = append(undated, model)
+				}
+			}
+			if len(undated) != 1 {
+				return result, fmt.Errorf("T3 Code Claude has multiple gateway IDs for %s. Choose an exact shared selection instead.", slug)
+			}
+			candidates = undated
+		}
+		result.Models = append(result.Models, t3CodeCatalogLibraryItem(candidates[0], library))
+	}
+	result.DefaultModel = t3CodeEffectiveDefault(result, library.DefaultModel)
+	return result, nil
+}
+
+func t3CodeMetaPublisher(id string) bool {
+	return strings.HasPrefix(id, "meta/") || strings.HasPrefix(id, "meta-llama/")
+}
+
+func t3CodeMetaCatalogLibrary(library modelLibrary, catalog []modelInfo) modelLibrary {
+	result := emptyModelLibrary()
+	for _, model := range catalog {
+		if model.Connection != "" && model.Connection != "kilo" {
+			continue
+		}
+		// Use the gateway ID, since the local Muse transport labels every
+		// row as Meta regardless of its actual publisher.
+		if t3CodeMetaPublisher(model.ID) {
+			result.Models = append(result.Models, t3CodeCatalogLibraryItem(model, library))
+		}
+	}
+	sort.Slice(result.Models, func(i, j int) bool {
+		a, b := result.Models[i].ID, result.Models[j].ID
+		museA, museB := strings.HasPrefix(a, "meta/muse-"), strings.HasPrefix(b, "meta/muse-")
+		if museA != museB {
+			return museA
+		}
+		return a < b
+	})
+	result.DefaultModel = t3CodeEffectiveDefault(result, library.DefaultModel)
+	return result
 }
 
 func validateT3CodeEffectiveLibrary(library modelLibrary, provider, mode string) error {

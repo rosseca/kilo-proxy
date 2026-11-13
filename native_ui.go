@@ -808,8 +808,9 @@ func (u *nativeUI) applyModels(raw json.RawMessage, requestedRevision float64, f
 		u.refreshState()
 		return false
 	}
-	currentRevision, org := u.owner.readUIProjection().CatalogRevision, u.owner.uiCatalogScope()
-	if response.Revision != float64(currentRevision) {
+	projection := u.owner.readUIProjection()
+	org := u.owner.uiCatalogScope()
+	if response.Revision != float64(projection.CatalogRevision) {
 		u.modelsPending = true
 		u.refreshState()
 		return false
@@ -825,7 +826,7 @@ func (u *nativeUI) applyModels(raw json.RawMessage, requestedRevision float64, f
 	if response.Complete == nil || *response.Complete {
 		u.catalogFetchedAt = time.Now().UTC()
 	}
-	u.cacheModels(org)
+	u.cacheModels(org, projection.UsageScope)
 	return true
 }
 func (u *nativeUI) refreshModels() {

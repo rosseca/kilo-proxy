@@ -8,9 +8,8 @@ import (
 	"strings"
 )
 
-// The packaged Claude manifests in desktop 0.0.45 and nightly
-// 0.0.46-nightly.20261003.2610 contain these exact slugs. Include current and
-// legacy rows: both can otherwise reach Claude Code with a non-gateway ID.
+// Known native slugs from the packaged Claude manifests, including legacy
+// rows. Older bundles without an extractable manifest use this fallback.
 var t3CodeClaudeBuiltinModelSlugs = []string{
 	"claude-opus-5-5", "claude-sonnet-5-5", "claude-fable-5-1", "claude-fable-5",
 	"claude-opus-5", "claude-opus-4-8", "claude-opus-4-7", "claude-opus-4-6",

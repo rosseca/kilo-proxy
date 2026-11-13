@@ -21,6 +21,7 @@ type t3CodeInstallation struct {
 	ProtocolV2            bool
 	ClaudeModelDefaults   bool
 	ClaudeBuiltins        []string
+	ClaudeCatalogSlugs    []string
 	SupportedProviders    []t3CodeProviderSupport
 	OpenCode2Supported    bool
 	OpenCodeKiloSupported bool
@@ -165,6 +166,7 @@ var t3CodeInstalledAnalysis t3CodeInspectionCache
 
 func cloneT3CodeInstallation(value t3CodeInstallation) t3CodeInstallation {
 	value.ClaudeBuiltins = slices.Clone(value.ClaudeBuiltins)
+	value.ClaudeCatalogSlugs = slices.Clone(value.ClaudeCatalogSlugs)
 	value.SupportedProviders = slices.Clone(value.SupportedProviders)
 	return value
 }
@@ -257,6 +259,7 @@ func analyzeT3CodeInstallation(metadata t3CodePackageMetadata, desktop, server [
 		}
 	}
 	sort.Strings(result.ClaudeBuiltins)
+	result.ClaudeCatalogSlugs = t3CodeBundledClaudeSlugs(server)
 	result.SourceDigest = digest
 	return result, nil
 }

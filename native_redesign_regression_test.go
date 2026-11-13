@@ -68,7 +68,7 @@ func TestNativeCatalogCachePreservesReasoningWithoutSavingPricesInLibrary(t *tes
 	u.setValue(nativeClientField(sharedModelKey, "vendor/one", "reasoning"), "high")
 	u.persistLibraryEdits()
 	u.flushModelLibrary()
-	u.cacheModels("e2e-team")
+	u.cacheModels("e2e-team", "")
 	nativeTestWait(t, u, func() bool {
 		u.catalogCache.mu.Lock()
 		defer u.catalogCache.mu.Unlock()

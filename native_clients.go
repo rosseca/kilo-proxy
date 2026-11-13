@@ -1354,9 +1354,15 @@ func (u *nativeUI) prepareClientAfterPreferencesChecked(key string, done func(er
 		done(errors.New(u.tr("Wait for the current app operation to finish.", "Espera a que termine la operación actual de la app.")))
 		return
 	}
-	if key == "t3-code" && u.t3CodeNativeOnly() {
-		u.prepareT3CodeNativeAfter(t3Preferences, done)
-		return
+	if key == "t3-code" {
+		if err := u.t3CodeProviderCatalogConnectionError(); err != nil {
+			done(err)
+			return
+		}
+		if !u.t3CodeNeedsSavedLibrary() {
+			u.prepareT3CodeWithoutLibraryAfter(t3Preferences, done)
+			return
+		}
 	}
 	if key == "synara" && u.synaraNativeOnly() {
 		u.prepareSynaraNativeAfter(synaraPreferences, done)
@@ -1456,11 +1462,13 @@ func (u *nativeUI) prepareClientAfterPreferencesChecked(key string, done func(er
 	})
 }
 
-// Native-only T3 accounts do not consume Kilo's shared library, model packs or
-// gateway credentials. The endpoint still confirms the exact saved accounts,
-// while the surrounding preparation transaction verifies CLI path settings.
-func (u *nativeUI) prepareT3CodeNativeAfter(preferences nativeT3CodePreferences, done func(error)) {
+// The server resolves optional saved model overrides and connected catalogs.
+func (u *nativeUI) prepareT3CodeWithoutLibraryAfter(preferences nativeT3CodePreferences, done func(error)) {
 	before := u.launchSettingsFingerprint("t3-code", "")
+	var connection [32]byte
+	if !u.t3CodeNativeOnly() {
+		connection = u.launchConnectionFingerprint()
+	}
 	u.clientRequest(http.MethodPost, nativeClientEndpoint("t3-code"), map[string]any{"preferences": preferences}, func(data json.RawMessage, err error) {
 		if err != nil {
 			done(err)
@@ -1476,7 +1484,7 @@ func (u *nativeUI) prepareT3CodeNativeAfter(preferences nativeT3CodePreferences,
 			return
 		}
 		prefs := &u.agentsState().T3Code.PreferencesState
-		if !confirmed.Prepared || !nativeT3CodePreferencesEqual(confirmed.Preferences, preferences) || !nativeT3CodePreferencesEqual(prefs.Preferences, preferences) || prefs.Pending != nil || u.t3CodePreferencesBusy() || before != u.launchSettingsFingerprint("t3-code", "") {
+		if !confirmed.Prepared || u.t3CodeProviderCatalogConnectionError() != nil || !nativeT3CodePreferencesEqual(confirmed.Preferences, preferences) || !nativeT3CodePreferencesEqual(prefs.Preferences, preferences) || prefs.Pending != nil || u.t3CodePreferencesBusy() || before != u.launchSettingsFingerprint("t3-code", "") {
 			done(errors.New(u.launchSettingsChangedMessage()))
 			return
 		}
@@ -1485,7 +1493,7 @@ func (u *nativeUI) prepareT3CodeNativeAfter(preferences nativeT3CodePreferences,
 		if confirmed.ConfigPath != "" {
 			selection.Path = confirmed.ConfigPath
 		}
-		u.acceptT3CodeProfile(data, [32]byte{})
+		u.acceptT3CodeProfile(data, connection)
 		done(nil)
 	})
 }

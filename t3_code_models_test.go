@@ -88,12 +88,11 @@ func TestT3CodeModelPolicyUnavailableAmbiguousAndDisabled(t *testing.T) {
 		edit func([]modelInfo) []modelInfo
 		want string
 	}{
-		{"missing", func(c []modelInfo) []modelInfo { return append(c[:1], c[2:]...) }, "Sonnet 5.5 is unavailable"},
+		{"empty intersection", func(c []modelInfo) []modelInfo { return c[3:] }, "No Claude models are available"},
 		{"ambiguous spelling", func(c []modelInfo) []modelInfo { return append(c, modelInfo{ID: "anthropic/claude-opus-5-5"}) }, "multiple gateway IDs"},
 		{"ambiguous date", func(c []modelInfo) []modelInfo {
-			return append(c, modelInfo{ID: "anthropic/claude-sonnet-5-5-20261012"})
+			return append(append(c[:1], c[2:]...), modelInfo{ID: "anthropic/claude-sonnet-5-5-20261012"}, modelInfo{ID: "anthropic/claude-sonnet-5-5-20261013"})
 		}, "multiple gateway IDs"},
-		{"identity not label", func(c []modelInfo) []modelInfo { c[2].ID = "other/claude-fable-5.1"; return c }, "Fable 5.1 is unavailable"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if _, err := deriveT3CodeModelPolicy(t3CodePolicyFixturePreferences(), library, tc.edit(t3CodeOfficialCatalogFixture())); err == nil || !strings.Contains(err.Error(), tc.want) {
@@ -158,5 +157,69 @@ func TestT3CodeClaudeRoutesKeepNativeVersionForUniqueDatedGatewayModel(t *testin
 	}
 	if _, err := t3CodeResolveModel(library, routes, "claude-opus-5-5-20261013"); err == nil {
 		t.Fatal("unselected dated snapshot acquired a route")
+	}
+}
+
+func TestT3CodeClaudeCatalogMatchesBundledModelsAndKeepsNativeOrder(t *testing.T) {
+	server := []byte(`const unrelated = "claude-opus-6";
+// src/provider/model-manifest.json
+var model_manifest_default = {
+	version: 1,
+	providers: {
+		"claudeAgent": {
+			"models": [
+				{"slug": "claude-opus-5-5"},
+				{"slug": "claude-fable-5-2"},
+				{"slug": "claude-sonnet-5-5"},
+				{"slug": "claude-haiku-5-5"},
+				{"slug": "claude-opus-4-5"}
+			]
+		},
+		"codex": {"models": [{"slug": "claude-opus-6"}]}
+	}
+};
+`)
+	slugs := t3CodeBundledClaudeSlugs(server)
+	if want := []string{"claude-opus-5-5", "claude-fable-5-2", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-opus-4-5"}; !reflect.DeepEqual(slugs, want) {
+		t.Fatal("unexpected bundled Claude models", slugs)
+	}
+	if duplicate := t3CodeBundledClaudeSlugs(append(append([]byte{}, server...), server...)); duplicate != nil {
+		t.Fatal("ambiguous manifest accepted", duplicate)
+	}
+	prefs := t3CodePolicyFixturePreferences()
+	prefs.KiloCodex = false
+	library := emptyModelLibrary()
+	library.DefaultModel = "anthropic/claude-haiku-5.5"
+	library.Models = []modelLibraryItem{{ID: library.DefaultModel, DisplayName: "My Haiku"}}
+	catalog := []modelInfo{
+		{ID: "anthropic/claude-haiku-5.5"},
+		{ID: "anthropic/claude-opus-6"},
+		{ID: "anthropic/claude-opus-5-5-20261010"},
+		{ID: "vendor/claude-sonnet-5.5", Name: "Claude Sonnet 5.5"},
+		{ID: "anthropic/claude-fable-5.2"},
+		{ID: "anthropic/claude-opus-5.5"},
+		{ID: "anthropic/claude-opus-4.5", Connection: "chatgpt"},
+	}
+	policy, err := deriveT3CodeModelPolicy(prefs, library, catalog, t3CodeInstallation{ClaudeCatalogSlugs: slugs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for _, model := range policy.ClaudeLibrary.Models {
+		ids = append(ids, model.ID)
+	}
+	want := []string{"anthropic/claude-opus-5.5", "anthropic/claude-fable-5.2", library.DefaultModel}
+	if !reflect.DeepEqual(ids, want) || policy.ClaudeLibrary.DefaultModel != library.DefaultModel || !reflect.DeepEqual(policy.ClaudeLibrary.Models[2], library.Models[0]) {
+		t.Fatal("Claude policy lost native order, exact IDs or saved override", policy.ClaudeLibrary)
+	}
+	for slug, id := range map[string]string{"claude-opus-5-5": want[0], "claude-fable-5-2": want[1], "claude-haiku-5-5": want[2]} {
+		if got, err := t3CodeResolveModel(policy.ClaudeLibrary, policy.ClaudeRoutes, slug); err != nil || got != id {
+			t.Fatal("native alias did not route to its exact ID", slug, got, err)
+		}
+	}
+	for _, id := range []string{"claude-opus-6", "claude-sonnet-5-5", "anthropic/claude-opus-5-5-20261010", "claude-opus-4-5"} {
+		if _, err := t3CodeResolveModel(policy.ClaudeLibrary, policy.ClaudeRoutes, id); err == nil {
+			t.Fatal("unexpected Claude route", id)
+		}
 	}
 }
