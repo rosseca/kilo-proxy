@@ -5,6 +5,8 @@ package main
 import (
 	"encoding/json"
 	"image"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
@@ -90,7 +92,7 @@ func TestNativeT3CodeWideCardAndIntegrationSettings(t *testing.T) {
 			for _, node := range h.nodes() {
 				labels += node.Desc.Label + "\n"
 			}
-			for _, expected := range []string{u.tr("Accounts and models", "Cuentas y modelos"), u.tr("Choose the accounts T3 offers. Changes save automatically.", "Elige las cuentas que ofrece T3. Los cambios se guardan solos."), u.tr("green KP badge", "insignia verde KP"), u.tr("Opus 5.5, Sonnet 5.5 and Fable 5.1", "Opus 5.5, Sonnet 5.5 y Fable 5.1"), u.tr("native reasoning selector", "selector nativo de razonamiento"), u.tr("check the selected account and model", "revisa la cuenta y el modelo elegidos")} {
+			for _, expected := range []string{u.tr("Accounts and models", "Cuentas y modelos"), u.tr("Choose the accounts T3 offers. Changes save automatically.", "Elige las cuentas que ofrece T3. Los cambios se guardan solos."), u.tr("green KP badge", "insignia verde KP"), u.tr("Claude models", "Modelos de Claude"), u.tr("native reasoning selector", "selector nativo de razonamiento"), u.tr("check the selected account and model", "revisa la cuenta y el modelo elegidos")} {
 				if !strings.Contains(labels, expected) {
 					t.Fatalf("missing agent guidance: %q", expected)
 				}
@@ -151,6 +153,137 @@ func TestNativeT3CodePreparedStatusIsFresh(t *testing.T) {
 	u.acceptT3CodeProfile(data, [32]byte{})
 	if u.t3CodePrepared(s) {
 		t.Fatal("changed connection displays a stale prepared state")
+	}
+}
+
+func TestNativeT3CodeProviderCatalogsWithoutSharedModels(t *testing.T) {
+	for _, provider := range []string{"claude", "muse"} {
+		t.Run(provider, func(t *testing.T) {
+			u, _ := nativeLaunchTestUI(t, "t3-code", false, false)
+			nativeSeedSharedForTest(t, u)
+			saved := u.owner.modelLibrary.snapshot()
+			prefs := nativeT3CodePreferences{Version: 1, CodexModels: "official", ClaudeModels: "official"}
+			if provider == "claude" {
+				prefs.KiloClaude = true
+			} else {
+				prefs.Providers = []string{"muse"}
+				prefs.MuseConnection, prefs.MuseModels = "kilo", "official"
+			}
+			state := &u.agentsState().T3Code
+			state.Requested = true
+			state.PreferencesState.Requested, state.PreferencesState.Loaded = true, true
+			state.PreferencesState.Preferences, state.PreferencesState.MuseKiloSupported = prefs, true
+			requests := make(chan map[string]json.RawMessage, 2)
+			launches := make(chan string, 1)
+			handler := u.owner.adminHandler()
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodPost {
+					handler.ServeHTTP(w, r)
+					return
+				}
+				switch r.URL.Path {
+				case nativeLaunchEndpoint:
+					var request struct{ Client string }
+					if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+						jsonError(w, http.StatusBadRequest, "invalid test launch")
+						return
+					}
+					select {
+					case launches <- request.Client:
+					default:
+						t.Error("unexpected repeated launch")
+					}
+					jsonResponse(w, http.StatusOK, map[string]bool{"ok": true})
+					return
+				case nativeClientEndpoint("t3-code"):
+				default:
+					handler.ServeHTTP(w, r)
+					return
+				}
+				var payload map[string]json.RawMessage
+				if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+					jsonError(w, http.StatusBadRequest, "invalid test request")
+					return
+				}
+				select {
+				case requests <- payload:
+				default:
+					t.Error("unexpected repeated preparation")
+				}
+				jsonResponse(w, http.StatusOK, map[string]any{
+					"prepared": true, "library": saved.Library, "preferences": prefs, "profileDir": "/synthetic/t3",
+				})
+			}))
+			t.Cleanup(server.Close)
+			u.owner.adminHost = strings.TrimPrefix(server.URL, "http://")
+
+			selection := u.sharedClientSelection("t3-code")
+			if u.t3CodeNativeOnly() || u.t3CodeNeedsSavedLibrary() || len(selection.Models) != 0 {
+				t.Fatal("official Kilo catalog unexpectedly requires shared models")
+			}
+			if detail := u.t3CodeDetail(selection); !*detail.canPrepare {
+				t.Fatal("Prepare is disabled with a connected official catalog and empty shared library")
+			}
+			if launch := u.uxhLaunchState("t3-code"); !launch.canOpen {
+				t.Fatalf("Open is disabled for the connected official catalog: %s", launch.reason)
+			}
+			var finished bool
+			var prepErr error
+			u.prepareClientAfter("t3-code", func(err error) {
+				finished, prepErr = true, err
+			})
+			nativeTestWait(t, u, func() bool { return finished })
+			if prepErr != nil {
+				t.Fatalf("Prepare failed: %v", prepErr)
+			}
+			var request map[string]json.RawMessage
+			select {
+			case request = <-requests:
+			default:
+				t.Fatal("Prepare did not post to T3")
+			}
+			var sent nativeT3CodePreferences
+			if len(request) != 1 || json.Unmarshal(request["preferences"], &sent) != nil || !nativeT3CodePreferencesEqual(sent, prefs) {
+				t.Fatal("Prepare did not send exactly the confirmed T3 preferences")
+			}
+			if !u.t3CodePrepared(selection) || u.owner.modelLibrary.snapshot().Revision != saved.Revision {
+				t.Fatal("Official catalog preparation did not stay prepared or rewrote the library")
+			}
+			u.launchAgent("t3-code")
+			nativeTestWait(t, u, func() bool { return u.clientState().Launching == "" })
+			select {
+			case client := <-launches:
+				if client != "t3-code" {
+					t.Fatalf("Open used the wrong client: %s", client)
+				}
+			default:
+				t.Fatalf("Open did not reach the launch route: %s", u.notice)
+			}
+			select {
+			case request = <-requests:
+				if len(request) != 1 || json.Unmarshal(request["preferences"], &sent) != nil || !nativeT3CodePreferencesEqual(sent, prefs) {
+					t.Fatal("Open did not prepare with exactly the confirmed T3 preferences")
+				}
+			default:
+				t.Fatal("Open did not prepare the provider catalog")
+			}
+
+			shared := prefs
+			shared.ClaudeModels, shared.MuseModels = "shared", "shared"
+			state.PreferencesState.Preferences = shared
+			if !u.t3CodeNeedsSavedLibrary() || *u.t3CodeDetail(selection).canPrepare || u.uxhLaunchState("t3-code").canOpen {
+				t.Fatal("Shared models unexpectedly work with an empty library")
+			}
+
+			state.PreferencesState.Preferences = prefs
+			u.owner.mu.Lock()
+			u.owner.apiKey = ""
+			u.owner.publishUIProjectionLocked()
+			u.owner.mu.Unlock()
+			if *u.t3CodeDetail(selection).canPrepare || u.uxhLaunchState("t3-code").canOpen || u.t3CodePrepared(selection) {
+				t.Fatal("Official Kilo catalog unexpectedly works without Kilo connected")
+			}
+		})
 	}
 }
 

@@ -17,9 +17,9 @@ type nativeCatalogCache struct {
 	written uint64
 }
 
-func (u *nativeUI) cacheModels(org string) {
+func (u *nativeUI) cacheModels(org, account string) {
 	dir := u.dir
-	b, err := json.Marshal(nativeCachedCatalog{SchemaVersion: 1, OrgID: org, Models: u.models, FetchedAt: u.catalogFetchedAt})
+	b, err := json.Marshal(nativeCachedCatalog{SchemaVersion: 1, OrgID: org, KiloAccount: account, Models: u.models, FetchedAt: u.catalogFetchedAt, KiloFetchedAt: u.catalogFetchedAt})
 	if err != nil || len(b) > 4<<20 {
 		return
 	}

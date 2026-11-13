@@ -25,9 +25,6 @@ func museProxyToken(localKey, scope string) string {
 func (a *app) museScopeLibrary(scope string) (modelLibrary, []modelInfo, error) {
 	fail := errors.New("Prepare Muse Code again in Kilo Proxy before using this connection.")
 	state := a.modelLibrary.snapshot()
-	if state.RecoveryRequired || state.Warning != "" {
-		return modelLibrary{}, nil, fail
-	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if !a.connectionReadyLocked() {
@@ -37,6 +34,9 @@ func (a *app) museScopeLibrary(scope string) (modelLibrary, []modelInfo, error) 
 	catalog := readNativeCatalogCache(a.dir, a.catalogScopeLocked())
 	switch scope {
 	case "terminal":
+		if state.RecoveryRequired || state.Warning != "" {
+			return modelLibrary{}, nil, fail
+		}
 		if normalizeMusePreferences(a.config.MuseCode).Connection != "kilo" {
 			return modelLibrary{}, nil, fail
 		}
@@ -50,18 +50,20 @@ func (a *app) museScopeLibrary(scope string) (modelLibrary, []modelInfo, error) 
 			return modelLibrary{}, nil, fail
 		}
 		saved, err := a.readT3CodePrepared()
-		if err != nil || !reflect.DeepEqual(saved.Library, state.Library) {
+		library := state.Library
+		if !t3CodeNeedsSavedLibrary(a.config.T3Code) {
+			library = t3CodeOptionalSavedLibrary(state)
+		} else if state.RecoveryRequired || state.Warning != "" {
+			return modelLibrary{}, nil, fail
+		}
+		if err != nil || !reflect.DeepEqual(saved.Library, library) {
 			return modelLibrary{}, nil, fail
 		}
 		binary, err := rt.resolve("t3-code", "")
 		if err != nil || !a.t3CodeReady(saved, binary, rt) {
 			return modelLibrary{}, nil, fail
 		}
-		policy, err := deriveT3CodeModelPolicy(saved.Preferences, state.Library, catalog)
-		if err != nil {
-			return modelLibrary{}, nil, fail
-		}
-		return policy.MuseLibrary, catalog, nil
+		return saved.MuseLibrary, catalog, nil
 	}
 	return modelLibrary{}, nil, fail
 }

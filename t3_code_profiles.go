@@ -95,7 +95,7 @@ func planT3CodeProfiles(options t3CodeProfileOptions) (t3CodeProfiles, error) {
 	} else if err := validateModelLibrary(options.Library); err != nil {
 		return result, err
 	}
-	if usesKilo && len(options.Library.Models) == 0 {
+	if usesKilo && (options.Policy == nil || options.Preferences == nil || t3CodeNeedsSavedLibrary(*options.Preferences)) && len(options.Library.Models) == 0 {
 		return result, errors.New("Choose shared models before preparing T3 Code.")
 	}
 	normalCodex, normalClaude, err := t3CodeNormalProviderHomes(options)

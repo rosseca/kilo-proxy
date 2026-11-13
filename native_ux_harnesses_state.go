@@ -111,11 +111,15 @@ func (u *nativeUI) uxhLaunchState(key string) uxhLaunch {
 	libraryStatus, libraryReady := u.libraryStatus()
 	connectionReady := u.agentConnectionReady() && !u.connectionWorking() && !u.setupConnectionNeeded()
 	nativeAccounts := key == "t3-code" && u.t3CodeNativeOnly() || key == "synara" && u.synaraNativeOnly() || key == "omnigent" && u.omnigentNativeOnly()
+	needsSavedModels := !nativeAccounts && (key != "t3-code" || u.t3CodeNeedsSavedLibrary())
+	if !needsSavedModels {
+		packIssue, validation, libraryReady = nil, nil, true
+	}
 	if nativeAccounts {
-		packIssue, validation, libraryReady, connectionReady = nil, nil, true, true
+		connectionReady = true
 	}
 	busy := c.Launching != "" || u.busy["POST"+nativeClientEndpoint(key)] || key == "claude-desktop" && u.busy["POST/api/claude-desktop/options"]
-	l.canOpen = available && libraryReady && connectionReady && (nativeAccounts || len(s.Models) > 0) && validation == nil && packIssue == nil && !busy
+	l.canOpen = available && libraryReady && connectionReady && (!needsSavedModels || len(s.Models) > 0) && validation == nil && packIssue == nil && !busy
 	if key == "codex" || key == "codex-cli" {
 		l.canOpen = l.canOpen && nativeClientImagesReady(s, u.models, u.state)
 	}
@@ -157,7 +161,7 @@ func (u *nativeUI) uxhLaunchState(key string) uxhLaunch {
 		local(reason)
 	case len(s.Models) == 0 && key == "claude-desktop":
 		local(u.claudeDesktopModelSummary(s))
-	case len(s.Models) == 0 && !nativeAccounts:
+	case len(s.Models) == 0 && needsSavedModels:
 		l.reason = u.tr("Add at least one shared model before opening an app.", "Añade al menos un modelo compartido antes de abrir una app.")
 	case validation != nil:
 		local(nativeMessage(validation.Error(), u.language))
@@ -183,6 +187,10 @@ func (u *nativeUI) uxhLaunchState(key string) uxhLaunch {
 		if preferences.Pending != nil || u.t3CodePreferencesBusy() || u.busy["GET"+nativeT3CodePreferencesEndpoint] || preferences.Requested && !preferences.Loaded {
 			l.canOpen = false
 			l.reason, l.local = u.tr("Load or finish saving T3 Code settings before opening.", "Carga o termina de guardar los ajustes de T3 Code antes de abrir."), true
+		}
+		if err := u.t3CodeProviderCatalogConnectionError(); err != nil {
+			l.canOpen = false
+			l.reason, l.local = err.Error(), false
 		}
 		if err := u.t3CodeOpenCodeConnectionError(); err != nil {
 			l.canOpen = false

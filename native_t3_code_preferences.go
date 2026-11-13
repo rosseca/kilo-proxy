@@ -321,7 +321,7 @@ func (u *nativeUI) t3CodePreferencesPanel() layout.Widget {
 		account("kilo-codex", "Kilo Proxy · Codex", u.tr("Models through Kilo Proxy", "Modelos a través de Kilo Proxy"), p.KiloCodex, func(p *nativeT3CodePreferences, v bool) { p.KiloCodex = v }),
 		u.uxsRow(u.tr("Codex Kilo models", "Modelos de Codex Kilo"), "", u.uxsRadioList("t3-preferences:codex-models:", []nativeChoice{{Value: "official", Label: u.tr("OpenAI and ChatGPT", "OpenAI y ChatGPT")}, {Value: "shared", Label: u.tr("All shared models", "Todos los modelos compartidos")}}, p.CodexModels, ready && p.KiloCodex, func(value string) { next := p; next.CodexModels = value; u.saveT3CodePreferences(next) }), nil, nil),
 		account("kilo-claude", "Kilo Proxy · Claude", u.tr("Models through Kilo Proxy", "Modelos a través de Kilo Proxy"), p.KiloClaude, func(p *nativeT3CodePreferences, v bool) { p.KiloClaude = v }),
-		u.uxsRow(u.tr("Claude Kilo models", "Modelos de Claude Kilo"), "", u.uxsRadioList("t3-preferences:claude-models:", []nativeChoice{{Value: "official", Label: u.tr("Opus 5.5, Sonnet 5.5 and Fable 5.1", "Opus 5.5, Sonnet 5.5 y Fable 5.1")}, {Value: "shared", Label: u.tr("All shared models", "Todos los modelos compartidos")}}, p.ClaudeModels, ready && p.KiloClaude, func(value string) { next := p; next.ClaudeModels = value; u.saveT3CodePreferences(next) }), nil, u.note(u.tr("Choose reasoning in T3 for its native Claude models. Shared models depend on the installed driver and provider.", "Elige el razonamiento en T3 para sus modelos nativos de Claude. Los modelos compartidos dependen del driver y proveedor instalados."))),
+		u.uxsRow(u.tr("Claude Kilo models", "Modelos de Claude Kilo"), "", u.uxsRadioList("t3-preferences:claude-models:", []nativeChoice{{Value: "official", Label: u.tr("Claude models", "Modelos de Claude")}, {Value: "shared", Label: u.tr("All shared models", "Todos los modelos compartidos")}}, p.ClaudeModels, ready && p.KiloClaude, func(value string) { next := p; next.ClaudeModels = value; u.saveT3CodePreferences(next) }), nil, u.note(u.tr("Claude models come from your connected Kilo catalog. Choose reasoning in T3. Shared models depend on the installed driver and provider.", "Los modelos de Claude vienen del catálogo de tu conexión Kilo. Elige el razonamiento en T3. Los modelos compartidos dependen del driver y proveedor instalados."))),
 	)
 	for _, provider := range nativeT3CodeProviderChoices(p, s.SupportedProviders) {
 		id, label := provider.ID, strings.TrimSpace(provider.Label)
@@ -331,6 +331,9 @@ func (u *nativeUI) t3CodePreferencesPanel() layout.Widget {
 		help := u.tr("Uses this provider's own installation and login", "Usa la instalación y sesión propias de este proveedor")
 		if id == "opencode" && nativeT3OpenCodeUsesKilo(p) || id == "muse" && nativeT3MuseUsesKilo(p) {
 			help = u.tr("Uses your saved shared models through Kilo Proxy", "Usa tus modelos compartidos guardados a través de Kilo Proxy")
+			if id == "muse" && nativeT3MuseModels(p) == "official" {
+				help = u.tr("Uses Meta models from your connected Kilo catalog", "Usa los modelos de Meta del catálogo de tu conexión Kilo")
+			}
 		}
 		if !provider.Supported {
 			label += u.tr(" · unavailable in this build", " · no disponible en esta compilación")
@@ -370,7 +373,7 @@ func (u *nativeUI) t3CodePreferencesPanel() layout.Widget {
 					next := p
 					next.MuseModels = value
 					u.saveT3CodePreferences(next)
-				}), nil, u.note(u.tr("Use the Meta models saved in Models, or choose every shared model. Both options use your Kilo connection.", "Usa los modelos de Meta guardados en Modelos o elige todos los modelos compartidos. Ambas opciones usan tu conexión Kilo."))))
+				}), nil, u.note(u.tr("Use the Meta models from your connected Kilo catalog or choose all saved shared models. Both options use your Kilo connection.", "Usa los modelos de Meta del catálogo de tu conexión Kilo o elige todos los modelos compartidos guardados. Ambas opciones usan tu conexión Kilo."))))
 			}
 			if nativeT3MuseUsesKilo(p) && nativeT3CodePreferencesEqual(p, u.agentsState().T3Code.Info.Preferences) {
 				models := []string{}

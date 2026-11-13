@@ -48,7 +48,7 @@ func planT3CodeMuse(options t3CodeProfileOptions) (map[string]any, []profileFile
 		return nil, nil, errors.New("Muse Code requires a valid private T3 profile and local proxy key.")
 	}
 	if options.Policy == nil || len(options.Policy.MuseLibrary.Models) == 0 {
-		return nil, nil, errors.New("Choose shared models before preparing Muse Code with Kilo Proxy.")
+		return nil, nil, errors.New("Choose models before preparing Muse Code with Kilo Proxy.")
 	}
 	home, settingsPath, authPath := t3CodeMusePaths(options.RootDir)
 	if _, err := museKiloIsolation(home, options.NormalMusePaths); err != nil {

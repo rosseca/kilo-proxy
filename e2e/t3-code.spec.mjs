@@ -6,6 +6,13 @@ const library=()=>({schemaVersion:1,defaultModel:'openai/gpt-fixture',models:[
  {id:'vendor/one',displayName:'My coding model',contextPreset:'custom',contextWindow:128000,reasoningEffort:'high',reasoningCustom:true,reasoningLevels:['low','high']},
  {id:'anthropic/claude-sonnet-4.6',displayName:'My default model',contextPreset:'custom',contextWindow:128000,reasoningCustom:true,reasoningLevels:[]},
 ]});
+const claudeOfficialIds=[
+ 'anthropic/claude-opus-5.5',
+ 'anthropic/claude-sonnet-5.5',
+ 'anthropic/claude-fable-5.1',
+ 'anthropic/claude-sonnet-4.6',
+ 'anthropic/claude-haiku-4.5',
+];
 const headers=gateway=>({Authorization:'Bearer '+gateway.token});
 async function getAPI(request,gateway,path) {
  const response=await request.get(new URL('/api/'+path,gateway.url).href,{headers:headers(gateway)});
@@ -46,8 +53,15 @@ test('T3 Code prepares chosen accounts before desktop launch and guards a second
  await setupT3(request,gateway);
  await startProxy(page,gateway);
  await page.locator('#tab-t3-code').click();
- await expect(page.locator('#t3-code-summary')).toHaveText('Kilo Proxy · Codex: 1 · Kilo Proxy · Claude: 3');
- await expect(page.locator('#t3-code-models li')).toHaveText(['Kilo Proxy · Codex · My GPT model · openai/gpt-fixture','Kilo Proxy · Claude · Claude Opus 5.5 · anthropic/claude-opus-5.5','Kilo Proxy · Claude · Claude Sonnet 5.5 · anthropic/claude-sonnet-5.5','Kilo Proxy · Claude · Claude Fable 5.1 · anthropic/claude-fable-5.1']);
+ await expect(page.locator('#t3-code-summary')).toHaveText('Kilo Proxy · Codex: 1 · Kilo Proxy · Claude: 5');
+ await expect(page.locator('#t3-code-models li')).toHaveText([
+  'Kilo Proxy · Codex · My GPT model · openai/gpt-fixture',
+  'Kilo Proxy · Claude · Claude Opus 5.5 · anthropic/claude-opus-5.5',
+  'Kilo Proxy · Claude · Claude Sonnet 5.5 · anthropic/claude-sonnet-5.5',
+  'Kilo Proxy · Claude · Claude Fable 5.1 · anthropic/claude-fable-5.1',
+  'Kilo Proxy · Claude · My default model · anthropic/claude-sonnet-4.6',
+  'Kilo Proxy · Claude · Claude Haiku 4.5 · anthropic/claude-haiku-4.5',
+ ]);
  await expect(page.locator('#t3-code-agents li')).toHaveCount(4);
  await expect(page.locator('#t3-code-agents li')).toHaveText([
   'Codex · Existing Codex CLI login',
@@ -106,11 +120,46 @@ test('T3 Code prepares chosen accounts before desktop launch and guards a second
  expect(await page.evaluate(()=>window.__copied)).toEqual([]);
 });
 
+test('T3 loads the Claude and Meta catalogs without shared models and still requires them for Shared',async({page,gateway,request})=>{
+ await setControl(gateway,{t3Capabilities:true,t3ColdCatalog:true});
+ const preferences={version:1,codex:false,claude:false,kiloCodex:false,kiloClaude:true,codexModels:'official',claudeModels:'official',providers:['muse'],openCode2:false,openCodeConnection:'native',museConnection:'kilo',museModels:'official'};
+ for(const [endpoint,data] of [['clients/cli/preferences',{version:1,museExecutable:gateway.codexExecutable}],['clients/t3-code/preferences',preferences]]) {
+  const result=await request.post(new URL('/api/'+endpoint,gateway.url).href,{headers:headers(gateway),data});
+  expect(result.ok(),await result.text()).toBe(true);
+ }
+ const empty=(await getAPI(request,gateway,'model-library')).library;
+ expect(empty.models).toEqual([]);
+ await page.reload();
+ await startProxy(page,gateway);
+ await page.locator('#tab-t3-code').click();
+ await expect(page.locator('#t3-code-summary')).toHaveText('Kilo Proxy · Codex: 0 · Kilo Proxy · Claude: 0 · Kilo Proxy · Muse Code: 0');
+ await page.locator('#t3-code-settings-title').click();
+ await expect(page.locator('#t3-code-claude-official')).toHaveText('Claude models');
+ await expect(page.locator('#t3-code-muse-official')).toHaveText('Meta models');
+ await expect(page.locator('#client-launch')).toBeEnabled();
+ const prepare=page.waitForRequest(r=>r.method()==='POST'&&new URL(r.url()).pathname==='/api/clients/t3-code');
+ await page.locator('#client-launch').click();
+ expect((await prepare).postDataJSON()).toEqual({preferences});
+ await expect.poll(async()=>(await records(gateway)).map(record=>record.client)).toEqual(['t3-code']);
+ await expect(page.locator('#t3-code-summary')).toHaveText('Kilo Proxy · Codex: 0 · Kilo Proxy · Claude: 5 · Kilo Proxy · Muse Code: 2');
+ const profile=await getAPI(request,gateway,'clients/t3-code');
+ expect(profile.prepared).toBe(true);
+ expect(profile.library).toEqual(empty);
+ expect(profile.effectiveClaudeModels.map(model=>model.id)).toEqual(claudeOfficialIds);
+ expect(profile.effectiveMuseModels.map(model=>model.id)).toEqual(['meta/muse-spark-1.3','meta-llama/llama-4-maverick']);
+ await page.locator('#t3-code-muse-models').selectOption('shared');
+ await expect(page.locator('#t3-code-muse-models')).toBeEnabled();
+ await expect(page.locator('#client-launch')).toBeDisabled();
+ await expect(page.locator('#client-launch-status')).toContainText('Add and save models');
+ expect((await getAPI(request,gateway,'model-library')).library).toEqual(empty);
+ expect((await records(gateway)).length).toBe(1);
+});
+
 test('T3 Code explains missing models, connection and installation without launching',async({page,gateway,request})=>{
  await setControl(gateway);
  await page.locator('#tab-t3-code').click();
  await expect(page.locator('#client-launch')).toBeDisabled();
- await expect(page.locator('#client-launch-status')).toContainText('Connect your selected provider first.');
+ await expect(page.locator('#client-launch-status')).toContainText('Connect Kilo to use the Claude or Meta catalog in T3 Code.');
  await startProxy(page,gateway);
  await expect(page.locator('#client-launch-status')).toContainText('Add and save models');
  await setupT3(request,gateway);
@@ -151,7 +200,7 @@ test('T3 Code stops stale preparation and refreshes an externally changed librar
   await expect(page.locator('#client-launch-status')).toContainText('shared models changed while preparing');
   expect(await records(gateway)).toEqual([]);
   expect((await getAPI(request,gateway,'model-library')).library.defaultModel).toBe('vendor/one');
-  await expect(page.locator('#t3-code-summary')).toContainText('Kilo Proxy · Claude: 3');
+  await expect(page.locator('#t3-code-summary')).toContainText('Kilo Proxy · Claude: 5');
   await expect(page.locator('#client-launch')).toBeEnabled();await page.locator('#client-launch').click();
   await expect.poll(async()=>(await records(gateway)).length).toBe(1);
  }finally{release();}
@@ -228,7 +277,7 @@ test('T3 settings save account and model choices, recover a failed write, and re
   await page.locator('#t3-code-options').click();await page.locator('#t3-code-prepare').click();
   await expect(page.locator('#t3-code-prepared')).toHaveText('Your saved T3 accounts and models are prepared.');
   const profile=await getAPI(request,gateway,'clients/t3-code');expect(profile.preferences).toEqual(saved.preferences);
-  expect(profile.effectiveClaudeModels.map(model=>model.id)).toEqual(['anthropic/claude-opus-5.5','anthropic/claude-sonnet-5.5','anthropic/claude-fable-5.1']);
+  expect(profile.effectiveClaudeModels.map(model=>model.id)).toEqual(claudeOfficialIds);
   expect(await records(gateway)).toEqual([]);
   await expect(page.locator('#toast')).toBeHidden();
   await page.locator('#t3-code-helper').screenshot({path:testInfo.outputPath('t3-settings-en.png')});

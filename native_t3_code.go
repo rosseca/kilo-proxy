@@ -4,6 +4,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 
 	"gioui.org/layout"
 )
@@ -39,6 +40,23 @@ type nativeT3CodeState struct {
 func (u *nativeUI) t3CodeNativeOnly() bool {
 	prefs := &u.agentsState().T3Code.PreferencesState
 	return prefs.Loaded && validNativeT3CodePreferences(prefs.Preferences) && !prefs.Preferences.KiloCodex && !prefs.Preferences.KiloClaude && !nativeT3OpenCodeUsesKilo(prefs.Preferences) && !nativeT3MuseUsesKilo(prefs.Preferences)
+}
+
+// Only confirmed preferences can opt out of the saved shared library.
+func (u *nativeUI) t3CodeNeedsSavedLibrary() bool {
+	state := &u.agentsState().T3Code.PreferencesState
+	return !state.Loaded || !validNativeT3CodePreferences(state.Preferences) ||
+		t3CodeNeedsSavedLibrary(t3CodePreferences(state.Preferences))
+}
+
+func (u *nativeUI) t3CodeProviderCatalogConnectionError() error {
+	state := &u.agentsState().T3Code.PreferencesState
+	p := state.Preferences
+	if state.Loaded && validNativeT3CodePreferences(p) &&
+		t3CodeUsesProviderCatalog(t3CodePreferences(p)) && !u.owner.readUIProjection().KiloReady {
+		return errors.New(u.tr("Connect Kilo to use the Claude or Meta catalog in T3 Code.", "Conecta Kilo para usar el catálogo de Claude o Meta en T3 Code."))
+	}
+	return nil
 }
 
 func (u *nativeUI) acceptT3CodeProfile(data json.RawMessage, connection [32]byte) {
@@ -87,8 +105,13 @@ func (u *nativeUI) t3CodePrepared(s *nativeClientSelection) bool {
 	if u.t3CodeNativeOnly() {
 		return nativeT3CodePreferencesEqual(state.PreferencesState.Preferences, state.Info.Preferences)
 	}
-	if state.Info.Library == nil || state.Connection != u.launchConnectionFingerprint() {
+	if state.Info.Library == nil || state.Connection != u.launchConnectionFingerprint() || u.t3CodeProviderCatalogConnectionError() != nil {
 		return false
+	}
+	if !u.t3CodeNeedsSavedLibrary() {
+		library := t3CodeOptionalSavedLibrary(u.owner.modelLibrary.snapshot())
+		return nativeT3CodePreferencesEqual(state.PreferencesState.Preferences, state.Info.Preferences) &&
+			libraryFingerprint(library) == libraryFingerprint(*state.Info.Library)
 	}
 	payload, err := nativeClientPayload("t3-code", s)
 	if err != nil {
@@ -108,15 +131,25 @@ func (u *nativeUI) t3CodeDetail(s *nativeClientSelection) uxhDetail {
 	if !state.PreferencesState.Requested {
 		u.refreshT3CodePreferences()
 	}
-	payload, validation := nativeClientPayload(key, s)
-	if validation == nil && state.PreferencesState.Loaded {
-		validation = nativeT3CodePreferenceLibraryError(state.PreferencesState.Preferences, payload.(map[string]any)["library"].(modelLibrary))
+	var validation error
+	libraryStatus, libraryReady := "", true
+	needsSavedModels := u.t3CodeNeedsSavedLibrary()
+	if needsSavedModels {
+		payload, err := nativeClientPayload(key, s)
+		validation = err
+		if validation == nil && state.PreferencesState.Loaded {
+			validation = nativeT3CodePreferenceLibraryError(state.PreferencesState.Preferences, payload.(map[string]any)["library"].(modelLibrary))
+		}
+		libraryStatus, libraryReady = u.libraryStatus()
 	}
-	libraryStatus, libraryReady := u.libraryStatus()
 	working := u.clientState().Launching != "" || u.busy["POST"+nativeClientEndpoint(key)] || u.t3CodePreferencesBusy() || u.busy["GET"+nativeT3CodePreferencesEndpoint] || !state.PreferencesState.Loaded || state.PreferencesState.Pending != nil
-	canPrepare := libraryReady && u.agentConnectionReady() && !u.setupConnectionNeeded() && !u.connectionWorking() && len(s.Models) > 0 && validation == nil && !working
+	canPrepare := libraryReady && u.agentConnectionReady() && !u.setupConnectionNeeded() && !u.connectionWorking() &&
+		(!needsSavedModels || len(s.Models) > 0) && validation == nil && !working
 	if u.t3CodeNativeOnly() {
-		validation, libraryReady, canPrepare = nil, true, !working
+		canPrepare = !working
+	}
+	if err := u.t3CodeProviderCatalogConnectionError(); err != nil {
+		validation, canPrepare = err, false
 	}
 	if err := u.t3CodeOpenCodeConnectionError(); err != nil {
 		validation, canPrepare = err, false
@@ -125,9 +158,9 @@ func (u *nativeUI) t3CodeDetail(s *nativeClientSelection) uxhDetail {
 		validation, canPrepare = err, false
 	}
 	d := uxhDetail{canPrepare: &canPrepare}
-	d.prepareNote = u.tr("Prepare or open T3 Code · Kilo to apply your saved accounts and models.", "Prepara o abre T3 Code · Kilo para aplicar las cuentas y modelos guardados.")
+	d.prepareNote = u.tr("Prepare or open T3 Code · Kilo to apply your account and model settings.", "Prepara o abre T3 Code · Kilo para aplicar tus ajustes de cuentas y modelos.")
 	if u.t3CodePrepared(s) {
-		d.prepareNote = u.tr("Your saved T3 accounts and models are prepared.", "Las cuentas y modelos guardados de T3 están preparados.")
+		d.prepareNote = u.tr("Your T3 accounts and models are prepared.", "Las cuentas y los modelos de T3 están preparados.")
 	}
 	if validation != nil {
 		d.status = append(d.status, u.hint(nativeMessage(validation.Error(), u.language)))
@@ -157,7 +190,7 @@ func (u *nativeUI) t3CodeDetail(s *nativeClientSelection) uxhDetail {
 	if u.expanded[notesID] {
 		notes = append(notes,
 			u.note(chatHelp),
-			u.note(u.tr("Claude Kilo offers Opus 5.5, Sonnet 5.5 and Fable 5.1 by default, with T3's native reasoning selector. Choose shared models instead in Accounts and models on this page. Available levels depend on the installed T3 and Claude Code versions.", "Claude Kilo ofrece Opus 5.5, Sonnet 5.5 y Fable 5.1 por defecto, con el selector nativo de razonamiento de T3. Puedes elegir los modelos compartidos en Cuentas y modelos de esta página. Los niveles disponibles dependen de las versiones instaladas de T3 y Claude Code.")),
+			u.note(u.tr("Claude Kilo uses Claude models from your connected Kilo catalog, with T3's native reasoning selector. You can choose shared models in Accounts and models. Available levels depend on the installed T3 and Claude Code versions.", "Claude Kilo usa los modelos de Claude del catálogo de tu conexión Kilo, con el selector nativo de razonamiento de T3. Puedes elegir los modelos compartidos en Cuentas y modelos. Los niveles disponibles dependen de las versiones instaladas de T3 y Claude Code.")),
 			u.note(u.tr("Your regular T3 Code workspace and its chats stay separate and can remain open. Codex and Claude use their existing CLI sessions, not Desktop app logins. Close only T3 Code · Kilo, then prepare again after changing accounts or models. Your chats are kept; check the selected account and model before continuing an older chat.", "Tu espacio T3 Code habitual y sus chats siguen separados y pueden permanecer abiertos. Codex y Claude usan sus sesiones CLI existentes, no los inicios de sesión de las apps Desktop. Cierra solo T3 Code · Kilo y prepara de nuevo tras cambiar cuentas o modelos. Tus chats se conservan; revisa la cuenta y el modelo elegidos antes de continuar un chat antiguo.")),
 		)
 	}

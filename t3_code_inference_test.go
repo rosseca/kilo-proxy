@@ -31,7 +31,7 @@ func t3CodeInferenceFixture(t *testing.T) *app {
 	if _, err := a.modelLibrary.save(library, a.modelLibrary.snapshot().Revision, false); err != nil {
 		t.Fatal(err)
 	}
-	cache, _ := json.Marshal(nativeCachedCatalog{SchemaVersion: 1, OrgID: a.catalogScopeLocked(), Models: t3CodeOfficialCatalogFixture(), FetchedAt: time.Now().UTC()})
+	cache, _ := json.Marshal(nativeCachedCatalog{SchemaVersion: 1, OrgID: a.catalogScopeLocked(), KiloAccount: usageAccountID(a.apiKey, a.config.OrgID), KiloFetchedAt: time.Now().UTC(), Models: t3CodeOfficialCatalogFixture(), FetchedAt: time.Now().UTC()})
 	if err := os.WriteFile(filepath.Join(a.dir, "model-catalog.json"), cache, 0600); err != nil {
 		t.Fatal(err)
 	}

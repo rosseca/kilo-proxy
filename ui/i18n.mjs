@@ -1,6 +1,8 @@
 export const translations = {
   "Elige modelos de Meta o todos los modelos compartidos para Muse Code.": "Choose Meta models or all shared models for Muse Code.",
-  "Selecciona al menos un modelo de Meta en Modelos, elige todos los modelos compartidos o desactiva Muse Code · Kilo.": "Select at least one Meta model in Models, choose all shared models, or disable Muse Code · Kilo.",
+  "No hay modelos de Meta en el catálogo de Kilo conectado. Actualiza el catálogo, elige todos los modelos compartidos o desactiva Muse Code · Kilo.": "No Meta models are available in the connected Kilo catalog. Refresh the catalog, choose all shared models, or disable Muse Code · Kilo.",
+  "No hay modelos de Claude disponibles tanto en T3 Code como en el catálogo de Kilo conectado. Actualiza el catálogo, elige los modelos compartidos o desactiva Claude · Kilo.": "No Claude models are available in both T3 Code and the connected Kilo catalog. Refresh the catalog, choose shared models, or disable Claude · Kilo.",
+  "Conecta Kilo para usar el catálogo de Claude o Meta en T3 Code.": "Connect Kilo to use the Claude or Meta catalog in T3 Code.",
   "La política de modelos de Muse no es válida.": "Invalid Muse model policy.",
   "El espacio privado de Omnigent ha detectado un problema. Revisa su estado antes de volver a abrirlo.": "The private Omnigent workspace reported a problem. Check its status before opening it again.",
   "Omnigent necesita el CLI nativo de Codex elegido o su paquete npm oficial correspondiente. Elige su ejecutable nativo o repara esa instalación; no se usará ninguna otra instalación de Codex.": "Omnigent requires the selected native Codex CLI or its matching official npm package. Choose its native executable or repair that selected installation; no other Codex installation will be used.",

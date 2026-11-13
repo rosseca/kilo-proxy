@@ -37,6 +37,17 @@ func TestE2EServer(t *testing.T) {
 	}
 	defer a.stop()
 	defer a.cancelLogin()
+	t3Catalog := append(t3CodeOfficialCatalogFixture(),
+		modelInfo{ID: "openai/gpt-fixture", Name: "Fixture GPT"},
+		modelInfo{ID: "anthropic/claude-haiku-4.5", Name: "Claude Haiku 4.5"},
+		modelInfo{ID: "meta/muse-spark-1.3", Name: "Muse Spark 1.3"},
+		modelInfo{ID: "meta-llama/llama-4-maverick", Name: "Llama 4 Maverick"},
+	)
+	for i := range t3Catalog {
+		t3Catalog[i].Connection = "kilo"
+		t3Catalog[i].ContextWindow = 128000
+	}
+	t3SeedCatalog := append(append([]modelInfo(nil), t3Catalog...), modelInfo{Connection: "kilo", ID: "anthropic/claude-sonnet-4.6", Name: "Claude Sonnet", ContextWindow: 128000})
 	a.editorTestRoot = root
 	a.zedCredentialStore = fakeZedCredentialStore
 	a.codexProfileDir = filepath.Join(root, ".codex-kilo-desktop")
@@ -114,12 +125,29 @@ func TestE2EServer(t *testing.T) {
 	}
 	copyEntries(archive.tree, "")
 	archive.file.Close()
-	files["apps/server/dist/bin.mjs"] = append(files["apps/server/dist/bin.mjs"], []byte("\n"+t3CodeOptionalCapabilityFixture())...)
+	providerContracts := t3CodeOptionalCapabilityFixture()
+	const nativeMuseStub = `const MuseDriver = {driverKind: kindMuse, metadata: {displayName:"Muse", supportsMultipleInstances:true}, configSchema: MuseSettings, defaultConfig:()=>decode({}), create:()=>{} };`
+	_, museDriver, ok := strings.Cut(t3CodeMuseKiloContractFixture(), "const MuseDriver = {")
+	if !ok || !strings.Contains(providerContracts, nativeMuseStub) {
+		t.Fatal("synthetic Muse provider contract changed")
+	}
+	museDriver, _, _ = strings.Cut(museDriver, "const BUILT_IN_DRIVERS")
+	providerContracts = strings.Replace(providerContracts, nativeMuseStub, "const MuseDriver = {"+museDriver, 1)
+	if !t3CodeMuseKiloSupported(providerContracts) || !t3CodeOpenCodeKiloSupported(providerContracts) {
+		t.Fatal("synthetic T3 package lacks scoped Muse or OpenCode support")
+	}
+	files["apps/server/dist/bin.mjs"] = append(files["apps/server/dist/bin.mjs"], []byte("\n"+providerContracts)...)
 	writeT3CodeFixtureASAR(t, filepath.Join(t3CodeCapabilitiesBinary, "Contents", "Resources", "app.asar"), files)
 
 	t.Setenv("CODEX_HOME", filepath.Join(root, ".codex"))
 	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(root, ".claude"))
 	codexBinary := writeOpenDesignCodexFixture(t, filepath.Join(root, "codex-cli"), syntheticSynaraNativeHeader("macos"))
+	a.museVersionProbe = func(path string) (string, error) {
+		if path != codexBinary {
+			return "", errors.New("Unknown synthetic Muse CLI")
+		}
+		return "1.4.10-R6427.1", nil
+	}
 	t3ClaudeBinary := filepath.Join(root, "t3-claude-cli")
 	if err := os.WriteFile(t3ClaudeBinary, []byte("#!/bin/sh\n[ \"$1\" = --version ] || exit 2\nprintf '2.1.288 (Claude Code)\\n'\n"), 0700); err != nil {
 		t.Fatal(err)
@@ -273,8 +301,8 @@ func TestE2EServer(t *testing.T) {
 				map[string]any{"id": "anthropic/claude-sonnet-4.6", "name": "Claude Sonnet", "context_length": 128000, "pricing": map[string]string{"prompt": "0.000003", "completion": "0.000015"}, "supported_parameters": []string{"tools"}, "architecture": map[string]any{"output_modalities": []string{"text"}}},
 			}
 			if readLaunchControl()["t3Models"] == true {
-				for _, model := range []struct{ ID, Name string }{{"openai/gpt-fixture", "Fixture GPT"}, {"anthropic/claude-opus-5.5", "Claude Opus 5.5"}, {"anthropic/claude-sonnet-5.5", "Claude Sonnet 5.5"}, {"anthropic/claude-fable-5.1", "Claude Fable 5.1"}} {
-					models = append(models, map[string]any{"id": model.ID, "name": model.Name, "context_length": 128000, "supported_parameters": []string{"tools", "reasoning"}, "architecture": map[string]any{"output_modalities": []string{"text"}}})
+				for _, model := range t3Catalog {
+					models = append(models, map[string]any{"id": model.ID, "name": model.Name, "context_length": model.ContextWindow, "supported_parameters": []string{"tools", "reasoning"}, "architecture": map[string]any{"output_modalities": []string{"text"}}})
 				}
 			}
 			if readLaunchControl()["byokModels"] == true {
@@ -369,15 +397,16 @@ func TestE2EServer(t *testing.T) {
 	admin := a.adminHandler()
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		control := readLaunchControl()
-		if control["t3Models"] == true && strings.HasPrefix(r.URL.Path, "/api/clients/t3-code") {
+		if control["t3Models"] == true && control["t3ColdCatalog"] != true && strings.HasPrefix(r.URL.Path, "/api/clients/t3-code") {
 			// The terminal fixture has no native window to populate its catalog cache.
 			// Seed the same scoped metadata used by the native Models page, explicitly
 			// opted into by T3 policy E2Es, without changing another test's catalog.
 			a.mu.Lock()
 			scope := a.catalogScopeLocked()
+			account := usageAccountID(a.apiKey, a.config.OrgID)
 			a.mu.Unlock()
-			catalog := append(t3CodeOfficialCatalogFixture(), modelInfo{ID: "openai/gpt-fixture", Name: "Fixture GPT", ContextWindow: 128000})
-			cache, cacheErr := json.Marshal(nativeCachedCatalog{SchemaVersion: 1, OrgID: scope, Models: catalog, FetchedAt: time.Now().UTC()})
+			fetchedAt := time.Now().UTC()
+			cache, cacheErr := json.Marshal(nativeCachedCatalog{SchemaVersion: 1, OrgID: scope, KiloAccount: account, Models: t3SeedCatalog, FetchedAt: fetchedAt, KiloFetchedAt: fetchedAt})
 			if cacheErr == nil {
 				cacheErr = os.MkdirAll(a.dir, 0700)
 			}

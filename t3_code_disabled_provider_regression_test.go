@@ -97,7 +97,7 @@ func TestT3CodeLegacyPreferencesUseOfficialSelectionsWithoutChangingSharedLibrar
 	for _, model := range policy.ClaudeLibrary.Models {
 		claudeIDs = append(claudeIDs, model.ID)
 	}
-	want := []string{"anthropic/claude-opus-5.5", "anthropic/claude-sonnet-5.5", "anthropic/claude-fable-5.1"}
+	want := []string{"anthropic/claude-opus-5.5", "anthropic/claude-sonnet-5.5", "anthropic/claude-fable-5.1", "anthropic/claude-opus-4.6"}
 	if !reflect.DeepEqual(claudeIDs, want) || policy.CodexLibrary.DefaultModel != options.Library.DefaultModel || len(policy.CodexLibrary.Models) != 1 {
 		t.Fatal("legacy effective selections or Codex default changed", policy)
 	}
