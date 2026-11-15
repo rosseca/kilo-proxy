@@ -57,6 +57,9 @@ func (u *nativeUI) uxaInspector(e event) layout.Widget {
 			children = append(children, u.note(source))
 		}
 	}
+	if note := u.embeddingBYOKNote(e.Usage); note != "" {
+		children = append(children, u.note(note))
+	}
 	switch {
 	case !e.HasDetails && !nativeBool(u.state, "captureEnabled"):
 		children = append(children, u.message(nativeToneInfo, u.tr("Capture is off, so the content of this request was not stored.", "La captura está desactivada, así que no se guardó el contenido de esta petición.")))
@@ -75,6 +78,13 @@ func (u *nativeUI) uxaInspector(e event) layout.Widget {
 			})
 		})
 	}
+}
+
+func (u *nativeUI) embeddingBYOKNote(usage *requestUsage) string {
+	if usage != nil && usage.Operation == "embedding" && usage.BYOK != nil && *usage.BYOK {
+		return u.tr("Provider key (BYOK)", "Clave del proveedor (BYOK)")
+	}
+	return ""
 }
 
 func (u *nativeUI) uxaTraceStages() []layout.Widget {
