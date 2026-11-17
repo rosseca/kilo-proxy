@@ -403,6 +403,61 @@ func TestT3CodeNightlyProfilesRejectConflictingCanonicalClaudeDefaults(t *testin
 	}
 }
 
+func TestT3CodeOfficialClaudeSettingsKeepOpusVersionsSeparate(t *testing.T) {
+	const opus55, opus5 = "anthropic/claude-opus-5.5", "anthropic/claude-opus-5"
+	options := t3ProfileTestOptions(t)
+	options.Version = t3CodeNightlyVersion
+	options.ClaudeModelDefaults = true
+	options.ClaudeCaps = claudeCaps("2.1.400")
+	options.Preferences = &t3CodePreferences{Version: 1, CodexModels: "official", KiloClaude: true, ClaudeModels: "official"}
+	options.Library = modelLibrary{SchemaVersion: 1, DefaultModel: opus55, Models: []modelLibraryItem{
+		{ID: opus55, ReasoningEffort: "medium", ContextWindow: 200000, MaxOutputTokens: 4096},
+	}}
+	options.Catalog = []modelInfo{
+		{ID: opus55, ContextWindow: 200000, ReasoningEfforts: []string{"medium", "high"}},
+		{ID: opus5, ContextWindow: 200000, ReasoningEfforts: []string{"medium", "high"}},
+	}
+	installation := t3CodeInstallation{ClaudeCatalogSlugs: []string{"claude-opus-5-5", "claude-opus-5"}}
+	policy, err := deriveT3CodeModelPolicy(*options.Preferences, options.Library, options.Catalog, installation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	options.Policy = &policy
+	home := filepath.Join(options.RootDir, "profiles", "claude-kilo")
+	if err := os.MkdirAll(home, 0700); err != nil {
+		t.Fatal(err)
+	}
+	settingsPath := filepath.Join(home, "settings.json")
+	old := []byte(`{"modelSettings":{"claude-opus-5":{"effortLevel":"high","custom":"keep"},"claude-opus-5-5":{"custom":"keep too"}}}`)
+	if err := os.WriteFile(settingsPath, old, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := prepareT3CodeProfiles(options); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(settingsPath)
+	var settings struct {
+		Model         string                       `json:"model"`
+		ModelSettings map[string]map[string]string `json:"modelSettings"`
+	}
+	if err != nil || json.Unmarshal(data, &settings) != nil || settings.Model != "claude-opus-5-5" {
+		t.Fatal("Claude did not receive its native model ID", err)
+	}
+	want := map[string]map[string]string{
+		"claude-opus-5":   {"custom": "keep"},
+		"claude-opus-5-5": {"effortLevel": "medium", "custom": "keep too"},
+	}
+	if !reflect.DeepEqual(settings.ModelSettings, want) {
+		t.Fatalf("Opus effort settings leaked across versions: %#v", settings.ModelSettings)
+	}
+	data, err = os.ReadFile(filepath.Join(home, "kilo-models.json"))
+	var selection claudeSelection
+	if err != nil || json.Unmarshal(data, &selection) != nil || selection.Initial != opus55 ||
+		len(selection.Models) != 2 || selection.Models[0].ID != opus55 || selection.Models[1].ID != opus5 {
+		t.Fatal("exact gateway IDs were lost from the saved selection", err)
+	}
+}
+
 func TestT3CodeNightlyProfilesRequireQualifiedClaudeIDsForSavedDefaults(t *testing.T) {
 	options := t3ProfileTestOptions(t)
 	options.Version = t3CodeNightlyVersion

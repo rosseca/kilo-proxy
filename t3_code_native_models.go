@@ -50,39 +50,28 @@ func t3CodeNativeClaudeSettings(data []byte, policy t3CodeModelPolicy, initial s
 			}
 		}
 	}
-	if native := t3CodeNativeClaudeModelID(initial); native != "" && policy.ClaudeRoutes[native] == initial {
-		initial = native
-	}
+	initial = t3CodeClaudePickerModelID(initial, policy.ClaudeRoutes)
 	set("ANTHROPIC_MODEL", initial)
 	settings["model"], _ = json.Marshal(initial)
 	settings["env"], _ = json.Marshal(env)
-	// Saved defaults use T3's native spelling as well. No replacement picker
-	// or global effort can override a level chosen for an individual turn.
-	var levels map[string]json.RawMessage
-	if json.Unmarshal(settings["modelSettings"], &levels) == nil {
-		for _, model := range policy.ClaudeLibrary.Models {
-			if model.ReasoningEffort == "" || !validClaudeEffort(model.ID, model.ReasoningEffort) {
-				continue
-			}
-			if native := t3CodeNativeClaudeModelID(model.ID); native != "" {
-				levels[native], _ = json.Marshal(map[string]string{"effortLevel": model.ReasoningEffort})
-			}
-		}
-		settings["modelSettings"], _ = json.Marshal(levels)
-	}
 	encoded, err := json.MarshalIndent(settings, "", "  ")
 	return append(encoded, '\n'), err
+}
+
+func t3CodeClaudePickerModelID(id string, routes map[string]string) string {
+	if native := t3CodeNativeClaudeModelID(id); native != "" && routes[native] == id {
+		return native
+	}
+	return id
 }
 
 func t3CodeClaudePickerLibrary(library modelLibrary, routes map[string]string) modelLibrary {
 	result := cloneModelLibrary(library)
 	for i := range result.Models {
 		id := result.Models[i].ID
-		if native := t3CodeNativeClaudeModelID(id); native != "" && routes[native] == id {
-			result.Models[i].ID = native
-			if result.DefaultModel == id {
-				result.DefaultModel = native
-			}
+		result.Models[i].ID = t3CodeClaudePickerModelID(id, routes)
+		if result.DefaultModel == id {
+			result.DefaultModel = result.Models[i].ID
 		}
 	}
 	// Roles are informational and keyed on shared IDs, not picker identities.
