@@ -283,25 +283,52 @@ func TestT3CodeRuntimeRecordProtectsAnOrphanServer(t *testing.T) {
 	if running, err := t3CodeRuntimeRunning(root); err != nil || running {
 		t.Fatal("missing runtime record blocked setup", running, err)
 	}
-	write := func(pid int) {
-		data, _ := json.Marshal(map[string]any{"version": 1, "pid": pid, "startedAt": time.Now().UTC().Format(time.RFC3339Nano), "port": 3773})
+	write := func(pid int, startedAt time.Time) {
+		data, _ := json.Marshal(map[string]any{"version": 1, "pid": pid, "startedAt": startedAt.UTC().Format(time.RFC3339Nano), "port": 3773})
 		if err := os.WriteFile(path, data, 0600); err != nil {
 			t.Fatal(err)
 		}
 	}
-	write(os.Getpid())
+	write(os.Getpid(), time.Now())
 	if running, err := t3CodeRuntimeRunning(root); err != nil || !running {
 		t.Fatal("live runtime PID did not guard setup", running, err)
 	}
-	write(1<<30 + 12345)
+	processStartedAt, err := t3CodeProcessStartTime(os.Getpid())
+	if err != nil || processStartedAt.IsZero() {
+		t.Fatal("cannot inspect current process start time", processStartedAt, err)
+	}
+	write(os.Getpid(), processStartedAt.Add(-2*time.Second))
+	if running, err := t3CodeRuntimeRunning(root); err != nil || running {
+		t.Fatal("reused live leader PID blocked setup", running, err)
+	}
+	write(1<<30+12345, time.Now())
 	if running, err := t3CodeRuntimeRunning(root); err != nil || running {
 		t.Fatal("dead stale runtime PID blocked setup", running, err)
 	}
-	if err := os.WriteFile(path, []byte(`{"version":1,"pid":-1}`), 0600); err != nil {
+	for _, record := range []string{
+		`{"version":1,"pid":-1}`,
+		`{"version":1,"pid":2147483648,"startedAt":"2026-01-01T00:00:00Z"}`,
+		`{"version":2,"pid":1,"startedAt":"2026-01-01T00:00:00Z"}`,
+		`{"version":1,"pid":1,"startedAt":"invalid"}`,
+		`{"version":1,"pid":1,"startedAt":"0001-01-01T00:00:00Z"}`,
+		`{"version":1,"pid":1,"startedAt":"9999-01-01T00:00:00Z"}`,
+		`{`,
+	} {
+		if err := os.WriteFile(path, []byte(record), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := t3CodeRuntimeRunning(root); err == nil {
+			t.Fatal("invalid runtime record accepted", record)
+		}
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path, 0700); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := t3CodeRuntimeRunning(root); err == nil {
-		t.Fatal("invalid runtime record accepted")
+		t.Fatal("unreadable runtime record accepted")
 	}
 }
 
