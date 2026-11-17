@@ -210,7 +210,7 @@ function __kiloT3InstanceModels(id,driver,models){const policy=` + string(policy
 }
 
 var t3CodeRuntimeModelsProjection = regexp.MustCompile(`snapshot:([A-Za-z_$][A-Za-z0-9_$]*),models:([A-Za-z_$][A-Za-z0-9_$]*)\.models`)
-var t3CodeRuntimeModelsCard = regexp.MustCompile(`liveModels:([A-Za-z_$][A-Za-z0-9_$]*)\?\.models,customModels:([A-Za-z_$][A-Za-z0-9_$]*)`)
+var t3CodeRuntimeModelsCard = regexp.MustCompile(`liveModels:([A-Za-z_$][A-Za-z0-9_$]*(?:\?\.models)?),customModels:([A-Za-z_$][A-Za-z0-9_$]*)\}`)
 var t3CodeRuntimeCardArguments = regexp.MustCompile(`\{instanceId:([A-Za-z_$][A-Za-z0-9_$]*),instance:([A-Za-z_$][A-Za-z0-9_$]*),driverOption:[A-Za-z_$][A-Za-z0-9_$]*,liveProvider:([A-Za-z_$][A-Za-z0-9_$]*),`)
 var t3CodeRuntimeDisplayNameCall = regexp.MustCompile(`displayName:([A-Za-z_$][A-Za-z0-9_$]*)\(([A-Za-z_$][A-Za-z0-9_$]*)\)`)
 
@@ -308,25 +308,40 @@ func patchT3CodeModelsCardWithVariants(source []byte, policy map[string][]string
 }
 
 func patchT3CodeModelsCardWithMuse(source []byte, policy map[string][]string, initial map[string]string, variants map[string][]string, muse t3CodeMuseRuntimePolicy) ([]byte, error) {
-	matches := t3CodeRuntimeModelsCard.FindAllSubmatchIndex(source, -1)
+	code := t3CodeContractCode(string(source))
+	matches := t3CodeRuntimeModelsCard.FindAllStringSubmatchIndex(code, -1)
 	if len(matches) != 1 || bytes.Contains(source, []byte("__kiloT3InstanceModels")) {
 		return nil, errors.New("This T3 Code Models settings interface has an incompatible contract.")
 	}
 	m := matches[0]
-	if m[1] >= len(source) || source[m[1]] != '}' {
-		return nil, errors.New("Cannot verify the T3 Code Models settings custom model collection.")
-	}
-	start := bytes.LastIndex(source[:m[0]], []byte("function "))
+	start := strings.LastIndex(code[:m[0]], "function ")
 	if start < 0 {
 		return nil, errors.New("Cannot verify the T3 Code Models settings component.")
 	}
-	arguments := t3CodeRuntimeCardArguments.FindAllSubmatch(source[start:m[0]], -1)
-	live, custom := string(source[m[2]:m[3]]), string(source[m[4]:m[5]])
-	if len(arguments) != 1 || string(arguments[0][3]) != live {
+	component := code[start:m[0]]
+	arguments := t3CodeRuntimeCardArguments.FindAllStringSubmatch(component, -1)
+	if len(arguments) != 1 {
 		return nil, errors.New("Cannot correlate the T3 Code Models settings account.")
 	}
-	id, instance := string(arguments[0][1]), string(arguments[0][2])
-	replacement := fmt.Sprintf("liveModels:__kiloT3InstanceModels(%s,%s.driver,%s?.models),customModels:__kiloT3InstanceModels(%s,%s.driver,%s)", id, instance, live, id, instance, custom)
+	id, instance, provider := arguments[0][1], arguments[0][2], arguments[0][3]
+	live, custom := code[m[2]:m[3]], code[m[4]:m[5]]
+	if live != provider+"?.models" {
+		// Newer nightlies read the live models into a local just before the
+		// memoized call. Verify that binding and both memo dependencies.
+		identifier := `[A-Za-z_$][A-Za-z0-9_$]*`
+		capture := `(` + identifier + `)`
+		alias := regexp.QuoteMeta(live)
+		customName := regexp.QuoteMeta(custom)
+		binding := regexp.MustCompile(`;let\[` + customName + `,` + identifier + `\]=` + identifier +
+			`\(` + identifier + `,` + identifier + `\),` + alias + `=` + regexp.QuoteMeta(provider) + `\?\.models,` + capture +
+			`;` + capture + `\[[0-9]+\]!==` + customName + `\|\|` + capture +
+			`\[[0-9]+\]!==` + alias + `\?\(` + capture + `=` + identifier + `\(\{$`)
+		match := binding.FindStringSubmatch(component)
+		if match == nil || match[1] != match[4] || match[2] != match[3] {
+			return nil, errors.New("Cannot correlate the T3 Code Models settings account.")
+		}
+	}
+	replacement := fmt.Sprintf("liveModels:__kiloT3InstanceModels(%s,%s.driver,%s),customModels:__kiloT3InstanceModels(%s,%s.driver,%s)}", id, instance, live, id, instance, custom)
 	result := append(t3CodeRuntimeModelFilterWithMuse(policy, initial, variants, muse), source[:m[0]]...)
 	result = append(result, []byte(replacement)...)
 	return append(result, source[m[1]:]...), nil
@@ -337,15 +352,15 @@ var t3CodeRuntimeModelsCardImport = regexp.MustCompile(`\bimport\s*\{[^;\r\n]*\}
 
 func t3CodeRuntimeModelsCardAsset(files map[string][]byte, providersAsset string) (string, error) {
 	source := files[providersAsset]
-	if t3CodeRuntimeModelsCard.Match(source) {
+	code := t3CodeContractCode(string(source))
+	if t3CodeRuntimeModelsCard.MatchString(code) {
 		return providersAsset, nil
 	}
 	imports := t3CodeRuntimeModelsCardImport.FindAllSubmatchIndex(source, -1)
 	if len(imports) == 1 {
 		match := imports[0]
-		code := t3CodeContractCode(string(source))
 		name := "assets/" + string(source[match[2]:match[3]])
-		if strings.HasPrefix(code[match[0]:], "import") && t3CodeRuntimeModelsCard.Match(files[name]) {
+		if strings.HasPrefix(code[match[0]:], "import") && t3CodeRuntimeModelsCard.MatchString(t3CodeContractCode(string(files[name]))) {
 			return name, nil
 		}
 	}

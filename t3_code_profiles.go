@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -261,9 +262,20 @@ func planT3CodeProfiles(options t3CodeProfileOptions) (t3CodeProfiles, error) {
 			}
 			selection.Models = append(selection.Models, claudeModel{ID: model.ID, DisplayName: model.DisplayName, Effort: effort, Context: context.ContextWindow, Output: context.MaxOutputTokens})
 		}
+		settingsSelection := selection
+		if options.Policy != nil {
+			// T3 passes native slugs to Claude Code. Write effort defaults under
+			// those slugs while keeping exact gateway IDs in the saved selection.
+			settingsSelection.Initial = t3CodeClaudePickerModelID(selection.Initial, options.Policy.ClaudeRoutes)
+			settingsSelection.Models = slices.Clone(selection.Models)
+			for i := range settingsSelection.Models {
+				model := &settingsSelection.Models[i]
+				model.ID = t3CodeClaudePickerModelID(model.ID, options.Policy.ClaudeRoutes)
+			}
+		}
 		if claudeSettingsCaps.PerModelEffort {
 			byFamily := map[string]string{}
-			for _, model := range selection.Models {
+			for _, model := range settingsSelection.Models {
 				family := claudeEffortKey(model.ID)
 				if family == "" {
 					continue
@@ -281,7 +293,7 @@ func planT3CodeProfiles(options t3CodeProfileOptions) (t3CodeProfiles, error) {
 		}
 		// T3 supplies exact model IDs itself. Do not generate native family aliases
 		// or modelOverrides: those would change the identity selected in T3.
-		claudeConfig, err := mergeClaudeSettings(oldClaude, selection, claudeSettingsCaps, options.Port, options.LocalKey)
+		claudeConfig, err := mergeClaudeSettings(oldClaude, settingsSelection, claudeSettingsCaps, options.Port, options.LocalKey)
 		if err != nil {
 			return t3CodeProfiles{}, err
 		}

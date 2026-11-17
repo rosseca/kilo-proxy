@@ -16,6 +16,7 @@ import (
 const t3CodeRuntimeFixturePanel = `function rowsFor(S){let V=[];for(let t of ["codex","claudeAgent","grok"]){let n=t,r=S.providerInstances?.[n],i=r??{driver:t};V.push({instanceId:n,instance:i,driver:t,isDefault:!0,isDirty:r!==undefined})}return V}`
 
 const t3CodeRuntimeFixtureProvidersSource = `function rowsFor(S){let V=[];for(let t of ["codex","claudeAgent","grok"]){let n=t,r=S.providerInstances?.[n],i=r??{driver:t};let a=r!==undefined;V.push({instanceId:n,instance:i,driver:t,isDefault:!0,isDirty:a})}return V}function modelCard(e){let {instanceId:n,instance:r,driverOption:i,liveProvider:s,mode:c}=e;let m=r.models;return displayModels({liveModels:s?.models,customModels:m})}`
+const t3CodeRuntimeFixtureAliasedModelsCard = `function modelCard(e){let{instanceId:n,instance:r,driverOption:i,liveProvider:s,mode:c}=e;let t=[],m=r.models;let[a,b]=customModelSaves(n,m),l=s?.models,o;t[0]!==a||t[1]!==l?(o=displayModels({liveModels:l,customModels:a}),t[0]=a,t[1]=l,t[2]=o):o=t[2];return o}function customModelSaves(id,models){return [models,()=>{}]}`
 const t3CodeRuntimeFixtureProjectionSource = `const driverNames={codex:"Codex",claudeAgent:"Claude",pi:"Pi"};function display(id){return id.split("_").map(word=>word[0]?.toUpperCase()+word.slice(1)).join(" ")}function defaultID(driver){return driver}function instanceName(e){let t=e.displayName?.trim(),n=driverNames[e.driver]??display(e.driver);if(t&&t!==n)return t;if(e.instanceId!==defaultID(e.driver)){let t=display(e.instanceId);if(t.length>0)return t}return t||n}function project(e){return e.map(e=>({instanceId:e.instanceId,driverKind:e.driver,displayName:instanceName(e),continuationGroupKey:e.continuation?.groupKey,isAvailable:e.availability!=="unavailable",snapshot:e,models:e.models}))};`
 
 // The actual bundled panel computes isDirty first; keep the same unique call
@@ -119,6 +120,38 @@ func TestT3CodeRuntimeModelsCardAsset(t *testing.T) {
 			got, err := t3CodeRuntimeModelsCardAsset(files, route)
 			if got != test.want || (err != nil) != (test.want == "") {
 				t.Fatalf("Models card asset = %q, %v; want %q", got, err, test.want)
+			}
+		})
+	}
+}
+
+func TestT3CodeRuntimeAliasedModelsCardContract(t *testing.T) {
+	const route = "assets/_chat.settings.providers-Fixture.js"
+	const dialog = "assets/AddProviderInstanceDialog-Fixture.js"
+	const importDialog = `import{n as card}from"./AddProviderInstanceDialog-Fixture.js";`
+	source := t3CodeRuntimeFixtureAliasedModelsCard
+	files := map[string][]byte{route: []byte(importDialog + "/* liveModels:x,customModels:y} */"), dialog: []byte(source)}
+	got, err := t3CodeRuntimeModelsCardAsset(files, route)
+	if got != dialog || err != nil {
+		t.Fatalf("Models card asset = %q, %v; want %q", got, err, dialog)
+	}
+	for _, test := range []struct {
+		name string
+		code string
+	}{
+		{"different provider", strings.Replace(source, "l=s?.models", "l=x?.models", 1)},
+		{"different memo input", strings.Replace(source, "t[1]!==l", "t[1]!==x", 1)},
+		{"different memo cache", strings.Replace(source, "t[1]!==l", "x[1]!==l", 1)},
+		{"different memo result", strings.Replace(source, "?(o=displayModels", "?(x=displayModels", 1)},
+		{"different custom model binding", strings.Replace(source, "let[a,b]", "let[x,b]", 1)},
+		{"property instead of declaration", strings.Replace(source, "let[a,b]", "obj.let[a,b]", 1)},
+		{"reassigned alias", strings.Replace(source, ";t[0]", ";l=x;t[0]", 1)},
+		{"commented", "/* " + source + " */"},
+		{"ambiguous", source + source},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := patchT3CodeModelsCard([]byte(test.code), nil); err == nil {
+				t.Fatal("incompatible aliased Models card accepted")
 			}
 		})
 	}
@@ -350,7 +383,12 @@ func TestT3CodeRuntimeModelPolicyPreservesNativeCapabilitiesAndInstanceIsolation
 	if err != nil {
 		t.Fatal(err)
 	}
-	script := string(projection) + "const modelCard=(function(){" + string(card) + ";return modelCard})();" + `
+	aliasedCard, err := patchT3CodeModelsCard([]byte(t3CodeRuntimeFixtureAliasedModelsCard), policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(projection) + "const modelCard=(function(){" + string(card) + ";return modelCard})();" +
+		"const aliasedCard=(function(){" + string(aliasedCard) + ";return modelCard})();" + `
 function displayModels(value){return value}
 const capabilities={optionDescriptors:[{id:"effort",options:[{id:"high"},{id:"max"}]},{id:"thinking",options:[{id:"adaptive"}]}]};
 const opus={slug:"claude-opus-5-5",capabilities},extra={slug:"claude-haiku-5-5",capabilities},gpt={slug:"gpt-5.5",capabilities},shared={slug:"vendor/shared",capabilities};
@@ -363,12 +401,14 @@ if(projected[0].models[0].capabilities!==capabilities)throw Error("native capabi
 if(projected[0].snapshot.models[0]!==opus||projected[0].snapshot.models.length!==2)throw Error("picker snapshot leaked manifest model");
 for(let i=2;i<records.length;i++){if(projected[i].models!==models||projected[i].snapshot.models!==models)throw Error("unrelated instance or driver filtered")}
 if(models.length!==4||records[0].models!==models)throw Error("original server snapshot mutated");
-const cardValue=modelCard({instanceId:"kilo_claude_proxy",instance:{driver:"claudeAgent",models},liveProvider:records[0]});
+for(const renderCard of [modelCard,aliasedCard]){
+const cardValue=renderCard({instanceId:"kilo_claude_proxy",instance:{driver:"claudeAgent",models},liveProvider:records[0]});
 if(cardValue.liveModels.length!==2||cardValue.customModels.length!==2||cardValue.liveModels[0]!==opus)throw Error("Providers Models leaked unknown manifest or custom model "+JSON.stringify(cardValue));
-const pending=modelCard({instanceId:"kilo_claude_proxy",instance:{driver:"claudeAgent",models}});
+const pending=renderCard({instanceId:"kilo_claude_proxy",instance:{driver:"claudeAgent",models}});
 if(pending.liveModels!==undefined||pending.customModels.length!==2)throw Error("pending provider lost policy correlation");
-const direct=modelCard({instanceId:"kilo_claude_normal",instance:{driver:"claudeAgent",models},liveProvider:records[2]});
+const direct=renderCard({instanceId:"kilo_claude_normal",instance:{driver:"claudeAgent",models},liveProvider:records[2]});
 if(direct.liveModels!==models||direct.customModels!==models)throw Error("direct account altered");
+}
 `
 	command := exec.Command(node, "--input-type=module", "--eval", script)
 	command.Env = []string{"HOME=" + t.TempDir(), "PATH=" + filepath.Dir(node), "LANG=C"}
