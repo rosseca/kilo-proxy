@@ -85,6 +85,10 @@ Release binaries need no Go, Node or Docker. Linux Desktop needs [system graphic
 
 For the terminal edition, follow the [headless setup guide](docs/headless.md).
 
+External applications can generate embeddings through the same local API using
+the saved Kilo organization connection. See the [embedding API and headless
+discovery guide](docs/embeddings.md).
+
 **Activity → History / CSV** retrieves historical Kilo usage by UTC day and up to three dimensions, including model, provider and project. Filter a date range and save raw CSV rows with exact token counts and microdollar costs. [Historical usage and CSV limits](docs/billing.md#historical-queries-and-raw-csv).
 
 [Muse Code](docs/muse-code.md) can use Kilo's shared models or its own Meta account in the terminal and as an optional T3 provider. Keep Kilo Proxy open for Kilo connections; `kilo-muse` also works with the app closed in native Meta mode. Muse is not yet available as a Synara provider.

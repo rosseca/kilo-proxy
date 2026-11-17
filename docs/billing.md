@@ -1,5 +1,10 @@
 # Account balance, billed usage and local history
 
+[Embedding requests](embeddings.md) use the saved Kilo organization connection.
+Local accounting records reported input tokens and inference cost, including
+BYOK provider spend. A zero gateway fee does not mean provider inference was free.
+Activity labels reported BYOK routing; missing token/cost metadata stays unknown.
+
 **Activity** separates three sources of information:
 
 | View | Source | Scope |

@@ -42,6 +42,12 @@ type headlessSetupCatalog struct {
 }
 
 func runHeadlessSetupCLI(dir, command string, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	if command == "embeddings" && headlessEmbeddingsHelp(args) {
+		if _, err := fmt.Fprintln(stdout, headlessEmbeddingsUsage); err != nil {
+			return 1
+		}
+		return 0
+	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	client, err := openHeadlessClient(dir)
@@ -73,6 +79,8 @@ func runHeadlessSetupCommand(ctx context.Context, client headlessSetupCaller, co
 		err = headlessLogout(ctx, client, args, stdout)
 	case "models":
 		err = headlessModels(ctx, client, args, stdin, stdout)
+	case "embeddings":
+		err = headlessEmbeddings(ctx, client, args, stdout)
 	case "commands":
 		err = headlessCommands(ctx, client, args, stdout)
 	case "connection":

@@ -1,5 +1,10 @@
 # Shared model library
 
+Embedding discovery is separate from this chat/coding-agent library. Use
+`kilo-proxy-headless embeddings models [--json]` or `GET /v1/embedding-models`;
+applications can call `/v1/embeddings` without adding a model here. See the
+[embedding guide](embeddings.md).
+
 The native app has a shared **Models** library that every agent uses by default. Add models once, set short names and reasoning preferences, and return to **Harnesses** to open an installed client. The library is saved automatically and restored when Kilo Proxy restarts. Optionally assign an independent model pack to a supported agent; the shared library remains untouched. Generated agent profiles are updated when you next open or prepare that agent; an already running agent does not receive live configuration updates.
 
 ## Choose and edit models

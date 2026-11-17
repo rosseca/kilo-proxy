@@ -186,6 +186,10 @@ func (a *app) adminHandler() http.Handler {
 			a.modelLibraryAPI(w, r)
 			return
 		}
+		if r.URL.Path == "/api/embedding-models" {
+			a.embeddingModelsAPI(w, r)
+			return
+		}
 		if r.URL.Path == "/api/headless/catalog" {
 			a.headlessCatalogAPI(w, r)
 			return

@@ -127,7 +127,7 @@ func (u *nativeUI) uxsConnectionBlock() layout.Widget {
 	base := nativeString(u.state, "baseURL")
 	row := u.uxsRow(
 		u.tr("Local address", "Dirección local"), u.tr("Any OpenAI-compatible client", "Cualquier cliente compatible con OpenAI"),
-		u.uxsValue(u.uxsMono(base), u.tr("Apps you open from Kilo Proxy come already configured.", "Las apps que abres desde Kilo Proxy ya vienen configuradas.")),
+		u.uxsValue(u.uxsMono(base), u.tr("Use this URL and local key for chat and embeddings.", "Usa esta URL y la clave local para chat y embeddings.")),
 		u.uxsActions(
 			u.button("connection.copy-url", u.tr("Copy URL", "Copiar URL"), func() { u.copy(nativeString(u.state, "baseURL")) }),
 			u.button("connection.copy-key", u.tr("Copy local key", "Copiar clave local"), func() { u.copy(nativeString(u.state, "localKey")) }),
