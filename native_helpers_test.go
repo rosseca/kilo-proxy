@@ -55,6 +55,7 @@ func TestNativeHelpersMatchBrowserCatalogsAndCommands(t *testing.T) {
 	for id := range nativeKnownReasoning {
 		all = append(all, choice(id))
 	}
+	toolsYes, toolsNo := true, false
 	cases := []catalogCase{
 		{"all exact presets", all, "openai/gpt-5.6-sol", false},
 		{"unknown, duplicate, image and context", []nativeModelChoice{{Model: modelInfo{ID: "v/one", Name: "One", ContextWindow: 123000, InputModalities: []string{"text", "image"}}}, choice("v/two"), choice("v/one"), choice("bad id")}, "v/two", false},
@@ -64,6 +65,7 @@ func TestNativeHelpersMatchBrowserCatalogsAndCommands(t *testing.T) {
 		{"metadata wins", []nativeModelChoice{{Model: modelInfo{ID: "openai/gpt-5.6-sol", ReasoningEfforts: []string{"none", "low", "max"}}}, {Model: modelInfo{ID: "vendor/new", ReasoningEfforts: []string{"high", "low", "invalid", "low"}}}}, "", false},
 		{"labels", []nativeModelChoice{{Model: modelInfo{ID: "v/a", Name: "Original"}, DisplayName: " A\nB "}, {Model: modelInfo{ID: "v/b", Name: "Fallback"}, DisplayName: "   "}, {Model: modelInfo{ID: "v/c"}, DisplayName: strings.Repeat("é", 90)}, {Model: modelInfo{ID: "v/d"}, DisplayName: strings.Repeat("x", 79) + "🔑"}}, "", false},
 		{"Xcode limits", []nativeModelChoice{choice("z-ai/glm-5.3"), choice("openai/gpt-6-astra"), choice("v/unknown")}, "z-ai/glm-5.3", true},
+		{"tool capability", []nativeModelChoice{{Model: modelInfo{ID: "v/tools", Tools: &toolsYes}}, {Model: modelInfo{ID: "v/plain", Tools: &toolsNo}}, choice("v/unknown")}, "", false},
 		{"context policies", []nativeModelChoice{
 			{Model: modelInfo{ID: "v/recommended", ContextWindow: 1050000, MaxOutputTokens: 128000}, ContextPreset: contextPresetRecommended},
 			{Model: modelInfo{ID: "v/low", ContextWindow: 1050000, MaxOutputTokens: 128000}, ContextPreset: contextPresetLow},
@@ -444,5 +446,31 @@ func TestNativeReasoningDefaultSelectorKeepsPublishedLevels(t *testing.T) {
 	choice.ReasoningLevels = []string{}
 	if levels, initial = nativeReasoningFor(choice); len(levels) != 0 || initial != "" {
 		t.Fatal("default selector overrode explicit reasoning disable")
+	}
+}
+
+func TestCodexCatalogSearchToolFollowsGatewayTools(t *testing.T) {
+	yes, no := true, false
+	data, err := buildCodexCatalog([]nativeModelChoice{
+		{Model: modelInfo{ID: "deepseek/deepseek-v4.1-flash", Tools: &yes}},
+		{Model: modelInfo{ID: "vendor/no-tools", Tools: &no}},
+		{Model: modelInfo{ID: "vendor/unknown"}},
+	}, "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var catalog struct {
+		Models []map[string]any `json:"models"`
+	}
+	if err := json.Unmarshal(data, &catalog); err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]any{}
+	for _, model := range catalog.Models {
+		got[model["slug"].(string)] = model["supports_search_tool"]
+	}
+	want := map[string]any{"deepseek/deepseek-v4.1-flash": true, "vendor/no-tools": false, "vendor/unknown": false}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("supports_search_tool = %v, want %v", got, want)
 	}
 }
