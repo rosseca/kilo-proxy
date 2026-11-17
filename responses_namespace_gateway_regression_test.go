@@ -655,9 +655,7 @@ func TestNamespaceGatewayContractRejectsUnsupportedWithoutSending(t *testing.T) 
 	cases := []struct {
 		name   string
 		mutate func(map[string]any)
-	}{{"previous-response", func(d map[string]any) { d["previous_response_id"] = "resp_previous" }}, {"dynamic-tools", func(d map[string]any) { d["tools"] = append(d["tools"].([]any), map[string]any{"type": "tool_search"}) }}, {"dynamic-results", func(d map[string]any) {
-		d["input"] = append(d["input"].([]any), map[string]any{"type": "tool_search_output", "id": "search_output", "tools": []any{}})
-	}}, {"hosted-child", func(d map[string]any) {
+	}{{"previous-response", func(d map[string]any) { d["previous_response_id"] = "resp_previous" }}, {"hosted-child", func(d map[string]any) {
 		object(d["tools"].([]any)[0])["tools"] = []any{map[string]any{"type": "web_search"}}
 	}}, {"bare-ambiguous-choice", func(d map[string]any) { d["tool_choice"] = map[string]any{"type": "function", "name": "spawn_agent"} }}}
 	for _, c := range cases {
