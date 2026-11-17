@@ -15,6 +15,34 @@ import (
 
 var image1280x1100 = image.Pt(1280, 1100)
 
+func TestUXActivityEmbeddings(t *testing.T) {
+	for _, lang := range []string{"en", "es"} {
+		h := newNativePointerHarness(t, image1280x1100)
+		u := h.u
+		u.language = lang
+		input := int64(8)
+		byok := true
+		cost := "0.000001600"
+		e := event{Path: "/v1/embeddings", Method: "POST", Status: 200, Usage: &requestUsage{Operation: "embedding", Model: "google/gemini-embedding-2", Input: &input, BYOK: &byok, CostUSD: &cost, CostSource: "usage.cost_details.upstream_inference_cost"}}
+		_, operation, _, tokens, _ := u.uxaRequestCells(e)
+		if operation != "Embedding" || tokens != u.tr("8 input tokens", "8 tokens de entrada") || strings.Contains(tokens, "→") {
+			t.Fatalf("operation %q tokens %q", operation, tokens)
+		}
+		e.Usage.Input = nil
+		_, _, _, tokens, _ = u.uxaRequestCells(e)
+		if tokens != u.tr("Input tokens unknown", "Tokens de entrada desconocidos") {
+			t.Fatalf("unknown tokens %q", tokens)
+		}
+		if got := u.embeddingBYOKNote(e.Usage); got != u.tr("Provider key (BYOK)", "Clave del proveedor (BYOK)") {
+			t.Fatalf("BYOK note %q", got)
+		}
+		e.Usage.BYOK = nil
+		if u.embeddingBYOKNote(e.Usage) != "" {
+			t.Fatal("invented BYOK")
+		}
+	}
+}
+
 // uxaSeedActivityForTest fills the app (the source behind /api/state) with 30
 // days of Kilo usage, a per-model breakdown and captured requests.
 func uxaSeedActivityForTest(t *testing.T, u *nativeUI, models bool) {

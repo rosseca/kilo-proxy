@@ -356,10 +356,17 @@ func t3CodeRuntimeRunning(root string) (bool, error) {
 	if err != nil || json.Unmarshal(data, &state) != nil || state.Version != 1 || state.PID < 1 || state.PID > 1<<31-1 {
 		return false, errors.New("Cannot verify the private T3 Code server runtime.")
 	}
-	if _, err := time.Parse(time.RFC3339Nano, state.StartedAt); err != nil {
+	startedAt, err := time.Parse(time.RFC3339Nano, state.StartedAt)
+	if err != nil || startedAt.IsZero() || startedAt.After(time.Now()) {
 		return false, errors.New("Cannot verify the private T3 Code server runtime.")
 	}
-	return openMausBotProcessAlive(state.PID)
+	processStartedAt, err := t3CodeProcessStartTime(state.PID)
+	if err != nil || processStartedAt.IsZero() {
+		return false, err
+	}
+	// The server writes startedAt after process creation, potentially after slow
+	// startup. A newer process cannot own this record, even if its PID is alive.
+	return !processStartedAt.After(startedAt), nil
 }
 
 func t3CodeCommandMatches(command, root string) bool {

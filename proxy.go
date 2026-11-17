@@ -188,10 +188,10 @@ func localHostMatches(r *http.Request, host string) bool {
 }
 
 func validRoute(method, path string) bool {
-	if method == "GET" && path == "/v1/models" {
+	if method == "GET" && (path == "/v1/models" || path == "/v1/embedding-models") {
 		return true
 	}
-	return method == "POST" && (path == "/v1/chat/completions" || path == "/v1/responses" || path == "/v1/messages")
+	return method == "POST" && (path == "/v1/chat/completions" || path == "/v1/responses" || path == "/v1/messages" || path == "/v1/embeddings")
 }
 
 type schemaBridgeContextKey struct{}
@@ -206,6 +206,13 @@ func (e responseAdaptationError) Error() string { return "response adaptation: "
 func (e responseAdaptationError) Unwrap() error { return e.cause }
 
 func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
+	// startLocked owns the app lock while constructing the listener. Capture
+	// readiness with its credentials: ChatGPT can otherwise permit startup while
+	// Kilo still represents an unsaved connection or an unfinished device login.
+	embeddingKey := key
+	if a.authPending() || a.connectionNeedsSave || a.providerChanging {
+		embeddingKey = ""
+	}
 	proxy := &httputil.ReverseProxy{
 		Transport:     traceTransport{remoteImageFallbackTransport{base: a.transport}},
 		FlushInterval: -1,
@@ -232,7 +239,9 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 			if strings.EqualFold(strings.TrimSpace(r.Header.Get("Content-Encoding")), "identity") {
 				r.Header.Del("Content-Encoding")
 			}
-			normalizeUpstreamPayloadError(r)
+			if r.Request == nil || !strings.HasSuffix(r.Request.URL.Path, "/embeddings") {
+				normalizeUpstreamPayloadError(r)
+			}
 			normalizeMessagesToolStop(r)
 			if err := adaptClaudeDesktopAliasResponse(r); err != nil {
 				return responseAdaptationError{err}
@@ -345,6 +354,10 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 		if prefix := zedProxyPrefix(localKey); r.URL.RawPath == "" && strings.HasPrefix(r.URL.Path, prefix+"/v1/") {
 			r = r.Clone(r.Context())
 			r.URL.Path = strings.TrimPrefix(r.URL.Path, prefix)
+			if r.URL.Path == "/v1/embeddings" || r.URL.Path == "/v1/embedding-models" {
+				jsonError(w, http.StatusNotFound, "Use the canonical embedding API URL.")
+				return
+			}
 		}
 		if !validRoute(r.Method, r.URL.Path) || r.URL.RawPath != "" || !validQuery(r.URL) {
 			jsonError(w, http.StatusNotFound, "Endpoint no compatible. Usa la base URL terminada en /v1.")
@@ -389,7 +402,7 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 			// Clients may close immediately after receiving the terminal event.
 			// That cannot invalidate final accounting already read upstream. A
 			// cancellation before completion remains an incomplete 499 request.
-			if r.Context().Err() != nil && (usage == nil || !usage.usage.Complete) {
+			if r.Context().Err() != nil && (usage == nil || !usage.usage.Complete && !usage.embeddingResponseComplete) {
 				recorder.status = 499
 			}
 			a.active--
@@ -516,6 +529,10 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 			return
 		}
 		if r.Method == http.MethodGet {
+			if r.URL.Path == "/v1/embedding-models" {
+				a.serveEmbeddingModels(recorder, r, embeddingKey, orgID)
+				return
+			}
 			if managed, _ := r.Context().Value(openMausBotRequestContextKey{}).(bool); managed {
 				a.serveOpenMausBotModels(recorder)
 				return
@@ -535,6 +552,15 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 				status = http.StatusRequestEntityTooLarge
 			}
 			jsonError(recorder, status, routeErr.Error())
+			return
+		}
+		if r.URL.Path == "/v1/embeddings" {
+			if status, code, message := validateEmbeddingProvider(model, embeddingKey, orgID); status != 0 {
+				embeddingError(recorder, status, code, message)
+				return
+			}
+			usage.setEmbeddingModel(model)
+			proxy.ServeHTTP(recorder, r)
 			return
 		}
 		if strings.HasPrefix(model, "chatgpt/") {

@@ -45,6 +45,11 @@ Authentication changes require the inference proxy to be stopped. With a control
 
 ## Choose models, reasoning, and context
 
+For embedding workflows, run `kilo-proxy-headless embeddings models [--json]`
+to discover organization models, then call the local `/v1/embeddings` endpoint
+with your application. This is separate from the chat library below. See
+[embeddings through Kilo Proxy](embeddings.md).
+
 ```sh
 kilo-proxy-headless models catalog --refresh
 kilo-proxy-headless models add EXACT_MODEL_ID --reasoning high --context low

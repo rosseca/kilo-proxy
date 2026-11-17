@@ -337,6 +337,7 @@ Usage: kilo-proxy-headless [--config-dir DIR] COMMAND [OPTIONS]
   login        Sign in to Kilo or ChatGPT with a device code
   logout       Remove a saved connection
   models       Manage the shared models and reasoning preferences
+  embeddings   List organization embedding models (embeddings models --json)
   commands     Install or print the kilo-* terminal commands
   connection   Show the API endpoint (add --show-key to display its local key)
   serve        Run the proxy in the foreground (use --setup for first setup)
@@ -351,7 +352,7 @@ The proxy and its private control API listen only on 127.0.0.1.`)
 }
 
 func parseHeadlessCommand(args []string) (command, dir string, rest []string, recognized bool, err error) {
-	known := map[string]bool{"serve": true, "status": true, "stop": true, "proxy": true, "configure": true, "login": true, "logout": true, "models": true, "commands": true, "connection": true, "service": true, "update": true, "help": true}
+	known := map[string]bool{"serve": true, "status": true, "stop": true, "proxy": true, "configure": true, "login": true, "logout": true, "models": true, "embeddings": true, "commands": true, "connection": true, "service": true, "update": true, "help": true}
 	leading := 0
 	dirSpecified := false
 	for leading < len(args) && strings.HasPrefix(args[leading], "--config-dir") {
@@ -451,7 +452,7 @@ func runHeadlessCLI(args []string) (bool, int) {
 		return true, 1
 	}
 	switch command {
-	case "configure", "login", "logout", "models", "commands", "connection":
+	case "configure", "login", "logout", "models", "embeddings", "commands", "connection":
 		return true, runHeadlessSetupCLI(dir, command, rest, os.Stdin, os.Stdout, os.Stderr)
 	case "service":
 		return true, runHeadlessServiceCLI(dir, rest, os.Stdout, os.Stderr)

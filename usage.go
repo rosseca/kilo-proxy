@@ -20,6 +20,8 @@ const usageBufferLimit = 1 << 20
 const usageSessionLimit = 200
 
 type requestUsage struct {
+	Operation    string  `json:"operation,omitempty"`
+	BYOK         *bool   `json:"byok,omitempty"`
 	Billing      string  `json:"billing,omitempty"`
 	Session      string  `json:"session"`
 	Source       string  `json:"source"`
@@ -74,16 +76,20 @@ type usageSummary struct {
 }
 
 type usageObserver struct {
-	historyAccount string
-	mu             sync.Mutex
-	eventDropped   bool
-	usage          requestUsage
-	label, org     string
-	messages       bool
-	sse            bool
-	buffer, event  []byte
-	dropping       bool
-	ended          bool
+	embedding                 *embeddingUsageExtractor
+	embeddingModel            string
+	embeddingStatus           int
+	embeddingResponseComplete bool
+	historyAccount            string
+	mu                        sync.Mutex
+	eventDropped              bool
+	usage                     requestUsage
+	label, org                string
+	messages                  bool
+	sse                       bool
+	buffer, event             []byte
+	dropping                  bool
+	ended                     bool
 }
 type usageContextKey struct{}
 
@@ -112,12 +118,18 @@ func newUsageObserver(r *http.Request, org string) *usageObserver {
 		break
 	}
 	digest := sha256.Sum256([]byte(org + "\x00" + identity))
-	return &usageObserver{usage: requestUsage{Session: hex.EncodeToString(digest[:]), Source: source}, label: label, org: org, messages: r.URL.Path == "/v1/messages"}
+	u := &usageObserver{usage: requestUsage{Session: hex.EncodeToString(digest[:]), Source: source}, label: label, org: org, messages: r.URL.Path == "/v1/messages"}
+	if r.Method == http.MethodPost && r.URL.Path == "/v1/embeddings" {
+		u.embedding = newEmbeddingUsageExtractor()
+		u.usage.Operation = "embedding"
+	}
+	return u
 }
 
 func (u *usageObserver) configure(r *http.Response) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
+	u.embeddingStatus = r.StatusCode
 	u.sse = strings.HasPrefix(strings.ToLower(r.Header.Get("Content-Type")), "text/event-stream")
 }
 
@@ -125,6 +137,10 @@ func (u *usageObserver) configure(r *http.Response) {
 func (u *usageObserver) feed(data []byte) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
+	if u.embedding != nil {
+		u.embedding.feed(data)
+		return
+	}
 	if !u.sse {
 		if len(u.buffer)+len(data) > usageBufferLimit {
 			u.usage.Limited = true
@@ -200,6 +216,10 @@ func (u *usageObserver) eof() {
 		return
 	}
 	u.ended = true
+	if u.embedding != nil {
+		u.finishEmbedding()
+		return
+	}
 	if !u.sse && !u.dropping {
 		u.parse(u.buffer)
 	}
@@ -401,6 +421,8 @@ func (r *usageReader) Read(p []byte) (int, error) {
 	r.observer.feed(p[:n])
 	if err == io.EOF {
 		r.observer.eof()
+	} else if err != nil {
+		r.observer.embeddingReadError()
 	}
 	return n, err
 }
@@ -489,5 +511,5 @@ func (a *app) usageSnapshot() map[string]any {
 func (u *usageObserver) snapshot() *usageObserver {
 	u.mu.Lock()
 	defer u.mu.Unlock()
-	return &usageObserver{usage: u.usage, label: u.label, org: u.org, historyAccount: u.historyAccount}
+	return &usageObserver{usage: u.usage, label: u.label, org: u.org, historyAccount: u.historyAccount, embeddingResponseComplete: u.embeddingResponseComplete}
 }

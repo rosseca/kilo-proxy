@@ -187,6 +187,13 @@ func (u *nativeUI) uxaRequestCells(e event) (when, harness, model, tokens, cost 
 		}
 		tokens = in + " → " + out
 	}
+	if e.Usage.Operation == "embedding" {
+		harness = u.tr("Embedding", "Embedding")
+		tokens = u.tr("Input tokens unknown", "Tokens de entrada desconocidos")
+		if e.Usage.Input != nil {
+			tokens = fmt.Sprintf(u.tr("%s input tokens", "%s tokens de entrada"), uxaCompact(u.language, *e.Usage.Input))
+		}
+	}
 	if e.Usage.Billing == "subscription" {
 		cost = u.tr("Subscription", "Suscripción")
 	} else if e.Usage.CostUSD != nil {
