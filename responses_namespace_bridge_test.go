@@ -647,3 +647,25 @@ func TestResponsesNamespaceBridgeDynamicAbsentToolsAndEmptyOutputs(t *testing.T)
 		t.Fatalf("absent tools must be created with the hoisted alias, got %#v", wire["tools"])
 	}
 }
+
+func TestResponsesNamespaceBridgeDynamicRetiredHistory(t *testing.T) {
+	doc := dynamicTestDoc(
+		dynamicTestOutput("ts1", namespaceTestGroup("mcp__orrery", namespaceTestFunction("search"))),
+		map[string]any{"type": "function_call", "call_id": "c1", "namespace": "mcp__orrery", "name": "search", "arguments": "{}"},
+		map[string]any{"type": "function_call", "call_id": "c0", "namespace": "mcp__orrery", "name": "read", "arguments": "{}"},
+	)
+	bridge, wire := namespaceTestPrepare(t, doc)
+	tools := wire["tools"].([]any)
+	if len(tools) != 2 {
+		t.Fatalf("a retired tool known only from history must not be hoisted: %#v", tools)
+	}
+	input := wire["input"].([]any)
+	retired := object(input[3])
+	if retired["namespace"] != nil || !strings.HasPrefix(stringValue(retired["name"]), "kilo_ns_") || retired["name"] == object(input[2])["name"] {
+		t.Fatalf("retired history call must get its own alias: %#v", retired)
+	}
+	client := namespaceTestResponse(t, bridge, map[string]any{"output": []any{map[string]any{"type": "function_call", "call_id": "c2", "name": retired["name"], "arguments": "{}"}}})
+	if call := object(client["output"].([]any)[0]); call["namespace"] != "mcp__orrery" || call["name"] != "read" {
+		t.Fatalf("retired alias not restored: %#v", call)
+	}
+}
