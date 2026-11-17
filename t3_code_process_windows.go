@@ -6,9 +6,33 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"golang.org/x/sys/windows"
 )
+
+func t3CodeProcessStartTime(pid int) (time.Time, error) {
+	handle, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
+	if errors.Is(err, windows.ERROR_INVALID_PARAMETER) {
+		return time.Time{}, nil
+	}
+	if err != nil {
+		return time.Time{}, err
+	}
+	defer windows.CloseHandle(handle)
+	var code uint32
+	if err := windows.GetExitCodeProcess(handle, &code); err != nil {
+		return time.Time{}, err
+	}
+	if code != 259 {
+		return time.Time{}, nil
+	}
+	var created, exited, kernel, user windows.Filetime
+	if err := windows.GetProcessTimes(handle, &created, &exited, &kernel, &user); err != nil {
+		return time.Time{}, err
+	}
+	return time.Unix(0, created.Nanoseconds()), nil
+}
 
 func t3CodeProcessRunning(ctx context.Context, root string) (bool, error) {
 	system, err := windows.GetSystemDirectory()
