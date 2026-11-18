@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -524,8 +525,16 @@ func TestResponsesNamespaceBridgeDynamicDiscovery(t *testing.T) {
 	searchAlias := dynamicTestAlias(t, tools[1:], "mcp__orrery.search")
 	dynamicTestAlias(t, tools[1:], "mcp__orrery.read")
 	input := wire["input"].([]any)
-	if delivered := object(input[2])["tools"].([]any); !reflect.DeepEqual(delivered, tools[1:]) {
-		t.Fatalf("output must list the same aliased tools as top level:\n%#v\n%#v", delivered, tools[1:])
+	delivered := object(input[2])["tools"].([]any)
+	if len(delivered) != 2 {
+		t.Fatalf("output must list both aliased tools, got %#v", delivered)
+	}
+	for i, value := range tools[1:] {
+		expected := namespaceCopyObject(object(value))
+		expected["description"] = strings.Replace(stringValue(expected["description"]), "\nShared guidance for all tools in this namespace: Original group", "", 1)
+		if !reflect.DeepEqual(delivered[i], expected) {
+			t.Fatalf("aliased output tool differs from top level beyond shared guidance: %#v, want %#v", delivered[i], expected)
+		}
 	}
 	hoisted := object(tools[1])
 	if !reflect.DeepEqual(hoisted["parameters"], search["parameters"]) && !reflect.DeepEqual(hoisted["parameters"], read["parameters"]) {
@@ -596,6 +605,51 @@ func TestResponsesNamespaceBridgeDynamicRepeatedDiscovery(t *testing.T) {
 	}
 }
 
+func TestResponsesNamespaceBridgeDynamicSharedGuidanceOnce(t *testing.T) {
+	const marker = "Unique shared instructions for weather tools."
+	const toolCount = 402
+	guidance := marker + strings.Repeat(" More namespace guidance.", 650)
+	tools := make([]any, toolCount)
+	for i := range tools {
+		tools[i] = namespaceTestFunction("lookup_" + strconv.Itoa(i))
+	}
+	group := func(children ...any) map[string]any {
+		result := namespaceTestGroup("weather", children...)
+		result["description"] = guidance
+		return result
+	}
+	for _, declared := range []bool{false, true} {
+		name := "discovered only"
+		if declared {
+			name = "declared and discovered"
+		}
+		t.Run(name, func(t *testing.T) {
+			doc := dynamicTestDoc(dynamicTestOutput("ts1", group(tools[:250]...)), dynamicTestOutput("ts2", group(tools[150:]...)))
+			if declared {
+				doc["tools"] = append(doc["tools"].([]any), group(tools[0]))
+			}
+			_, wire := namespaceTestPrepare(t, doc)
+			registered := wire["tools"].([]any)
+			if len(registered) != toolCount+1 {
+				t.Fatalf("want %d registered tools plus tool search, got %d", toolCount, len(registered))
+			}
+			sent, _ := json.Marshal(wire)
+			if count := bytes.Count(sent, []byte(marker)); count != 1 {
+				t.Fatalf("shared namespace guidance appears %d times in %d upstream bytes, want once", count, len(sent))
+			}
+			input := wire["input"].([]any)
+			first := object(input[1])["tools"].([]any)
+			second := object(input[2])["tools"].([]any)
+			if len(first) != 250 || len(second) != toolCount-150 {
+				t.Fatal("search outputs must retain the tools they discovered")
+			}
+			if !reflect.DeepEqual(first[150], second[0]) {
+				t.Fatal("repeated discoveries must retain the same alias and schema")
+			}
+		})
+	}
+}
+
 func TestResponsesNamespaceBridgeDynamicFlatTools(t *testing.T) {
 	plain := namespaceTestFunction("plain")
 	doc := dynamicTestDoc(dynamicTestOutput("ts1", namespaceTestGroup("mcp__orrery", namespaceTestFunction("search")), plain))
@@ -628,6 +682,18 @@ func TestResponsesNamespaceBridgeDynamicEchoOmitsHoisted(t *testing.T) {
 	client := namespaceTestResponse(t, bridge, map[string]any{"output": []any{}, "tools": wire["tools"]})
 	if !reflect.DeepEqual(client["tools"], []any{dynamicTestSearchTool()}) {
 		t.Fatalf("echo must match the client's tools, got %#v", client["tools"])
+	}
+}
+
+func TestResponsesNamespaceBridgeDynamicEchoKeepsDeclaredToolOfDifferentType(t *testing.T) {
+	declared := map[string]any{"type": "custom", "name": "shared", "format": map[string]any{"type": "text"}}
+	namespace := namespaceTestGroup("weather", namespaceTestFunction("lookup"))
+	doc := dynamicTestDoc(dynamicTestOutput("ts1", namespace, namespaceTestFunction("shared")))
+	doc["tools"] = append(doc["tools"].([]any), declared)
+	bridge, wire := namespaceTestPrepare(t, doc)
+	client := namespaceTestResponse(t, bridge, map[string]any{"tools": wire["tools"]})
+	if !reflect.DeepEqual(client["tools"], doc["tools"]) {
+		t.Fatalf("echo must retain the declared custom tool, got %#v", client["tools"])
 	}
 }
 

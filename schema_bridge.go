@@ -46,6 +46,15 @@ func object(v any) map[string]any           { m, _ := v.(map[string]any); return
 func stringValue(v any) string              { s, _ := v.(string); return s }
 func toolKey(namespace, name string) string { return namespace + "\x00" + name }
 
+func responsesToolSearchOutputTools(value any) []any {
+	item := object(value)
+	if stringValue(item["type"]) != "tool_search_output" {
+		return nil
+	}
+	tools, _ := item["tools"].([]any)
+	return tools
+}
+
 func needsEnvelope(schema map[string]any) bool {
 	for _, key := range []string{"oneOf", "anyOf", "allOf"} {
 		if _, ok := schema[key]; ok {
@@ -198,6 +207,14 @@ func unwrapArguments(value any) (string, error) {
 	return string(raw), nil
 }
 
+func (b *schemaBridge) prepareTools(tools []any, wrap bool) error {
+	b.registerCollabTools(tools, "")
+	if wrap {
+		return b.wrapTools(tools, "")
+	}
+	return nil
+}
+
 func prepareSchemaBridge(r *http.Request) (*schemaBridge, error) {
 	if r.Method != "POST" || r.URL.Path != "/v1/responses" {
 		return nil, nil
@@ -218,9 +235,15 @@ func prepareSchemaBridge(r *http.Request) (*schemaBridge, error) {
 	model := strings.TrimPrefix(stringValue(doc["model"]), "~")
 	tools, _ := doc["tools"].([]any)
 	b := &schemaBridge{tools: map[string]bool{}, calls: map[string]bool{}, collabTools: map[string]bool{}, collabCalls: map[string]bool{}}
-	b.registerCollabTools(tools, "")
-	if strings.HasPrefix(model, "anthropic/") {
-		if err := b.wrapTools(tools, ""); err != nil {
+	wrap := strings.HasPrefix(model, "anthropic/")
+	if err := b.prepareTools(tools, wrap); err != nil {
+		return nil, err
+	}
+	// Prepare deferred schemas before the namespace bridge assigns wire aliases.
+	// Response adaptation restores the client namespace before unwrapping calls.
+	input, _ := doc["input"].([]any)
+	for _, item := range input {
+		if err := b.prepareTools(responsesToolSearchOutputTools(item), wrap); err != nil {
 			return nil, err
 		}
 	}
@@ -228,7 +251,6 @@ func prepareSchemaBridge(r *http.Request) (*schemaBridge, error) {
 		return nil, nil
 	}
 	// Tool-call history must use the same wire representation as new calls.
-	input, _ := doc["input"].([]any)
 	for _, v := range input {
 		item := object(v)
 		if b.matchesEnvelope(item) {

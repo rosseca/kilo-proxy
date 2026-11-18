@@ -241,7 +241,7 @@ func prepareResponsesNamespaceBridge(r *http.Request) (*responsesNamespaceBridge
 				discoveredFlat = append(discoveredFlat, tool)
 				b.flatNames[key] = true
 				b.reservedNames[name] = true
-				b.hoistedFlat[name] = true
+				b.hoistedFlat[key] = true
 			}
 		}
 	}
@@ -303,7 +303,8 @@ func prepareResponsesNamespaceBridge(r *http.Request) (*responsesNamespaceBridge
 		return nil, err
 	}
 	flattened := make([]any, 0, len(tools))
-	wire := make(map[string]map[string]any) // alias → its single upstream definition
+	sentGuidance := make(map[string]bool)
+	const sharedPrefix = "\nShared guidance for all tools in this namespace: "
 	for _, value := range tools {
 		tool := object(value)
 		if stringValue(tool["type"]) != "namespace" {
@@ -334,17 +335,19 @@ func prepareResponsesNamespaceBridge(r *http.Request) (*responsesNamespaceBridge
 				if len(children) == 1 {
 					guidance = " " + shared
 				} else {
-					guidance = "\nShared guidance for all tools in this namespace: " + shared
+					guidance = sharedPrefix + shared
 				}
+				sentGuidance[namespace] = true
 			}
-			definition := b.wireTool(entry, child, guidance)
-			wire[entry.alias] = definition
-			flattened = append(flattened, definition)
+			flattened = append(flattened, b.wireTool(entry, child, guidance))
 		}
 	}
 	// Rewrite each tool_search_output to the aliases it delivered and hoist
 	// every discovered alias once: DeepSeek and GLM ignore tools that appear
 	// only inside the output, and OpenAI models need them listed there too.
+	// Keep shared guidance in a top-level description once per namespace.
+	// History retains each alias and schema without repeating that guidance.
+	historyDefinitions := make(map[string]map[string]any)
 	var hoisted []any
 	for _, value := range input {
 		item := object(value)
@@ -360,19 +363,22 @@ func prepareResponsesNamespaceBridge(r *http.Request) (*responsesNamespaceBridge
 				continue
 			}
 			namespace := stringValue(tool["name"])
-			guidance := ""
-			if shared := stringValue(b.groups[namespace]["description"]); shared != "" {
-				guidance = "\nShared guidance for all tools in this namespace: " + shared
-			}
 			children, _ := tool["tools"].([]any)
 			for _, value := range children {
 				child := object(value)
 				entry := b.tools[namespaceToolID(stringValue(child["type"]), namespace, stringValue(child["name"]))]
-				definition := wire[entry.alias]
+				definition := historyDefinitions[entry.alias]
 				if definition == nil {
-					definition = b.wireTool(entry, entry.original, guidance)
-					wire[entry.alias] = definition
-					hoisted = append(hoisted, definition)
+					definition = b.wireTool(entry, entry.original, "")
+					historyDefinitions[entry.alias] = definition
+					if entry.dynamic {
+						topLevel := definition
+						if shared := stringValue(b.groups[namespace]["description"]); shared != "" && !sentGuidance[namespace] {
+							topLevel = b.wireTool(entry, entry.original, sharedPrefix+shared)
+							sentGuidance[namespace] = true
+						}
+						hoisted = append(hoisted, topLevel)
+					}
 				}
 				rewritten = append(rewritten, definition)
 			}
@@ -526,7 +532,7 @@ func (b *responsesNamespaceBridge) restoreTools(response map[string]any) error {
 		tool := object(value)
 		entry := b.aliases[stringValue(tool["name"])]
 		// Tools hoisted from tool_search_output were never in the client's tools.
-		if entry != nil && entry.dynamic || entry == nil && b.hoistedFlat[stringValue(tool["name"])] {
+		if entry != nil && entry.dynamic || entry == nil && b.hoistedFlat[stringValue(tool["type"])+"\x00"+stringValue(tool["name"])] {
 			continue
 		}
 		if entry == nil {

@@ -718,7 +718,9 @@ func TestNamespaceGatewayContractDynamicToolSearch(t *testing.T) {
 				if !strings.HasPrefix(alias, "kilo_ns_") || ngMarker(object(tools[1])) != "dynamic" {
 					t.Errorf("hoisted tool is not the aliased lookup: %s", ngJSON(t, tools[1]))
 				}
-				ngEqual(t, "output lists the hoisted alias", object(wire["input"].([]any)[2])["tools"], []any{tools[1]})
+				expected := namespaceCopyObject(object(tools[1]))
+				expected["description"] = strings.Replace(stringValue(expected["description"]), "\nShared guidance for all tools in this namespace: Original client namespace weather", "", 1)
+				ngEqual(t, "output lists the hoisted alias without repeated guidance", object(wire["input"].([]any)[2])["tools"], []any{expected})
 				response := map[string]any{"id": "resp_dynamic", "object": "response", "status": "completed", "tools": wire["tools"], "tool_choice": "auto", "output": []any{
 					map[string]any{"type": "function_call", "id": "fc_dynamic", "call_id": "call_dynamic", "name": alias, "arguments": arguments, "status": "completed"},
 				}}
