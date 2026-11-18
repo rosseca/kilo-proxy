@@ -251,7 +251,7 @@ export function codexCatalog(models, defaultModel) {
     base_instructions:instructions,
     supports_reasoning_summaries:false, supports_reasoning_summary_parameter:false,
     support_verbosity:false, prefer_websockets:false, use_responses_lite:false,
-    supports_parallel_tool_calls:false, experimental_supported_tools:[],
+    supports_parallel_tool_calls:false, supports_search_tool:m.tools === true, experimental_supported_tools:[],
     truncation_policy:{mode:'tokens',limit:10000},
     input_modalities:m.inputModalities?.includes('image') ? ['text','image'] : ['text'],
     context_window:contextLimits(m).contextWindow,

@@ -655,9 +655,7 @@ func TestNamespaceGatewayContractRejectsUnsupportedWithoutSending(t *testing.T) 
 	cases := []struct {
 		name   string
 		mutate func(map[string]any)
-	}{{"previous-response", func(d map[string]any) { d["previous_response_id"] = "resp_previous" }}, {"dynamic-tools", func(d map[string]any) { d["tools"] = append(d["tools"].([]any), map[string]any{"type": "tool_search"}) }}, {"dynamic-results", func(d map[string]any) {
-		d["input"] = append(d["input"].([]any), map[string]any{"type": "tool_search_output", "id": "search_output", "tools": []any{}})
-	}}, {"hosted-child", func(d map[string]any) {
+	}{{"previous-response", func(d map[string]any) { d["previous_response_id"] = "resp_previous" }}, {"hosted-child", func(d map[string]any) {
 		object(d["tools"].([]any)[0])["tools"] = []any{map[string]any{"type": "web_search"}}
 	}}, {"bare-ambiguous-choice", func(d map[string]any) { d["tool_choice"] = map[string]any{"type": "function", "name": "spawn_agent"} }}}
 	for _, c := range cases {
@@ -689,6 +687,66 @@ func TestNamespaceGatewayContractFlatAndOtherProtocolsPassThrough(t *testing.T) 
 				t.Errorf("passthrough status=%d body=%s", result.status, result.body)
 			}
 			ngEqual(t, "passthrough response", ngDoc(t, result.body), map[string]any{"id": "resp_passthrough", "output": []any{}, "sentinel": "preserve"})
+		})
+	}
+}
+
+// Codex with tool search on: MCP tools arrive in tool_search_output, not in
+// top-level tools, and must round-trip through the proxy like declared ones.
+func TestNamespaceGatewayContractDynamicToolSearch(t *testing.T) {
+	search := map[string]any{"type": "tool_search", "execution": "client", "description": "Search deferred tools."}
+	lookup := ngFunction(ngID{namespace: "weather", name: "lookup", marker: "dynamic"})
+	group := map[string]any{"type": "namespace", "name": "weather", "description": "Original client namespace weather", "tools": []any{lookup}}
+	arguments := ngArgs(t, "dynamic")
+	for _, stream := range []bool{false, true} {
+		t.Run(fmt.Sprintf("stream=%t", stream), func(t *testing.T) {
+			req := map[string]any{"model": "deepseek/test-model", "stream": stream, "tools": []any{search}, "input": []any{
+				map[string]any{"role": "user", "content": "Use the weather tool"},
+				map[string]any{"type": "tool_search_call", "call_id": "ts_1", "status": "completed", "execution": "client", "arguments": map[string]any{"query": "weather"}},
+				map[string]any{"type": "tool_search_output", "call_id": "ts_1", "status": "completed", "execution": "client", "tools": []any{group}},
+			}}
+			result := ngProxy(t, "/v1/responses", ngJSON(t, req), func(wire map[string]any) ([]byte, string) {
+				if bytes.Contains(ngJSON(t, wire), []byte(`"namespace"`)) {
+					t.Errorf("namespace reached upstream: %s", ngJSON(t, wire))
+				}
+				tools, _ := wire["tools"].([]any)
+				if len(tools) != 2 {
+					t.Fatalf("want tool_search plus one hoisted alias, got %s", ngJSON(t, tools))
+				}
+				ngEqual(t, "tool_search forwarded unchanged", tools[0], search)
+				alias := stringValue(object(tools[1])["name"])
+				if !strings.HasPrefix(alias, "kilo_ns_") || ngMarker(object(tools[1])) != "dynamic" {
+					t.Errorf("hoisted tool is not the aliased lookup: %s", ngJSON(t, tools[1]))
+				}
+				ngEqual(t, "output lists the hoisted alias", object(wire["input"].([]any)[2])["tools"], []any{tools[1]})
+				response := map[string]any{"id": "resp_dynamic", "object": "response", "status": "completed", "tools": wire["tools"], "tool_choice": "auto", "output": []any{
+					map[string]any{"type": "function_call", "id": "fc_dynamic", "call_id": "call_dynamic", "name": alias, "arguments": arguments, "status": "completed"},
+				}}
+				if stream {
+					return ngSSE(t, response), "text/event-stream"
+				}
+				return ngJSON(t, response), "application/json"
+			})
+			if result.status != 200 {
+				t.Fatalf("status=%d body=%s", result.status, result.body)
+			}
+			var client map[string]any
+			if stream {
+				var added, done map[string]map[string]any
+				var delta map[string]string
+				client, added, delta, done = ngReadSSE(t, result.body)
+				for label, event := range map[string]map[string]any{"added": added["fc_dynamic"], "done": done["fc_dynamic"]} {
+					if event["namespace"] != "weather" || event["name"] != "lookup" {
+						t.Errorf("SSE %s identity not restored: %s", label, ngJSON(t, event))
+					}
+				}
+				ngEqual(t, "SSE argument bytes", delta["fc_dynamic"], arguments)
+			} else {
+				client = ngDoc(t, result.body)
+			}
+			call := object(client["output"].([]any)[0])
+			ngEqual(t, "restored call", map[string]any{"namespace": call["namespace"], "name": call["name"], "arguments": call["arguments"]}, map[string]any{"namespace": "weather", "name": "lookup", "arguments": arguments})
+			ngEqual(t, "echoed tools match the client's", client["tools"], []any{search})
 		})
 	}
 }

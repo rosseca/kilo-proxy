@@ -144,7 +144,10 @@ func buildCodexCatalog(models []nativeModelChoice, initial string, xcode bool) (
 			"shell_type": "default", "visibility": "list", "supported_in_api": true, "priority": len(entries),
 			"base_instructions": nativeCodexInstructions, "supports_reasoning_summaries": false,
 			"supports_reasoning_summary_parameter": false, "support_verbosity": false, "prefer_websockets": false,
-			"use_responses_lite": false, "supports_parallel_tool_calls": false, "experimental_supported_tools": []string{},
+			"use_responses_lite": false, "supports_parallel_tool_calls": false,
+			// Codex defers MCP tools behind client-side tool_search only when the catalog
+			// allows it; otherwise every MCP tool is sent inline on every request.
+			"supports_search_tool": m.Tools != nil && *m.Tools, "experimental_supported_tools": []string{},
 			"truncation_policy": map[string]any{"mode": "tokens", "limit": 10000}, "input_modalities": modalities,
 		}
 		context, err := contextPolicyForChoice(choice)
