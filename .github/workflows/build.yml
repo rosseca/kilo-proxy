@@ -66,9 +66,9 @@ jobs:
             shard: 2
             shards: 2
     runs-on: ubuntu-24.04
-    # The complete serial WebKit suite can consume the whole job deadline.
-    # Split its files across two jobs, preserving setup and report time in each.
-    timeout-minutes: 30
+    # Keep WebKit's dependency downloads and test runs on separate deadlines.
+    # Allow five extra minutes for checkout, tool setup, and report upload.
+    timeout-minutes: ${{ matrix.browser == 'webkit' && 65 || 30 }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -80,7 +80,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps ${{ matrix.browser }}
+        timeout-minutes: 30
       - run: npm run test:e2e -- --project=${{ matrix.browser }} --shard=${{ matrix.shard }}/${{ matrix.shards }}
+        timeout-minutes: 30
       # Keep retry traces even if the job ultimately succeeds.
       - uses: actions/upload-artifact@v4
         if: always()
