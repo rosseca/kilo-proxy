@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"reflect"
 	"sort"
 	"strings"
 )
@@ -22,6 +23,9 @@ import (
 type responsesNamespaceTool struct {
 	kind, namespace, name, alias string
 	original                     map[string]any
+	// dynamic tools were delivered only by tool_search_output, never declared
+	// in the client's top-level tools.
+	dynamic bool
 }
 
 type responsesNamespaceBridge struct {
@@ -31,6 +35,7 @@ type responsesNamespaceBridge struct {
 	reservedNames map[string]bool
 	groups        map[string]map[string]any
 	choiceRefs    map[string]map[string]any
+	hoistedFlat   map[string]bool
 }
 
 func namespaceToolID(kind, namespace, name string) string {
@@ -63,22 +68,78 @@ func namespaceCallKind(item map[string]any) string {
 	return ""
 }
 
-func (b *responsesNamespaceBridge) register(kind, namespace, name string, original map[string]any) error {
+func (b *responsesNamespaceBridge) register(kind, namespace, name string, original map[string]any, dynamic bool) error {
 	if kind != "function" && kind != "custom" || namespace == "" || name == "" || strings.ContainsRune(namespace+name, '\x00') {
 		return errors.New("invalid client tool namespace identity")
 	}
 	key := namespaceToolID(kind, namespace, name)
 	if existing := b.tools[key]; existing != nil {
 		if original != nil && existing.original != nil {
-			return errors.New("duplicate client tool in a namespace")
+			// tool_search may deliver the same tool repeatedly or alongside its
+			// declaration; only a different definition is ambiguous.
+			if !reflect.DeepEqual(existing.original, original) {
+				return errors.New("conflicting definitions for tool " + namespace + "." + name)
+			}
+			return nil
 		}
 		if original != nil {
 			existing.original = namespaceCopyObject(original)
+			existing.dynamic = dynamic
 		}
 		return nil
 	}
-	b.tools[key] = &responsesNamespaceTool{kind: kind, namespace: namespace, name: name, original: namespaceCopyObject(original)}
+	b.tools[key] = &responsesNamespaceTool{kind: kind, namespace: namespace, name: name, original: namespaceCopyObject(original), dynamic: dynamic && original != nil}
 	return nil
+}
+
+// validateNamespaceGroup applies the same client-tool rules to declared groups
+// and to groups delivered by tool_search_output.
+func validateNamespaceGroup(tool map[string]any) (string, []any, error) {
+	if !namespaceValidName(tool["name"]) {
+		return "", nil, errors.New("namespace tools require a non-empty name")
+	}
+	for key := range tool {
+		if key != "type" && key != "name" && key != "description" && key != "tools" {
+			return "", nil, errors.New("unsupported tool namespace property")
+		}
+	}
+	if description, exists := tool["description"]; exists {
+		if _, ok := description.(string); !ok {
+			return "", nil, errors.New("namespace description must be a string")
+		}
+	}
+	children, ok := tool["tools"].([]any)
+	if !ok || len(children) == 0 {
+		return "", nil, errors.New("namespace tools require a non-empty client tool list")
+	}
+	names := make(map[string]bool)
+	for _, value := range children {
+		child := object(value)
+		kind := stringValue(child["type"])
+		if kind != "function" && kind != "custom" {
+			return "", nil, errors.New("a tool namespace may contain only function or custom client tools")
+		}
+		if !namespaceValidName(child["name"]) || names[stringValue(child["name"])] {
+			return "", nil, errors.New("namespace client tools require unique non-empty names")
+		}
+		if _, exists := child["namespace"]; exists {
+			return "", nil, errors.New("nested tool namespace identities are unsupported")
+		}
+		names[stringValue(child["name"])] = true
+	}
+	return stringValue(tool["name"]), children, nil
+}
+
+// wireTool is the flat, aliased upstream form of one namespace child.
+func (b *responsesNamespaceBridge) wireTool(entry *responsesNamespaceTool, child map[string]any, guidance string) map[string]any {
+	wire := namespaceCopyObject(child)
+	wire["name"] = entry.alias
+	context := "Client tool: " + entry.namespace + "." + entry.name + ". Tool namespace: " + entry.namespace + "." + guidance
+	if description := stringValue(child["description"]); description != "" {
+		context += "\n" + description
+	}
+	wire["description"] = context
+	return wire
 }
 
 func prepareResponsesNamespaceBridge(r *http.Request) (*responsesNamespaceBridge, error) {
@@ -101,6 +162,7 @@ func prepareResponsesNamespaceBridge(r *http.Request) (*responsesNamespaceBridge
 	b := &responsesNamespaceBridge{
 		tools: make(map[string]*responsesNamespaceTool), aliases: make(map[string]*responsesNamespaceTool),
 		flatNames: make(map[string]bool), reservedNames: make(map[string]bool), groups: make(map[string]map[string]any), choiceRefs: make(map[string]map[string]any),
+		hoistedFlat: make(map[string]bool),
 	}
 	tools, toolsArray := doc["tools"].([]any)
 	for _, value := range tools {
@@ -112,54 +174,83 @@ func prepareResponsesNamespaceBridge(r *http.Request) (*responsesNamespaceBridge
 			}
 			continue
 		}
-		if !namespaceValidName(tool["name"]) {
-			return nil, errors.New("namespace tools require a non-empty name")
+		namespace, children, err := validateNamespaceGroup(tool)
+		if err != nil {
+			return nil, err
 		}
-		namespace := stringValue(tool["name"])
 		if _, exists := b.groups[namespace]; exists {
 			return nil, errors.New("duplicate tool namespace")
 		}
-		for key := range tool {
-			if key != "type" && key != "name" && key != "description" && key != "tools" {
-				return nil, errors.New("unsupported tool namespace property")
-			}
-		}
-		if description, exists := tool["description"]; exists {
-			if _, ok := description.(string); !ok {
-				return nil, errors.New("namespace description must be a string")
-			}
-		}
-		children, ok := tool["tools"].([]any)
-		if !ok || len(children) == 0 {
-			return nil, errors.New("namespace tools require a non-empty client tool list")
-		}
 		b.groups[namespace] = namespaceCopyObject(tool)
-		names := make(map[string]bool)
 		for _, value := range children {
 			child := object(value)
-			kind := stringValue(child["type"])
-			if kind != "function" && kind != "custom" {
-				return nil, errors.New("a tool namespace may contain only function or custom client tools")
-			}
-			if !namespaceValidName(child["name"]) || names[stringValue(child["name"])] {
-				return nil, errors.New("namespace client tools require unique non-empty names")
-			}
-			if _, exists := child["namespace"]; exists {
-				return nil, errors.New("nested tool namespace identities are unsupported")
-			}
-			names[stringValue(child["name"])] = true
-			if err := b.register(kind, namespace, stringValue(child["name"]), child); err != nil {
+			if err := b.register(stringValue(child["type"]), namespace, stringValue(child["name"]), child, false); err != nil {
 				return nil, err
 			}
 		}
 	}
+	// Codex tool_search delivers deferred tools in tool_search_output items,
+	// each a ranked subset of a namespace in any order. Register their union
+	// so calls round-trip like declared tools; they are hoisted below because
+	// some upstream models only call tools declared at the top level.
+	input, _ := doc["input"].([]any)
+	topFlat := make(map[string]map[string]any)
+	for _, value := range tools {
+		tool := object(value)
+		if kind := stringValue(tool["type"]); kind == "function" || kind == "custom" {
+			topFlat[kind+"\x00"+stringValue(tool["name"])] = tool
+		}
+	}
+	var discoveredFlat []any
+	for _, value := range input {
+		item := object(value)
+		if stringValue(item["type"]) != "tool_search_output" {
+			continue
+		}
+		delivered, _ := item["tools"].([]any)
+		for _, value := range delivered {
+			tool := object(value)
+			switch kind := stringValue(tool["type"]); kind {
+			case "namespace":
+				namespace, children, err := validateNamespaceGroup(tool)
+				if err != nil {
+					return nil, err
+				}
+				if _, exists := b.groups[namespace]; !exists {
+					b.groups[namespace] = namespaceCopyObject(tool)
+				}
+				for _, value := range children {
+					child := object(value)
+					if err := b.register(stringValue(child["type"]), namespace, stringValue(child["name"]), child, true); err != nil {
+						return nil, err
+					}
+				}
+			case "function", "custom":
+				name := stringValue(tool["name"])
+				if name == "" {
+					continue
+				}
+				key := kind + "\x00" + name
+				if existing := topFlat[key]; existing != nil {
+					if !reflect.DeepEqual(existing, tool) {
+						return nil, errors.New("conflicting definitions for tool " + name)
+					}
+					continue
+				}
+				topFlat[key] = tool
+				discoveredFlat = append(discoveredFlat, tool)
+				b.flatNames[key] = true
+				b.reservedNames[name] = true
+				b.hoistedFlat[key] = true
+			}
+		}
+	}
 	// The demonstrated gateway filter drops namespace declarations, not
-	// historical calls. Without a declared group, preserve the existing wire
-	// contract (including Codex delegation notifications) exactly.
+	// historical calls. Without a declared or discovered group, preserve the
+	// existing wire contract (including Codex delegation notifications) exactly.
 	if len(b.groups) == 0 {
 		return nil, nil
 	}
-	input, _ := doc["input"].([]any)
 	for _, value := range input {
 		item := object(value)
 		kind := namespaceCallKind(item)
@@ -175,7 +266,7 @@ func prepareResponsesNamespaceBridge(r *http.Request) (*responsesNamespaceBridge
 		}
 		// Full history can mention a tool no longer in this turn's declarations.
 		// Its explicit identity is sufficient; no shared ID/name cache is used.
-		if err := b.register(kind, namespace, name, nil); err != nil {
+		if err := b.register(kind, namespace, name, nil, false); err != nil {
 			return nil, err
 		}
 	}
@@ -187,16 +278,6 @@ func prepareResponsesNamespaceBridge(r *http.Request) (*responsesNamespaceBridge
 	}
 	if doc["conversation"] != nil {
 		return nil, errors.New("namespace compatibility requires full input history; conversation state is unsupported")
-	}
-	for _, value := range tools {
-		if stringValue(object(value)["type"]) == "tool_search" {
-			return nil, errors.New("namespace compatibility does not support dynamic tool_search; send explicit tool declarations and full input history")
-		}
-	}
-	for _, value := range input {
-		if stringValue(object(value)["type"]) == "tool_search_output" {
-			return nil, errors.New("namespace compatibility does not support dynamic tool_search_output; send explicit tool declarations and full input history")
-		}
 	}
 	// Sort identities so request ordering cannot decide which name wins a
 	// collision with an existing flat tool. Aliases reveal no argument content.
@@ -222,6 +303,8 @@ func prepareResponsesNamespaceBridge(r *http.Request) (*responsesNamespaceBridge
 		return nil, err
 	}
 	flattened := make([]any, 0, len(tools))
+	sentGuidance := make(map[string]bool)
+	const sharedPrefix = "\nShared guidance for all tools in this namespace: "
 	for _, value := range tools {
 		tool := object(value)
 		if stringValue(tool["type"]) != "namespace" {
@@ -245,26 +328,65 @@ func prepareResponsesNamespaceBridge(r *http.Request) (*responsesNamespaceBridge
 			}
 		}
 		for i, value := range children {
-			child := namespaceCopyObject(object(value))
+			child := object(value)
 			entry := b.tools[namespaceToolID(stringValue(child["type"]), namespace, stringValue(child["name"]))]
-			child["name"] = entry.alias
-			context := "Client tool: " + namespace + "." + entry.name + ". Tool namespace: " + namespace + "."
+			guidance := ""
 			if i == carrier && shared != "" {
 				if len(children) == 1 {
-					context += " " + shared
+					guidance = " " + shared
 				} else {
-					context += "\nShared guidance for all tools in this namespace: " + shared
+					guidance = sharedPrefix + shared
 				}
+				sentGuidance[namespace] = true
 			}
-			if description := stringValue(child["description"]); description != "" {
-				context += "\n" + description
-			}
-			child["description"] = context
-			flattened = append(flattened, child)
+			flattened = append(flattened, b.wireTool(entry, child, guidance))
 		}
 	}
-	if toolsArray {
-		doc["tools"] = flattened
+	// Rewrite each tool_search_output to the aliases it delivered and hoist
+	// every discovered alias once: DeepSeek and GLM ignore tools that appear
+	// only inside the output, and OpenAI models need them listed there too.
+	// Keep shared guidance in a top-level description once per namespace.
+	// History retains each alias and schema without repeating that guidance.
+	historyDefinitions := make(map[string]map[string]any)
+	var hoisted []any
+	for _, value := range input {
+		item := object(value)
+		if stringValue(item["type"]) != "tool_search_output" {
+			continue
+		}
+		delivered, _ := item["tools"].([]any)
+		rewritten := make([]any, 0, len(delivered))
+		for _, value := range delivered {
+			tool := object(value)
+			if stringValue(tool["type"]) != "namespace" {
+				rewritten = append(rewritten, value)
+				continue
+			}
+			namespace := stringValue(tool["name"])
+			children, _ := tool["tools"].([]any)
+			for _, value := range children {
+				child := object(value)
+				entry := b.tools[namespaceToolID(stringValue(child["type"]), namespace, stringValue(child["name"]))]
+				definition := historyDefinitions[entry.alias]
+				if definition == nil {
+					definition = b.wireTool(entry, entry.original, "")
+					historyDefinitions[entry.alias] = definition
+					if entry.dynamic {
+						topLevel := definition
+						if shared := stringValue(b.groups[namespace]["description"]); shared != "" && !sentGuidance[namespace] {
+							topLevel = b.wireTool(entry, entry.original, sharedPrefix+shared)
+							sentGuidance[namespace] = true
+						}
+						hoisted = append(hoisted, topLevel)
+					}
+				}
+				rewritten = append(rewritten, definition)
+			}
+		}
+		item["tools"] = rewritten
+	}
+	if toolsArray || len(hoisted)+len(discoveredFlat) > 0 {
+		doc["tools"] = append(append(flattened, hoisted...), discoveredFlat...)
 	}
 	for _, value := range input {
 		item := object(value)
@@ -409,6 +531,10 @@ func (b *responsesNamespaceBridge) restoreTools(response map[string]any) error {
 	for _, value := range tools {
 		tool := object(value)
 		entry := b.aliases[stringValue(tool["name"])]
+		// Tools hoisted from tool_search_output were never in the client's tools.
+		if entry != nil && entry.dynamic || entry == nil && b.hoistedFlat[stringValue(tool["type"])+"\x00"+stringValue(tool["name"])] {
+			continue
+		}
 		if entry == nil {
 			restored = append(restored, value)
 			continue

@@ -254,6 +254,14 @@ func prepareGeminiToolSchemas(r *http.Request, model string) error {
 	if err != nil {
 		return err
 	}
+	input, _ := doc["input"].([]any)
+	for _, item := range input {
+		discoveredChanged, err := normalizeGeminiTools(responsesToolSearchOutputTools(item), 0)
+		if err != nil {
+			return err
+		}
+		changed = changed || discoveredChanged
+	}
 	if !changed {
 		return nil
 	}

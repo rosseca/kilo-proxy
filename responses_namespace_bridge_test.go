@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -302,14 +303,13 @@ func TestResponsesNamespaceBridgeRejectUnsupported(t *testing.T) {
 		namespaceTestDoc(namespaceTestGroup("group", namespaceTestFunction("x")), namespaceTestGroup("group", namespaceTestFunction("y"))),
 		namespaceTestDoc(namespaceTestGroup("", namespaceTestFunction("x"))),
 		namespaceTestDoc(namespaceTestGroup("group")),
-		namespaceTestDoc(namespaceTestGroup("group", namespaceTestFunction("x")), map[string]any{"type": "tool_search"}),
 	}
 	previous := namespaceTestDoc(namespaceTestGroup("group", namespaceTestFunction("x")))
 	previous["previous_response_id"] = "resp_saved"
 	cases = append(cases, previous)
-	dynamic := namespaceTestDoc(namespaceTestGroup("group", namespaceTestFunction("x")))
-	dynamic["input"] = []any{map[string]any{"type": "tool_search_output", "tools": []any{}}}
-	cases = append(cases, dynamic)
+	hostedDiscovery := namespaceTestDoc(map[string]any{"type": "tool_search"})
+	hostedDiscovery["input"] = []any{map[string]any{"type": "tool_search_output", "tools": []any{namespaceTestGroup("group", map[string]any{"type": "web_search"})}}}
+	cases = append(cases, hostedDiscovery)
 	bare := namespaceTestDoc(namespaceTestGroup("group", namespaceTestFunction("x")))
 	bare["tool_choice"] = map[string]any{"type": "function", "name": "x"}
 	cases = append(cases, bare)
@@ -475,5 +475,263 @@ func TestResponsesNamespaceBridgeHistoryWithoutGroupsExact(t *testing.T) {
 				t.Fatal("history-only request bytes, length, or headers changed")
 			}
 		})
+	}
+}
+
+func dynamicTestSearchTool() map[string]any {
+	return map[string]any{"type": "tool_search", "execution": "client", "description": "Search deferred tools."}
+}
+func dynamicTestOutput(callID string, tools ...any) map[string]any {
+	return map[string]any{"type": "tool_search_output", "call_id": callID, "status": "completed", "execution": "client", "tools": tools}
+}
+func dynamicTestDoc(input ...any) map[string]any {
+	doc := namespaceTestDoc(dynamicTestSearchTool())
+	doc["input"] = append([]any{map[string]any{"role": "user", "content": "find orrery"}}, input...)
+	return doc
+}
+
+// dynamicTestAlias finds the wire alias carrying namespace.name in its description context.
+func dynamicTestAlias(t *testing.T, tools []any, qualified string) string {
+	t.Helper()
+	for _, value := range tools {
+		tool := object(value)
+		if strings.HasPrefix(stringValue(tool["description"]), "Client tool: "+qualified+".") {
+			return stringValue(tool["name"])
+		}
+	}
+	t.Fatalf("no alias for %s in %#v", qualified, tools)
+	return ""
+}
+
+func TestResponsesNamespaceBridgeDynamicDiscovery(t *testing.T) {
+	search, read := namespaceTestFunction("search"), namespaceTestFunction("read")
+	doc := dynamicTestDoc(
+		map[string]any{"type": "tool_search_call", "call_id": "ts1", "status": "completed", "execution": "client", "arguments": map[string]any{"query": "orrery"}},
+		dynamicTestOutput("ts1", namespaceTestGroup("mcp__orrery", search, read)),
+		map[string]any{"type": "function_call", "call_id": "c1", "namespace": "mcp__orrery", "name": "search", "arguments": "{\"marker\":\"x\"}"},
+	)
+	bridge, wire := namespaceTestPrepare(t, doc)
+	if bridge == nil {
+		t.Fatal("bridge inactive for a discovered namespace")
+	}
+	raw, _ := json.Marshal(wire)
+	if bytes.Contains(raw, []byte(`"namespace"`)) {
+		t.Fatalf("namespace leaked upstream: %s", raw)
+	}
+	tools := wire["tools"].([]any)
+	if len(tools) != 3 || !reflect.DeepEqual(tools[0], dynamicTestSearchTool()) {
+		t.Fatalf("want tool_search unchanged plus two hoisted aliases, got %#v", tools)
+	}
+	searchAlias := dynamicTestAlias(t, tools[1:], "mcp__orrery.search")
+	dynamicTestAlias(t, tools[1:], "mcp__orrery.read")
+	input := wire["input"].([]any)
+	delivered := object(input[2])["tools"].([]any)
+	if len(delivered) != 2 {
+		t.Fatalf("output must list both aliased tools, got %#v", delivered)
+	}
+	for i, value := range tools[1:] {
+		expected := namespaceCopyObject(object(value))
+		expected["description"] = strings.Replace(stringValue(expected["description"]), "\nShared guidance for all tools in this namespace: Original group", "", 1)
+		if !reflect.DeepEqual(delivered[i], expected) {
+			t.Fatalf("aliased output tool differs from top level beyond shared guidance: %#v, want %#v", delivered[i], expected)
+		}
+	}
+	hoisted := object(tools[1])
+	if !reflect.DeepEqual(hoisted["parameters"], search["parameters"]) && !reflect.DeepEqual(hoisted["parameters"], read["parameters"]) {
+		t.Fatal("hoisted schema changed")
+	}
+	call := object(input[3])
+	if call["name"] != searchAlias || call["call_id"] != "c1" || call["arguments"] != "{\"marker\":\"x\"}" {
+		t.Fatalf("history call not aliased: %#v", call)
+	}
+	client := namespaceTestResponse(t, bridge, map[string]any{"output": []any{map[string]any{"type": "function_call", "call_id": "c2", "name": searchAlias, "arguments": "{\"marker\":\"y\"}"}}})
+	restored := object(client["output"].([]any)[0])
+	if restored["namespace"] != "mcp__orrery" || restored["name"] != "search" || restored["arguments"] != "{\"marker\":\"y\"}" {
+		t.Fatalf("call not restored: %#v", restored)
+	}
+}
+
+func TestResponsesNamespaceBridgeDynamicRepeatedDiscovery(t *testing.T) {
+	search, read, status := namespaceTestFunction("search"), namespaceTestFunction("read"), namespaceTestFunction("status")
+	t.Run("partial subsets merge", func(t *testing.T) {
+		doc := dynamicTestDoc(
+			dynamicTestOutput("ts1", namespaceTestGroup("mcp__orrery", search, status)),
+			dynamicTestOutput("ts2", namespaceTestGroup("mcp__orrery", read, search)),
+		)
+		_, wire := namespaceTestPrepare(t, doc)
+		tools := wire["tools"].([]any)
+		if len(tools) != 4 {
+			t.Fatalf("want tool_search + 3 unique aliases, got %d", len(tools))
+		}
+		input := wire["input"].([]any)
+		first, second := object(input[1])["tools"].([]any), object(input[2])["tools"].([]any)
+		if len(first) != 2 || len(second) != 2 {
+			t.Fatal("each output must list only the children it delivered")
+		}
+		if dynamicTestAlias(t, first, "mcp__orrery.search") != dynamicTestAlias(t, second, "mcp__orrery.search") || dynamicTestAlias(t, first, "mcp__orrery.search") != dynamicTestAlias(t, tools[1:], "mcp__orrery.search") {
+			t.Fatal("one child must have one alias everywhere")
+		}
+	})
+	t.Run("declared and discovered", func(t *testing.T) {
+		doc := namespaceTestDoc(dynamicTestSearchTool(), namespaceTestGroup("mcp__orrery", search, read))
+		doc["input"] = []any{dynamicTestOutput("ts1", namespaceTestGroup("mcp__orrery", search))}
+		_, wire := namespaceTestPrepare(t, doc)
+		tools := wire["tools"].([]any)
+		if len(tools) != 3 {
+			t.Fatalf("declared children must not be hoisted again, got %d tools", len(tools))
+		}
+		delivered := object(wire["input"].([]any)[0])["tools"].([]any)
+		if len(delivered) != 1 || dynamicTestAlias(t, delivered, "mcp__orrery.search") != dynamicTestAlias(t, tools[1:], "mcp__orrery.search") {
+			t.Fatal("discovered declared child must reuse the declared alias")
+		}
+	})
+	changed := namespaceTestFunction("search")
+	changed["description"] = "A different definition"
+	for name, doc := range map[string]map[string]any{
+		"between outputs": dynamicTestDoc(dynamicTestOutput("ts1", namespaceTestGroup("mcp__orrery", search)), dynamicTestOutput("ts2", namespaceTestGroup("mcp__orrery", changed))),
+		"against declaration": func() map[string]any {
+			d := namespaceTestDoc(namespaceTestGroup("mcp__orrery", search))
+			d["input"] = []any{dynamicTestOutput("ts1", namespaceTestGroup("mcp__orrery", changed))}
+			return d
+		}(),
+	} {
+		t.Run("conflict "+name, func(t *testing.T) {
+			raw, _ := json.Marshal(doc)
+			request := httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(raw))
+			if _, err := prepareResponsesNamespaceBridge(request); err == nil || !strings.Contains(err.Error(), "conflicting") {
+				t.Fatalf("want conflicting error, got %v", err)
+			}
+		})
+	}
+}
+
+func TestResponsesNamespaceBridgeDynamicSharedGuidanceOnce(t *testing.T) {
+	const marker = "Unique shared instructions for weather tools."
+	const toolCount = 402
+	guidance := marker + strings.Repeat(" More namespace guidance.", 650)
+	tools := make([]any, toolCount)
+	for i := range tools {
+		tools[i] = namespaceTestFunction("lookup_" + strconv.Itoa(i))
+	}
+	group := func(children ...any) map[string]any {
+		result := namespaceTestGroup("weather", children...)
+		result["description"] = guidance
+		return result
+	}
+	for _, declared := range []bool{false, true} {
+		name := "discovered only"
+		if declared {
+			name = "declared and discovered"
+		}
+		t.Run(name, func(t *testing.T) {
+			doc := dynamicTestDoc(dynamicTestOutput("ts1", group(tools[:250]...)), dynamicTestOutput("ts2", group(tools[150:]...)))
+			if declared {
+				doc["tools"] = append(doc["tools"].([]any), group(tools[0]))
+			}
+			_, wire := namespaceTestPrepare(t, doc)
+			registered := wire["tools"].([]any)
+			if len(registered) != toolCount+1 {
+				t.Fatalf("want %d registered tools plus tool search, got %d", toolCount, len(registered))
+			}
+			sent, _ := json.Marshal(wire)
+			if count := bytes.Count(sent, []byte(marker)); count != 1 {
+				t.Fatalf("shared namespace guidance appears %d times in %d upstream bytes, want once", count, len(sent))
+			}
+			input := wire["input"].([]any)
+			first := object(input[1])["tools"].([]any)
+			second := object(input[2])["tools"].([]any)
+			if len(first) != 250 || len(second) != toolCount-150 {
+				t.Fatal("search outputs must retain the tools they discovered")
+			}
+			if !reflect.DeepEqual(first[150], second[0]) {
+				t.Fatal("repeated discoveries must retain the same alias and schema")
+			}
+		})
+	}
+}
+
+func TestResponsesNamespaceBridgeDynamicFlatTools(t *testing.T) {
+	plain := namespaceTestFunction("plain")
+	doc := dynamicTestDoc(dynamicTestOutput("ts1", namespaceTestGroup("mcp__orrery", namespaceTestFunction("search")), plain))
+	_, wire := namespaceTestPrepare(t, doc)
+	tools := wire["tools"].([]any)
+	if len(tools) != 3 || !reflect.DeepEqual(tools[2], plain) {
+		t.Fatalf("flat discovered tool must be hoisted unchanged after aliases: %#v", tools)
+	}
+	if delivered := object(wire["input"].([]any)[1])["tools"].([]any); !reflect.DeepEqual(delivered[1], plain) {
+		t.Fatal("flat tool in output must stay unchanged")
+	}
+	declared := dynamicTestDoc(dynamicTestOutput("ts1", namespaceTestGroup("mcp__orrery", namespaceTestFunction("search")), plain))
+	declared["tools"] = append(declared["tools"].([]any), namespaceTestFunction("plain"))
+	if _, wire := namespaceTestPrepare(t, declared); len(wire["tools"].([]any)) != 3 {
+		t.Fatal("identical declared flat tool must not be duplicated")
+	}
+	other := namespaceTestFunction("plain")
+	other["description"] = "different"
+	conflict := dynamicTestDoc(dynamicTestOutput("ts1", namespaceTestGroup("mcp__orrery", namespaceTestFunction("search")), plain))
+	conflict["tools"] = append(conflict["tools"].([]any), other)
+	raw, _ := json.Marshal(conflict)
+	if _, err := prepareResponsesNamespaceBridge(httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(raw))); err == nil || !strings.Contains(err.Error(), "conflicting") {
+		t.Fatalf("want conflicting error, got %v", err)
+	}
+}
+
+func TestResponsesNamespaceBridgeDynamicEchoOmitsHoisted(t *testing.T) {
+	doc := dynamicTestDoc(dynamicTestOutput("ts1", namespaceTestGroup("mcp__orrery", namespaceTestFunction("search")), namespaceTestFunction("plain")))
+	bridge, wire := namespaceTestPrepare(t, doc)
+	client := namespaceTestResponse(t, bridge, map[string]any{"output": []any{}, "tools": wire["tools"]})
+	if !reflect.DeepEqual(client["tools"], []any{dynamicTestSearchTool()}) {
+		t.Fatalf("echo must match the client's tools, got %#v", client["tools"])
+	}
+}
+
+func TestResponsesNamespaceBridgeDynamicEchoKeepsDeclaredToolOfDifferentType(t *testing.T) {
+	declared := map[string]any{"type": "custom", "name": "shared", "format": map[string]any{"type": "text"}}
+	namespace := namespaceTestGroup("weather", namespaceTestFunction("lookup"))
+	doc := dynamicTestDoc(dynamicTestOutput("ts1", namespace, namespaceTestFunction("shared")))
+	doc["tools"] = append(doc["tools"].([]any), declared)
+	bridge, wire := namespaceTestPrepare(t, doc)
+	client := namespaceTestResponse(t, bridge, map[string]any{"tools": wire["tools"]})
+	if !reflect.DeepEqual(client["tools"], doc["tools"]) {
+		t.Fatalf("echo must retain the declared custom tool, got %#v", client["tools"])
+	}
+}
+
+func TestResponsesNamespaceBridgeDynamicAbsentToolsAndEmptyOutputs(t *testing.T) {
+	empty := dynamicTestDoc(dynamicTestOutput("ts1"))
+	raw, _ := json.Marshal(empty)
+	request := httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(raw))
+	if bridge, err := prepareResponsesNamespaceBridge(request); err != nil || bridge != nil {
+		t.Fatalf("empty discovery must pass through, got %v %v", bridge, err)
+	}
+	if body, _ := io.ReadAll(request.Body); !bytes.Equal(body, raw) {
+		t.Fatal("pass-through bytes changed")
+	}
+	noTools := map[string]any{"model": "openai/test", "input": []any{dynamicTestOutput("ts1", namespaceTestGroup("mcp__orrery", namespaceTestFunction("search")))}}
+	_, wire := namespaceTestPrepare(t, noTools)
+	if tools, _ := wire["tools"].([]any); len(tools) != 1 {
+		t.Fatalf("absent tools must be created with the hoisted alias, got %#v", wire["tools"])
+	}
+}
+
+func TestResponsesNamespaceBridgeDynamicRetiredHistory(t *testing.T) {
+	doc := dynamicTestDoc(
+		dynamicTestOutput("ts1", namespaceTestGroup("mcp__orrery", namespaceTestFunction("search"))),
+		map[string]any{"type": "function_call", "call_id": "c1", "namespace": "mcp__orrery", "name": "search", "arguments": "{}"},
+		map[string]any{"type": "function_call", "call_id": "c0", "namespace": "mcp__orrery", "name": "read", "arguments": "{}"},
+	)
+	bridge, wire := namespaceTestPrepare(t, doc)
+	tools := wire["tools"].([]any)
+	if len(tools) != 2 {
+		t.Fatalf("a retired tool known only from history must not be hoisted: %#v", tools)
+	}
+	input := wire["input"].([]any)
+	retired := object(input[3])
+	if retired["namespace"] != nil || !strings.HasPrefix(stringValue(retired["name"]), "kilo_ns_") || retired["name"] == object(input[2])["name"] {
+		t.Fatalf("retired history call must get its own alias: %#v", retired)
+	}
+	client := namespaceTestResponse(t, bridge, map[string]any{"output": []any{map[string]any{"type": "function_call", "call_id": "c2", "name": retired["name"], "arguments": "{}"}}})
+	if call := object(client["output"].([]any)[0]); call["namespace"] != "mcp__orrery" || call["name"] != "read" {
+		t.Fatalf("retired alias not restored: %#v", call)
 	}
 }
