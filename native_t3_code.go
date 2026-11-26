@@ -26,13 +26,14 @@ type nativeT3CodeInfo struct {
 }
 
 type nativeT3CodeState struct {
-	Info             nativeT3CodeInfo
-	Requested        bool
-	Loaded           bool
-	Generation       uint64
-	Connection       [32]byte
-	Error            string
-	PreferencesState nativeT3CodePreferencesState
+	Info              nativeT3CodeInfo
+	Requested         bool
+	Loaded            bool
+	Generation        uint64
+	Connection        [32]byte
+	Error             string
+	PreferencesState  nativeT3CodePreferencesState
+	TelemetryRevision uint64
 }
 
 // Only confirmed, current preferences can opt out of the Kilo model gateway.
@@ -180,7 +181,7 @@ func (u *nativeUI) t3CodeDetail(s *nativeClientSelection) uxhDetail {
 	if state.Info.ProtocolV2 {
 		chatHelp = u.tr("This T3 build can change agents between turns in the same chat. T3 transfers a summary when switching providers; previous reasoning, tool results and attachments are not transferred. Each agent keeps its own CLI profile.", "Esta compilación de T3 permite cambiar de agente entre turnos en el mismo chat. T3 transfiere un resumen al cambiar de proveedor; no transfiere el razonamiento anterior, los resultados de herramientas ni los adjuntos. Cada agente conserva su propio perfil CLI.")
 	}
-	d.blocks = append(d.blocks, u.t3CodePreferencesPanel())
+	d.blocks = append(d.blocks, u.t3CodePreferencesPanel(), u.t3CodePrivacyPanel())
 	requirements := u.tr("Detects installed T3 Code release channels, including alpha, beta and nightly. Preparation checks the installed integration contract and the CLIs required by your enabled accounts.", "Detecta canales instalados de T3 Code, incluidos alpha, beta y nightly. La preparación comprueba el contrato instalado y los CLI que requieren las cuentas activadas.")
 	if state.Info.Version != "" {
 		requirements += u.tr(" Detected: ", " Detectado: ") + state.Info.Version + "."

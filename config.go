@@ -43,6 +43,7 @@ type settings struct {
 	OpenCode1Executable             string                  `json:"openCode1Executable,omitempty"`
 	OpenCode2Executable             string                  `json:"openCode2Executable,omitempty"`
 	T3Code                          t3CodePreferences       `json:"t3Code"`
+	T3CodeTelemetryDisabled         bool                    `json:"t3CodeTelemetryDisabled,omitempty"`
 	ClaudeDesktopExperimentalModels bool                    `json:"claudeDesktopExperimentalModels,omitempty"`
 	ImageTransport                  imageTransportSettings  `json:"imageTransport"`
 	CaptureActivity                 bool                    `json:"captureActivity"`

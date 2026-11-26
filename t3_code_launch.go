@@ -267,6 +267,9 @@ func (a *app) applyT3CodeLaunch(plan *clientLaunchPlan, rt clientLaunchRuntime) 
 	plan.Env["T3CODE_HOME"] = paths.Data
 	plan.Env["HOME"] = paths.UIHome
 	plan.Env["T3CODE_DISABLE_AUTO_UPDATE"] = "true"
+	if a.config.T3CodeTelemetryDisabled {
+		plan.Env["T3CODE_TELEMETRY_ENABLED"] = "false"
+	}
 	plan.Unset = append(plan.Unset, t3CodeUnsetEnvironment(os.Environ())...)
 	if t3CodeOpenCodeKiloEnabled(saved.Preferences) {
 		for _, entry := range os.Environ() {

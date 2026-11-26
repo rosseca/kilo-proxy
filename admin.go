@@ -158,6 +158,10 @@ func (a *app) adminHandler() http.Handler {
 			a.t3CodePreferencesAPI(w, r)
 			return
 		}
+		if r.URL.Path == t3CodeTelemetryEndpoint {
+			a.t3CodeTelemetryAPI(w, r)
+			return
+		}
 		if r.URL.Path == t3CodeProfileEndpoint {
 			a.t3CodeProfileAPI(w, r)
 			return
@@ -315,6 +319,7 @@ func (a *app) state(w http.ResponseWriter) {
 	snapshot := map[string]any{
 		"connectionReady": a.connectionReadyLocked(), "kiloReady": a.kiloReadyLocked(), "chatgptReady": a.chatGPTReadyLocked(), "chatgpt": a.chatgpt.snapshot(),
 		"claudeDesktopExperimentalModels": a.claudeDesktopExperimentalLocked(),
+		"t3CodeTelemetryDisabled":         a.config.T3CodeTelemetryDisabled,
 		"imageTransport":                  a.config.ImageTransport,
 		"imageTransportDependency":        imageDependency,
 		"imageUploadWarning":              a.imageUploadWarning,

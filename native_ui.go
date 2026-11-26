@@ -672,6 +672,8 @@ func (u *nativeUI) refreshState() {
 	updateRevision, updateSaving := u.updateRevision, u.busy["POST/api/updates"] || u.busy["POST/api/updates/install"]
 	c := u.clientState()
 	desktopRevision, desktopSaving := c.DesktopExperimentalRevision, c.DesktopExperimentalTarget != nil
+	t3 := &u.agentsState().T3Code
+	telemetryRevision, telemetrySaving := t3.TelemetryRevision, u.t3CodeTelemetrySaving()
 	u.call("GET", "/api/state", nil, func(raw json.RawMessage) {
 		// A snapshot that overlaps Start or Stop can predate the completed
 		// operation. Discard it before applying any state-derived effects;
@@ -688,6 +690,7 @@ func (u *nativeUI) refreshState() {
 			return
 		}
 		desktopExperimental := u.claudeDesktopExperimentalModels()
+		telemetryDisabled := nativeBool(u.state, "t3CodeTelemetryDisabled")
 		update := u.state["update"]
 		u.acceptState(raw)
 		// A poll captured before a manual check must not restore its old status.
@@ -710,6 +713,10 @@ func (u *nativeUI) refreshState() {
 		// Ignore a Desktop option snapshot captured before or during its save.
 		if desktopSaving || desktopRevision != c.DesktopExperimentalRevision || c.DesktopExperimentalTarget != nil {
 			u.state["claudeDesktopExperimentalModels"] = desktopExperimental
+		}
+		// A poll that overlaps the T3 telemetry save may still have the old setting.
+		if telemetrySaving || telemetryRevision != t3.TelemetryRevision || u.t3CodeTelemetrySaving() {
+			u.state["t3CodeTelemetryDisabled"] = telemetryDisabled
 		}
 		// A response captured before a choice or during its save can contain
 		// the previous language, even when it arrives after the save succeeds.

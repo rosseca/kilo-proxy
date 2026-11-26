@@ -12,10 +12,54 @@ function fixture(t, api, options = {}) {
  const element=()=>({children:[],textContent:'',value:'',checked:false,disabled:false,hidden:false,listeners:{},classList:{toggle(){}},replaceChildren(){this.children=[];},append(item){this.children.push(item);},addEventListener(name,callback){this.listeners[name]=callback;},dispatch(name){this.listeners[name]?.({target:this});}});
  globalThis.document={getElementById(id){if(!nodes.has(id))nodes.set(id,element());return nodes.get(id);},createElement:element};
  t.after(()=>{globalThis.document=previous;});
- const helper=createT3CodeHelper({api:async(path,body)=>path==='clients/t3-code/preferences'?(options.preferencesAPI ? options.preferencesAPI(body) : preferencesResponse()):api(path,body),onChange(){}});
- helper.render({state:{connectionReady:true,kiloReady:true,baseURL:'http://127.0.0.1:8877/v1',localKey:'private-local-secret'},language:'en'});
- return {helper,nodes};
+ const state={connectionReady:true,kiloReady:true,baseURL:'http://127.0.0.1:8877/v1',localKey:'private-local-secret'};
+ const helper=createT3CodeHelper({api:async(path,body)=>path==='clients/t3-code/preferences'?(options.preferencesAPI ? options.preferencesAPI(body) : preferencesResponse()):api(path,body),copy:options.copy,onChange(){},onTelemetryConfirmed(disabled){state.t3CodeTelemetryDisabled=disabled;}});
+ helper.render({state,language:'en'});
+ return {helper,nodes,state};
 }
+
+test('T3 telemetry saves independently and waits for confirmation before opening',async t=>{
+ const writes=[], copied=[];
+ let confirmSave;
+ const {helper,nodes,state}=fixture(t,async(path,body)=>{
+  if(path==='model-library')return saved();
+  if(body)writes.push([path,body]);
+  if(path==='clients/t3-code/telemetry')return new Promise(resolve=>{confirmSave=resolve;});
+  return {};
+ },{copy:text=>copied.push(text)});
+ await tick();
+ const toggle=nodes.get('t3-code-telemetry-disabled');
+ assert.equal(toggle.checked,false);
+ helper.setLaunching(true);
+ assert.equal(toggle.disabled,true);
+ helper.setLaunching(false);
+ toggle.checked=true;
+ toggle.dispatch('change');
+ assert.equal(toggle.disabled,true);
+ assert.equal(helper.launchState().working,true);
+ assert.equal(state.t3CodeTelemetryDisabled,undefined);
+ helper.render({state,language:'es'});
+ assert.equal(toggle.checked,true);
+ assert.equal(nodes.get('t3-code-telemetry-status').textContent,'Guardando…');
+ confirmSave({disabled:true});
+ await tick();
+ assert.equal(toggle.disabled,false);
+ assert.equal(toggle.checked,true);
+ assert.equal(helper.launchState().working,false);
+ assert.deepEqual(writes,[['clients/t3-code/telemetry',{disabled:true}]]);
+
+ toggle.checked=false;
+ toggle.dispatch('change');
+ confirmSave({disabled:true});
+ await tick();
+ assert.equal(toggle.checked,true);
+ assert.match(nodes.get('t3-code-telemetry-status').textContent,/No se pudo confirmar/);
+ assert.deepEqual(writes.at(-1),['clients/t3-code/telemetry',{disabled:false}]);
+
+ document.getElementById('t3-code-dns-domain').textContent='ingest.t3.codes';
+ nodes.get('t3-code-copy-dns-rule').dispatch('click');
+ assert.deepEqual(copied,['ingest.t3.codes']);
+});
 
 test('prepared status requires the current complete shared library',()=>{
  const source=saved(),profile={prepared:true,library:structuredClone(source.library)};

@@ -56,6 +56,7 @@ let imageDependencyPrompt={};
 let updateCheckPending = false, updateRequestError = false;
 let updateInstall = {};
 let updateCheckRevision = 0;
+let t3CodeTelemetryRevision = 0;
 let chatGPTRevision = 0, chatGPTPending = false, chatGPTLoginRequested = false;
 let imageSettingsSaving = false;
 let updateFailedCheck = '';
@@ -218,7 +219,10 @@ function launch(key) {
 }
 const openMausBotHelper=createOpenMausBotHelper({api,onChange:renderClientLaunch});
 const museHelper=createMuseHelper({api,onChange:renderClientLaunch});
-const t3CodeHelper=createT3CodeHelper({api,onChange:renderClientLaunch});
+const t3CodeHelper=createT3CodeHelper({api,copy,onChange:renderClientLaunch,onTelemetryConfirmed:disabled=>{
+ t3CodeTelemetryRevision++;
+ if(state)state.t3CodeTelemetryDisabled=disabled;
+}});
 const omnigentHelper=createOmnigentHelper({api,onChange:renderClientLaunch,onPreferencesConfirmed:()=>{launchRefreshPending=true;if(!launchDetecting)void detectLaunchClients();}});
 const synaraHelper=createSynaraHelper({api,onChange:renderClientLaunch,onPreferencesConfirmed:()=>{launchRefreshPending=true;if(!launchDetecting)void detectLaunchClients();}});
 const openDesignHelper=createOpenDesignHelper({api,refreshCatalog:loadModels,onChange:renderClientLaunch});
@@ -254,6 +258,7 @@ function renderClientLaunch(){
  const L=(en,es)=>language==='en'?en:es,selection=clientLaunchSelection();
  $('client-launch-bar').hidden=!selection;
  if(!selection)return;
+ if(selection.id==='t3-code')t3CodeHelper.setLaunching(launchBusy);
  if(!launchDetected&&!launchDetecting)void detectLaunchClients();
  const detected=launchInfo?.clients?.[selection.id],custom=selection.id==='codex'&&$('client-launch-app').value.trim();
  const cli=['codex-cli','claude','opencode','opencode2','omp','muse'].includes(selection.id),available=!!detected?.available||!!custom,terminal=detected?.kind==='terminal'||cli;
@@ -917,8 +922,10 @@ $('model-picker').addEventListener('change', event => {
 });
 async function refresh() {
   if (stopped) return;
-  const revision = updateCheckRevision, updateSaving = updateCheckPending || updateInstall.pending, authRevision=chatGPTRevision, changing=chatGPTPending, next = await api('state');
+  const revision = updateCheckRevision, updateSaving = updateCheckPending || updateInstall.pending, authRevision=chatGPTRevision, changing=chatGPTPending;
+  const telemetryRevision = t3CodeTelemetryRevision, next = await api('state');
   if(changing||chatGPTPending||authRevision!==chatGPTRevision)return;
+  if (telemetryRevision !== t3CodeTelemetryRevision && state) next.t3CodeTelemetryDisabled = state.t3CodeTelemetryDisabled;
   // A state poll already in flight must not undo a newer manual check.
   if ((updateSaving || updateCheckPending || updateInstall.pending || revision !== updateCheckRevision) && state) next.update = state.update;
   else if (updateInstall.started && !next.update?.installing && packageUpdateFailureCode(next.update?.installMessage)) updateInstall = {failed:true};
