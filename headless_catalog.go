@@ -62,7 +62,7 @@ func (a *app) headlessCatalogAPI(w http.ResponseWriter, r *http.Request) {
 			seen[model.ID] = true
 		}
 		for _, model := range cache.Models {
-			if !seen[model.ID] && (model.Connection == "chatgpt" || cache.KiloAccount == account) {
+			if !seen[model.ID] && (model.Connection == "chatgpt" || model.Connection == "litellm" || cache.KiloAccount == account) {
 				// Cached-only rows retain capabilities, but BYOK availability
 				// must come from the current connection's catalog response.
 				model.HasUserByokAvailable = nil

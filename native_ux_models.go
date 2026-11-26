@@ -679,6 +679,17 @@ func (u *nativeUI) uxmModelCell(name, provider, id string, badge layout.Widget) 
 	return uxmStack(title, uxmGap(2), u.uxmSubtle(12, meta))
 }
 
+func (u *nativeUI) uxmModelPublisher(m modelInfo) string {
+	publisher := modelLabLabel(modelLab(m))
+	if gateway := u.uxmModelGateway(m); gateway != "" {
+		if publisher == "" || strings.EqualFold(publisher, gateway) {
+			return gateway
+		}
+		return publisher + " · " + gateway
+	}
+	return publisher
+}
+
 // uxmClickRow is a full-width clickable row exposed with the given semantic class.
 func (u *nativeUI) uxmClickRow(id, label string, class semantic.ClassOp, selected bool, action func(), content func(hovered bool) layout.Widget) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {

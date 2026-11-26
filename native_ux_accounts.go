@@ -20,7 +20,7 @@ func (u *nativeUI) uxsConnectionBusy() bool {
 			return true
 		}
 	}
-	return u.chatGPTRequestBusy()
+	return u.chatGPTRequestBusy() || u.gatewayRequestBusy()
 }
 
 func (u *nativeUI) uxsKiloPending() bool {
@@ -31,7 +31,7 @@ func (u *nativeUI) uxsKiloPending() bool {
 // uxsKiloNeedsSave is a signed-in key with a team the backend has not saved yet
 // (device login and auto-selected teams).
 func (u *nativeUI) uxsKiloNeedsSave() bool {
-	return nativeBool(u.state, "hasKey") && nativeString(u.state, "orgId") != "" && !nativeBool(u.state, "kiloReady") && !u.uxsKiloPending()
+	return u.kiloEnabled() && nativeBool(u.state, "hasKey") && nativeString(u.state, "orgId") != "" && !nativeBool(u.state, "kiloReady") && !u.uxsKiloPending()
 }
 
 // uxsPauseProxy runs change with the proxy stopped. The local API only edits a
@@ -120,7 +120,7 @@ func (u *nativeUI) uxsAutoField(id, label, placeholder string, secret bool, appl
 }
 
 func (u *nativeUI) uxsAccountsBlock() layout.Widget {
-	return u.uxsBlock(u.tr("Accounts", "Cuentas"), u.tr("who pays for what your apps ask", "quién paga lo que piden tus apps"), u.uxsKiloRow(), u.uxsChatGPTRow())
+	return u.uxsBlock(u.tr("Accounts", "Cuentas"), u.tr("who pays for what your apps ask", "quién paga lo que piden tus apps"), u.uxsKiloRow(), u.uxsChatGPTRow(), u.uxsLiteLLMRow())
 }
 
 func (u *nativeUI) uxsConnectionBlock() layout.Widget {
@@ -200,7 +200,9 @@ func (u *nativeUI) uxsKiloRow() layout.Widget {
 		)
 	case hasKey && orgID != "":
 		tone, label := nativeToneSuccess, u.tr("Connected", "Conectado")
-		if !nativeBool(u.state, "kiloReady") {
+		if !u.kiloEnabled() {
+			tone, label = nativeToneNeutral, u.tr("Paused", "En pausa")
+		} else if !nativeBool(u.state, "kiloReady") {
 			tone, label = nativeToneInfo, u.tr("Saving…", "Guardando…")
 		}
 		status = u.uxsStatus(tone, label, "")
@@ -222,6 +224,11 @@ func (u *nativeUI) uxsKiloRow() layout.Widget {
 	}
 	actions = append(actions, u.uxsToggleLink("uxs.kilo", "Manage", "Gestionar"))
 	value := []layout.Widget{u.uxsValue(status, small...)}
+	if hasKey && orgID != "" && !pending {
+		value = append(value, u.disabled(u.gatewayEditable(), u.uxsToggle("providers.kilo.active", u.tr("Use Kilo", "Usar Kilo"), "", u.kiloEnabled(), func(on bool) {
+			u.setGatewayActive(kiloActiveEndpoint, on)
+		})))
+	}
 	if msg := nativeString(auth, "message"); msg != "" {
 		switch nativeString(auth, "status") {
 		case "error", "failed", "denied", "expired":

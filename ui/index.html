@@ -23,8 +23,9 @@
       </section>
       <div class="main-grid">
         <section class="card connection-card" id="connection" aria-labelledby="connection-title">
-          <div class="card-heading"><div><div class="step-label">01 / CONEXIÓN</div><h2 id="connection-title">Tu cuenta de Kilo</h2></div><span class="card-symbol">↗</span></div>
+          <div class="card-heading"><div><div class="step-label">01 / CONEXIÓN</div><h2 id="connection-title">Cuentas</h2></div><span class="card-symbol">↗</span></div>
           <div class="sso-section" id="kilo-login-section"><button type="button" id="sso-login" class="sso-button" disabled>Conectar con Kilo <span>↗</span></button><p>Entra desde Kilo con tu cuenta o el SSO de tu empresa.</p><div id="login-progress" class="auth-status" role="status" hidden><p id="login-message"></p><div id="login-verification" hidden><span>Código: <strong id="login-code"></strong></span><a id="login-link" target="_blank" rel="noopener noreferrer">Abrir login de Kilo ↗</a></div><button id="cancel-login" class="text-button" type="button" hidden>Cancelar login</button></div><p id="account-email" hidden></p></div>
+          <label id="kilo-enabled-row" class="checkbox-label" hidden><input id="kilo-enabled" type="checkbox" checked><span>Usar Kilo</span></label>
           <form id="connection-form">
             <fieldset id="credentials-fields" disabled>
               <label for="api-key">API key manual (alternativa) <span class="label-note" id="key-state">Sin login</span></label>
@@ -39,13 +40,33 @@
             <div class="form-foot"><span id="connection-foot">La clave de Kilo nunca se copia a tu editor.</span><button id="forget" type="button" class="text-button" hidden>Olvidar clave</button></div>
           </form>
           <section id="chatgpt-account" class="sso-section" aria-labelledby="chatgpt-title" hidden><h3 id="chatgpt-title">Suscripción de ChatGPT</h3><p id="chatgpt-intro"></p><p id="chatgpt-identity" role="status"></p><div class="form-actions"><button id="chatgpt-login" type="button" class="sso-button">Iniciar sesión con ChatGPT</button><button id="chatgpt-logout" type="button" class="secondary-button" hidden>Desconectar ChatGPT</button></div><div id="chatgpt-pending" class="auth-status" role="status" hidden><p id="chatgpt-pending-label"></p><strong id="chatgpt-code"></strong><a id="chatgpt-verify" target="_blank" rel="noopener noreferrer">Abrir autorización de ChatGPT ↗</a><button id="chatgpt-cancel" class="text-button" type="button">Cancelar login de ChatGPT</button></div><p id="chatgpt-error" class="account-status" role="status" hidden></p><p id="chatgpt-privacy" class="field-help"></p></section>
+          <section id="litellm-account" class="sso-section" aria-labelledby="litellm-title" hidden>
+            <h3 id="litellm-title">LiteLLM</h3>
+            <p id="litellm-status" role="status"></p>
+            <label id="litellm-enabled-row" class="checkbox-label" hidden><input id="litellm-enabled" type="checkbox"><span>Usar LiteLLM</span></label>
+            <button id="litellm-edit" class="secondary-button" type="button" aria-controls="litellm-form" aria-expanded="false">Añadir LiteLLM</button>
+            <form id="litellm-form" hidden>
+              <label for="litellm-url">URL de la API</label>
+              <input id="litellm-url" type="url" required maxlength="2048" autocomplete="off" spellcheck="false" aria-describedby="litellm-url-help">
+              <p id="litellm-url-help" class="field-help">Usa la URL base de la API. Kilo Proxy añade /v1 si falta.</p>
+              <label for="litellm-key">Clave virtual de LiteLLM</label>
+              <input id="litellm-key" type="password" maxlength="8192" autocomplete="off" spellcheck="false" aria-describedby="litellm-key-help">
+              <p id="litellm-key-help" class="field-help"></p>
+              <label id="litellm-without-key-row" class="checkbox-label" hidden><input id="litellm-without-key" type="checkbox"><span>Conectar sin clave</span></label>
+              <div class="form-actions">
+                <button id="litellm-save" class="primary-button" type="submit">Probar y guardar</button>
+                <button id="litellm-cancel" class="secondary-button" type="button">Cancelar</button>
+              </div>
+            </form>
+            <p id="litellm-error" class="account-status" role="alert" hidden></p>
+          </section>
         </section>
         <section class="card endpoint-card" aria-labelledby="endpoint-title">
           <div class="card-heading"><div><div class="step-label">02 / LISTO PARA TU EDITOR</div><h2 id="endpoint-title">Copia. Pega. Programa.</h2></div></div>
           <p class="endpoint-intro">Usa estos valores si tu editor pide URL y API key. Para Codex, sigue los dos pasos de su pestaña: configuración y comando de arranque.</p>
           <div class="copy-field"><span class="mini-label">BASE URL</span><div><code id="base-url">http://127.0.0.1:8877/v1</code><button class="copy-button" data-copy="url" aria-label="Copiar base URL">Copiar <span>↗</span></button></div></div>
           <div class="copy-field"><span class="mini-label">API KEY LOCAL</span><div><code id="local-key">kl_local_••••••••••••••••</code><button class="copy-button" data-copy="key" aria-label="Copiar API key local">Copiar <span>↗</span></button></div></div>
-          <div class="endpoint-explainer"><span class="info-icon">i</span><p>Esta clave solo abre tu proxy local. Kilo recibe tu API key personal y el ID de tu organización.</p></div>
+          <div class="endpoint-explainer"><span class="info-icon">i</span><p>Esta clave solo abre tu proxy local. Las apps usan esta clave para todos los modelos.</p></div>
           <div class="connection-diagram"><div><span class="diagram-icon">⌘</span><strong>Tu editor</strong><small>Clave local</small></div><span class="diagram-arrow">→</span><div class="diagram-local"><img src="/icon.svg" width="34" height="34" alt=""><strong>Kilo Proxy</strong><small id="diagram-routing">Añade la organización</small></div><span class="diagram-arrow">→</span><div><span class="diagram-icon cloud">☁</span><strong id="diagram-provider">Kilo Gateway</strong><small id="diagram-billing">Saldo de empresa</small></div></div>
           <div id="endpoint-status" class="endpoint-status"><span class="device-dot"></span> Arranca el proxy para aceptar peticiones.</div>
         </section>
@@ -167,12 +188,12 @@
 <p id="catalog-status" class="field-help" role="status"></p>
 <p class="field-help">Precios en USD por 1M tokens: entrada / salida.</p>
 <div id="codex-bulk-controls" hidden><label class="model-filter"><input id="codex-selected-only" type="checkbox">Solo seleccionados</label><button id="select-codex-results" class="text-button" type="button">Marcar resultados (máx. 50)</button><button id="clear-codex-models" class="text-button" type="button">Vaciar selección</button><span id="codex-selection-count" role="status"></span></div>
-<div id="model-picker" class="model-grid" role="radiogroup" aria-label="Modelo de Kilo"></div>
+<div id="model-picker" class="model-grid" role="radiogroup" aria-label="Modelo"></div>
 <p id="model-hint" class="field-help"></p>
 <div id="model-details" class="model-details" hidden></div>
 <div id="manual-model-field"><label for="model" class="model-label">ID del modelo · selección o entrada manual</label><input type="text" id="model" spellcheck="false" placeholder="Selecciona un modelo del catálogo"></div>
-<p class="field-help">El catálogo es público. Los permisos de tu organización y la compatibilidad con cada API se comprueban al generar.</p>
-<p class="field-help">Precios publicados por Kilo, sin impuestos ni posibles ajustes por caché, contexto o proveedor. Los modelos Auto pueden tener precio variable.</p>
+<p class="field-help">Cada cuenta ofrece su catálogo. La compatibilidad con cada API se comprueba al generar.</p>
+<p class="field-help">Los precios del catálogo pueden variar por caché, contexto o proveedor.</p>
 </div><section id="codex-models" class="model-details" hidden>
 <p>Cambia «Nombre en Codex» para usar etiquetas cortas como Sol, GLM o Fable. Deja el campo vacío para recuperar el nombre original. Guarda y reinicia Codex Kilo para aplicarlo.</p>
 <button id="load-codex-catalog" type="button" class="secondary-button">Cargar catálogo guardado</button>

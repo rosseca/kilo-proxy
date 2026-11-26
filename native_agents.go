@@ -224,11 +224,11 @@ func (u *nativeUI) agentSetup(key string) {
 }
 
 func (u *nativeUI) agentConnectionReady() bool {
-	if u.chatGPTReady() {
+	if u.chatGPTReady() || u.liteLLMReady() || u.owner.uiConnectionReady() {
 		return true
 	}
 	p := u.owner.readUIProjection()
-	return p.HasKey && p.HasOrg
+	return u.kiloEnabled() && p.HasKey && p.HasOrg
 }
 
 func (u *nativeUI) detectAgentCapabilities() {

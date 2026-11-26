@@ -60,6 +60,7 @@ func TestNativeHelpersMatchBrowserCatalogsAndCommands(t *testing.T) {
 		{"all exact presets", all, "openai/gpt-5.6-sol", false},
 		{"unknown, duplicate, image and context", []nativeModelChoice{{Model: modelInfo{ID: "v/one", Name: "One", ContextWindow: 123000, InputModalities: []string{"text", "image"}}}, choice("v/two"), choice("v/one"), choice("bad id")}, "v/two", false},
 		{"tilde ID", []nativeModelChoice{choice("~z-ai/glm-5.3-flash")}, "", false},
+		{"gateway labels", []nativeModelChoice{choice("litellm/team/catalog-model"), choice("chatgpt/model"), choice("openai/model")}, "", false},
 		{"manual override", []nativeModelChoice{{Model: modelInfo{ID: "openai/gpt-5.6-sol", ReasoningEfforts: []string{"low", "max"}}, ReasoningCustom: true, ReasoningLevels: []string{"high", "low", "oops", "low"}, DefaultReasoning: "high"}}, "", false},
 		{"manual disable", []nativeModelChoice{{Model: modelInfo{ID: "openai/gpt-5.6-sol", ReasoningEfforts: []string{"low", "max"}}, ReasoningCustom: true}}, "", false},
 		{"metadata wins", []nativeModelChoice{{Model: modelInfo{ID: "openai/gpt-5.6-sol", ReasoningEfforts: []string{"none", "low", "max"}}}, {Model: modelInfo{ID: "vendor/new", ReasoningEfforts: []string{"high", "low", "invalid", "low"}}}}, "", false},

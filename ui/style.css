@@ -169,3 +169,15 @@
 .model-byok-heading strong,.model-byok-heading small{display:block}
 .model-byok-heading small{margin-top:4px;color:var(--muted);font-size:11px;font-weight:400}
 #model-details>.model-byok-badge{margin-left:8px}
+
+#litellm-account { border-top:1px solid var(--border); border-bottom:0; margin:22px 0 0; padding:18px 0 0; }
+#litellm-title { margin:0; font-size:16px; }
+#litellm-status { overflow-wrap:anywhere; }
+#litellm-form,#litellm-edit { margin-top:12px; }
+#kilo-enabled-row,#litellm-enabled-row,#litellm-without-key-row { margin:12px 0; }
+#litellm-url { width:100%; min-width:0; border:1px solid #dfe3d8; border-radius:6px; background:#fdfefb; height:41px; padding:0 12px; color:var(--ink); font-size:12px; }
+#litellm-url:focus-visible { outline:2px solid #a8b956; outline-offset:1px; }
+#litellm-account #litellm-error { margin-top:12px; border-color:#d38c7e; background:#fff2ec; color:#9a3c28; overflow-wrap:anywhere; }
+.model-connection-badge { display:inline-block; width:max-content; margin-top:5px; padding:1px 6px; border:1px solid var(--border); color:var(--muted); font-size:10px; font-weight:600; }
+#model-details>.model-connection-badge { margin-left:8px; }
+#diagram-provider,#diagram-billing { white-space:normal; text-align:center; }

@@ -35,9 +35,8 @@ func requestModel(r *http.Request) (string, error) {
 	return model, nil
 }
 
-// One shared catalog can contain Kilo credits and ChatGPT subscription models.
-// Subscription IDs have their own namespace, so equal model names never change
-// how an existing conversation is billed.
+// The shared catalog keeps the origin in model IDs for LiteLLM and ChatGPT,
+// so equal model names cannot change an existing conversation’s connection.
 func (a *app) fetchModels(ctx context.Context, requireAccount bool) ([]modelInfo, uint64, error) {
 	models, revision, _, err := a.fetchModelsWithCompleteness(ctx, requireAccount)
 	return models, revision, err
@@ -50,13 +49,15 @@ func (a *app) fetchModelsWithCompleteness(ctx context.Context, requireAccount bo
 	a.mu.Lock()
 	revision, key, org := a.catalogRevision, a.apiKey, a.config.OrgID
 	chatgpt, connection := a.chatGPTReadyLocked(), a.chatgpt
-	kilo := key != "" && org != ""
+	kilo, kiloPaused := a.kiloReadyLocked(), a.config.KiloPaused
+	liteConnection, liteReady := a.liteLLMConnectionLocked()
+	liteEnabled := a.config.LiteLLM.Enabled
 	identity := connection.identity()
 	a.mu.Unlock()
-	if !chatgpt {
+	if !chatgpt && !liteEnabled && !kiloPaused {
 		models, revision, err := a.fetchKiloModels(ctx, requireAccount)
 		a.mu.Lock()
-		if a.catalogRevision == revision && !a.chatGPTReadyLocked() {
+		if a.catalogRevision == revision && !a.chatGPTReadyLocked() && !a.config.LiteLLM.Enabled && !a.config.KiloPaused {
 			a.catalogWarnings = nil
 		}
 		a.mu.Unlock()
@@ -70,30 +71,55 @@ func (a *app) fetchModelsWithCompleteness(ctx context.Context, requireAccount bo
 		err        error
 		connection string
 	}
-	done := make(chan result, 2)
-	count := 1
-	go func() { models, err := connection.models(ctx); done <- result{models, err, "chatgpt"} }()
+	done := make(chan result, 3)
+	count := 0
+	if chatgpt {
+		count++
+		go func() { models, err := connection.models(ctx); done <- result{models, err, "chatgpt"} }()
+	}
 	if kilo {
 		count++
 		go func() { models, _, err := a.fetchKiloModels(ctx, true); done <- result{models, err, "kilo"} }()
 	}
-	var all []modelInfo
+	if liteReady {
+		count++
+		go func() {
+			models, err := a.fetchLiteLLMModels(ctx, liteConnection)
+			done <- result{models, err, "litellm"}
+		}()
+	}
+	all := []modelInfo{}
 	var warnings []string
+	liteModelCount := -1
+	if liteEnabled && !liteReady {
+		warnings = append(warnings, "LiteLLM: unlock or enter your virtual key in Accounts.")
+	}
 	for range count {
 		result := <-done
 		if result.err != nil {
-			warnings = append(warnings, result.connection+": "+result.err.Error())
+			display := result.connection
+			if display == "litellm" {
+				display = "LiteLLM"
+			}
+			warnings = append(warnings, display+": "+result.err.Error())
 			continue
+		}
+		if result.connection == "litellm" {
+			liteModelCount = len(result.models)
 		}
 		for i := range result.models {
 			result.models[i].Connection = result.connection
 		}
 		all = append(all, result.models...)
 	}
+	sort.Strings(warnings)
 	a.mu.Lock()
 	changed := a.catalogRevision != revision || a.apiKey != key || a.config.OrgID != org || connection.identity() != identity
 	if !changed {
 		a.catalogWarnings = warnings
+		if liteModelCount >= 0 {
+			a.liteLLMModelsCount = liteModelCount
+		}
 	}
 	a.mu.Unlock()
 	if changed {
@@ -102,24 +128,48 @@ func (a *app) fetchModelsWithCompleteness(ctx context.Context, requireAccount bo
 	if len(all) == 0 && len(warnings) > 0 {
 		return nil, revision, false, &catalogError{502, strings.Join(warnings, "; ")}
 	}
-	sort.SliceStable(all, func(i, j int) bool { return strings.ToLower(all[i].Name) < strings.ToLower(all[j].Name) })
+	if requireAccount && count == 0 {
+		return nil, revision, false, &catalogError{http.StatusUnauthorized, "Activate a connection to load models."}
+	}
+	sort.SliceStable(all, func(i, j int) bool {
+		left, right := strings.ToLower(all[i].Name), strings.ToLower(all[j].Name)
+		if left == right {
+			return all[i].ID < all[j].ID
+		}
+		return left < right
+	})
 	return all, revision, len(warnings) == 0, nil
 }
 
 // Each model identifies its connection; no global provider switch is needed.
 func (a *app) kiloReadyLocked() bool {
-	return a.apiKey != "" && a.config.OrgID != "" && !a.authPending() && !a.connectionNeedsSave
+	return !a.config.KiloPaused && a.apiKey != "" && a.config.OrgID != "" && !a.authPending() && !a.connectionNeedsSave
 }
 func (a *app) chatGPTReadyLocked() bool {
 	state := a.chatgpt.snapshot()
 	return !a.providerChanging && state.Connected && state.Status != "pending"
 }
-func (a *app) connectionReadyLocked() bool { return a.kiloReadyLocked() || a.chatGPTReadyLocked() }
-func (a *app) catalogScopeLocked() string {
-	if a.chatgpt.snapshot().Connected {
-		return a.config.OrgID + "|chatgpt:" + a.chatgpt.identity()
+func (a *app) connectionReadyLocked() bool {
+	return a.kiloReadyLocked() || a.chatGPTReadyLocked() || a.liteLLMReadyLocked()
+}
+
+func (a *app) catalogBaseScopeLocked() string {
+	scope := a.config.OrgID
+	if a.config.KiloPaused {
+		scope += "|kilo:paused"
 	}
-	return a.config.OrgID
+	if connection, ready := a.liteLLMConnectionLocked(); ready {
+		scope += "|litellm:" + liteLLMAccountScope(connection)
+	}
+	return scope
+}
+
+func (a *app) catalogScopeLocked() string {
+	scope := a.catalogBaseScopeLocked()
+	if a.chatgpt.snapshot().Connected {
+		return scope + "|chatgpt:" + a.chatgpt.identity()
+	}
+	return scope
 }
 func (a *app) claudeDesktopExperimentalLocked() bool {
 	return a.chatgpt.snapshot().Connected || a.config.ClaudeDesktopExperimentalModels

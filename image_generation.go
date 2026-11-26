@@ -171,12 +171,16 @@ func (a *app) generateImage(r *http.Request, args imageGenerationArguments, key,
 	}
 	a.mu.Lock()
 	settings, endpoint, transport := a.config.ImageGeneration, a.imageGenerationURL, a.transport
+	kiloPaused := a.config.KiloPaused
 	a.mu.Unlock()
 	if !settings.Enabled {
 		return nil, errors.New("Enable image generation in Kilo Proxy first.")
 	}
 	if err := validateImageGenerationSettings(settings); err != nil {
 		return nil, err
+	}
+	if settings.Provider != "chatgpt" && kiloPaused {
+		return nil, errors.New("Kilo is paused. Activate it in Accounts to generate images through Kilo.")
 	}
 	if settings.Provider != "chatgpt" && (key == "" || org == "") {
 		return nil, errors.New("Connect a Kilo account and organization before generating images.")
@@ -194,7 +198,7 @@ func (a *app) generateImage(r *http.Request, args imageGenerationArguments, key,
 	if settings.Provider == "chatgpt" {
 		return a.generateChatGPTImage(r.WithContext(ctx), args, settings, localKey)
 	}
-	models, revision, err := a.fetchModels(ctx, true)
+	models, revision, err := a.fetchKiloModels(ctx, true)
 	if err != nil {
 		return nil, errors.New("Cannot verify the image model catalog. Check your Kilo connection and try again.")
 	}
@@ -220,7 +224,7 @@ func (a *app) generateImage(r *http.Request, args imageGenerationArguments, key,
 		return nil, errors.New("The selected model is not listed with image input. Choose an image model that accepts reference images before editing.")
 	}
 	a.mu.Lock()
-	current := a.config.ImageGeneration == settings && a.catalogRevision == revision && secureEqual(a.apiKey, key) && a.config.OrgID == org
+	current := !a.config.KiloPaused && a.config.ImageGeneration == settings && a.catalogRevision == revision && secureEqual(a.apiKey, key) && a.config.OrgID == org
 	a.mu.Unlock()
 	if !current {
 		return nil, errors.New("The image settings or Kilo connection changed. Try again.")

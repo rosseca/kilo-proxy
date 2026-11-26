@@ -47,6 +47,7 @@ type nativeUI struct {
 	setupStep           int
 	traceGeneration     uint64
 	modelsPending       bool
+	gatewayRevision     uint64
 	languageRevision    uint64
 	languageTarget      string
 	modelSortDismissTag int
@@ -669,6 +670,7 @@ func (u *nativeUI) refreshState() {
 	kiloAuthRevision, kiloAuthSaving := u.kiloAuthRevision, u.busy["POST/api/auth/start"] || u.busy["POST/api/auth/cancel"]
 	chatGPTRevision, chatGPTSaving := u.chatGPTRevision, u.chatGPTRequestBusy()
 	proxyRevision, proxySaving := u.proxyRevision, u.busy["POST/api/start"] || u.busy["POST/api/stop"]
+	gatewayRevision := u.gatewayRevision
 	updateRevision, updateSaving := u.updateRevision, u.busy["POST/api/updates"] || u.busy["POST/api/updates/install"]
 	c := u.clientState()
 	desktopRevision, desktopSaving := c.DesktopExperimentalRevision, c.DesktopExperimentalTarget != nil
@@ -679,6 +681,12 @@ func (u *nativeUI) refreshState() {
 		// operation. Discard it before applying any state-derived effects;
 		// the next poll will fetch a coherent snapshot, including after errors.
 		if proxySaving || proxyRevision != u.proxyRevision || u.busy["POST/api/start"] || u.busy["POST/api/stop"] {
+			return
+		}
+		if gatewayRevision != u.gatewayRevision {
+			if !u.gatewayRequestBusy() {
+				u.refreshState()
+			}
 			return
 		}
 		// A Kilo login poll must not restore an earlier login or cancellation.

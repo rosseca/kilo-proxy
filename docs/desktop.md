@@ -74,6 +74,14 @@ Spend covers the current Kilo Proxy process, across all conversations and image 
 
 The tray needs a desktop environment that supports status icons. Linux shells differ in where or whether they display StatusNotifierItem/AppIndicator icons. Browser and headless modes remain available when native desktop integration is unsuitable.
 
+## LiteLLM
+
+Open **Settings → Accounts → Add LiteLLM**, or choose LiteLLM during first launch. Use your gateway's API base address. Kilo Proxy adds `/v1` if needed and preserves any path prefix. If your gateway requires a virtual key, enter it in the masked field. **Test and save** reads `/v1/models` without making an inference request. A failed check preserves the existing connection.
+
+Use the **Kilo** and **LiteLLM** switches independently. Select LiteLLM models in the shared library. In T3 Code, use the shared-model option to include them in selectors that also offer a provider-specific catalog. LiteLLM determines which API formats and features each model supports. A request uses the selected gateway even when another connection is active.
+
+The virtual key is stored in the local credential store. Changing the API address requires a key for the new address if it needs one. A previously selected LiteLLM model stays tied to its original address. Activity shows the LiteLLM connection and reported usage. Check the LiteLLM dashboard for gateway costs.
+
 ## Language
 
 On startup, a saved English or Spanish application preference takes priority. Without a saved choice, Kilo Proxy reads the operating system's preferred language:

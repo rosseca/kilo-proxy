@@ -37,6 +37,9 @@ type app struct {
 	chatGPTResponsesURL       string // Test override; never accepted from clients or settings.
 	chatGPTQuotaDue           time.Time
 	providerChanging          bool
+	liteLLMUpdate             sync.Mutex
+	liteLLMKey                string
+	liteLLMModelsCount        int
 	updates                   *releaseUpdateChecker
 	packageUpdates            *packageUpdateManager
 	managedToolsMu            sync.Mutex
@@ -177,6 +180,7 @@ func newApp(dir string, vault credentialVault) (*app, error) {
 			a.keySaved = true
 		}
 	}
+	a.loadLiteLLMKey()
 	a.publishUIProjectionLocked()
 	return a, nil
 }
@@ -529,7 +533,14 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 			return
 		}
 		if r.Method == http.MethodGet {
+			a.mu.Lock()
+			kiloPaused, liteEnabled := a.config.KiloPaused, a.config.LiteLLM.Enabled
+			a.mu.Unlock()
 			if r.URL.Path == "/v1/embedding-models" {
+				if kiloPaused {
+					embeddingError(recorder, http.StatusServiceUnavailable, "kilo_paused", "Kilo is paused. Activate it in Accounts to load its embedding catalog.")
+					return
+				}
 				a.serveEmbeddingModels(recorder, r, embeddingKey, orgID)
 				return
 			}
@@ -537,7 +548,7 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 				a.serveOpenMausBotModels(recorder)
 				return
 			}
-			if a.chatgpt.snapshot().Connected {
+			if a.chatgpt.snapshot().Connected || liteEnabled || kiloPaused {
 				a.serveModelList(recorder, r)
 			} else {
 				proxy.ServeHTTP(recorder, r)
@@ -554,7 +565,50 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 			jsonError(recorder, status, routeErr.Error())
 			return
 		}
+		if strings.HasPrefix(model, liteLLMModelPrefix) {
+			a.mu.Lock()
+			connection, ready := a.liteLLMConnectionLocked()
+			a.mu.Unlock()
+			scope, alias := "", ""
+			if ready {
+				prefix := liteLLMNamespace(connection.Base)
+				if suffix, matches := strings.CutPrefix(model, prefix); matches && suffix != "" && catalogID.MatchString(model) {
+					scope, alias = liteLLMAccountScope(connection), suffix
+				}
+			}
+			usage = newUsageObserver(r, "litellm:"+scope)
+			usage.historyAccount = scope
+			usage.usage.Billing, usage.usage.Model = "litellm", model
+			if !ready {
+				jsonError(recorder, http.StatusServiceUnavailable, "This model requires an active LiteLLM connection. Check Accounts.")
+				return
+			}
+			if alias == "" {
+				jsonError(recorder, http.StatusConflict, "This model belongs to a different LiteLLM connection. Choose a model from the active catalog.")
+				return
+			}
+			if capture != nil {
+				capture.addSecrets(connection.Key)
+			}
+			if r.URL.Path == "/v1/embeddings" {
+				usage.setEmbeddingModel(model)
+			}
+			r = r.WithContext(context.WithValue(r.Context(), usageContextKey{}, usage))
+			if err := prepareLiteLLMModel(r, alias); err != nil {
+				jsonError(recorder, http.StatusBadRequest, err.Error())
+				return
+			}
+			a.serveLiteLLM(recorder, r, connection)
+			return
+		}
+		a.mu.Lock()
+		kiloPaused := a.config.KiloPaused
+		a.mu.Unlock()
 		if r.URL.Path == "/v1/embeddings" {
+			if kiloPaused && !strings.HasPrefix(model, "chatgpt/") {
+				embeddingError(recorder, http.StatusServiceUnavailable, "kilo_paused", "Kilo is paused. Activate it in Accounts to use this model.")
+				return
+			}
 			if status, code, message := validateEmbeddingProvider(model, embeddingKey, orgID); status != 0 {
 				embeddingError(recorder, status, code, message)
 				return
@@ -573,8 +627,12 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 			a.serveChatGPT(recorder, r)
 			return
 		}
+		if kiloPaused {
+			jsonError(recorder, http.StatusServiceUnavailable, "Kilo is paused. Activate it in Accounts to use this model.")
+			return
+		}
 		if key == "" || orgID == "" {
-			jsonError(recorder, 401, "This model requires a Kilo connection. Connect Kilo or choose a ChatGPT subscription model.")
+			jsonError(recorder, 401, "This model requires a Kilo connection. Connect Kilo or choose a model from another active connection.")
 			return
 		}
 		if err := a.prepareResponsesMaxOutputTokens(r, model); err != nil {
@@ -711,7 +769,8 @@ func (a *app) startLocked() error {
 	if a.providerChanging {
 		return errProxyAuthenticationChanging
 	}
-	if a.authPending() && !a.chatGPTReadyLocked() {
+	_, liteReady := a.liteLLMConnectionLocked()
+	if a.authPending() && !a.chatGPTReadyLocked() && !liteReady {
 		return errProxyLoginPending
 	}
 	if !a.connectionReadyLocked() {

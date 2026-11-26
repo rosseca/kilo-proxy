@@ -1,4 +1,5 @@
 import {chatGPTConnected,chatGPTReady,connectionReady,validChatGPTVerificationURL,renderChatGPT,renderSubscriptionUsage} from './chatgpt-helper.mjs';
+import {createLiteLLMHelper, liteLLMReady} from './litellm-helper.mjs';
 import {contextControls,contextModel,syncContextModels,contextError,contextPreview} from './context-policy.mjs';
 import {renderAccountUsage} from './account-usage.mjs';
 import {createUsageExplorer} from './usage-explorer.mjs';
@@ -19,7 +20,7 @@ import {claudeCapabilities,claudeEfforts,claudeSelection,claudeSettings} from '.
 import {reportedCost, reportedSpend, inferenceCostNote, costSourceLabel, cacheStats, lastCacheStats} from './usage-helper.mjs';
 import {formatTraceJSON} from './activity-helper.mjs';
 import {codexCatalog,codexDisplayName,reasoningFor,reasoningLevels} from './codex-catalog.mjs';
-import {modelHasUserByok, modelByokBadge, filterModels, formatPrice, modelPriceDetails, validModelID, sortModels, configureModelSort, setModelSort, mergeModelSelection, filterModelLab, configureModelLab, setModelLab} from './model-helper.mjs';
+import {modelHasUserByok, modelByokBadge, modelConnectionBadge, filterModels, formatPrice, modelPriceDetails, validModelID, sortModels, configureModelSort, setModelSort, mergeModelSelection, filterModelLab, configureModelLab, setModelLab} from './model-helper.mjs';
 import {imageGenerationModels,imageGenerationSelection,imageGenerationValid,imageGenerationProvider,imageGenerationConnectionReady,codexImageMCPConfig} from './model-helper.mjs';
 import {clientConfig, launchCommand} from './client-config.mjs';
 import {chooseLanguage, translate, bindDocument} from './i18n.mjs';
@@ -58,6 +59,9 @@ let updateInstall = {};
 let updateCheckRevision = 0;
 let t3CodeTelemetryRevision = 0;
 let chatGPTRevision = 0, chatGPTPending = false, chatGPTLoginRequested = false;
+let liteLLMRevision = 0, codingFilterEdited = false;
+const renderLiteLLM = createLiteLLMHelper(document, updateLiteLLM);
+const alternateConnectionReady = s => chatGPTReady(s) || liteLLMReady(s);
 let imageSettingsSaving = false;
 let updateFailedCheck = '';
 try { const saved=JSON.parse(sessionStorage.getItem('kilo-cloudflare-prompt')||'{}');if(saved&&typeof saved==='object')imageDependencyPrompt={dismissed:saved.dismissed===true,mode:saved.mode,running:saved.running===true}; } catch {}
@@ -479,7 +483,7 @@ function render(s) {
   $('toggle-key').setAttribute('aria-label', t($('api-key').type === 'password' ? 'Mostrar API key' : 'Ocultar API key'));
   $('version').textContent = 'v' + s.version;
   const subscription=chatGPTConnected(s),pending = ['starting','pending'].includes(s.auth?.status);
-  $('load-models').disabled = catalogLoading || pending&&!chatGPTReady(s);
+  $('load-models').disabled = catalogLoading || pending&&!alternateConnectionReady(s);
   $('credentials-fields').disabled = s.running || busy || pending;
   $('sso-login').disabled = s.running || busy || pending;
   $('load-teams').disabled = s.running || busy || pending || !s.hasKey;
@@ -507,10 +511,11 @@ function render(s) {
   $('start-label').textContent = s.running ? t('Detener proxy') : t('Guardar y arrancar');
   $('start-icon').textContent = s.running ? '■' : '▶';
   $('start-stop').classList.toggle('stop', s.running);
-  $('start-stop').disabled = busy || pending&&!chatGPTReady(s); $('check').disabled = busy || pending&&!chatGPTReady(s); $('forget').disabled = busy || s.running;
+  $('start-stop').disabled = busy || !s.running && pending&&!alternateConnectionReady(s);
+  $('check').disabled = busy || pending&&!alternateConnectionReady(s); $('forget').disabled = busy || s.running;
   $('forget').hidden = !s.hasKey;
-  $('org-id').required=!chatGPTReady(s);
-  if(chatGPTReady(s)&&!s.hasKey&&!s.running)$('start-label').textContent=language==='en'?'Start proxy':'Arrancar proxy';
+  $('org-id').required=s.kiloEnabled!==false&&!alternateConnectionReady(s);
+  if(alternateConnectionReady(s)&&!s.kiloReady&&!s.running)$('start-label').textContent=language==='en'?'Start proxy':'Arrancar proxy';
   $('base-url').textContent = s.baseURL;
   $('endpoint-status').classList.toggle('live', s.running);
   $('endpoint-status').replaceChildren();
@@ -528,9 +533,22 @@ function render(s) {
   usageExplorer.update(s,language);
   if(subscription){const quota=document.createElement('section');quota.id='subscription-usage';renderSubscriptionUsage(quota,s,language,busy);$('account-usage').append(quota);}
   renderChatGPT(document,s,language,busy);
-  $('diagram-routing').textContent=subscription?(language==='en'?'Local authentication':'Autenticación local'):t('Añade la organización');
-  $('diagram-provider').textContent=subscription?(s.kiloReady?'Kilo + ChatGPT':'ChatGPT'):'Kilo Gateway';
-  $('diagram-billing').textContent=subscription?(language==='en'?'Credit / subscription quota':'Crédito / cuota de suscripción'):t('Saldo de empresa');
+  renderLiteLLM(s,language,busy);
+  if (!codingFilterEdited) $('coding-models').checked = !liteLLMReady(s);
+  if (liteLLMReady(s)) {
+    const providers = [s.kiloReady && 'Kilo', chatGPTReady(s) && 'ChatGPT', 'LiteLLM'].filter(Boolean);
+    $('diagram-routing').textContent = t('Autenticación local');
+    $('diagram-provider').textContent = providers.join(' + ');
+    $('diagram-billing').textContent = providers.length > 1 ? t('Cuenta según el modelo') : t('Uso gestionado en LiteLLM');
+  } else if (!s.kiloReady && !chatGPTReady(s) && (s.kiloEnabled === false || s.litellm?.url)) {
+    $('diagram-routing').textContent = t('Activa una conexión');
+    $('diagram-provider').textContent = t('Sin conexiones activas');
+    $('diagram-billing').textContent = '';
+  } else {
+    $('diagram-routing').textContent=subscription?t('Autenticación local'):t('Añade la organización');
+    $('diagram-provider').textContent=subscription?(s.kiloReady?'Kilo + ChatGPT':'ChatGPT'):'Kilo Gateway';
+    $('diagram-billing').textContent=subscription?(language==='en'?'Credit / subscription quota':'Crédito / cuota de suscripción'):t('Saldo de empresa');
+  }
   $('check').textContent=t('Comprobar gateway');
   if(activeTrace && !(s.events || []).some(event=>event.id===activeTrace.id)){activeTrace=null;traceRequest++;}
   renderTrace();
@@ -538,13 +556,16 @@ function render(s) {
   $('event-rows').replaceChildren();
   for (const e of s.events || []) {
     const row = document.createElement('tr');
-    const values = [new Date(e.at).toLocaleTimeString(language, {hour: '2-digit', minute: '2-digit', second: '2-digit'}), e.method + ' ' + e.path, e.status, e.usage?.model || '—', e.usage?.billing==='subscription'?(language==='en'?'Subscription usage':'Uso de suscripción'):reportedCost(e.usage?.costUSD) ?? t('Coste desconocido'), e.duration < 1000 ? e.duration + ' ms' : (e.duration / 1000).toFixed(1) + ' s'];
+    const cost = e.usage?.billing === 'subscription' ? t('Uso de suscripción')
+      : e.usage?.billing === 'litellm' ? t('Uso gestionado en LiteLLM')
+      : reportedCost(e.usage?.costUSD) ?? t('Coste desconocido');
+    const values = [new Date(e.at).toLocaleTimeString(language, {hour: '2-digit', minute: '2-digit', second: '2-digit'}), e.method + ' ' + e.path, e.status, e.usage?.model || '—', cost, e.duration < 1000 ? e.duration + ' ms' : (e.duration / 1000).toFixed(1) + ' s'];
     values.forEach((value, i) => {
       const cell = document.createElement('td');
       if (i === 2) { const badge = document.createElement('span'); badge.className = 'status-code' + (e.status >= 400 ? ' error' : ''); badge.textContent = value; cell.append(badge); }
       else cell.textContent = value;
       if(i===4 && reportedCost(e.usage?.costUSD)!==null){
-        const source=costSourceLabel(e.usage?.costSource,language);
+        const source=e.usage?.billing==='litellm'?'':costSourceLabel(e.usage?.costSource,language);
         if(source){const hint=document.createElement('small');hint.className='cost-source';hint.textContent=source;cell.append(hint);}
       }
       row.append(cell);
@@ -554,7 +575,7 @@ function render(s) {
     else details.textContent=t('Sin captura');
     row.append(details);$('event-rows').append(row);
   }
-  if (catalogRevision !== s.catalogRevision && (!pending||chatGPTReady(s))) {
+  if (catalogRevision !== s.catalogRevision && (!pending||alternateConnectionReady(s))) {
     catalogRevision = s.catalogRevision; catalog = []; syncSelectedContext(); catalogFetchedAt = ''; void loadModels();
   }
   $('catalog-warnings').hidden=!s.catalogWarnings?.length;
@@ -826,8 +847,8 @@ function renderModels() {
   const matches = sortModels(['codex','codex-cli','claude'].includes(client) ? codexVisibleModels() : filterModels(filterModelLab(catalog,$('model-lab').value), $('model-search').value, $('coding-models').checked),$('model-sort').value);
   const selectedID = $('model').value.trim();
   const selected = catalog.find(m => m.id === selectedID);
-  $('load-models').disabled = catalogLoading || ['starting','pending'].includes(state?.auth?.status);
-  $('catalog-status').textContent = catalogLoading ? t('Cargando modelos de Kilo…') : catalogError ? t(catalogError) : t('{shown} de {total} modelos · actualizado {time}', {shown:matches.length,total:availableCount,time:catalogFetchedAt ? new Date(catalogFetchedAt).toLocaleTimeString(language, {hour:'2-digit',minute:'2-digit'}) : '—'});
+  $('load-models').disabled = catalogLoading || ['starting','pending'].includes(state?.auth?.status) && !alternateConnectionReady(state);
+  $('catalog-status').textContent = catalogLoading ? t('Cargando catálogo de modelos…') : catalogError ? t(catalogError) : t('{shown} de {total} modelos · actualizado {time}', {shown:matches.length,total:availableCount,time:catalogFetchedAt ? new Date(catalogFetchedAt).toLocaleTimeString(language, {hour:'2-digit',minute:'2-digit'}) : '—'});
   const picker = $('model-picker'), restoreFocus = picker.contains(document.activeElement), scroll = picker.scrollTop;
   const focusKey=document.activeElement?.dataset.focus;
   const caret=document.activeElement?.classList.contains('codex-name-input') ? [document.activeElement.selectionStart,document.activeElement.selectionEnd] : null;
@@ -854,6 +875,8 @@ function renderModels() {
     radio.setAttribute('aria-label',shownName + ' · ' + m.id);
     const title = document.createElement('strong'), id = document.createElement('small'); title.textContent = shownName; id.textContent = m.id; name.append(title,id);
     name.className='model-option-title';
+    const originBadge = modelConnectionBadge(m, liteLLMReady(state));
+    if(originBadge)name.append(originBadge);
     const byokBadge=modelByokBadge(m,currentCatalog,state,language);if(byokBadge)name.append(byokBadge);
     row.append(radio,name,modelPriceDetails(m,language));
     if(isCodexClient()){
@@ -876,7 +899,10 @@ function renderModels() {
     if (selectedID) details.textContent = t('ID manual o no encontrado en el catálogo actual. Revisa el modelo y su ventana de contexto.');
     return;
   }
-  const title = document.createElement('strong'); title.textContent = selected.name; details.append(title);const byokBadge=modelByokBadge(selected,currentCatalog,state,language);if(byokBadge)details.append(byokBadge);
+  const title = document.createElement('strong'); title.textContent = selected.name; details.append(title);
+  const originBadge = modelConnectionBadge(selected, liteLLMReady(state));
+  if(originBadge)details.append(originBadge);
+  const byokBadge=modelByokBadge(selected,currentCatalog,state,language);if(byokBadge)details.append(byokBadge);
   const grid = document.createElement('dl');
   const count = n => n ? n.toLocaleString(language) : t('Coste desconocido');
   const flag = value => value === true ? t('Sí') : value === false ? t('No') : t('Coste desconocido');
@@ -908,7 +934,7 @@ $('load-models').addEventListener('click', () => void loadModels());
 $('model-search').addEventListener('input', renderModels);
 $('model-sort').addEventListener('change', () => { setModelSort($('model-sort').value); $('model-picker').scrollTop=0; renderModels(); });
 $('model-lab').addEventListener('change', () => { setModelLab($('model-lab').value); $('model-picker').scrollTop=0; renderModels(); });
-$('coding-models').addEventListener('change', renderModels);
+$('coding-models').addEventListener('change', () => { codingFilterEdited = true; renderModels(); });
 $('model-picker').addEventListener('change', event => {
   if(!event.target.matches('input[name="model-choice"]'))return;
   if(client==='claude'){const selection=multiClients.claude,id=event.target.value;if(event.target.checked){if(selection.models.size>=50){event.target.checked=false;return;}selection.models.set(id,{...(catalog.find(m=>m.id===id) || {id,name:id})});if(!selection.initial)selection.initial=id;}else{selection.models.delete(id);if(selection.initial===id)selection.initial=selection.models.keys().next().value || '';for(const alias of Object.keys(selection.aliases))if(selection.aliases[alias]===id)delete selection.aliases[alias];}renderModels();renderSnippet();return;}
@@ -923,8 +949,8 @@ $('model-picker').addEventListener('change', event => {
 async function refresh() {
   if (stopped) return;
   const revision = updateCheckRevision, updateSaving = updateCheckPending || updateInstall.pending, authRevision=chatGPTRevision, changing=chatGPTPending;
-  const telemetryRevision = t3CodeTelemetryRevision, next = await api('state');
-  if(changing||chatGPTPending||authRevision!==chatGPTRevision)return;
+  const telemetryRevision = t3CodeTelemetryRevision, connectionsRevision = liteLLMRevision, next = await api('state');
+  if(changing||chatGPTPending||authRevision!==chatGPTRevision||connectionsRevision!==liteLLMRevision)return;
   if (telemetryRevision !== t3CodeTelemetryRevision && state) next.t3CodeTelemetryDisabled = state.t3CodeTelemetryDisabled;
   // A state poll already in flight must not undo a newer manual check.
   if ((updateSaving || updateCheckPending || updateInstall.pending || revision !== updateCheckRevision) && state) next.update = state.update;
@@ -941,11 +967,36 @@ async function action(fn) {
   finally { busy = false; if (state) render(state); }
 }
 async function save() {
-  if(chatGPTReady(state)&&!$('api-key').value.trim()&&$('org-id').value.trim()===(state.orgId||'').trim()&&Number($('port').value)===state.port)return;
+  if (state.kiloEnabled === false && !alternateConnectionReady(state)) throw new Error(t('Activa una conexión en Cuentas.'));
+  if (alternateConnectionReady(state)) {
+    const authPending = ['starting','pending'].includes(state.auth?.status);
+    if (authPending) return;
+    if (!$('api-key').value.trim() && $('org-id').value.trim() === (state.orgId || '').trim() && $('remember').checked === state.remember) {
+      if (Number($('port').value) !== state.port) {
+        if (!$('port').reportValidity()) throw new Error(t('Completa los campos de conexión.'));
+        await api('config',{apiKey:'',orgId:'',port:Number($('port').value),remember:state.remember});
+      }
+      return;
+    }
+  }
   if (!$('connection-form').reportValidity()) throw new Error(t('Completa los campos de conexión.'));
   await api('config', {apiKey: $('api-key').value, orgId: $('org-id').value, port: Number($('port').value), remember: $('remember').checked});
   $('api-key').value = '';
   $('api-key').type = 'password'; $('toggle-key').textContent = t('Ver'); $('toggle-key').setAttribute('aria-pressed', 'false');
+}
+async function updateLiteLLM(path, body) {
+  if (busy || !state) throw new Error(t('Espera a que termine la operación actual.'));
+  busy = true;
+  liteLLMRevision++;
+  render(state);
+  try {
+    const {litellm,kiloEnabled,kiloReady,connectionReady,catalogRevision} = await api(path,body);
+    render({...state,litellm,kiloEnabled,kiloReady,connectionReady,catalogRevision});
+  } finally {
+    liteLLMRevision++;
+    busy = false;
+    render(state);
+  }
 }
 async function updateChatGPT(name){
  chatGPTPending=true;chatGPTRevision++;

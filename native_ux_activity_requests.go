@@ -177,6 +177,13 @@ func (u *nativeUI) uxaRequestCells(e event) (when, harness, model, tokens, cost 
 	if e.Usage.Model != "" {
 		model = u.uxaModelName(e.Usage.Model)
 	}
+	if e.Usage.Billing == "litellm" {
+		if model == "—" {
+			model = "LiteLLM"
+		} else {
+			model += " · LiteLLM"
+		}
+	}
 	if e.Usage.Input != nil || e.Usage.Output != nil {
 		in, out := "—", "—"
 		if e.Usage.Input != nil {
