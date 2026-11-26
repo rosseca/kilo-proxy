@@ -310,6 +310,46 @@ test('saved choices absent from a newer build stay visible until disabled, witho
  helper.render({state:{connectionReady:true},language:'es'});assert.doesNotMatch(nodes.get('t3-code-agents').children.map(node=>node.textContent).join(' '),/Cursor|Unknown/);
 });
 
+test('Kilo Code ACP uses its own account and keeps a saved choice removable after downgrade', async t=>{
+ let current={...preferences(),codex:false,claude:false,kiloCodex:false,kiloClaude:false},supported=true;
+ const settingsWrites=[],prepares=[];
+ const {helper,nodes}=fixture(t, async (path,body)=>{
+  if(path==='model-library')throw new Error('No shared model library');
+  if(body)prepares.push(structuredClone(body));
+  return {prepared:!!body,preferences:structuredClone(current)};
+ },{preferencesAPI:async body=>{
+  if(body){settingsWrites.push(structuredClone(body));current=structuredClone(body);}
+  return {preferences:structuredClone(current),supportedProviders:supported?[{id:'kilo-acp',label:'Kilo Code (ACP)'}]:[]};
+ }});
+ helper.render({state:{connectionReady:false,kiloReady:false},language:'en'});
+ await tick();
+ const list=nodes.get('t3-code-provider-options');
+ assert.deepEqual(list.children.map(label=>label.children[1].textContent),['Kilo Code (ACP)']);
+ const available=list.children[0].children[0];
+ assert.equal(available.id,'t3-code-provider-kilo-acp');
+ assert.equal(available.checked,false);
+ available.checked=true;available.dispatch('change');
+ await tick();
+ assert.deepEqual(settingsWrites.map(body=>body.providers),[['kilo-acp']]);
+ assert.equal(helper.launchState().nativeOnly,true);
+ assert.equal(helper.launchState().valid,true);
+ assert.deepEqual(nodes.get('t3-code-agents').children.map(row=>row.textContent),['Kilo Code (ACP) · Own login and catalog']);
+ await helper.launchState().prepare();
+ assert.deepEqual(prepares,[{preferences:current}]);
+
+ supported=false;
+ await helper.reload();
+ helper.render({state:{connectionReady:false,kiloReady:false},language:'es'});
+ assert.equal(list.children[0].children[1].textContent,'Kilo Code (ACP) · no disponible en esta compilación');
+ const unavailable=list.children[0].children[0];
+ assert.equal(unavailable.checked,true);
+ assert.equal(unavailable.disabled,false);
+ unavailable.checked=false;unavailable.dispatch('change');
+ await tick();
+ assert.deepEqual(settingsWrites.map(body=>body.providers),[['kilo-acp'],[]]);
+ assert.equal(list.children.length,0);
+});
+
 
 test('OpenCode connection is optional in old responses and only enabled Kilo OpenCode requires the gateway',()=>{
  const own={...preferences(),kiloCodex:false,kiloClaude:false,providers:['opencode']};

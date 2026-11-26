@@ -17,7 +17,7 @@ const museUsesKilo = value => value?.providers?.includes('muse') && museConnecti
 const openCodeUsesKilo = value => value?.providers?.includes('opencode') && openCodeConnection(value) === 'kilo';
 const normalizePreferences = value => ({...structuredClone(value),openCodeConnection:openCodeConnection(value),museConnection:museConnection(value),museModels:museModelPolicy(value)});
 const preferencesSignature = value => JSON.stringify(value && [value.version,value.codex,value.claude,value.kiloCodex,value.kiloClaude,value.codexModels,value.claudeModels,[...(value.providers ?? [])].sort(),value.openCode2,openCodeConnection(value),museConnection(value),museModelPolicy(value)]);
-const knownProviders = {cursor:'Cursor',grok:'Grok',opencode:'OpenCode',antigravity:'Antigravity',muse:'Muse Code',pi:'Pi'};
+const knownProviders = {cursor:'Cursor',grok:'Grok',opencode:'OpenCode',antigravity:'Antigravity',muse:'Muse Code',pi:'Pi','kilo-acp':'Kilo Code (ACP)'};
 export function t3CodePreferencesValid(value) {
  return value?.version === 1 && ['official','shared'].includes(value.codexModels) && ['official','shared'].includes(value.claudeModels) && ['codex','claude','kiloCodex','kiloClaude','openCode2'].every(key => typeof value[key] === 'boolean') && Array.isArray(value.providers) && value.providers.every(id => typeof id === 'string') && (!value.openCode2 || value.providers.includes('opencode')) && [undefined,'','native','kilo'].includes(value.openCodeConnection) && [undefined,'','native','kilo'].includes(value.museConnection) && [undefined,'official','shared'].includes(value.museModels);
 }
@@ -185,6 +185,7 @@ export function createT3CodeHelper({api, copy, onChange, onTelemetryConfirmed}) 
    let label = provider.label;
    if (provider.id === 'opencode') label = (openCodeUsesKilo(preferences) ? 'Kilo Proxy · ' : '')+(preferences.openCode2 ? 'OpenCode 2' : 'OpenCode')+(openCodeUsesKilo(preferences) ? L(' · Shared models through the proxy', ' · Modelos compartidos a través del proxy') : L(' · Own login and catalog', ' · Sesión y catálogo propios'));
    if(provider.id==='muse')label=museUsesKilo(preferences)?(museModelPolicy(preferences)==='official'?L('Kilo Proxy · Muse Code · Meta models through the proxy','Kilo Proxy · Muse Code · Modelos de Meta a través del proxy'):L('Kilo Proxy · Muse Code · Shared models through the proxy','Kilo Proxy · Muse Code · Modelos compartidos a través del proxy')):L('Muse Code · Meta login and catalog','Muse Code · Sesión y catálogo de Meta');
+   if (provider.id === 'kilo-acp' && provider.supported) label += L(' · Own login and catalog', ' · Sesión y catálogo propios');
    accounts.push(label+(provider.supported?'':L(' · unavailable in this build',' · no disponible en esta compilación')));
   }
   for (const text of accounts) { const item = document.createElement('li'); item.textContent = text; $('t3-code-agents').append(item); }

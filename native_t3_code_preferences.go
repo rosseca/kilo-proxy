@@ -66,7 +66,7 @@ type nativeT3CodeProviderChoice struct {
 }
 
 func nativeT3CodeProviderChoices(p nativeT3CodePreferences, supported []nativeT3CodeProvider) []nativeT3CodeProviderChoice {
-	known := map[string]string{}
+	known := map[string]string{t3CodeKiloACPOption: t3CodeKiloACPSupport.Label}
 	for _, provider := range t3CodeOptionalProviders {
 		known[provider.ID] = provider.Label
 	}
@@ -372,6 +372,9 @@ func (u *nativeUI) t3CodePreferencesPanel() layout.Widget {
 			continue
 		}
 		help := u.tr("Uses this provider's own installation and login", "Usa la instalación y sesión propias de este proveedor")
+		if id == t3CodeKiloACPOption {
+			help = u.tr("T3 manages the ACP Registry installation and Kilo Code sign-in", "T3 gestiona la instalación desde el registro ACP y la sesión de Kilo Code")
+		}
 		if id == "opencode" && nativeT3OpenCodeUsesKilo(p) || id == "muse" && nativeT3MuseUsesKilo(p) {
 			help = u.tr("Uses your saved shared models through Kilo Proxy", "Usa tus modelos compartidos guardados a través de Kilo Proxy")
 			if id == "muse" && nativeT3MuseModels(p) == "official" {

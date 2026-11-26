@@ -27,6 +27,13 @@ func planT3CodeOptionalProviders(prefs t3CodePreferences, installation t3CodeIns
 		selected[id] = true
 	}
 	result := map[string]any{}
+	if selected[t3CodeKiloACPOption] {
+		id, provider, err := planT3CodeKiloACP(privateRoot)
+		if err != nil {
+			return nil, err
+		}
+		result[id] = provider
+	}
 	for _, provider := range t3CodeOptionalProviders {
 		if !supported[provider.ID] {
 			continue
