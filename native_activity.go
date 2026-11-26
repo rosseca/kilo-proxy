@@ -173,6 +173,8 @@ func (u *nativeUI) costSourceLabel(source string) string {
 		return u.tr("Gateway market cost", "Coste de mercado del gateway")
 	case "usage.cost_microdollars", "usage.cost":
 		return u.tr("Gateway-reported cost", "Coste informado por el gateway")
+	case "litellm_reported":
+		return u.tr("LiteLLM-reported cost", "Coste informado por LiteLLM")
 	}
 	return ""
 }

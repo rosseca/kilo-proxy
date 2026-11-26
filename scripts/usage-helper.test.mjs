@@ -45,6 +45,7 @@ test('inference cost sources are identified without claiming a BYOK charge belon
   assert.equal(costSourceLabel('usage.cost_details.upstream_inference_cost',language),language==='es'?'Inferencia del proveedor':'Provider inference');
   for(const source of ['provider_metadata.gateway.marketCost','response.provider_metadata.gateway.marketCost'])assert.equal(costSourceLabel(source,language),language==='es'?'Coste de mercado del gateway':'Gateway market cost');
   for(const source of ['usage.cost','usage.cost_microdollars'])assert.equal(costSourceLabel(source,language),language==='es'?'Coste informado por el gateway':'Gateway-reported cost');
+  assert.equal(costSourceLabel('litellm_reported',language),language==='es'?'Coste informado por LiteLLM':'LiteLLM-reported cost');
   for(const source of ['',undefined,'unknown.field'])assert.equal(costSourceLabel(source,language),'');
   const note=inferenceCostNote(language);
   assert.ok(note.includes('BYOK'));

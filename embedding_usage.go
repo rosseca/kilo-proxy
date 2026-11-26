@@ -345,7 +345,7 @@ func (u *usageObserver) setEmbeddingModel(model string) {
 // Called under the observer lock, only after the upstream reader returned EOF.
 // HTTP delivery and metadata completeness are intentionally separate signals.
 func (u *usageObserver) finishEmbedding() {
-	u.embeddingResponseComplete = u.embeddingStatus >= 200 && u.embeddingStatus < 300
+	u.embeddingResponseComplete = u.responseStatus >= 200 && u.responseStatus < 300
 	data, err := u.embedding.finish()
 	if err != nil {
 		u.usage.Limited = true

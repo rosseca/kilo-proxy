@@ -20,6 +20,7 @@ test('LiteLLM setup preserves a working account and switches catalogs independen
       let body = '';
       for await (const chunk of req) body += chunk;
       forwarded.push(JSON.parse(body).model);
+      if (forwarded.length === 2) res.setHeader('x-litellm-response-cost', '0.012345');
       res.end(JSON.stringify({model: 'vendor/one', choices: [], usage: {prompt_tokens: 2, completion_tokens: 1, total_tokens: 3}}));
       return;
     }
@@ -62,13 +63,22 @@ test('LiteLLM setup preserves a working account and switches catalogs independen
     await page.locator('#capture-activity').check();
     await expect.poll(async () => (await state(request, gateway)).captureEnabled).toBe(true);
     const local = await state(request, gateway);
-    const response = await request.post(local.baseURL + '/chat/completions', {
+    const options = {
       headers: {Authorization: 'Bearer ' + local.localKey},
       data: {model: await liteLLMChoice.inputValue(), messages: [{role: 'user', content: 'synthetic test'}]},
-    });
-    expect(response.ok()).toBe(true);
-    expect(forwarded).toEqual(['vendor/one']);
-    await expect(page.locator('#event-rows')).toContainText('Usage managed in LiteLLM');
+    };
+    const endpoint = local.baseURL + '/chat/completions';
+    expect((await request.post(endpoint, options)).ok()).toBe(true);
+    const rows = page.locator('#event-rows');
+    const unpricedRow = rows.locator('tr').filter({hasText: 'litellm/'}).filter({hasText: 'Not reported'});
+    await expect(unpricedRow).toHaveCount(1);
+    expect((await request.post(endpoint, options)).ok()).toBe(true);
+    expect(forwarded).toEqual(['vendor/one', 'vendor/one']);
+    const pricedRow = rows.locator('tr').filter({hasText: 'LiteLLM-reported cost'});
+    await expect(pricedRow).toContainText('$0.012345');
+    await expect(unpricedRow).toHaveCount(1);
+    await expect(page.locator('#spend-title')).toHaveText('Reported subtotal');
+    await expect(page.locator('#spend-total')).toHaveText('$0.012345');
 
     await page.locator('#start-stop').click();
     await expect(page.locator('#status-label')).toHaveText('Proxy stopped');

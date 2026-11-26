@@ -183,6 +183,108 @@ func TestLiteLLMResponsesKeepsToolEventsAndContextIDs(t *testing.T) {
 	}
 }
 
+func TestLiteLLMReportedCostEntersActivityAndSessionTotals(t *testing.T) {
+	const messageDelta = `data: {"type":"message_delta","usage":{"output_tokens":2,"cost":0.0125}}` + "\n\n"
+	for _, tc := range []struct {
+		name, path, body, amount string
+		header                   []string
+		stream                   bool
+		status                   int
+	}{
+		{
+			name: "JSON cost header", path: "/v1/chat/completions", header: []string{"1.25e-7"},
+			body: `{"usage":{"prompt_tokens":2,"cost":100}}`, amount: "0.000000125",
+		},
+		{
+			name: "embeddings with explicit zero", path: "/v1/embeddings", header: []string{"0"},
+			body: `{"data":[{"embedding":[0.125],"index":0}],"usage":{"prompt_tokens":2,"total_tokens":2}}`, amount: "0.000000000",
+		},
+		{
+			name: "chat usage chunk", path: "/v1/chat/completions", stream: true, header: []string{"0"},
+			body: `data: {"object":"chat.completion.chunk","choices":[{"index":0,"delta":{}}],"usage":{"prompt_tokens":2,"cost":2.5e-6}}` + "\n\ndata: [DONE]\n\n", amount: "0.000002500",
+		},
+		{
+			name: "Responses final usage", path: "/v1/responses", stream: true,
+			body: `data: {"type":"response.completed","response":{"usage":{"input_tokens":2,"cost":0.025}}}` + "\n\n", amount: "0.025000000",
+		},
+		{
+			name: "Messages final usage", path: "/v1/messages", stream: true,
+			body: messageDelta + `data: {"type":"message_stop"}` + "\n\n", amount: "0.012500000",
+		},
+		{
+			name: "stream placeholder zero", path: "/v1/responses", stream: true, header: []string{"0"},
+			body: `data: {"type":"response.completed","response":{"usage":{"input_tokens":2}}}` + "\n\n",
+		},
+		{
+			name: "incomplete Messages stream", path: "/v1/messages", stream: true, body: messageDelta,
+		},
+		{
+			name: "malformed cost header", path: "/v1/chat/completions", header: []string{"NaN"},
+			body: `{"usage":{"prompt_tokens":2,"cost":100}}`,
+		},
+		{
+			name: "ambiguous cost header", path: "/v1/chat/completions", header: []string{"0.02", "0.03"}, body: `{}`,
+		},
+		{
+			name: "failed response", path: "/v1/chat/completions", status: http.StatusTooManyRequests,
+			header: []string{"0.10"}, body: `{"error":{"message":"rate limited"}}`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := testApp(t)
+			a.captureEnabled = true
+			base, err := normalizeLiteLLMURL("https://litellm.example.invalid")
+			if err != nil {
+				t.Fatal(err)
+			}
+			a.config.LiteLLM = liteLLMSettings{URL: base.String(), Enabled: true}
+			status := tc.status
+			if status == 0 {
+				status = http.StatusOK
+			}
+			a.transport = usageMemoryTransport(func(r *http.Request) (*http.Response, error) {
+				header := make(http.Header)
+				header.Set("Content-Type", "application/json")
+				if tc.stream {
+					header.Set("Content-Type", "text/event-stream")
+				}
+				for _, value := range tc.header {
+					header.Add("X-Litellm-Response-Cost", value)
+				}
+				return &http.Response{StatusCode: status, Header: header, Body: io.NopCloser(strings.NewReader(tc.body)), Request: r}, nil
+			})
+			model := liteLLMNamespace(base) + "test"
+			req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:8877"+tc.path, strings.NewReader(`{"model":"`+model+`","input":"synthetic"}`))
+			req.Header.Set("Authorization", "Bearer "+a.config.LocalKey)
+			req.Header.Set("X-Litellm-Response-Cost", "99")
+			w := httptest.NewRecorder()
+			a.inferenceHandler("", "", a.config.LocalKey, "127.0.0.1:8877").ServeHTTP(w, req)
+			if w.Code != status || w.Body.String() != tc.body {
+				t.Fatalf("observing cost changed LiteLLM response: status %d, body %q", w.Code, w.Body.String())
+			}
+			if len(a.events) != 1 || a.events[0].Usage == nil || a.events[0].Usage.Billing != "litellm" {
+				t.Fatal("LiteLLM usage missing from Activity")
+			}
+			usage := a.events[0].Usage
+			priced, total := int64(0), "0.000000000"
+			if tc.amount == "" {
+				if usage.CostUSD != nil || usage.CostSource != "" {
+					t.Fatalf("unreported cost was treated as known: %+v", usage)
+				}
+			} else {
+				priced, total = 1, tc.amount
+				if usage.CostUSD == nil || *usage.CostUSD != tc.amount || usage.CostSource != "litellm_reported" {
+					t.Fatalf("reported cost missing from Activity: %+v", usage)
+				}
+			}
+			session := a.usageSessions[usage.Session]
+			if a.usageTotal.Priced != priced || a.usageTotal.CostUSD != total || session == nil || session.Priced != priced || session.CostUSD != total {
+				t.Fatalf("reported cost mismatch in process or conversation: %+v, %+v", a.usageTotal, session)
+			}
+		})
+	}
+}
+
 func TestLiteLLMT3KiloRefreshKeepsSharedCatalog(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/gateway/models" {

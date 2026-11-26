@@ -431,7 +431,7 @@ func (u *nativeUI) setupPanel() layout.Widget {
 		)
 		content = u.column(u.banner(nativeToneSuccess, u.tr("You're ready", "Todo está listo")), summary)
 	default:
-		content = u.column(u.setupConnectionPanel(), u.card(u.uxsLiteLLMRow()), u.setupChatGPTOption())
+		content = u.setupConnectionPanel()
 	}
 	return u.column(u.setupStepper(), content)
 }
@@ -545,6 +545,7 @@ func (u *nativeUI) setupConnectionPanel() layout.Widget {
 			widgets = append(widgets, u.hint(u.tr("Choose a team to continue.", "Elige un equipo para continuar.")))
 		}
 	}
+	widgets = append(widgets, u.setupLiteLLMOption(), u.setupChatGPTOption())
 	if nativeBool(u.state, "running") {
 		widgets = append(widgets, u.note(u.tr("Pause the Kilo connection to change accounts, or continue with this account.", "Pausa la conexión con Kilo para cambiar de cuenta o continúa con esta cuenta.")), u.pills(u.proxyButton(), u.button("setup.keep-account", u.tr("Continue with this account", "Continuar con esta cuenta"), func() { u.setSetupStep(setupModels) })))
 	}
@@ -574,6 +575,18 @@ func (u *nativeUI) setupAuthCode(auth map[string]any) layout.Widget {
 			u.ghostButton("connection.cancel", u.tr("Cancel login", "Cancelar inicio de sesión"), func() { u.call("POST", "/api/auth/cancel", map[string]any{}, u.acceptState) }),
 		),
 	)
+}
+
+func (u *nativeUI) setupLiteLLMOption() layout.Widget {
+	if nativeString(nativeMap(u.state["litellm"]), "url") != "" || u.expanded["providers.litellm"] || u.liteLLMLoginStatus() == "pending" {
+		return u.card(u.uxsLiteLLMRow())
+	}
+	return u.disabled(u.gatewayEditable(), func(gtx layout.Context) layout.Dimensions {
+		gtx.Constraints.Min.X = 0
+		return u.buttonWidget("setup.litellm", u.tr("Does your company use LiteLLM? Add it here", "¿Tu empresa usa LiteLLM? Añádelo aquí"), nativeButtonDisclosure, nil, false, false, func() {
+			u.openLiteLLMEditor("", "key")
+		})(gtx)
+	})
 }
 
 // setupChatGPTOption keeps the experimental ChatGPT connection one click away

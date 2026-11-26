@@ -85,7 +85,9 @@ Both methods check only the model list. A failed check leaves the previous conne
 
 Use the **Kilo** and **LiteLLM** switches independently. Select LiteLLM models in the shared library. In T3 Code, use the shared-model option to include them in selectors that also offer a provider-specific catalog. LiteLLM determines which API formats and features each model supports. A request uses the selected gateway even when another connection is active.
 
-LiteLLM credentials are stored in the local credential store. Changing the API address requires credentials for the new gateway if it requires authentication. A previously selected LiteLLM model stays tied to its original address. Activity shows the LiteLLM connection and reported usage. Check the LiteLLM dashboard for gateway costs.
+LiteLLM credentials are stored in the local credential store. Changing the API address requires credentials for the new gateway if it requires authentication. A previously selected LiteLLM model stays tied to its original address.
+
+Activity shows the tokens and USD cost reported by LiteLLM for each request. Session totals include the amounts received by Kilo Proxy. For streaming requests, the gateway must include the cost in the stream with `include_cost_in_streaming_usage`. Chat Completions also needs a usage chunk, which clients can request with `stream_options.include_usage`. When a request has no reported cost, its amount is unknown. For the gateway-wide spend, check the LiteLLM dashboard. [LiteLLM spend tracking](https://docs.litellm.ai/docs/proxy/cost_tracking)
 
 ## Language
 

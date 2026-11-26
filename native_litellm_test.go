@@ -19,6 +19,16 @@ import (
 
 func TestNativeLiteLLMOnlyOnboarding(t *testing.T) {
 	u := nativeFreshOnboarding(t)
+	// Use the collapsed ChatGPT option rather than the fixture vault's error state.
+	subscription := u.owner.chatgpt
+	subscription.mu.Lock()
+	subscription.state = chatGPTState{Status: "idle"}
+	subscription.publishUIProjectionLocked()
+	subscription.mu.Unlock()
+	u.refreshState()
+	nativeTestWait(t, u, func() bool {
+		return nativeString(nativeMap(u.state["chatgpt"]), "status") == "idle"
+	})
 	gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/models" || r.Header.Get("Authorization") != "Bearer synthetic-virtual-key" {
 			http.Error(w, "unexpected gateway request", http.StatusUnauthorized)
@@ -32,10 +42,47 @@ func TestNativeLiteLLMOnlyOnboarding(t *testing.T) {
 
 	h := &nativePointerHarness{t: t, u: u, size: image.Pt(1180, 820), now: time.Now()}
 	h.frame()
-	h.reveal("Add LiteLLM", semantic.Button)
-	h.click("Add LiteLLM", semantic.Button)
+	const add = "Does your company use LiteLLM? Add it here"
+	const companyKey = "Did your company give you a key? Use it here"
+	const chatGPT = "Have ChatGPT Plus or Pro? Connect it too (optional)"
+	assertCollapsed := func() {
+		t.Helper()
+		h.reveal(add, semantic.Button)
+		disclosure := h.target(add, semantic.Button).Desc
+		if disclosure.Selected || !nativeUpdateHasText(h, "+ "+add) {
+			t.Fatal("LiteLLM onboarding did not show the collapsed LiteLLM disclosure")
+		}
+		for _, pair := range [][2]string{{companyKey, add}, {add, chatGPT}} {
+			above := h.target(pair[0], semantic.Button).Desc.Bounds
+			below := h.target(pair[1], semantic.Button).Desc.Bounds
+			gap := below.Min.Y - above.Max.Y
+			if gap < 0 || gap > int(nativeSpace16) || below.Min.X != above.Min.X {
+				t.Fatalf("%q %v did not sit directly below %q %v", pair[1], below, pair[0], above)
+			}
+		}
+		for _, label := range []string{"Not configured", "API URL", "Test and save"} {
+			if nativeUpdateHasText(h, label) {
+				t.Fatalf("collapsed LiteLLM onboarding displayed %q", label)
+			}
+		}
+	}
+	assertCollapsed()
+	h.click(add, semantic.Button)
+	if !nativeUpdateHasText(h, "API URL") || !nativeUpdateHasText(h, "Virtual key (if required)") {
+		t.Fatal("opening LiteLLM did not show the connection editor")
+	}
 	if u.value("providers.litellm.url") != "" || u.value("providers.litellm.key") != "" {
 		t.Fatal("fresh LiteLLM settings prepopulate the gateway or the key")
+	}
+	u.setValue("providers.litellm.url", "http://127.0.0.1:4000")
+	u.setValue("providers.litellm.key", "synthetic-discarded-key")
+	h.frame()
+	h.reveal("Cancel", semantic.Button)
+	h.click("Cancel", semantic.Button)
+	assertCollapsed()
+	h.click(add, semantic.Button)
+	if u.value("providers.litellm.url") != "" || u.value("providers.litellm.key") != "" {
+		t.Fatal("reopening LiteLLM retained the cancelled draft")
 	}
 	u.setValue("providers.litellm.url", gateway.URL)
 	u.setValue("providers.litellm.key", "synthetic-virtual-key")

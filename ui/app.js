@@ -556,16 +556,16 @@ function render(s) {
   $('event-rows').replaceChildren();
   for (const e of s.events || []) {
     const row = document.createElement('tr');
-    const cost = e.usage?.billing === 'subscription' ? t('Uso de suscripción')
-      : e.usage?.billing === 'litellm' ? t('Uso gestionado en LiteLLM')
-      : reportedCost(e.usage?.costUSD) ?? t('Coste desconocido');
+    const {billing, costUSD, costSource} = e.usage ?? {};
+    const amount = reportedCost(costUSD);
+    const cost = billing === 'subscription' ? t('Uso de suscripción') : amount ?? t('Coste desconocido');
     const values = [new Date(e.at).toLocaleTimeString(language, {hour: '2-digit', minute: '2-digit', second: '2-digit'}), e.method + ' ' + e.path, e.status, e.usage?.model || '—', cost, e.duration < 1000 ? e.duration + ' ms' : (e.duration / 1000).toFixed(1) + ' s'];
     values.forEach((value, i) => {
       const cell = document.createElement('td');
       if (i === 2) { const badge = document.createElement('span'); badge.className = 'status-code' + (e.status >= 400 ? ' error' : ''); badge.textContent = value; cell.append(badge); }
       else cell.textContent = value;
-      if(i===4 && reportedCost(e.usage?.costUSD)!==null){
-        const source=e.usage?.billing==='litellm'?'':costSourceLabel(e.usage?.costSource,language);
+      if(i===4 && amount!==null && billing!=='subscription'){
+        const source=costSourceLabel(costSource,language);
         if(source){const hint=document.createElement('small');hint.className='cost-source';hint.textContent=source;cell.append(hint);}
       }
       row.append(cell);
