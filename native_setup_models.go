@@ -24,7 +24,11 @@ func (u *nativeUI) setupModelsStep() layout.Widget {
 	start := u.uxmSetupStart()
 	widgets := []layout.Widget{}
 	if len(u.models) == 0 {
-		widgets = append(widgets, u.message(nativeToneInfo, u.tr("Loading your catalog…", "Cargando tu catálogo…")))
+		if u.liteLLMReady() && !u.catalogFetchedAt.IsZero() {
+			widgets = append(widgets, u.message(nativeToneWarning, u.tr("The catalog contains no models. Check your connections and refresh it.", "El catálogo está vacío. Revisa tus conexiones y actualízalo.")))
+		} else {
+			widgets = append(widgets, u.message(nativeToneInfo, u.tr("Loading your catalog…", "Cargando tu catálogo…")))
+		}
 	}
 	if len(s.Models) > 0 {
 		widgets = append(widgets, u.uxmSetupGroup(u.tr("Your list", "Tu lista"), u.uxmSetupOption("current", start == "current", true, u.uxmSetupCurrentHeader(), u.uxmSetupCurrentTable())))
@@ -391,7 +395,7 @@ func (u *nativeUI) uxmSetupCurrentTable() layout.Widget {
 			actions = func(gtx layout.Context) layout.Dimensions { return layout.E.Layout(gtx, remove) }
 		}
 		rows = append(rows, u.uxmTableRow(uxmSetupCurrentColumns, false, nativeSurface,
-			u.uxmModelCell(nativeCodexDisplayName(choice), modelLabLabel(modelLab(m)), id, badge),
+			u.uxmModelCell(nativeCodexDisplayName(choice), u.uxmModelPublisher(m), id, badge),
 			func(gtx layout.Context) layout.Dimensions {
 				return layout.E.Layout(gtx, u.textStyle(14, u.uxmPrice(m), nativeInk, font.Medium))
 			},

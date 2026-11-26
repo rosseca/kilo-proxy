@@ -367,7 +367,7 @@ func (u *usageObserver) finishEmbedding() {
 	if u.embeddingModel != "" {
 		u.usage.Model = u.embeddingModel
 	}
-	if byok, ok := usage["is_byok"].(bool); ok {
+	if byok, ok := usage["is_byok"].(bool); ok && u.usage.Billing != "litellm" {
 		u.usage.BYOK = &byok
 	}
 }

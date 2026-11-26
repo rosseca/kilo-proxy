@@ -1,6 +1,6 @@
 import {claudeDesktopModelAllowed,claudeDesktopSelection} from './claude-desktop-helper.mjs';
 import {contextLimits,contextControls,contextModel,syncContextModels,contextError,contextPreview} from './context-policy.mjs';
-import {validModelID,modelPriceDetails,filterModels,sortModels,configureModelSort,setModelSort,mergeModelSelection,filterModelLab,configureModelLab,setModelLab} from './model-helper.mjs';
+import {validModelID,modelPriceDetails,modelConnectionBadge,isLiteLLMModel,filterModels,sortModels,configureModelSort,setModelSort,mergeModelSelection,filterModelLab,configureModelLab,setModelLab} from './model-helper.mjs';
 import {ompPayload,ompLaunch,ompConfig,ompEfforts} from './omp-helper.mjs';
 import {clientConfig} from './client-config.mjs';
 import {reasoningLevels as knownReasoningLevels} from './codex-catalog.mjs';
@@ -102,7 +102,8 @@ export function createEditorHelper({api,notify,copy,refreshCatalog,onChange=()=>
   const all=new Map(ctx.catalog.filter(m=>ctx.client!=='claude-desktop'||claudeDesktopModelAllowed(m.id,desktopExperimental)).map(m=>[m.id,m]));for(const [id,m]of selected.models)all.set(id,mergeModelSelection(all.get(id),m));
   configureModelLab($('editor-lab'),[...all.values()],ctx.language);
   const matches=sortModels(filterModels(filterModelLab([...all.values()],$('editor-lab').value),q,false).filter(m=>!only||selected.models.has(m.id)),$('editor-sort').value);
-  const next=JSON.stringify([ctx.client,ctx.language,matches,contextPreview(payload),working,ctx.client==='claude-desktop'?desktopExperimental:null]);if(next===signature)return;
+  const showConnections=ctx.catalog.some(isLiteLLMModel);
+  const next=JSON.stringify([ctx.client,ctx.language,matches,showConnections,contextPreview(payload),working,ctx.client==='claude-desktop'?desktopExperimental:null]);if(next===signature)return;
   if(!force&&renderedClient===ctx.client&&!working&&$('editor-picker').contains(document.activeElement)&&document.activeElement.matches('input[type=text],input[type=number]'))return;
   // A background state refresh can render a changed name/reasoning preference
   // before the next input gains focus. Keep the user's limit panels expanded.
@@ -115,6 +116,8 @@ export function createEditorHelper({api,notify,copy,refreshCatalog,onChange=()=>
    const check=document.createElement('input');check.type='checkbox';check.checked=chosen;check.disabled=working||(!chosen&&selected.models.size>=50);check.dataset.editorId=m.id;check.setAttribute('aria-label',m.name||m.id);
    check.addEventListener('change',()=>{if(check.checked){selected.models.set(m.id,{...m,name:(m.name||m.id).slice(0,80)});if(!selected.initial)selected.initial=m.id}else{selected.models.delete(m.id);if(selected.initial===m.id)selected.initial=selected.models.keys().next().value||''}render(ctx)});
    const text=document.createElement('span'),title=document.createElement('strong'),id=document.createElement('small');title.textContent=m.name||m.id;id.textContent=m.id;text.append(title,id);
+   const originBadge=modelConnectionBadge(m,showConnections);
+   if(originBadge)text.append(originBadge);
    text.className='model-option-title';label.append(check,text,modelPriceDetails(m,ctx.language));entry.append(label);
    if(chosen){
     const value=selected.models.get(m.id),row=document.createElement('div');row.className='codex-row-controls';

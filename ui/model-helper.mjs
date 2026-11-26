@@ -15,6 +15,22 @@ export function modelByokBadge(model, catalog, state, language='en') {
     : team?'BYOK connection available for the selected team.':'BYOK connection available for the current Kilo account.';
   return badge;
 }
+export function isLiteLLMModel(model) {
+  return model.connection === 'litellm' || model.id?.startsWith('litellm/');
+}
+export function modelConnectionName(model, kiloLabel = 'Kilo') {
+  if (isLiteLLMModel(model)) return 'LiteLLM';
+  if (model.connection === 'chatgpt' || model.id?.startsWith('chatgpt/')) return 'ChatGPT';
+  return kiloLabel;
+}
+export function modelConnectionBadge(model, showAll = false) {
+  const source = modelConnectionName(model);
+  if (!showAll && source !== 'LiteLLM') return null;
+  const badge = document.createElement('span');
+  badge.className = 'model-connection-badge';
+  badge.textContent = source;
+  return badge;
+}
 export function filterModels(models, query = '', coding = true) {
   const terms = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
   return models.filter(m => (!coding || (m.tools === true && m.outputModalities?.includes('text'))) && terms.every(term => `${m.name} ${m.id}`.toLowerCase().includes(term)));
@@ -22,7 +38,7 @@ export function filterModels(models, query = '', coding = true) {
 // Image tools use an independent catalog: image input and tool calling alone
 // do not make a model capable of producing an image.
 export function imageGenerationModels(models) {
-  return sortModels(models.filter(model=>model.outputModalities?.includes('image')),'name');
+  return sortModels(models.filter(model=>!isLiteLLMModel(model) && model.outputModalities?.includes('image')),'name');
 }
 export function imageGenerationSelection(value) {
   if(!value || typeof value.enabled!=='boolean' || typeof value.model!=='string')return null;

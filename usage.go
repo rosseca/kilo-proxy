@@ -303,7 +303,7 @@ func dollars(n int64) string {
 func leftPad(s string, n int) string { return strings.Repeat("0", n-len(s)) + s }
 
 func (u *usageObserver) parseCost(root, usage map[string]any) {
-	if u.usage.Billing == "subscription" {
+	if u.usage.Billing == "subscription" || u.usage.Billing == "litellm" {
 		return
 	}
 	// Keep the explicit Kilo microdollar contract first. Otherwise follow Kilo's
@@ -365,7 +365,7 @@ func (u *usageObserver) parse(data []byte) {
 	if message := usageObject(root["message"]); message != nil && kind == "message_start" {
 		payload = message
 	}
-	if model, ok := payload["model"].(string); ok && len(model) <= 256 {
+	if model, ok := payload["model"].(string); ok && len(model) <= 256 && u.usage.Billing != "litellm" {
 		if u.usage.Billing == "subscription" && !strings.HasPrefix(model, "chatgpt/") {
 			model = "chatgpt/" + model
 		}

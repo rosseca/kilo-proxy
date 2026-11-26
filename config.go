@@ -53,6 +53,8 @@ type settings struct {
 	Port                            int                     `json:"port"`
 	OrgID                           string                  `json:"orgId"`
 	OrgName                         string                  `json:"orgName,omitempty"`
+	KiloPaused                      bool                    `json:"kiloPaused,omitempty"`
+	LiteLLM                         liteLLMSettings         `json:"litellm,omitzero"`
 	LocalKey                        string                  `json:"localKey"`
 	Remember                        bool                    `json:"remember"`
 	VaultID                         string                  `json:"vaultId"`
@@ -138,6 +140,9 @@ func readSettings(dir string) (settings, error) {
 	}
 	if err := validateImageGenerationSettings(s.ImageGeneration); err != nil {
 		return s, errors.New("invalid image generation settings; restore a valid configuration")
+	}
+	if err := validateLiteLLMSettings(s.LiteLLM); err != nil {
+		return s, err
 	}
 	return s, nil
 }

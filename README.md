@@ -79,9 +79,11 @@ Release binaries need no Go, Node or Docker. Linux Desktop needs [system graphic
 
 ## First launch
 
-1. **Connect your account:** follow the sign-in guide and choose your Kilo organization, or connect ChatGPT.
+1. **Connect your account:** choose your Kilo organization, connect ChatGPT, or add a LiteLLM gateway.
 2. **Choose models:** start with the recommended models or a curated pack, then adjust the shared library.
 3. **Install or open your agent:** on macOS and Linux, **Harnesses** can check versions and install or update a private Kilo copy of supported tools. Choose the stable or nightly channel for T3 Code, or stable or Beta for Synara. Start the proxy and open your agent here. Keep Kilo Proxy running while you use it. [Supported packages and requirements](docs/managed-tools.md).
+
+In **Settings → Accounts → Add LiteLLM**, enter your gateway's API URL and a virtual key if it requires one. **Test and save** checks only the model list. Kilo and LiteLLM can be active together or independently. The shared catalog shows the connection for each model, and requests stay on the selected connection. [LiteLLM setup and client compatibility](docs/desktop.md#litellm).
 
 For the terminal edition, follow the [headless setup guide](docs/headless.md).
 

@@ -138,8 +138,15 @@ func buildCodexCatalog(models []nativeModelChoice, initial string, xcode bool) (
 		if helperContains(m.InputModalities, "image") {
 			modalities = append(modalities, "image")
 		}
+		gateway := "Kilo Gateway"
+		switch {
+		case m.Connection == "litellm" || strings.HasPrefix(m.ID, liteLLMModelPrefix):
+			gateway = "LiteLLM"
+		case m.Connection == "chatgpt" || strings.HasPrefix(m.ID, "chatgpt/"):
+			gateway = "ChatGPT"
+		}
 		entry := map[string]any{
-			"slug": m.ID, "display_name": nativeCodexDisplayName(choice), "description": "Kilo Gateway · " + m.ID,
+			"slug": m.ID, "display_name": nativeCodexDisplayName(choice), "description": gateway + " · " + m.ID,
 			"default_reasoning_level": initialEffort, "supported_reasoning_levels": supported,
 			"shell_type": "default", "visibility": "list", "supported_in_api": true, "priority": len(entries),
 			"base_instructions": nativeCodexInstructions, "supports_reasoning_summaries": false,

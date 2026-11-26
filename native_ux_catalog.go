@@ -224,7 +224,12 @@ func (u *nativeUI) uxmCatalogRow(target uxmCatalogTarget, m modelInfo, order str
 	if choice := target.selection.choice(id); choice != nil && choice.DisplayName != "" {
 		label = choice.DisplayName
 	}
-	return u.uxmClickRow(target.prefix+"choose:"+id, label, semantic.CheckBox, picked, toggle, func(hovered bool) layout.Widget {
+	description, accessibleName := id, label
+	if gateway := u.uxmModelGateway(m); gateway != "" {
+		description = gateway + " · " + id
+		accessibleName += " · " + gateway
+	}
+	return u.uxmClickRow(target.prefix+"choose:"+id, accessibleName, semantic.CheckBox, picked, toggle, func(hovered bool) layout.Widget {
 		background := nativeSurface
 		if picked {
 			background = nativeCitrus
@@ -243,7 +248,7 @@ func (u *nativeUI) uxmCatalogRow(target uxmCatalogTarget, m modelInfo, order str
 		if badge := u.modelByokBadge(m, currentByok); badge != nil {
 			title = u.pills(title, badge)
 		}
-		name := []layout.Widget{title, uxmGap(2), u.uxmSubtle(12, id)}
+		name := []layout.Widget{title, uxmGap(2), u.uxmSubtle(12, description)}
 		if m.MayTrain != nil && *m.MayTrain {
 			name = append(name, u.uxmSubtle(12, u.tr("Kilo reports that this model may use prompts for training.", "Kilo indica que este modelo puede usar los mensajes para entrenamiento.")))
 		}

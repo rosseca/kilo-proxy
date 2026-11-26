@@ -1,6 +1,6 @@
 import {connectionReady} from './chatgpt-helper.mjs';
 import {contextControls,contextModel,contextLibraryFields,syncContextModels,contextError} from './context-policy.mjs';
-import {validModelID, modelPriceDetails, filterModels, sortModels, configureModelSort, setModelSort, filterModelLab, configureModelLab, setModelLab} from './model-helper.mjs';
+import {validModelID, modelPriceDetails, modelConnectionBadge, isLiteLLMModel, filterModels, sortModels, configureModelSort, setModelSort, filterModelLab, configureModelLab, setModelLab} from './model-helper.mjs';
 
 export const openDesignEngines = ['codex-cli', 'claude', 'opencode'];
 export function openDesignLibrary(models = [], initial = '') {
@@ -106,7 +106,8 @@ export function createOpenDesignHelper({api, refreshCatalog, onChange = () => {}
   configureModelSort($('open-design-sort'), ctx.language);
   configureModelLab($('open-design-lab'), [...all.values()], ctx.language);
   const matches = sortModels(filterModels(filterModelLab([...all.values()], $('open-design-lab').value), $('open-design-search').value, false).filter(model => !$('open-design-selected').checked || selected.has(model.id)), $('open-design-sort').value);
-  const next = JSON.stringify([matches, [...selected.keys()], initial, ctx.language, working]);
+  const showConnections = ctx.catalog.some(isLiteLLMModel);
+  const next = JSON.stringify([matches, [...selected.keys()], initial, ctx.language, working, showConnections]);
   if (signature === next) return;
   signature = next;
   const scroll = $('open-design-picker').scrollTop;
@@ -124,6 +125,8 @@ export function createOpenDesignHelper({api, refreshCatalog, onChange = () => {}
    });
    const text = document.createElement('span'), title = document.createElement('strong'), id = document.createElement('small');
    text.className = 'model-option-title'; title.textContent = selected.get(model.id)?.displayName || model.name || model.id; id.textContent = model.id; text.append(title, id);
+   const originBadge = modelConnectionBadge(model, showConnections);
+   if (originBadge) text.append(originBadge);
    label.append(check, text, modelPriceDetails(model, ctx.language)); card.append(label);
    if (chosen) {
     const row = document.createElement('div'), button = document.createElement('button'); row.className = 'codex-row-controls'; button.type = 'button'; button.className = 'codex-default-button';

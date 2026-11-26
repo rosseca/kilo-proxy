@@ -9,13 +9,13 @@ import (
 // Published under app.mu after committed connection/settings mutations. It
 // contains no credential, mutable slice or map. Rendering never acquires app.mu.
 type appUIProjection struct {
-	Fingerprint                                 [32]byte
-	HasKey, HasOrg, KiloReady, ProviderChanging bool
-	Port                                        int
-	OrgID, Language, TrayDisplay, UsageScope    string
-	Remember                                    bool
-	CatalogRevision                             uint64
-	ImageTransport                              imageTransportSettings
+	Fingerprint                                                [32]byte
+	HasKey, HasOrg, KiloReady, LiteLLMReady, ProviderChanging  bool
+	Port                                                       int
+	OrgID, Language, TrayDisplay, UsageScope, CatalogBaseScope string
+	Remember                                                   bool
+	CatalogRevision                                            uint64
+	ImageTransport                                             imageTransportSettings
 }
 
 type chatGPTUIProjection struct {
@@ -26,12 +26,19 @@ type chatGPTUIProjection struct {
 // Caller holds app.mu. Keep this independent of ChatGPT's lock: its own atomic
 // projection is composed by readers, so publishing never inverts lock order.
 func (a *app) publishUIProjectionLocked() {
-	data, _ := json.Marshal([]any{a.config.Port, a.config.OrgID, a.config.LocalKey, a.apiKey})
+	scope := a.catalogBaseScopeLocked()
+	connection := []any{a.config.Port, a.config.OrgID, a.config.LocalKey, a.apiKey}
+	if scope != a.config.OrgID {
+		connection = append(connection, scope)
+	}
+	data, _ := json.Marshal(connection)
 	a.uiProjection.Store(&appUIProjection{
 		Fingerprint:      sha256.Sum256(data),
 		HasKey:           strings.TrimSpace(a.apiKey) != "",
 		HasOrg:           strings.TrimSpace(a.config.OrgID) != "",
 		KiloReady:        a.kiloReadyLocked(),
+		LiteLLMReady:     a.liteLLMReadyLocked(),
+		CatalogBaseScope: scope,
 		ProviderChanging: a.providerChanging,
 		Port:             a.config.Port, OrgID: a.config.OrgID, Language: a.config.Language,
 		Remember: a.config.Remember, TrayDisplay: normalizeTrayDisplay(a.config.TrayDisplay),
@@ -65,13 +72,13 @@ func (c *chatGPTConnection) readUIProjection() chatGPTUIProjection {
 
 func (a *app) uiConnectionReady() bool {
 	p, c := a.readUIProjection(), a.chatgpt.readUIProjection()
-	return p.KiloReady || !p.ProviderChanging && c.Connected && c.Status != "pending"
+	return p.KiloReady || p.LiteLLMReady || !p.ProviderChanging && c.Connected && c.Status != "pending"
 }
 
 func (a *app) uiCatalogScope() string {
 	p, c := a.readUIProjection(), a.chatgpt.readUIProjection()
 	if c.Connected {
-		return p.OrgID + "|chatgpt:" + c.Identity
+		return p.CatalogBaseScope + "|chatgpt:" + c.Identity
 	}
-	return p.OrgID
+	return p.CatalogBaseScope
 }

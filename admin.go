@@ -58,7 +58,7 @@ func (a *app) adminHandler() http.Handler {
 			jsonError(w, 403, "Origen no permitido.")
 			return
 		}
-		if r.URL.Path == "/chatgpt-helper.mjs" && r.Method == http.MethodGet {
+		if (r.URL.Path == "/chatgpt-helper.mjs" || r.URL.Path == "/litellm-helper.mjs") && r.Method == http.MethodGet {
 			files.ServeHTTP(w, r)
 			return
 		}
@@ -92,6 +92,11 @@ func (a *app) adminHandler() http.Handler {
 		}
 		if strings.HasPrefix(r.URL.Path, "/api/chatgpt/") {
 			a.providerAPI(w, r)
+			return
+		}
+		switch r.URL.Path {
+		case liteLLMSettingsEndpoint, liteLLMActiveEndpoint, kiloActiveEndpoint:
+			a.connectionSettingsAPI(w, r)
 			return
 		}
 		if r.URL.Path == "/api/updates" {
@@ -318,6 +323,7 @@ func (a *app) state(w http.ResponseWriter) {
 	}
 	snapshot := map[string]any{
 		"connectionReady": a.connectionReadyLocked(), "kiloReady": a.kiloReadyLocked(), "chatgptReady": a.chatGPTReadyLocked(), "chatgpt": a.chatgpt.snapshot(),
+		"litellm": a.liteLLMViewLocked(), "kiloEnabled": !a.config.KiloPaused,
 		"claudeDesktopExperimentalModels": a.claudeDesktopExperimentalLocked(),
 		"t3CodeTelemetryDisabled":         a.config.T3CodeTelemetryDisabled,
 		"imageTransport":                  a.config.ImageTransport,
@@ -403,8 +409,8 @@ func (a *app) saveConfig(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, 409, "Detén el proxy o cancela el login antes de cambiar la conexión.")
 		return
 	}
-	if input.OrgID == "" && input.APIKey == "" && a.chatGPTReadyLocked() {
-		// Subscription-only port edits must not clear a saved Kilo connection.
+	if input.OrgID == "" && input.APIKey == "" && (a.chatGPTReadyLocked() || a.liteLLMReadyLocked()) {
+		// Port edits with another connection must not clear saved Kilo credentials.
 		cfg := a.config
 		cfg.Port = input.Port
 		if err := writeSettings(a.dir, cfg); err != nil {

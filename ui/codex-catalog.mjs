@@ -1,5 +1,5 @@
 import {contextLimits} from './context-policy.mjs';
-import {validModelID} from './model-helper.mjs';
+import {validModelID,modelConnectionName} from './model-helper.mjs';
 // Conservative, original instructions for external models. Do not copy the
 // installed application's model prompts or claim provider-specific capabilities.
 const instructions = 'You are a coding assistant working with the user in a shared workspace. Follow the user instructions and applicable repository guidance. Inspect relevant files before making changes. Use the available tools to complete the requested work, preserve unrelated user changes, and verify changes with appropriate checks. Explain results and limitations clearly. Do not claim actions or tests you did not perform.';
@@ -245,7 +245,7 @@ export function codexCatalog(models, defaultModel) {
   const ordered = [...models].sort((a,b) => Number(b.id === defaultModel) - Number(a.id === defaultModel));
   const seen = new Set();
   return {models:ordered.filter(m => validModelID(m.id) && !seen.has(m.id) && seen.add(m.id)).map((m,index) => ({
-    slug:m.id, display_name:codexDisplayName(m), description:'Kilo Gateway · ' + m.id,
+    slug:m.id, display_name:codexDisplayName(m), description:modelConnectionName(m, 'Kilo Gateway') + ' · ' + m.id,
     default_reasoning_level:reasoningFor(m).initial, supported_reasoning_levels:reasoningFor(m).levels.map(effort=>({effort,description:'Reasoning effort: '+effort})),
     shell_type:'default', visibility:'list', supported_in_api:true, priority:index,
     base_instructions:instructions,

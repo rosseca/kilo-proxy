@@ -55,8 +55,11 @@ func catalogFailure(w http.ResponseWriter, err error) {
 func (a *app) fetchKiloModels(ctx context.Context, requireAccount bool) ([]modelInfo, uint64, error) {
 	a.mu.Lock()
 	key, org, revision, base := a.apiKey, a.config.OrgID, a.catalogRevision, *a.upstream
-	pending := a.authPending()
+	pending, paused := a.authPending(), a.config.KiloPaused
 	a.mu.Unlock()
+	if paused {
+		return nil, revision, &catalogError{http.StatusServiceUnavailable, "Kilo is paused. Activate it in Accounts."}
+	}
 	if pending {
 		return nil, revision, &catalogError{409, "Espera a que termine el login para cargar los modelos."}
 	}

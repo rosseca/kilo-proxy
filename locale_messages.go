@@ -37,6 +37,24 @@ func nativeMessage(message, language string) string {
 
 // Canonical backend translations shared with ui/i18n.mjs.
 var nativeBackendMessages = map[string]string{
+	"Introduce una URL HTTP o HTTPS válida para la API de LiteLLM.":                           "Enter a valid HTTP or HTTPS URL for the LiteLLM API.",
+	"Introduce la URL de la API de LiteLLM en lugar de la página de administración.":          "Enter the LiteLLM API URL rather than the administration page.",
+	"La URL de LiteLLM apunta a esta instancia de Kilo Proxy.":                                "The LiteLLM URL points to this Kilo Proxy instance.",
+	"No se pudo resolver el servidor de LiteLLM. Revisa la URL y la conexión de red.":         "Could not resolve the LiteLLM server. Check the URL and network connection.",
+	"Ya se está comprobando una conexión de LiteLLM.":                                         "A LiteLLM connection is already being checked.",
+	"Introduce la clave virtual de este servidor de LiteLLM o elige conectar sin clave.":      "Enter the virtual key for this LiteLLM server, or explicitly choose to use no key.",
+	"La clave virtual es demasiado larga o contiene espacios o caracteres no válidos.":        "The virtual key is too long or contains spaces or invalid characters.",
+	"Introduce la clave virtual de LiteLLM en lugar de la clave local de Kilo Proxy.":         "Enter the LiteLLM virtual key instead of the Kilo Proxy local key.",
+	"No se encontró el endpoint de modelos de LiteLLM. Revisa la URL de la API.":              "The LiteLLM model endpoint was not found. Check the API address.",
+	"LiteLLM ha rechazado la clave virtual o sus permisos.":                                   "LiteLLM rejected the virtual key or its permissions.",
+	"No se pudo cargar el catálogo de LiteLLM. Revisa la URL de la API y la conexión de red.": "Could not load the LiteLLM model catalog. Check the API URL and network connection.",
+	"El puerto local cambió al comprobar LiteLLM. Vuelve a intentarlo.":                       "The local port changed during the LiteLLM check. Try again.",
+	"No se pudo guardar la clave de LiteLLM en el almacén de credenciales.":                   "Could not save the LiteLLM key in the credential store.",
+	"No se pudieron guardar los ajustes de LiteLLM.":                                          "Could not save the LiteLLM settings.",
+	"Elige si quieres activar esta conexión.":                                                 "Choose whether to enable this connection.",
+	"Configura y verifica LiteLLM antes de activarlo.":                                        "Configure and verify LiteLLM before enabling it.",
+	"No se pudo guardar el ajuste de conexión.":                                               "Could not save the connection setting.",
+
 	"Elige modelos de Meta o todos los modelos compartidos para Muse Code.":                                                                                                        "Choose Meta models or all shared models for Muse Code.",
 	"No hay modelos de Meta en el catálogo de Kilo conectado. Actualiza el catálogo, elige todos los modelos compartidos o desactiva Muse Code · Kilo.":                            "No Meta models are available in the connected Kilo catalog. Refresh the catalog, choose all shared models, or disable Muse Code · Kilo.",
 	"No hay modelos de Claude disponibles tanto en T3 Code como en el catálogo de Kilo conectado. Actualiza el catálogo, elige los modelos compartidos o desactiva Claude · Kilo.": "No Claude models are available in both T3 Code and the connected Kilo catalog. Refresh the catalog, choose shared models, or disable Claude · Kilo.",

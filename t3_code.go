@@ -113,7 +113,7 @@ func (input t3CodeValidationInput) catalog() []modelInfo {
 	}
 	var models []modelInfo
 	for _, model := range cache.Models {
-		if model.Connection == "chatgpt" {
+		if model.Connection == "chatgpt" || model.Connection == "litellm" {
 			models = append(models, model)
 		}
 	}
@@ -775,12 +775,12 @@ func (a *app) loadT3CodeProviderCatalog(ctx context.Context, prefs t3CodePrefere
 	}
 	kiloFetchedAt := time.Now().UTC()
 	fetchedAt := time.Time{}
-	if !a.chatGPTReadyLocked() {
+	if !a.chatGPTReadyLocked() && !a.config.LiteLLM.Enabled {
 		fetchedAt = kiloFetchedAt
 	}
 	cache = readNativeCachedCatalog(a.dir, scope)
 	for _, model := range cache.Models {
-		if model.Connection == "chatgpt" {
+		if model.Connection == "chatgpt" || model.Connection == "litellm" {
 			models = append(models, model)
 		}
 	}

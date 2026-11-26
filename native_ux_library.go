@@ -499,7 +499,7 @@ func (u *nativeUI) uxmLibraryTable() layout.Widget {
 				badge = byok
 			}
 		}
-		cell := []layout.Widget{u.uxmModelCell(nativeCodexDisplayName(*choice), modelLabLabel(modelLab(m)), id, badge)}
+		cell := []layout.Widget{u.uxmModelCell(nativeCodexDisplayName(*choice), u.uxmModelPublisher(m), id, badge)}
 		if _, found := u.packCatalogModel(id); !found {
 			cell = append(cell, u.uxmSubtle(12, u.tr("Saved model · catalog unavailable", "Modelo guardado · catálogo no disponible")))
 		}

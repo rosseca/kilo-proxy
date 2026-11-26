@@ -31,7 +31,7 @@ func (u *nativeUI) setupNeeded() bool {
 }
 
 func (u *nativeUI) setupConnectionNeeded() bool {
-	if u.chatGPTReady() {
+	if u.chatGPTReady() || u.liteLLMReady() {
 		return false
 	}
 	return !u.owner.uiConnectionReady()
@@ -66,7 +66,7 @@ func (u *nativeUI) connectionWorking() bool {
 }
 
 func (u *nativeUI) connectionWorkingExceptLaunch(client string) bool {
-	if u.chatGPTRequestBusy() {
+	if u.chatGPTRequestBusy() || u.gatewayRequestBusy() {
 		return true
 	}
 	for _, path := range []string{"/api/config", "/api/start", "/api/stop", "/api/forget", "/api/auth/start", "/api/auth/cancel", "/api/auth/organizations"} {
@@ -78,12 +78,16 @@ func (u *nativeUI) connectionWorkingExceptLaunch(client string) bool {
 		return true
 	}
 	auth := nativeString(nativeMap(u.state["auth"]), "status")
-	if (auth == "pending" || auth == "starting") && !u.chatGPTReady() {
+	if (auth == "pending" || auth == "starting") && !u.chatGPTReady() && !u.liteLLMReady() {
 		return true
 	}
-	return nativeString(nativeMap(u.state["chatgpt"]), "status") == "pending" && !nativeBool(u.state, "kiloReady")
+	return nativeString(nativeMap(u.state["chatgpt"]), "status") == "pending" && !nativeBool(u.state, "kiloReady") && !u.liteLLMReady()
 }
+
 func (u *nativeUI) kiloConnectionWorking() bool {
+	if u.gatewayRequestBusy() {
+		return true
+	}
 	auth := nativeString(nativeMap(u.state["auth"]), "status")
 	if auth == "pending" || auth == "starting" {
 		return true
@@ -110,7 +114,8 @@ func (u *nativeUI) beginKiloLogin() {
 }
 
 func (u *nativeUI) setupConnectionContinue() {
-	if u.chatGPTRequestBusy() || u.chatGPTReady() && u.connectionWorking() || !u.chatGPTReady() && u.kiloConnectionWorking() {
+	alternateReady := u.chatGPTReady() || u.liteLLMReady()
+	if u.chatGPTRequestBusy() || alternateReady && u.connectionWorking() || !alternateReady && u.kiloConnectionWorking() {
 		return
 	}
 	continueSetup := func() {
@@ -127,7 +132,7 @@ func (u *nativeUI) setupConnectionContinue() {
 		u.modelsPending = true
 		u.refreshState()
 	}
-	if u.chatGPTReady() {
+	if alternateReady {
 		if !u.setupConnectionNeeded() {
 			continueSetup()
 		}
@@ -171,7 +176,7 @@ func (u *nativeUI) setProxyRunning(start bool, done func()) {
 	u.call("POST", path, map[string]any{}, func(raw json.RawMessage) {
 		u.acceptState(raw)
 		if nativeBool(u.state, "running") != start {
-			u.setNotice(nativeToneWarning, u.tr("Could not confirm the Kilo connection. Try again.", "No se pudo confirmar la conexión con Kilo. Vuelve a intentarlo."))
+			u.setNotice(nativeToneWarning, u.tr("Could not confirm the proxy status. Try again.", "No se pudo confirmar el estado del proxy. Vuelve a intentarlo."))
 			return
 		}
 		if done != nil {
@@ -401,6 +406,14 @@ func (u *nativeUI) setupPanel() layout.Widget {
 				account = subscription
 			}
 		}
+		if u.liteLLMReady() {
+			identity := u.litellmSetupAccount()
+			if nativeBool(u.state, "kiloReady") || u.chatGPTReady() {
+				account += " · " + identity
+			} else {
+				account = identity
+			}
+		}
 
 		count := len(u.library.selection.Models)
 		modelCount := fmt.Sprintf(u.tr("%d models selected", "%d modelos seleccionados"), count)
@@ -418,7 +431,7 @@ func (u *nativeUI) setupPanel() layout.Widget {
 		)
 		content = u.column(u.banner(nativeToneSuccess, u.tr("You're ready", "Todo está listo")), summary)
 	default:
-		content = u.column(u.setupConnectionPanel(), u.setupChatGPTOption())
+		content = u.column(u.setupConnectionPanel(), u.card(u.uxsLiteLLMRow()), u.setupChatGPTOption())
 	}
 	return u.column(u.setupStepper(), content)
 }
@@ -427,8 +440,8 @@ func (u *nativeUI) setupFooter() layout.Widget {
 	var back, primary layout.Widget
 	switch u.setupStep {
 	case setupConnect:
-		if u.chatGPTReady() {
-			if nativeBool(nativeMap(u.state["chatgpt"]), "connected") {
+		if u.chatGPTReady() || u.liteLLMReady() {
+			if u.liteLLMReady() || u.chatGPTConnected() {
 				primary = u.disabled(!u.connectionWorking() && !u.setupConnectionNeeded(), u.primaryButton("primary.setup.connection-next", u.tr("Choose models", "Elegir modelos"), u.setupConnectionContinue))
 			}
 			break

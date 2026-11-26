@@ -368,7 +368,7 @@ func (u *nativeUI) uxhListPage() layout.Widget {
 		widgets = append(widgets, u.message(nativeToneError, a.Error))
 	}
 	if u.setupNeeded() {
-		widgets = append(widgets, u.card(u.actionRow(u.column(u.heading(u.tr("Finish setting up your workspace", "Termina de configurar tu espacio")), u.note(u.tr("Connect Kilo or ChatGPT and choose at least one model. We'll guide you through it.", "Conecta Kilo o ChatGPT y elige al menos un modelo. Te guiamos paso a paso."))), u.primaryButton("primary.agents.setup", u.tr("Continue setup", "Continuar configuración"), u.beginSetup))))
+		widgets = append(widgets, u.card(u.actionRow(u.column(u.heading(u.tr("Finish setting up your workspace", "Termina de configurar tu espacio")), u.note(u.tr("Connect an account and choose at least one model.", "Conecta una cuenta y elige al menos un modelo."))), u.primaryButton("primary.agents.setup", u.tr("Continue setup", "Continuar configuración"), u.beginSetup))))
 	}
 	widgets = append(widgets, u.uxhTopBar())
 	if reason := u.uxhSharedReason(); reason != "" && !u.setupNeeded() {

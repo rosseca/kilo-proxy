@@ -2,7 +2,7 @@ import {contextControls,contextModel,syncContextModels,contextError,contextPrevi
 import {codexCatalog,reasoningFor,codexDisplayName} from './codex-catalog.mjs';
 import {writeClipboard} from './desktop-helper.mjs';
 import {claudeCapabilities,claudeEfforts,claudeSelection} from './claude-helper.mjs';
-import {validModelID,modelPriceDetails,sortModels,configureModelSort,setModelSort,mergeModelSelection,filterModelLab,configureModelLab,setModelLab} from './model-helper.mjs';
+import {validModelID,modelPriceDetails,modelConnectionBadge,isLiteLLMModel,sortModels,configureModelSort,setModelSort,mergeModelSelection,filterModelLab,configureModelLab,setModelLab} from './model-helper.mjs';
 
 export function xcodeChatGuide(baseURL,key,language='en') {
  const url=baseURL.replace(/\/v1\/?$/,'')+'/xcode';
@@ -62,11 +62,14 @@ export function createXcodeHelper({api,notify,refreshCatalog,onChange=()=>{}}) {
   document.querySelectorAll('[data-xcode-variant]').forEach(b=>{b.setAttribute('aria-selected',String(b.dataset.xcodeVariant===variant));b.textContent=b.dataset.xcodeVariant==='chat'?'Chat':b.dataset.xcodeVariant==='codex'?L('Codex in Xcode','Codex en Xcode'):L('Claude in Xcode','Claude en Xcode')});
   const list=$('xcode-picker'),scroll=list.scrollTop,focus=document.activeElement?.dataset.xcodeFocus;
   list.replaceChildren();const query=$('xcode-search').value.toLowerCase();
+  const showConnections=context.catalog.some(isLiteLLMModel);
   const matches=sortModels(filterModelLab([...available.values()],$('xcode-lab').value).filter(m=>(!$('xcode-selected').checked||s.models.has(m.id))&&(m.id+' '+(m.name||'')+' '+(m.displayName||'')).toLowerCase().includes(query)),$('xcode-sort').value);
   for(const model of matches){
    const chosen=s.models.has(model.id),entry=document.createElement('div');entry.className='codex-model-entry'+(chosen?' is-selected':'');
    const row=document.createElement('label');row.className='model-option';const check=document.createElement('input');check.type='checkbox';check.checked=chosen;check.dataset.xcodeFocus='choose:'+model.id;
    const title=document.createElement('span'),strong=document.createElement('strong'),small=document.createElement('small');strong.textContent=codexDisplayName(model);small.textContent=model.id;title.append(strong,small);
+   const originBadge=modelConnectionBadge(model,showConnections);
+   if(originBadge)title.append(originBadge);
    title.className='model-option-title';row.append(check,title,modelPriceDetails(model,context.language));entry.append(row);
    check.addEventListener('change',()=>{if(check.checked){const max=variant==='claude'&&!caps().picker?3:50;if(s.models.size>=max){check.checked=false;notify(L('Maximum ','Máximo ')+max+L(' models',' modelos'),true);return}s.models.set(model.id,{...model});if(!s.initial)s.initial=model.id}else{s.models.delete(model.id);if(s.initial===model.id)s.initial=s.models.keys().next().value||'';for(const a of Object.keys(s.aliases))if(s.aliases[a]===model.id)s.aliases[a]=''}render()});
    if(chosen){
