@@ -44,20 +44,38 @@
             <h3 id="litellm-title">LiteLLM</h3>
             <p id="litellm-status" role="status"></p>
             <label id="litellm-enabled-row" class="checkbox-label" hidden><input id="litellm-enabled" type="checkbox"><span>Usar LiteLLM</span></label>
-            <button id="litellm-edit" class="secondary-button" type="button" aria-controls="litellm-form" aria-expanded="false">Añadir LiteLLM</button>
+            <div class="form-actions" id="litellm-account-actions">
+              <button id="litellm-edit" class="secondary-button" type="button" aria-controls="litellm-form" aria-expanded="false">Añadir LiteLLM</button>
+              <button id="litellm-logout" class="text-button" type="button" hidden>Desconectar LiteLLM</button>
+            </div>
             <form id="litellm-form" hidden>
               <label for="litellm-url">URL de la API</label>
               <input id="litellm-url" type="url" required maxlength="2048" autocomplete="off" spellcheck="false" aria-describedby="litellm-url-help">
               <p id="litellm-url-help" class="field-help">Usa la URL base de la API. Kilo Proxy añade /v1 si falta.</p>
-              <label for="litellm-key">Clave virtual de LiteLLM</label>
-              <input id="litellm-key" type="password" maxlength="8192" autocomplete="off" spellcheck="false" aria-describedby="litellm-key-help">
-              <p id="litellm-key-help" class="field-help"></p>
-              <label id="litellm-without-key-row" class="checkbox-label" hidden><input id="litellm-without-key" type="checkbox"><span>Conectar sin clave</span></label>
+              <fieldset id="litellm-auth-mode">
+                <legend>Método de acceso</legend>
+                <label><input id="litellm-auth-key" name="litellm-auth-mode" type="radio" value="key" checked><span>Clave virtual</span></label>
+                <label><input id="litellm-auth-browser" name="litellm-auth-mode" type="radio" value="browser"><span>Inicio de sesión en el navegador</span></label>
+              </fieldset>
+              <div id="litellm-key-fields">
+                <label for="litellm-key">Clave virtual de LiteLLM</label>
+                <input id="litellm-key" type="password" maxlength="8192" autocomplete="off" spellcheck="false" aria-describedby="litellm-key-help">
+                <p id="litellm-key-help" class="field-help"></p>
+                <label id="litellm-without-key-row" class="checkbox-label" hidden><input id="litellm-without-key" type="checkbox"><span>Conectar sin clave</span></label>
+              </div>
+              <p id="litellm-browser-help" class="field-help" hidden>Introduce tus credenciales en la página de acceso de LiteLLM.</p>
               <div class="form-actions">
                 <button id="litellm-save" class="primary-button" type="submit">Probar y guardar</button>
                 <button id="litellm-cancel" class="secondary-button" type="button">Cancelar</button>
               </div>
             </form>
+            <div id="litellm-login-pending" class="auth-status" hidden>
+              <p role="status">Esperando a que completes el acceso en el navegador.</p>
+              <div class="form-actions">
+                <a id="litellm-login-link" target="_blank" rel="noopener noreferrer" hidden>Abrir acceso de LiteLLM</a>
+                <button id="litellm-login-cancel" class="text-button" type="button">Cancelar acceso de LiteLLM</button>
+              </div>
+            </div>
             <p id="litellm-error" class="account-status" role="alert" hidden></p>
           </section>
         </section>

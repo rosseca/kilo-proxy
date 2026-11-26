@@ -323,9 +323,31 @@ func TestNativeAgentCLIInstalledWithoutTerminal(t *testing.T) {
 			}
 			h.reveal(check, semantic.Button)
 			nativeGridCapture(t, h, "agent-cli-terminal-unavailable-"+language)
+			// First-load replies can shift the rows while the screenshot is rendered.
+			// Settle the fixture's discovery and preference reads before taking coordinates.
+			nativeTestWait(t, u, func() bool {
+				for _, path := range []string{
+					nativeLaunchEndpoint, openDesignProfileEndpoint, nativeCLIPreferencesEndpoint,
+					nativeOpenCodePreferencesEndpoint, nativeT3CodePreferencesEndpoint,
+					nativeSynaraPreferencesEndpoint, nativeOmnigentPreferencesEndpoint, "/api/claude/info",
+				} {
+					if u.busy["GET"+path] {
+						return false
+					}
+				}
+				return true
+			})
+			h.frame()
+			const codexCLI = "Codex CLI"
+			nativeRevealText(h, codexCLI)
+			button := nativeAgentRowButton(h, codexCLI, check)
+			gets := f.recorder.gets.Load()
 			f.terminal.Store(true)
-			h.click(check, semantic.Button)
+			nativeClickNode(h, button)
 			nativeTestWait(t, u, func() bool { return !u.busy["GET"+nativeLaunchEndpoint] && !u.busy["GET/api/claude/info"] })
+			if actual := f.recorder.gets.Load(); actual != gets+1 {
+				t.Fatalf("terminal recheck GETs: got %d, want %d (discovery error: %q)", actual-gets, 1, u.clientState().LaunchError)
+			}
 			h.frame()
 			for _, client := range nativeCLIInstallationCases {
 				info := u.clientState().LaunchInfo.Clients[client.key]

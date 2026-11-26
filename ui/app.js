@@ -990,8 +990,13 @@ async function updateLiteLLM(path, body) {
   liteLLMRevision++;
   render(state);
   try {
-    const {litellm,kiloEnabled,kiloReady,connectionReady,catalogRevision} = await api(path,body);
-    render({...state,litellm,kiloEnabled,kiloReady,connectionReady,catalogRevision});
+    const result = await api(path,body);
+    const nextState = {...state};
+    for (const key of ['litellm','litellmLogin','kiloEnabled','kiloReady','connectionReady','catalogRevision']) {
+      if (Object.hasOwn(result,key)) nextState[key] = result[key];
+    }
+    render(nextState);
+    return result;
   } finally {
     liteLLMRevision++;
     busy = false;

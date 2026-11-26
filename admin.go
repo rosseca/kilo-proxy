@@ -95,7 +95,7 @@ func (a *app) adminHandler() http.Handler {
 			return
 		}
 		switch r.URL.Path {
-		case liteLLMSettingsEndpoint, liteLLMActiveEndpoint, kiloActiveEndpoint:
+		case liteLLMSettingsEndpoint, liteLLMActiveEndpoint, kiloActiveEndpoint, liteLLMLoginEndpoint, liteLLMLoginCancelEndpoint, liteLLMLogoutEndpoint:
 			a.connectionSettingsAPI(w, r)
 			return
 		}
@@ -323,7 +323,7 @@ func (a *app) state(w http.ResponseWriter) {
 	}
 	snapshot := map[string]any{
 		"connectionReady": a.connectionReadyLocked(), "kiloReady": a.kiloReadyLocked(), "chatgptReady": a.chatGPTReadyLocked(), "chatgpt": a.chatgpt.snapshot(),
-		"litellm": a.liteLLMViewLocked(), "kiloEnabled": !a.config.KiloPaused,
+		"litellm": a.liteLLMViewLocked(), "litellmLogin": a.liteLLMLoginViewLocked(), "kiloEnabled": !a.config.KiloPaused,
 		"claudeDesktopExperimentalModels": a.claudeDesktopExperimentalLocked(),
 		"t3CodeTelemetryDisabled":         a.config.T3CodeTelemetryDisabled,
 		"imageTransport":                  a.config.ImageTransport,

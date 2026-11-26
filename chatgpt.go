@@ -51,7 +51,7 @@ func (a *app) fetchModelsWithCompleteness(ctx context.Context, requireAccount bo
 	chatgpt, connection := a.chatGPTReadyLocked(), a.chatgpt
 	kilo, kiloPaused := a.kiloReadyLocked(), a.config.KiloPaused
 	liteConnection, liteReady := a.liteLLMConnectionLocked()
-	liteEnabled := a.config.LiteLLM.Enabled
+	liteEnabled, liteAuthMode := a.config.LiteLLM.Enabled, a.config.LiteLLM.AuthMode
 	identity := connection.identity()
 	a.mu.Unlock()
 	if !chatgpt && !liteEnabled && !kiloPaused {
@@ -84,7 +84,12 @@ func (a *app) fetchModelsWithCompleteness(ctx context.Context, requireAccount bo
 	if liteReady {
 		count++
 		go func() {
-			models, err := a.fetchLiteLLMModels(ctx, liteConnection)
+			authorized, err := a.liteLLMRequestCredential(ctx, liteConnection)
+			if err != nil {
+				done <- result{nil, err, "litellm"}
+				return
+			}
+			models, err := a.fetchLiteLLMModels(ctx, authorized)
 			done <- result{models, err, "litellm"}
 		}()
 	}
@@ -92,7 +97,11 @@ func (a *app) fetchModelsWithCompleteness(ctx context.Context, requireAccount bo
 	var warnings []string
 	liteModelCount := -1
 	if liteEnabled && !liteReady {
-		warnings = append(warnings, "LiteLLM: unlock or enter your virtual key in Accounts.")
+		message := "LiteLLM: unlock or enter your virtual key in Accounts."
+		if liteAuthMode == liteLLMBrowserMode {
+			message = "LiteLLM: unlock the credential store or sign in again in Accounts."
+		}
+		warnings = append(warnings, message)
 	}
 	for range count {
 		result := <-done

@@ -173,7 +173,12 @@
 #litellm-account { border-top:1px solid var(--border); border-bottom:0; margin:22px 0 0; padding:18px 0 0; }
 #litellm-title { margin:0; font-size:16px; }
 #litellm-status { overflow-wrap:anywhere; }
-#litellm-form,#litellm-edit { margin-top:12px; }
+#litellm-form,#litellm-account-actions { margin-top:12px; }
+#litellm-auth-mode { margin:12px 0; padding:0; border:0; }
+#litellm-auth-mode legend { font-size:11px; font-weight:600; }
+#litellm-auth-mode label { display:flex; gap:8px; align-items:center; margin:6px 0; }
+#litellm-auth-mode input { flex:none; margin:0; accent-color:#566b38; }
+#litellm-login-pending .form-actions { align-items:center; }
 #kilo-enabled-row,#litellm-enabled-row,#litellm-without-key-row { margin:12px 0; }
 #litellm-url { width:100%; min-width:0; border:1px solid #dfe3d8; border-radius:6px; background:#fdfefb; height:41px; padding:0 12px; color:var(--ink); font-size:12px; }
 #litellm-url:focus-visible { outline:2px solid #a8b956; outline-offset:1px; }

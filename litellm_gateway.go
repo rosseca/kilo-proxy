@@ -26,7 +26,11 @@ func liteLLMNamespace(base *url.URL) string {
 }
 
 func liteLLMAccountScope(connection liteLLMConnection) string {
-	digest := sha256.Sum256([]byte(connection.Base.String() + "\x00" + connection.Key))
+	identity := connection.Key
+	if connection.Session != "" {
+		identity = "\x00browser:" + connection.Session
+	}
+	digest := sha256.Sum256([]byte(connection.Base.String() + "\x00" + identity))
 	return hex.EncodeToString(digest[:])
 }
 
