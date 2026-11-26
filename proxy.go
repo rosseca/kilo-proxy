@@ -40,6 +40,12 @@ type app struct {
 	liteLLMUpdate             sync.Mutex
 	liteLLMKey                string
 	liteLLMModelsCount        int
+	liteLLMBrowser            *liteLLMBrowserCredential
+	liteLLMUnstored           *liteLLMBrowserCredential
+	liteLLMLogin              *liteLLMLoginAttempt
+	liteLLMLoginState         liteLLMLoginView
+	liteLLMRefresh            *liteLLMRefreshFlight
+	liteLLMRefreshRetryAt     time.Time
 	updates                   *releaseUpdateChecker
 	packageUpdates            *packageUpdateManager
 	managedToolsMu            sync.Mutex
@@ -585,6 +591,11 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 			}
 			if alias == "" {
 				jsonError(recorder, http.StatusConflict, "This model belongs to a different LiteLLM connection. Choose a model from the active catalog.")
+				return
+			}
+			connection, routeErr = a.liteLLMRequestCredential(r.Context(), connection)
+			if routeErr != nil {
+				jsonError(recorder, http.StatusServiceUnavailable, "LiteLLM could not authorize this request. Check its connection in Accounts.")
 				return
 			}
 			if capture != nil {

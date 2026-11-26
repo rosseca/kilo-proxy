@@ -71,6 +71,7 @@ type nativeUI struct {
 	kiloAuthRevision            uint64
 	chatGPTRevision             uint64
 	chatGPTLoginRequested       bool
+	liteLLMAuthorizationURL     string
 
 	dir                            string
 	bridge                         desktopBridge
@@ -563,13 +564,17 @@ func (u *nativeUI) open(address string) {
 		u.noticeError(err)
 		return
 	}
+	u.openValidatedExternalURL(safe)
+}
+
+func (u *nativeUI) openValidatedExternalURL(address string) {
 	bridge := u.bridge
 	go func() {
 		open := openBrowser
 		if bridge != nil {
 			open = bridge.OpenExternal
 		}
-		if err := open(safe); err != nil {
+		if err := open(address); err != nil {
 			u.enqueue(func() { u.noticeError(err) })
 		}
 	}()
@@ -748,6 +753,7 @@ func (u *nativeUI) acceptState(raw json.RawMessage) {
 	u.acceptImageDependencyState(state)
 	u.state = state
 	u.authenticated = true
+	u.acceptLiteLLMLogin()
 	if u.chatGPTLoginRequested {
 		account := nativeMap(state["chatgpt"])
 		if nativeString(account, "status") == "pending" && nativeString(account, "verificationUrl") == nativeChatGPTVerificationURL {

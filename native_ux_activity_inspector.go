@@ -22,6 +22,8 @@ func (u *nativeUI) uxaInspector(e event) layout.Widget {
 		cost = u.tr("Subscription usage", "Uso de suscripción")
 	} else if e.Usage != nil && e.Usage.CostUSD != nil {
 		cost = nativeMoney(*e.Usage.CostUSD)
+	} else if e.Usage != nil && e.Usage.Billing == "litellm" {
+		cost = u.tr("Not reported", "Coste desconocido")
 	}
 	title := model
 	if harness != "—" {

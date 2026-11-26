@@ -84,6 +84,7 @@ func TestNativeInferenceCostSourceSemantics(t *testing.T) {
 			"response.provider_metadata.gateway.marketCost": u.tr("Gateway market cost", "Coste de mercado del gateway"),
 			"usage.cost":              u.tr("Gateway-reported cost", "Coste informado por el gateway"),
 			"usage.cost_microdollars": u.tr("Gateway-reported cost", "Coste informado por el gateway"),
+			"litellm_reported":        u.tr("LiteLLM-reported cost", "Coste informado por LiteLLM"),
 			"":                        "", "unknown.field": "",
 		} {
 			if got := u.costSourceLabel(source); got != want {

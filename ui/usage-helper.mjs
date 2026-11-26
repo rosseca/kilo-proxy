@@ -34,6 +34,7 @@ export function costSourceLabel(source, language = 'en') {
   if(source==='usage.cost_details.upstream_inference_cost')return es?'Inferencia del proveedor':'Provider inference';
   if(['provider_metadata.gateway.marketCost','response.provider_metadata.gateway.marketCost'].includes(source))return es?'Coste de mercado del gateway':'Gateway market cost';
   if(['usage.cost_microdollars','usage.cost'].includes(source))return es?'Coste informado por el gateway':'Gateway-reported cost';
+  if(source==='litellm_reported')return es?'Coste informado por LiteLLM':'LiteLLM-reported cost';
   return '';
 }
 

@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
@@ -21,12 +22,14 @@ const (
 type liteLLMSettings struct {
 	URL      string `json:"url"`
 	Enabled  bool   `json:"enabled"`
+	AuthMode string `json:"authMode,omitempty"`
 	VaultRef string `json:"vaultRef,omitempty"`
 }
 
 type liteLLMConnection struct {
-	Base *url.URL
-	Key  string
+	Base    *url.URL
+	Key     string
+	Session string
 }
 
 type liteLLMView struct {
@@ -34,6 +37,7 @@ type liteLLMView struct {
 	Enabled     bool   `json:"enabled"`
 	Ready       bool   `json:"ready"`
 	HasKey      bool   `json:"hasKey"`
+	AuthMode    string `json:"authMode"`
 	KeySaved    bool   `json:"keySaved"`
 	ModelsCount int    `json:"modelsCount"`
 }
@@ -103,13 +107,17 @@ func liteLLMDefaultPort(scheme string) string {
 func validateLiteLLMSettings(cfg liteLLMSettings) error {
 	const message = "Invalid LiteLLM settings. Restore a valid configuration."
 	if cfg.URL == "" {
-		if cfg.Enabled || cfg.VaultRef != "" {
+		if cfg.Enabled || cfg.VaultRef != "" || cfg.AuthMode != "" {
 			return errors.New(message)
 		}
 		return nil
 	}
 	base, err := normalizeLiteLLMURL(cfg.URL)
 	if err != nil || base.String() != cfg.URL {
+		return errors.New(message)
+	}
+	if cfg.AuthMode != "" && cfg.AuthMode != liteLLMBrowserMode ||
+		cfg.AuthMode == liteLLMBrowserMode && (validateLiteLLMBrowserTransport(base) != nil || cfg.Enabled && cfg.VaultRef == "") {
 		return errors.New(message)
 	}
 	if cfg.VaultRef != "" {
@@ -136,6 +144,16 @@ func (a *app) loadLiteLLMKey() {
 	if cfg.VaultRef == "" {
 		return
 	}
+	if cfg.AuthMode == liteLLMBrowserMode {
+		a.liteLLMBrowser = a.loadLiteLLMBrowserCredential(a.config.VaultID, cfg)
+		if a.liteLLMBrowser != nil {
+			staged := a.loadLiteLLMBrowserCredential(a.config.VaultID, stagedLiteLLMBrowserSettings(cfg))
+			if staged != nil && staged.Refresh != a.liteLLMBrowser.Refresh {
+				a.liteLLMUnstored = staged
+			}
+		}
+		return
+	}
 	key, err := a.vault.Get(liteLLMVaultSlot(a.config.VaultID, cfg))
 	if err == nil && validLiteLLMKey(key) {
 		a.liteLLMKey = key
@@ -150,19 +168,34 @@ func (a *app) liteLLMConnectionLocked() (liteLLMConnection, bool) {
 	if err != nil {
 		return liteLLMConnection{}, false
 	}
+	if cfg := a.config.LiteLLM; cfg.AuthMode == liteLLMBrowserMode {
+		return liteLLMConnection{Base: base, Key: a.liteLLMBrowser.Access, Session: cfg.VaultRef}, true
+	}
 	return liteLLMConnection{Base: base, Key: a.liteLLMKey}, true
 }
 
 func (a *app) liteLLMViewLocked() liteLLMView {
 	cfg := a.config.LiteLLM
+	mode, hasKey := "key", a.liteLLMKey != ""
+	if cfg.AuthMode == liteLLMBrowserMode {
+		mode = cfg.AuthMode
+		hasKey = a.liteLLMBrowser != nil
+		if a.liteLLMLoginState.Error == errLiteLLMOAuthRenew.Error() && hasKey && !time.Now().Before(a.liteLLMBrowser.ExpiresAt) {
+			hasKey = false
+		}
+	}
+	ready := a.liteLLMReadyLocked() && (mode != liteLLMBrowserMode || hasKey)
 	return liteLLMView{
-		URL: cfg.URL, Enabled: cfg.Enabled, Ready: a.liteLLMReadyLocked(),
-		HasKey: a.liteLLMKey != "", KeySaved: cfg.VaultRef != "", ModelsCount: a.liteLLMModelsCount,
+		URL: cfg.URL, Enabled: cfg.Enabled, Ready: ready,
+		HasKey: hasKey, AuthMode: mode, KeySaved: cfg.VaultRef != "", ModelsCount: a.liteLLMModelsCount,
 	}
 }
 
 func (a *app) liteLLMReadyLocked() bool {
 	cfg := a.config.LiteLLM
+	if cfg.AuthMode == liteLLMBrowserMode {
+		return cfg.Enabled && cfg.VaultRef != "" && a.liteLLMBrowser != nil
+	}
 	return cfg.Enabled && cfg.URL != "" && (cfg.VaultRef == "" || a.liteLLMKey != "")
 }
 
@@ -206,7 +239,7 @@ func (a *app) checkLiteLLMTarget(ctx context.Context, base *url.URL) error {
 
 func (a *app) writeConnectionViewLocked(w http.ResponseWriter) {
 	jsonResponse(w, http.StatusOK, map[string]any{
-		"litellm": a.liteLLMViewLocked(), "kiloEnabled": !a.config.KiloPaused,
+		"litellm": a.liteLLMViewLocked(), "litellmLogin": a.liteLLMLoginViewLocked(), "kiloEnabled": !a.config.KiloPaused,
 		"kiloReady": a.kiloReadyLocked(), "connectionReady": a.connectionReadyLocked(),
 		"catalogRevision": a.catalogRevision,
 	})
@@ -218,11 +251,18 @@ func (a *app) connectionSettingsAPI(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusMethodNotAllowed, "Method not allowed.")
 		return
 	}
-	if r.URL.Path == liteLLMSettingsEndpoint {
+	switch r.URL.Path {
+	case liteLLMSettingsEndpoint:
 		a.saveLiteLLMConnection(w, r)
-		return
+	case liteLLMLoginEndpoint:
+		a.startLiteLLMLogin(w, r)
+	case liteLLMLoginCancelEndpoint:
+		a.cancelLiteLLMLoginHTTP(w, r)
+	case liteLLMLogoutEndpoint:
+		a.logoutLiteLLMHTTP(w, r)
+	default:
+		a.setConnectionEnabled(w, r)
 	}
-	a.setConnectionEnabled(w, r)
 }
 
 func (a *app) saveLiteLLMConnection(w http.ResponseWriter, r *http.Request) {
@@ -246,8 +286,21 @@ func (a *app) saveLiteLLMConnection(w http.ResponseWriter, r *http.Request) {
 
 	a.mu.Lock()
 	previous, previousKey := a.config.LiteLLM, a.liteLLMKey
+	previousBrowser := a.liteLLMBrowser
+	if a.liteLLMUnstored != nil {
+		previousBrowser = a.liteLLMUnstored
+	}
 	checkedPort, localKey := a.config.Port, a.config.LocalKey
+	pending := a.liteLLMLogin != nil
 	a.mu.Unlock()
+	if pending {
+		jsonError(w, http.StatusConflict, "Cancel LiteLLM browser sign-in before changing the connection.")
+		return
+	}
+	if previous.AuthMode == liteLLMBrowserMode && input.APIKey == nil {
+		jsonError(w, http.StatusBadRequest, "Enter a LiteLLM virtual key, or explicitly choose to use no key.")
+		return
+	}
 	key := ""
 	switch {
 	case input.APIKey != nil:
@@ -294,10 +347,10 @@ func (a *app) saveLiteLLMConnection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	next := a.config
-	next.LiteLLM = liteLLMSettings{URL: base.String(), Enabled: previous.URL == "" || previous.Enabled}
+	next.LiteLLM = liteLLMSettings{URL: base.String(), Enabled: previous.URL == "" || previous.Enabled || previous.AuthMode == liteLLMBrowserMode && previous.VaultRef == ""}
 	var addedSlot string
 	if key != "" {
-		if previous.URL == next.LiteLLM.URL && previousKey == key && previous.VaultRef != "" {
+		if previous.AuthMode != liteLLMBrowserMode && previous.URL == next.LiteLLM.URL && previousKey == key && previous.VaultRef != "" {
 			next.LiteLLM.VaultRef = previous.VaultRef
 		} else {
 			next.LiteLLM.VaultRef = randomKey("")
@@ -316,8 +369,12 @@ func (a *app) saveLiteLLMConnection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.config, a.liteLLMKey, a.liteLLMModelsCount = next, key, len(models)
+	a.liteLLMBrowser, a.liteLLMUnstored = nil, nil
+	a.liteLLMLoginState = liteLLMLoginView{Status: "idle"}
+	a.liteLLMRefreshRetryAt = time.Time{}
 	if previous.VaultRef != "" && previous.VaultRef != next.LiteLLM.VaultRef {
-		_ = a.vault.Delete(liteLLMVaultSlot(next.VaultID, previous))
+		_ = a.deleteLiteLLMStoredCredential(next.VaultID, previous)
+		a.revokeReplacedLiteLLMCredential(previous.URL, previousBrowser)
 	}
 	a.catalogRevision++
 	a.catalogWarnings = nil
@@ -349,7 +406,12 @@ func (a *app) setConnectionEnabled(w http.ResponseWriter, r *http.Request) {
 	defer a.mu.Unlock()
 	next := a.config
 	if liteLLM {
-		if enabled && (next.LiteLLM.URL == "" || (next.LiteLLM.VaultRef != "" && a.liteLLMKey == "")) {
+		cfg := next.LiteLLM
+		available := cfg.URL != "" && (cfg.VaultRef == "" || a.liteLLMKey != "")
+		if cfg.AuthMode == liteLLMBrowserMode {
+			available = cfg.VaultRef != "" && a.liteLLMBrowser != nil
+		}
+		if enabled && !available {
 			jsonError(w, http.StatusConflict, "Configure and verify LiteLLM before enabling it.")
 			return
 		}

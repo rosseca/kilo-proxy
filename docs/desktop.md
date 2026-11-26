@@ -76,11 +76,18 @@ The tray needs a desktop environment that supports status icons. Linux shells di
 
 ## LiteLLM
 
-Open **Settings → Accounts → Add LiteLLM**, or choose LiteLLM during first launch. Use your gateway's API base address. Kilo Proxy adds `/v1` if needed and preserves any path prefix. If your gateway requires a virtual key, enter it in the masked field. **Test and save** reads `/v1/models` without making an inference request. A failed check preserves the existing connection.
+Open **Settings → Accounts → Add LiteLLM**, or choose LiteLLM during first launch. Use your gateway's API base address. Kilo Proxy adds `/v1` if needed and preserves any path prefix.
+
+- **API key** accepts a virtual key in the masked field. Leave it empty for a gateway that allows anonymous requests. **Test and save** reads `/v1/models` before saving.
+- **Browser sign-in** opens LiteLLM in your default browser. Enter your credentials there and choose a team if LiteLLM asks. Kilo Proxy checks the team's model catalog before saving the connection and renews the session using its stored refresh credential.
+
+Both methods check only the model list. A failed check leaves the previous connection available. Browser sign-in requires LiteLLM's documented PKCE contract at `/.well-known/litellm-cli-auth`. For a gateway behind an HTTPS reverse proxy, set `PROXY_BASE_URL` to the external gateway address so the issuer and endpoints match. [LiteLLM CLI sign-in contract](https://docs.litellm.ai/docs/proxy/cli_sso#native-client-contract)
 
 Use the **Kilo** and **LiteLLM** switches independently. Select LiteLLM models in the shared library. In T3 Code, use the shared-model option to include them in selectors that also offer a provider-specific catalog. LiteLLM determines which API formats and features each model supports. A request uses the selected gateway even when another connection is active.
 
-The virtual key is stored in the local credential store. Changing the API address requires a key for the new address if it needs one. A previously selected LiteLLM model stays tied to its original address. Activity shows the LiteLLM connection and reported usage. Check the LiteLLM dashboard for gateway costs.
+LiteLLM credentials are stored in the local credential store. Changing the API address requires credentials for the new gateway if it requires authentication. A previously selected LiteLLM model stays tied to its original address.
+
+Activity shows the tokens and USD cost reported by LiteLLM for each request. Session totals include the amounts received by Kilo Proxy. For streaming requests, the gateway must include the cost in the stream with `include_cost_in_streaming_usage`. Chat Completions also needs a usage chunk, which clients can request with `stream_options.include_usage`. When a request has no reported cost, its amount is unknown. For the gateway-wide spend, check the LiteLLM dashboard. [LiteLLM spend tracking](https://docs.litellm.ai/docs/proxy/cost_tracking)
 
 ## Language
 

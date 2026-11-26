@@ -78,7 +78,7 @@ type usageSummary struct {
 type usageObserver struct {
 	embedding                 *embeddingUsageExtractor
 	embeddingModel            string
-	embeddingStatus           int
+	responseStatus            int
 	embeddingResponseComplete bool
 	historyAccount            string
 	mu                        sync.Mutex
@@ -129,8 +129,13 @@ func newUsageObserver(r *http.Request, org string) *usageObserver {
 func (u *usageObserver) configure(r *http.Response) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
-	u.embeddingStatus = r.StatusCode
+	u.responseStatus = r.StatusCode
 	u.sse = strings.HasPrefix(strings.ToLower(r.Header.Get("Content-Type")), "text/event-stream")
+	if u.usage.Billing == "litellm" && !u.sse && u.responseStatus >= 200 && u.responseStatus < 300 {
+		if values := r.Header.Values("X-Litellm-Response-Cost"); len(values) == 1 {
+			u.setLiteLLMReportedCost(values[0])
+		}
+	}
 }
 
 // Only observe copies of bytes already read by the proxy. Never delay or rewrite traffic.
@@ -303,7 +308,7 @@ func dollars(n int64) string {
 func leftPad(s string, n int) string { return strings.Repeat("0", n-len(s)) + s }
 
 func (u *usageObserver) parseCost(root, usage map[string]any) {
-	if u.usage.Billing == "subscription" || u.usage.Billing == "litellm" {
+	if u.usage.Billing == "subscription" {
 		return
 	}
 	// Keep the explicit Kilo microdollar contract first. Otherwise follow Kilo's
@@ -336,6 +341,26 @@ func (u *usageObserver) parseCost(root, usage map[string]any) {
 			}
 			return
 		}
+	}
+}
+
+func (u *usageObserver) setLiteLLMReportedCost(value any) {
+	if cost, ok := money(value, false); ok {
+		u.usage.costNanos = cost
+		amount := dollars(cost)
+		u.usage.CostUSD = &amount
+		u.usage.CostSource = "litellm_reported"
+	}
+}
+
+func (u *usageObserver) parseLiteLLMStreamCost(root, usage map[string]any, kind string) {
+	// LiteLLM may send a placeholder cost in the initial SSE headers. With
+	// include_cost_in_streaming_usage it reports the amount in the usage event.
+	if !u.sse || u.responseStatus < 200 || u.responseStatus >= 300 || root["error"] != nil {
+		return
+	}
+	if kind == "response.completed" || kind == "message_delta" || root["object"] == "chat.completion.chunk" {
+		u.setLiteLLMReportedCost(usage["cost"])
 	}
 }
 
@@ -401,8 +426,12 @@ func (u *usageObserver) parse(data []byte) {
 		replaceInt(&u.usage.Reasoning, usageObject(usage["output_tokens_details"])["reasoning_tokens"])
 		replaceInt(&u.usage.Reasoning, usageObject(usage["completion_tokens_details"])["reasoning_tokens"])
 	}
-	// Gateway metadata may arrive separately from token usage in Responses SSE.
-	u.parseCost(root, usage)
+	if u.usage.Billing == "litellm" {
+		u.parseLiteLLMStreamCost(root, usage, kind)
+	} else {
+		// Kilo gateway metadata may arrive separately from token usage in Responses SSE.
+		u.parseCost(root, usage)
+	}
 	if (!u.sse && root != nil) || kind == "response.completed" || kind == "response.done" || kind == "response.incomplete" || kind == "message_stop" {
 		u.usage.Complete = true
 	}
@@ -511,5 +540,9 @@ func (a *app) usageSnapshot() map[string]any {
 func (u *usageObserver) snapshot() *usageObserver {
 	u.mu.Lock()
 	defer u.mu.Unlock()
-	return &usageObserver{usage: u.usage, label: u.label, org: u.org, historyAccount: u.historyAccount, embeddingResponseComplete: u.embeddingResponseComplete}
+	usage := u.usage
+	if usage.Billing == "litellm" && u.sse && !usage.Complete {
+		usage.CostUSD, usage.CostSource, usage.costNanos = nil, "", 0
+	}
+	return &usageObserver{usage: usage, label: u.label, org: u.org, historyAccount: u.historyAccount, embeddingResponseComplete: u.embeddingResponseComplete}
 }
