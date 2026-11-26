@@ -83,6 +83,81 @@ func TestT3CodeKiloInstalledPackageContract(t *testing.T) {
 	}
 }
 
+func TestT3CodeKiloContractAcceptsScopedAppImageBaseEnvironment(t *testing.T) {
+	// Compiled from T3's AppImage environment sanitizer. Keep the inherited
+	// environment cleanup separate from the provider's instance overrides.
+	const upstream = `const APPIMAGE_RUNTIME_ENV_KEYS = [
+"APPIMAGE",
+"APPDIR",
+"ARGV0",
+"OWD"
+];
+const APPIMAGE_PATH_LIKE_ENV_SEPARATORS = {
+PATH: /:/,
+LD_LIBRARY_PATH: /[:;]/,
+XDG_DATA_DIRS: /:/,
+GSETTINGS_SCHEMA_DIR: /:/
+};
+function isPathSegmentUnderAppDir(segment, appDir) {
+	return segment === appDir || segment.startsWith(` + "`${appDir}/`" + `);
+}
+function stripAppImageRuntimeEnv(env) {
+	if (env.APPIMAGE === void 0 && env.APPDIR === void 0) return env;
+	const scrubbed = { ...env };
+	for (const key of APPIMAGE_RUNTIME_ENV_KEYS) delete scrubbed[key];
+	const appDir = env.APPDIR?.replace(/\/+$/, "");
+	if (appDir) for (const [key, separator] of Object.entries(APPIMAGE_PATH_LIKE_ENV_SEPARATORS)) {
+		const value = scrubbed[key];
+		if (value === void 0) continue;
+		const segments = value.split(separator);
+		const kept = segments.filter((segment) => !isPathSegmentUnderAppDir(segment, appDir));
+		if (kept.length === segments.length) continue;
+		if (kept.length === 0) delete scrubbed[key];
+		else scrubbed[key] = kept.length === 1 && kept[0] === "" ? ":" : kept.join(":");
+	}
+	return scrubbed;
+}
+`
+	for _, tc := range []struct {
+		name   string
+		source string
+		check  func(string) bool
+	}{
+		{"OpenCode", t3CodeOpenCodeKiloContractFixture(), t3CodeOpenCodeKiloSupported},
+		{"Muse", t3CodeMuseKiloContractFixture(), t3CodeMuseKiloSupported},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			const start = "function* (environment, baseEnv = process.env) {"
+			instance := strings.Replace(tc.source, start, start+"\n const hostEnv = stripAppImageRuntimeEnv(baseEnv);", 1)
+			instance = strings.Replace(instance, "const next = { ...baseEnv };", "const next = { ...hostEnv };", 1)
+			source := upstream + instance
+			if !tc.check(source) {
+				t.Fatal("complete AppImage-scoped merge contract rejected")
+			}
+			for _, alteration := range []struct{ name, from, to string }{
+				{"absent-scrubber", upstream, ""},
+				{"commented-scrubber", upstream, "/*\n" + upstream + "\n*/"},
+				{"unverified-scrubber", "stripAppImageRuntimeEnv(baseEnv)", "arbitraryEnvironment(baseEnv)"},
+				{"different-base", "stripAppImageRuntimeEnv(baseEnv)", "stripAppImageRuntimeEnv(process.env)"},
+				{"unbound-host", "const hostEnv = stripAppImageRuntimeEnv(baseEnv);", "if (false) { const hostEnv = stripAppImageRuntimeEnv(baseEnv); }"},
+				{"ambient-mutation", "delete scrubbed[key];", "delete env[key];"},
+				{"changed-scrubber-key", `"OWD"`, `"OPENCODE_CONFIG_DIR"`},
+				{"mutable-scrubber-keys", upstream, upstream + "APPIMAGE_RUNTIME_ENV_KEYS.push(externalKey);\n"},
+				{"duplicate-scrubber", upstream, upstream + upstream},
+				{"discarded-instance-value", "next[variable.name] = variable.value;", "next[variable.name] = hostEnv[variable.name];"},
+				{"discarded-instance-result", "return next;", "return hostEnv;"},
+			} {
+				t.Run(alteration.name, func(t *testing.T) {
+					invalid := strings.Replace(source, alteration.from, alteration.to, 1)
+					if invalid == source || tc.check(invalid) {
+						t.Fatal("invalid AppImage-scoped instance environment accepted")
+					}
+				})
+			}
+		})
+	}
+}
+
 func TestT3CodeKiloContractAcceptsScopedHomeVariableHelper(t *testing.T) {
 	const helper = `const HOME_PATH_VARIABLES = /* @__PURE__ */ new Set(["CODEX_HOME", "CLAUDE_CONFIG_DIR", "GROK_HOME"]);
 function expandHomeVariable$1(name, value, home) {

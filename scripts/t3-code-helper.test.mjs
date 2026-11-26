@@ -12,10 +12,54 @@ function fixture(t, api, options = {}) {
  const element=()=>({children:[],textContent:'',value:'',checked:false,disabled:false,hidden:false,listeners:{},classList:{toggle(){}},replaceChildren(){this.children=[];},append(item){this.children.push(item);},addEventListener(name,callback){this.listeners[name]=callback;},dispatch(name){this.listeners[name]?.({target:this});}});
  globalThis.document={getElementById(id){if(!nodes.has(id))nodes.set(id,element());return nodes.get(id);},createElement:element};
  t.after(()=>{globalThis.document=previous;});
- const helper=createT3CodeHelper({api:async(path,body)=>path==='clients/t3-code/preferences'?(options.preferencesAPI ? options.preferencesAPI(body) : preferencesResponse()):api(path,body),onChange(){}});
- helper.render({state:{connectionReady:true,kiloReady:true,baseURL:'http://127.0.0.1:8877/v1',localKey:'private-local-secret'},language:'en'});
- return {helper,nodes};
+ const state={connectionReady:true,kiloReady:true,baseURL:'http://127.0.0.1:8877/v1',localKey:'private-local-secret'};
+ const helper=createT3CodeHelper({api:async(path,body)=>path==='clients/t3-code/preferences'?(options.preferencesAPI ? options.preferencesAPI(body) : preferencesResponse()):api(path,body),copy:options.copy,onChange(){},onTelemetryConfirmed(disabled){state.t3CodeTelemetryDisabled=disabled;}});
+ helper.render({state,language:'en'});
+ return {helper,nodes,state};
 }
+
+test('T3 telemetry saves independently and waits for confirmation before opening',async t=>{
+ const writes=[], copied=[];
+ let confirmSave;
+ const {helper,nodes,state}=fixture(t,async(path,body)=>{
+  if(path==='model-library')return saved();
+  if(body)writes.push([path,body]);
+  if(path==='clients/t3-code/telemetry')return new Promise(resolve=>{confirmSave=resolve;});
+  return {};
+ },{copy:text=>copied.push(text)});
+ await tick();
+ const toggle=nodes.get('t3-code-telemetry-disabled');
+ assert.equal(toggle.checked,false);
+ helper.setLaunching(true);
+ assert.equal(toggle.disabled,true);
+ helper.setLaunching(false);
+ toggle.checked=true;
+ toggle.dispatch('change');
+ assert.equal(toggle.disabled,true);
+ assert.equal(helper.launchState().working,true);
+ assert.equal(state.t3CodeTelemetryDisabled,undefined);
+ helper.render({state,language:'es'});
+ assert.equal(toggle.checked,true);
+ assert.equal(nodes.get('t3-code-telemetry-status').textContent,'Guardando…');
+ confirmSave({disabled:true});
+ await tick();
+ assert.equal(toggle.disabled,false);
+ assert.equal(toggle.checked,true);
+ assert.equal(helper.launchState().working,false);
+ assert.deepEqual(writes,[['clients/t3-code/telemetry',{disabled:true}]]);
+
+ toggle.checked=false;
+ toggle.dispatch('change');
+ confirmSave({disabled:true});
+ await tick();
+ assert.equal(toggle.checked,true);
+ assert.match(nodes.get('t3-code-telemetry-status').textContent,/No se pudo confirmar/);
+ assert.deepEqual(writes.at(-1),['clients/t3-code/telemetry',{disabled:false}]);
+
+ document.getElementById('t3-code-dns-domain').textContent='ingest.t3.codes';
+ nodes.get('t3-code-copy-dns-rule').dispatch('click');
+ assert.deepEqual(copied,['ingest.t3.codes']);
+});
 
 test('prepared status requires the current complete shared library',()=>{
  const source=saved(),profile={prepared:true,library:structuredClone(source.library)};
@@ -264,6 +308,46 @@ test('saved choices absent from a newer build stay visible until disabled, witho
  nodes.get('t3-code-opencode-version').value='2';nodes.get('t3-code-opencode-version').dispatch('change');await tick();assert.equal(writes.length,2);
  assert.deepEqual(nodes.get('t3-code-provider-options').children.map(label=>label.children[1].textContent),['OpenCode']);
  helper.render({state:{connectionReady:true},language:'es'});assert.doesNotMatch(nodes.get('t3-code-agents').children.map(node=>node.textContent).join(' '),/Cursor|Unknown/);
+});
+
+test('Kilo Code ACP uses its own account and keeps a saved choice removable after downgrade', async t=>{
+ let current={...preferences(),codex:false,claude:false,kiloCodex:false,kiloClaude:false},supported=true;
+ const settingsWrites=[],prepares=[];
+ const {helper,nodes}=fixture(t, async (path,body)=>{
+  if(path==='model-library')throw new Error('No shared model library');
+  if(body)prepares.push(structuredClone(body));
+  return {prepared:!!body,preferences:structuredClone(current)};
+ },{preferencesAPI:async body=>{
+  if(body){settingsWrites.push(structuredClone(body));current=structuredClone(body);}
+  return {preferences:structuredClone(current),supportedProviders:supported?[{id:'kilo-acp',label:'Kilo Code (ACP)'}]:[]};
+ }});
+ helper.render({state:{connectionReady:false,kiloReady:false},language:'en'});
+ await tick();
+ const list=nodes.get('t3-code-provider-options');
+ assert.deepEqual(list.children.map(label=>label.children[1].textContent),['Kilo Code (ACP)']);
+ const available=list.children[0].children[0];
+ assert.equal(available.id,'t3-code-provider-kilo-acp');
+ assert.equal(available.checked,false);
+ available.checked=true;available.dispatch('change');
+ await tick();
+ assert.deepEqual(settingsWrites.map(body=>body.providers),[['kilo-acp']]);
+ assert.equal(helper.launchState().nativeOnly,true);
+ assert.equal(helper.launchState().valid,true);
+ assert.deepEqual(nodes.get('t3-code-agents').children.map(row=>row.textContent),['Kilo Code (ACP) · Own login and catalog']);
+ await helper.launchState().prepare();
+ assert.deepEqual(prepares,[{preferences:current}]);
+
+ supported=false;
+ await helper.reload();
+ helper.render({state:{connectionReady:false,kiloReady:false},language:'es'});
+ assert.equal(list.children[0].children[1].textContent,'Kilo Code (ACP) · no disponible en esta compilación');
+ const unavailable=list.children[0].children[0];
+ assert.equal(unavailable.checked,true);
+ assert.equal(unavailable.disabled,false);
+ unavailable.checked=false;unavailable.dispatch('change');
+ await tick();
+ assert.deepEqual(settingsWrites.map(body=>body.providers),[['kilo-acp'],[]]);
+ assert.equal(list.children.length,0);
 });
 
 

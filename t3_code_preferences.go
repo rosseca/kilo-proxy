@@ -81,7 +81,7 @@ func validateT3CodePreferences(p t3CodePreferences) error {
 	}
 	seen := map[string]bool{}
 	for _, id := range p.Providers {
-		valid := false
+		valid := id == t3CodeKiloACPOption
 		for _, provider := range t3CodeOptionalProviders {
 			valid = valid || id == provider.ID
 		}

@@ -17,7 +17,7 @@ const museUsesKilo = value => value?.providers?.includes('muse') && museConnecti
 const openCodeUsesKilo = value => value?.providers?.includes('opencode') && openCodeConnection(value) === 'kilo';
 const normalizePreferences = value => ({...structuredClone(value),openCodeConnection:openCodeConnection(value),museConnection:museConnection(value),museModels:museModelPolicy(value)});
 const preferencesSignature = value => JSON.stringify(value && [value.version,value.codex,value.claude,value.kiloCodex,value.kiloClaude,value.codexModels,value.claudeModels,[...(value.providers ?? [])].sort(),value.openCode2,openCodeConnection(value),museConnection(value),museModelPolicy(value)]);
-const knownProviders = {cursor:'Cursor',grok:'Grok',opencode:'OpenCode',antigravity:'Antigravity',muse:'Muse Code',pi:'Pi'};
+const knownProviders = {cursor:'Cursor',grok:'Grok',opencode:'OpenCode',antigravity:'Antigravity',muse:'Muse Code',pi:'Pi','kilo-acp':'Kilo Code (ACP)'};
 export function t3CodePreferencesValid(value) {
  return value?.version === 1 && ['official','shared'].includes(value.codexModels) && ['official','shared'].includes(value.claudeModels) && ['codex','claude','kiloCodex','kiloClaude','openCode2'].every(key => typeof value[key] === 'boolean') && Array.isArray(value.providers) && value.providers.every(id => typeof id === 'string') && (!value.openCode2 || value.providers.includes('opencode')) && [undefined,'','native','kilo'].includes(value.openCodeConnection) && [undefined,'','native','kilo'].includes(value.museConnection) && [undefined,'official','shared'].includes(value.museModels);
 }
@@ -34,10 +34,11 @@ export function t3CodePrepared(saved, profile, preferences) {
 }
 
 // Settings and launch snapshots belong to the separate Kilo workspace.
-export function createT3CodeHelper({api, onChange}) {
+export function createT3CodeHelper({api, copy, onChange, onTelemetryConfirmed}) {
  const $ = id => document.getElementById(id);
  let ctx = {state:null, language:'en'}, saved = null, profile = null, preferences = null, capabilities = [];
  let loaded = false, loading = false, working = false, saving = false, error = '', preferencesError = '', pendingPreferences = null, profileConnection = '', requiresPreparation = false, openCode2Supported = false, openCodeKiloSupported = false, museKiloSupported = false, generation = 0;
+ let telemetryPending = null, telemetryError = false, launching = false;
  const L = (en, es) => ctx.language === 'en' ? en : es;
  const connectionSignature = () => JSON.stringify([ctx.state?.baseURL, ctx.state?.localKey, ctx.state?.orgId, ctx.state?.usageAccountScope, ctx.state?.catalogRevision, ctx.state?.kiloReady, ctx.state?.connectionReady, ctx.state?.chatgpt?.connected]);
  const nativeOnly = () => t3CodeNativeOnly(preferences);
@@ -132,6 +133,34 @@ export function createT3CodeHelper({api, onChange}) {
   $('t3-code-settings-retry').textContent = L('Retry saving', 'Reintentar guardado'); $('t3-code-settings-retry').disabled = saving || loading || working;
   $('t3-code-settings-reload').textContent = L('Reload settings', 'Cargar ajustes'); $('t3-code-settings-reload').disabled = saving || loading || working;
  }
+ function renderTelemetry() {
+  const toggle = $('t3-code-telemetry-disabled'), status = $('t3-code-telemetry-status');
+  toggle.checked = telemetryPending ?? (ctx.state?.t3CodeTelemetryDisabled === true);
+  toggle.disabled = !ctx.state || launching || telemetryPending !== null;
+  $('t3-code-privacy-label').textContent = L('Privacy', 'Privacidad');
+  $('t3-code-telemetry-label').textContent = L('Disable T3 telemetry', 'Desactivar la telemetría de T3');
+  $('t3-code-telemetry-help').textContent = L('Applies the next time you open T3 Code · Kilo.', 'Se aplica la próxima vez que abras T3 Code · Kilo.');
+  status.textContent = telemetryPending !== null ? L('Saving…', 'Guardando…') : telemetryError ? L('Could not confirm the telemetry setting. Try again.', 'No se pudo confirmar el ajuste de telemetría. Vuelve a intentarlo.') : '';
+  status.classList.toggle('error', telemetryError);
+  $('t3-code-dns-help').textContent = L('Optionally, paste this domain into your DNS blocklist to block requests to the T3 product telemetry endpoint.', 'Si quieres bloquear las peticiones al endpoint de telemetría de T3, pega este dominio en la lista de bloqueo de tu DNS.');
+  $('t3-code-copy-dns-rule').textContent = L('Copy DNS rule', 'Copiar regla DNS');
+ }
+ async function saveTelemetry(disabled) {
+  if (!ctx.state || launching || telemetryPending !== null) return;
+  telemetryPending = disabled;
+  telemetryError = false;
+  renderTelemetry(); onChange();
+  try {
+   const response = await api('clients/t3-code/telemetry', {disabled});
+   if (response?.disabled !== disabled) throw new Error('Telemetry setting not confirmed');
+   onTelemetryConfirmed(disabled);
+  } catch {
+   telemetryError = true;
+  } finally {
+   telemetryPending = null;
+   renderTelemetry(); onChange();
+  }
+ }
  function render(next = ctx) {
   ctx = next;
   $('t3-code-intro').textContent = L('A separate T3 Code workspace with the accounts and models you choose. Green KP badges on T3’s provider rail and composer identify Kilo accounts.', 'Un espacio T3 Code separado con las cuentas y modelos que elijas. Las marcas KP verdes en los iconos del selector y el compositor de T3 identifican las cuentas Kilo.');
@@ -156,6 +185,7 @@ export function createT3CodeHelper({api, onChange}) {
    let label = provider.label;
    if (provider.id === 'opencode') label = (openCodeUsesKilo(preferences) ? 'Kilo Proxy · ' : '')+(preferences.openCode2 ? 'OpenCode 2' : 'OpenCode')+(openCodeUsesKilo(preferences) ? L(' · Shared models through the proxy', ' · Modelos compartidos a través del proxy') : L(' · Own login and catalog', ' · Sesión y catálogo propios'));
    if(provider.id==='muse')label=museUsesKilo(preferences)?(museModelPolicy(preferences)==='official'?L('Kilo Proxy · Muse Code · Meta models through the proxy','Kilo Proxy · Muse Code · Modelos de Meta a través del proxy'):L('Kilo Proxy · Muse Code · Shared models through the proxy','Kilo Proxy · Muse Code · Modelos compartidos a través del proxy')):L('Muse Code · Meta login and catalog','Muse Code · Sesión y catálogo de Meta');
+   if (provider.id === 'kilo-acp' && provider.supported) label += L(' · Own login and catalog', ' · Sesión y catálogo propios');
    accounts.push(label+(provider.supported?'':L(' · unavailable in this build',' · no disponible en esta compilación')));
   }
   for (const text of accounts) { const item = document.createElement('li'); item.textContent = text; $('t3-code-agents').append(item); }
@@ -169,7 +199,7 @@ export function createT3CodeHelper({api, onChange}) {
   $('t3-code-install').textContent = L('Get T3 Code ↗', 'Obtener T3 Code ↗');
   $('t3-code-prepared').textContent = prepared() ? L('Your saved T3 accounts and models are prepared.', 'Las cuentas y modelos guardados de T3 están preparados.') : L('Prepare or open T3 Code · Kilo to apply your saved accounts and models.', 'Prepara o abre T3 Code · Kilo para aplicar las cuentas y modelos guardados.');
   $('t3-code-status').textContent = translate(error || (working ? L('Preparing T3 Code accounts…', 'Preparando cuentas de T3 Code…') : profile?.message || ''), ctx.language); $('t3-code-status').classList.toggle('error', !!error);
-  renderPreferences(); onChange();
+  renderPreferences(); renderTelemetry(); onChange();
   if (!loaded && !loading) void reload();
  }
  async function reload() {
@@ -231,11 +261,13 @@ export function createT3CodeHelper({api, onChange}) {
  $('t3-code-opencode-version').addEventListener('change', () => { if (!preferences) return; if ($('t3-code-opencode-version').value === '2' && !openCode2Supported) {$('t3-code-opencode-version').value=preferences.openCode2?'2':'1';return;} void savePreferences({...structuredClone(preferences), openCode2:$('t3-code-opencode-version').value === '2'}); });
  $('t3-code-settings-retry').addEventListener('click', () => { if (pendingPreferences) void savePreferences(pendingPreferences); });
  $('t3-code-settings-reload').addEventListener('click', () => { void reload(); });
+ $('t3-code-telemetry-disabled').addEventListener('change', event => { void saveTelemetry(event.target.checked); });
+ $('t3-code-copy-dns-rule').addEventListener('click', () => { void copy($('t3-code-dns-domain').textContent); });
  $('t3-code-reload').addEventListener('click', () => { void reload(); });
  $('t3-code-prepare').addEventListener('click', () => { void prepare().catch(() => {}); });
- return {render, reload, savePreferences, preferences:() => preferences && structuredClone(preferences), launchState:() => {
+ return {render, reload, savePreferences, setLaunching(value) { if (launching !== value) { launching = value; renderTelemetry(); } }, preferences:() => preferences && structuredClone(preferences), launchState:() => {
   const current = currentProfile();
   const count = (current?.effectiveCodexModels?.length ?? 0) + (current?.effectiveClaudeModels?.length ?? 0) + (openCodeUsesKilo(preferences) ? current?.effectiveOpenCodeModels?.length ?? 0 : 0) + (museUsesKilo(preferences) ? current?.effectiveMuseModels?.length ?? 0 : 0);
-  return {id:'t3-code', nativeOnly:nativeOnly(), count, canPrepareWithoutModelSummary:catalogMode(), ready:false, valid:ready() && connected(), reason:reason(), working:working || loading || saving, fingerprint:signature(), prepare};
+  return {id:'t3-code', nativeOnly:nativeOnly(), count, canPrepareWithoutModelSummary:catalogMode(), ready:false, valid:ready() && connected(), reason:reason(), working:working || loading || saving || telemetryPending !== null, fingerprint:signature(), prepare};
  }};
 }

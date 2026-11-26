@@ -9,15 +9,82 @@ import (
 	"net/http/httptest"
 	"net/http/httputil"
 	"net/url"
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"gioui.org/io/semantic"
 )
+
+func TestNativeT3CodeTelemetrySaveSurvivesOldStatePoll(t *testing.T) {
+	a, err := newApp(filepath.Join(t.TempDir(), "app"), &fakeVault{values: map[string]string{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	api := a.adminHandler()
+	var holdState atomic.Bool
+	stateStarted, stateGate := make(chan struct{}), make(chan struct{})
+	releaseState := sync.OnceFunc(func() { close(stateGate) })
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/api/state" && holdState.CompareAndSwap(true, false) {
+			// Build the authenticated state response before the telemetry save.
+			response := httptest.NewRecorder()
+			api.ServeHTTP(response, r)
+			close(stateStarted)
+			select {
+			case <-stateGate:
+			case <-r.Context().Done():
+				return
+			}
+			w.WriteHeader(response.Code)
+			_, _ = w.Write(response.Body.Bytes())
+			return
+		}
+		api.ServeHTTP(w, r)
+	}))
+	a.adminHost = server.Listener.Addr().String()
+	server.Start()
+	t.Cleanup(func() {
+		releaseState()
+		a.requestQuit()
+		server.Close()
+	})
+	u := newNativeUI(a, func() {})
+	disabled := func() bool { return nativeBool(u.state, "t3CodeTelemetryDisabled") }
+	nativeTestWait(t, u, func() bool { return u.authenticated && !u.busy["GET/api/state"] })
+	if disabled() {
+		t.Fatal("new workspace should inherit T3's telemetry policy")
+	}
+
+	holdState.Store(true)
+	u.refreshState()
+	nativeTestWait(t, u, func() bool {
+		select {
+		case <-stateStarted:
+			return true
+		default:
+			return false
+		}
+	})
+	u.saveT3CodeTelemetry(true)
+	nativeTestWait(t, u, func() bool { return !u.t3CodeTelemetrySaving() && disabled() })
+	releaseState()
+	nativeTestWait(t, u, func() bool { return !u.busy["GET/api/state"] })
+	if !disabled() {
+		t.Fatal("old poll reverted the confirmed telemetry setting")
+	}
+
+	u.saveT3CodeTelemetry(false)
+	nativeTestWait(t, u, func() bool { return !u.t3CodeTelemetrySaving() && !u.busy["GET/api/state"] })
+	if disabled() {
+		t.Fatal("saving false did not restore T3's telemetry policy")
+	}
+}
 
 type nativeT3PreferencesFixture struct {
 	u                      *nativeUI

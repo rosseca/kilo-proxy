@@ -301,6 +301,9 @@ func t3CodeOptionalProviderCapabilities(source string) ([]t3CodeProviderSupport,
 			}
 		}
 	}
+	if t3CodeSupportsKiloACP(source, registry[1]) {
+		providers = append(providers, t3CodeKiloACPSupport)
+	}
 	openCode := false
 	for _, provider := range providers {
 		openCode = openCode || provider.ID == "opencode"
@@ -434,6 +437,55 @@ func t3CodeContractHomeVariableForwarded(source, code, helper string) bool {
 	return match != "" && code[start:start+len(match)] == t3CodeContractCode(match)
 }
 
+// T3 scrubs AppImage launcher variables from the inherited base before
+// applying instance overrides. Require the known non-mutating helper
+// and its exact key lists, not an arbitrary transformation of baseEnv.
+func t3CodeContractAppImageBaseEnvironment(source, code, beforeCopy string) bool {
+	binding := regexp.MustCompile(`^\{\s*const\s+hostEnv\s*=\s*stripAppImageRuntimeEnv\(\s*baseEnv\s*\)\s*;`)
+	if !binding.MatchString(beforeCopy) {
+		return false
+	}
+	starts := regexp.MustCompile(`(?m)^const\s+APPIMAGE_RUNTIME_ENV_KEYS\s*=`).FindAllStringIndex(code, 2)
+	helpers := regexp.MustCompile(`(?m)^function\s+stripAppImageRuntimeEnv\(env\)\s*\{`).FindAllStringIndex(code, 2)
+	if len(starts) != 1 || len(helpers) != 1 || starts[0][0] >= helpers[0][0] ||
+		strings.Count(code, "APPIMAGE_RUNTIME_ENV_KEYS") != 2 ||
+		strings.Count(code, "APPIMAGE_PATH_LIKE_ENV_SEPARATORS") != 2 ||
+		strings.Count(code, "isPathSegmentUnderAppDir") != 2 {
+		return false
+	}
+	bodyStart := helpers[0][1] - 1
+	body, ok := t3CodeContractBody(code, bodyStart)
+	if !ok {
+		return false
+	}
+	const scrubber = `const APPIMAGE_RUNTIME_ENV_KEYS = [
+	"APPIMAGE", "APPDIR", "ARGV0", "OWD"
+];
+const APPIMAGE_PATH_LIKE_ENV_SEPARATORS = {
+	PATH: /:/, LD_LIBRARY_PATH: /[:;]/, XDG_DATA_DIRS: /:/, GSETTINGS_SCHEMA_DIR: /:/
+};
+function isPathSegmentUnderAppDir(segment, appDir) {
+	return segment === appDir || segment.startsWith(` + "`${appDir}/`" + `);
+}
+function stripAppImageRuntimeEnv(env) {
+	if (env.APPIMAGE === void 0 && env.APPDIR === void 0) return env;
+	const scrubbed = { ...env };
+	for (const key of APPIMAGE_RUNTIME_ENV_KEYS) delete scrubbed[key];
+	const appDir = env.APPDIR?.replace(/\/+$/, "");
+	if (appDir) for (const [key, separator] of Object.entries(APPIMAGE_PATH_LIKE_ENV_SEPARATORS)) {
+		const value = scrubbed[key];
+		if (value === void 0) continue;
+		const segments = value.split(separator);
+		const kept = segments.filter((segment) => !isPathSegmentUnderAppDir(segment, appDir));
+		if (kept.length === segments.length) continue;
+		if (kept.length === 0) delete scrubbed[key];
+		else scrubbed[key] = kept.length === 1 && kept[0] === "" ? ":" : kept.join(":");
+	}
+	return scrubbed;
+}`
+	return slices.Equal(strings.Fields(source[starts[0][0]:bodyStart+len(body)]), strings.Fields(scrubber))
+}
+
 // Require an assignment on the copied instance environment. Match direct
 // forwarding, the inline native-home expansion, or the verified helper.
 func t3CodeContractCopiesInstanceEnvironment(source, code, merger string) bool {
@@ -445,13 +497,20 @@ func t3CodeContractCopiesInstanceEnvironment(source, code, merger string) bool {
 	if !ok {
 		return false
 	}
-	copy := regexp.MustCompile(`const\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*\{\s*\.\.\.baseEnv\s*\}`).FindStringSubmatch(body)
+	const copyBase = `const\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*\{\s*\.\.\.`
+	copy := regexp.MustCompile(copyBase + `baseEnv\s*\}`).FindStringSubmatchIndex(body)
+	if len(copy) != 4 {
+		copy = regexp.MustCompile(copyBase + `hostEnv\s*\}`).FindStringSubmatchIndex(body)
+		if len(copy) != 4 || !t3CodeContractAppImageBaseEnvironment(source, code, body[:copy[0]]) {
+			return false
+		}
+	}
 	loop := regexp.MustCompile(`for\s*\(const\s+([A-Za-z_$][A-Za-z0-9_$]*)\s+of\s+environment\)`).FindStringSubmatch(body)
-	if len(copy) != 2 || len(loop) != 2 {
+	if len(loop) != 2 {
 		return false
 	}
 	rawBody := source[mergers[0][1]-1 : mergers[0][1]-1+len(body)]
-	next, variable := copy[1], loop[1]
+	next, variable := body[copy[2]:copy[3]], loop[1]
 	nextPattern, variablePattern := regexp.QuoteMeta(next), regexp.QuoteMeta(variable)
 	if !regexp.MustCompile(`\breturn\s+` + nextPattern + `\b`).MatchString(body) {
 		return false

@@ -259,7 +259,9 @@ func readT3CodePreparedAt(dir string) (t3CodePrepared, error) {
 		return saved, errors.New("Prepare the private T3 Code profiles first.")
 	}
 	data, err := readCatalogFile(t3CodePaths(dir).Selection)
-	if err != nil || json.Unmarshal(data, &saved) != nil || !t3CodeVersionValid(saved.Version) || saved.Fingerprint == "" || validateModelLibrary(saved.Library) != nil || (len(saved.Providers) < 4 || len(saved.Providers) > 12) || len(saved.Files) > 32 {
+	// Four core slots, two optional proxy slots, and one native ACP slot.
+	maxProviders := len(t3CodeOptionalProviders) + 7
+	if err != nil || json.Unmarshal(data, &saved) != nil || !t3CodeVersionValid(saved.Version) || saved.Fingerprint == "" || validateModelLibrary(saved.Library) != nil || len(saved.Providers) < 4 || len(saved.Providers) > maxProviders || len(saved.Files) > 32 {
 		return t3CodePrepared{}, errors.New("Prepare the private T3 Code profiles first.")
 	}
 	if validateT3CodePreferences(saved.Preferences) != nil || validateT3CodeLibrary(saved.CodexLibrary) != nil || validateT3CodeClaudeRoutes(saved.ClaudeLibrary, saved.ClaudeRoutes) != nil || validateModelLibrary(saved.OpenCodeLibrary) != nil || validateModelLibrary(saved.MuseLibrary) != nil {
@@ -301,6 +303,9 @@ func readT3CodePreparedAt(dir string) (t3CodePrepared, error) {
 	if err := validateT3CodeMuseManifest(saved, t3CodePaths(dir)); err != nil {
 		return t3CodePrepared{}, err
 	}
+	if !validT3CodeKiloACPPlan(saved.Preferences, saved.Providers) {
+		return t3CodePrepared{}, errors.New("Invalid private T3 Code ACP account selection.")
+	}
 	if !validT3CodeRuntimeRoot(saved.Runtime, t3CodePaths(dir).Root) {
 		return t3CodePrepared{}, errors.New("Prepare the private T3 Code interface again.")
 	}
@@ -320,6 +325,9 @@ func readT3CodePreparedAt(dir string) (t3CodePrepared, error) {
 			}
 		}
 		for _, id := range saved.Preferences.Providers {
+			if id == t3CodeKiloACPOption {
+				continue
+			}
 			provider, ok := saved.Providers[id].(map[string]any)
 			if !ok || provider["driver"] != id || provider["enabled"] != true {
 				return t3CodePrepared{}, errors.New("Invalid native T3 Code provider selection.")
@@ -446,7 +454,7 @@ func t3CodeReadyFrom(input t3CodeValidationInput, saved t3CodePrepared, binary s
 	// T3 fills defaults and persists normal runtime settings. Only the configured
 	// managed entries must retain our owned fields, not the entire settings file.
 	for id, expected := range saved.Providers {
-		if !t3CodeSubset(expected, providers[id]) {
+		if !t3CodeSubset(expected, providers[id]) || (t3CodeIsKiloACP(expected) && !t3CodeIsKiloACP(providers[id])) {
 			return false
 		}
 	}
@@ -528,7 +536,14 @@ func planT3CodeSettingsWithPolicy(paths t3CodeManagedPaths, providers map[string
 		// left intact, and a supported build restores this same managed ID.
 		delete(all, t3CodeOpenCodeProxyID)
 	}
+	removeT3CodeManagedACP(paths.Selection, all, providers)
 	for id, raw := range providers {
+		if t3CodeIsKiloACP(raw) {
+			if err := applyT3CodeKiloACP(all, id); err != nil {
+				return nil, err
+			}
+			continue
+		}
 		instance, ok := raw.(map[string]any)
 		if !ok {
 			return nil, errors.New("Invalid private T3 Code provider configuration.")
@@ -935,7 +950,11 @@ func (a *app) t3CodeProfileAPI(w http.ResponseWriter, r *http.Request) {
 	for _, model := range library.Models {
 		models = append(models, t3CodeModelSummary{ID: model.ID, Name: model.DisplayName, ReasoningEffort: model.ReasoningEffort})
 	}
-	saved, _ = a.readT3CodePrepared()
+	saved, err = a.readT3CodePrepared()
+	if err != nil {
+		jsonError(w, 409, err.Error())
+		return
+	}
 	version := saved.Version
 	installation, _ := inspectT3CodeInstallation(binary, rt.platform)
 	catalog := a.t3CodeValidationInputLocked().catalog()

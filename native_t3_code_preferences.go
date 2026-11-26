@@ -66,7 +66,7 @@ type nativeT3CodeProviderChoice struct {
 }
 
 func nativeT3CodeProviderChoices(p nativeT3CodePreferences, supported []nativeT3CodeProvider) []nativeT3CodeProviderChoice {
-	known := map[string]string{}
+	known := map[string]string{t3CodeKiloACPOption: t3CodeKiloACPSupport.Label}
 	for _, provider := range t3CodeOptionalProviders {
 		known[provider.ID] = provider.Label
 	}
@@ -181,7 +181,50 @@ func (u *nativeUI) t3CodeOpenCodeConnectionError() error {
 }
 
 func (u *nativeUI) t3CodePreferencesBusy() bool {
-	return u.busy["POST"+nativeT3CodePreferencesEndpoint]
+	return u.busy["POST"+nativeT3CodePreferencesEndpoint] || u.t3CodeTelemetrySaving()
+}
+
+func (u *nativeUI) t3CodeTelemetrySaving() bool {
+	return u.busy["POST"+t3CodeTelemetryEndpoint]
+}
+
+func (u *nativeUI) saveT3CodeTelemetry(disabled bool) {
+	if u.t3CodePreferencesBusy() || u.clientState().Launching == "t3-code" {
+		return
+	}
+	u.agentsState().T3Code.TelemetryRevision++
+	u.clientRequest("POST", t3CodeTelemetryEndpoint, map[string]bool{"disabled": disabled}, func(raw json.RawMessage, err error) {
+		if err != nil {
+			u.noticeError(err)
+			return
+		}
+		var response struct {
+			Disabled *bool `json:"disabled"`
+		}
+		if json.Unmarshal(raw, &response) != nil || response.Disabled == nil || *response.Disabled != disabled {
+			u.noticeError(errors.New(u.tr("T3 Code did not confirm the telemetry setting.", "T3 Code no confirmó el ajuste de telemetría.")))
+			return
+		}
+		u.state["t3CodeTelemetryDisabled"] = disabled
+		u.setNotice(nativeToneSuccess, u.tr("T3 Code telemetry setting saved.", "Ajuste de telemetría de T3 Code guardado."))
+		u.refreshState()
+	})
+}
+
+func (u *nativeUI) t3CodePrivacyPanel() layout.Widget {
+	label := u.tr("Disable T3 telemetry", "Desactivar la telemetría de T3")
+	help := u.tr("Applies the next time you open T3 Code · Kilo. Close that workspace first if it’s open.", "Se aplica la próxima vez que abras T3 Code · Kilo. Si está abierto, ciérralo primero.")
+	if u.t3CodeTelemetrySaving() {
+		help = u.tr("Saving telemetry setting…", "Guardando ajuste de telemetría…")
+	}
+	editable := u.authenticated && !u.t3CodePreferencesBusy() && u.clientState().Launching != "t3-code"
+	toggle := u.uxsToggle("t3-privacy:telemetry", label, "", nativeBool(u.state, "t3CodeTelemetryDisabled"), u.saveT3CodeTelemetry)
+	copyDNS := u.iconButton("t3-privacy:dns-copy", u.tr("Copy DNS rule", "Copiar regla DNS"), nativeButtonSecondary, nativeIconCopy, func() { u.copy(t3CodeTelemetryDomain) })
+	dnsHelp := u.tr("Add this host to your DNS denylist to block T3 product events sent to it.", "Añade este dominio a tu lista de bloqueo DNS para bloquear los eventos de producto que T3 le envía.")
+	return u.uxsBlock(u.tr("Privacy", "Privacidad"), "",
+		u.uxsRow(u.tr("Usage data", "Datos de uso"), "", u.disabled(editable, toggle), nil, u.note(help)),
+		u.uxsRow(u.tr("DNS denylist", "Bloqueo DNS"), "", u.note(t3CodeTelemetryDomain), copyDNS, u.note(dnsHelp)),
+	)
 }
 
 func (u *nativeUI) refreshT3CodePreferences() {
@@ -329,6 +372,9 @@ func (u *nativeUI) t3CodePreferencesPanel() layout.Widget {
 			continue
 		}
 		help := u.tr("Uses this provider's own installation and login", "Usa la instalación y sesión propias de este proveedor")
+		if id == t3CodeKiloACPOption {
+			help = u.tr("T3 manages the ACP Registry installation and Kilo Code sign-in", "T3 gestiona la instalación desde el registro ACP y la sesión de Kilo Code")
+		}
 		if id == "opencode" && nativeT3OpenCodeUsesKilo(p) || id == "muse" && nativeT3MuseUsesKilo(p) {
 			help = u.tr("Uses your saved shared models through Kilo Proxy", "Usa tus modelos compartidos guardados a través de Kilo Proxy")
 			if id == "muse" && nativeT3MuseModels(p) == "official" {
