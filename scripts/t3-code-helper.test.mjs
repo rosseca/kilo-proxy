@@ -363,6 +363,113 @@ test('OpenCode connection is optional in old responses and only enabled Kilo Ope
  assert.equal(t3CodePrepared(null,{prepared:true,preferences:own},{...own,openCodeConnection:'native'}),true);
 });
 
+test('LiteLLM defaults preserve legacy prepared accounts and validate explicit choices',()=>{
+ const legacy={...preferences(),kiloCodex:false,kiloClaude:false};
+ const defaults={...legacy,liteLLMCodex:false,liteLLMClaude:false,liteLLMCodexModels:'official',liteLLMClaudeModels:'official'};
+ assert.equal(t3CodeNativeOnly(legacy),true);
+ assert.equal(t3CodePrepared(null,{prepared:true,preferences:legacy},defaults),true);
+ assert.equal(t3CodePrepared(null,{prepared:true,preferences:defaults},legacy),true);
+ for (const account of ['liteLLMCodex','liteLLMClaude']) {
+  assert.equal(t3CodeNativeOnly({...legacy,[account]:true}),false);
+  assert.equal(t3CodePreferencesValid({...legacy,[account]:null}),false);
+  assert.equal(t3CodePreferencesValid({...legacy,[account+'Models']:'shared'}),false);
+ }
+});
+
+test('already enabled LiteLLM accounts prepare from a cold catalog and drop stale gateway summaries',async t=>{
+ const current={...preferences(),kiloCodex:false,kiloClaude:false,liteLLMCodex:true,liteLLMClaude:true};
+ const state={connectionReady:true,kiloReady:false,catalogRevision:7,litellm:{ready:true,url:'https://lite.example.invalid/v1',authMode:'browser'}};
+ const replacement={...state,catalogRevision:8};
+ const writes=[];
+ let switchBeforeWrite=false, switchAfterWrite=false;
+ let delayedProfile;
+ const {helper,nodes}=fixture(t,async (path,body)=>{
+  if (path==='model-library') {
+   if (switchBeforeWrite) helper.render({state:replacement,language:'en'});
+   return {library:emptyLibrary()};
+  }
+  if (!body) return delayedProfile ?? {prepared:false,preferences:current,library:emptyLibrary()};
+  writes.push(structuredClone(body));
+  if (switchAfterWrite) helper.render({state:replacement,language:'en'});
+  return {prepared:true,preferences:current,library:emptyLibrary(),
+   effectiveLiteLLMCodexModels:[{id:'litellm/gpt-work',name:'GPT Work'}],
+   effectiveLiteLLMClaudeModels:[{id:'litellm/claude-work',name:'Claude Work'}]};
+ },{preferencesAPI:async()=>({preferences:structuredClone(current)})});
+ await tick();
+ assert.equal(helper.launchState().nativeOnly,false);
+ assert.match(helper.launchState().reason,/Connect LiteLLM/);
+ await assert.rejects(helper.launchState().prepare(),/Connect LiteLLM/);
+ helper.render({state,language:'en'});
+ await helper.reload();
+ assert.equal(helper.launchState().valid,true);
+ assert.equal(helper.launchState().canPrepareWithoutModelSummary,true);
+ assert.equal(helper.launchState().count,0);
+ switchBeforeWrite=true;
+ await assert.rejects(helper.launchState().prepare(),/connection changed/);
+ assert.deepEqual(writes,[]);
+ switchBeforeWrite=false;
+ helper.render({state,language:'en'});
+ switchAfterWrite=true;
+ await assert.rejects(helper.launchState().prepare(),/connection changed while preparing/);
+ assert.equal(helper.launchState().count,0);
+ switchAfterWrite=false;
+ helper.render({state,language:'en'});
+ const prepared = await helper.launchState().prepare();
+ assert.deepEqual(writes,[{preferences:current},{preferences:current}]);
+ assert.equal(helper.launchState().count,2);
+ assert.match(nodes.get('t3-code-summary').textContent,/LiteLLM · Codex: 1 · LiteLLM · Claude: 1/);
+ assert.deepEqual(nodes.get('t3-code-models').children.map(row=>row.textContent),[
+  'LiteLLM · Codex · GPT Work · litellm/gpt-work',
+  'LiteLLM · Claude · Claude Work · litellm/claude-work',
+ ]);
+ assert.ok(nodes.get('t3-code-agents').children.some(row=>row.textContent.startsWith('LiteLLM · Claude')));
+ helper.render({state:replacement,language:'en'});
+ assert.equal(helper.launchState().count,0);
+ assert.doesNotMatch(nodes.get('t3-code-prepared').textContent,/are prepared/);
+ helper.render({state:{...state,litellm:{...state.litellm,ready:false}},language:'es'});
+ assert.equal(helper.launchState().valid,false);
+ assert.match(helper.launchState().reason,/Conecta LiteLLM/);
+ const pollingState = structuredClone(state);
+ helper.render({state:pollingState,language:'en'});
+ let finishReload;
+ delayedProfile = new Promise(resolve=>{finishReload=resolve;});
+ const reload = helper.reload();
+ pollingState.catalogRevision++;
+ finishReload(prepared);
+ await reload;
+ assert.equal(helper.launchState().count,0);
+});
+
+test('selected LiteLLM models require a saved library and confirm the exact preparation',async t=>{
+ const current={...preferences(),kiloCodex:false,kiloClaude:false,liteLLMCodex:true,liteLLMCodexModels:'selected'};
+ const state={connectionReady:true,litellm:{ready:true,url:'https://lite.example.invalid/v1'}};
+ let library=emptyLibrary(), confirm=false;
+ const writes=[];
+ const {helper}=fixture(t,async (path,body)=>{
+  if (path==='model-library') return {library:structuredClone(library)};
+  if (body) writes.push(structuredClone(body));
+  return {prepared:!!body && confirm,preferences:current,library:structuredClone(library)};
+ },{preferencesAPI:async()=>({preferences:structuredClone(current)})});
+ await tick();
+ helper.render({state,language:'en'});
+ assert.equal(helper.launchState().nativeOnly,false);
+ assert.equal(helper.launchState().valid,false);
+ await assert.rejects(helper.launchState().prepare(),/Add and save models/);
+ assert.deepEqual(writes,[]);
+ const model='litellm/0123456789abcdef0123456789abcdef/gpt-work';
+ library={schemaVersion:1,defaultModel:model,models:[{id:model}]};
+ await helper.reload();
+ assert.equal(helper.launchState().valid,true);
+ assert.equal(helper.launchState().canPrepareWithoutModelSummary,true);
+ await assert.rejects(helper.launchState().prepare(),/did not confirm the prepared catalog/);
+ confirm=true;
+ await helper.launchState().prepare();
+ assert.deepEqual(writes,[{preferences:current,library},{preferences:current,library}]);
+ current.liteLLMCodexModels='official';
+ await assert.rejects(helper.launchState().prepare(),/settings changed/);
+ assert.equal(writes.length,2);
+});
+
 test('OpenCode connection saves an explicit immutable choice and displays only its matching Kilo summary',async t=>{
  let current={...preferences(),providers:['opencode'],openCode2:true}, release;
  const posts=[];
