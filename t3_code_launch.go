@@ -121,12 +121,12 @@ func (a *app) t3CodeAvailability(executable string, rt clientLaunchRuntime, pref
 	if err := t3CodeCompatibility(executable, rt.platform); err != nil {
 		return err
 	}
-	if prefs.Codex || prefs.KiloCodex {
+	if prefs.Codex || prefs.KiloCodex || prefs.LiteLLMCodex {
 		if _, err := resolveOpenDesignCLI("codex-cli", rt); err != nil {
 			return errors.New("Install a native Codex CLI executable before preparing T3 Code, or disable its T3 connections in Kilo Settings.")
 		}
 	}
-	if prefs.Claude || prefs.KiloClaude {
+	if prefs.Claude || prefs.KiloClaude || prefs.LiteLLMClaude {
 		if _, err := rt.resolve("claude", ""); err != nil {
 			return errors.New("Install Claude Code CLI before preparing T3 Code, or disable its T3 connections in Kilo Settings. Claude Desktop is a separate application.")
 		}

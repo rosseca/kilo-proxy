@@ -83,7 +83,7 @@ Open **Settings → Accounts → Add LiteLLM**, or choose LiteLLM during first l
 
 Both methods check only the model list. A failed check leaves the previous connection available. Browser sign-in requires LiteLLM's documented PKCE contract at `/.well-known/litellm-cli-auth`. For a gateway behind an HTTPS reverse proxy, set `PROXY_BASE_URL` to the external gateway address so the issuer and endpoints match. [LiteLLM CLI sign-in contract](https://docs.litellm.ai/docs/proxy/cli_sso#native-client-contract)
 
-Use the **Kilo** and **LiteLLM** switches independently. Select LiteLLM models in the shared library. In T3 Code, use the shared-model option to include them in selectors that also offer a provider-specific catalog. LiteLLM determines which API formats and features each model supports. A request uses the selected gateway even when another connection is active.
+Use the **Kilo** and **LiteLLM** switches independently. Select LiteLLM models in the shared library or enable dedicated **LiteLLM · Codex** and **LiteLLM · Claude** connections in T3 Code. LiteLLM determines which API formats and features each model supports. A request uses the selected gateway even when another connection is active. [T3 Code LiteLLM connections](t3-code.md#litellm-connections)
 
 LiteLLM credentials are stored in the local credential store. Changing the API address requires credentials for the new gateway if it requires authentication. A previously selected LiteLLM model stays tied to its original address.
 

@@ -295,6 +295,12 @@ func validateT3CodeOpenCodeManifest(saved t3CodePrepared, paths t3CodeManagedPat
 	if saved.Preferences.KiloClaude {
 		count += 3
 	}
+	if saved.Preferences.LiteLLMCodex {
+		count += 3
+	}
+	if saved.Preferences.LiteLLMClaude {
+		count += 3
+	}
 	if enabled {
 		count += 2
 	}

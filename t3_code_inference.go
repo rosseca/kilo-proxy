@@ -3,14 +3,60 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"reflect"
+	"strings"
 )
 
 type t3CodeRequestContextKey struct{}
+type t3LiteLLMRequestScopeKey struct{}
+type t3LiteLLMRequestAccountKey struct{}
+type t3LiteLLMRequestModelKey struct{}
+
+const t3LiteLLMProxyPrefix = "/t3-code/litellm/"
+
+func t3LiteLLMProxyToken(localKey, scope string) string {
+	mac := hmac.New(sha256.New, []byte(localKey))
+	mac.Write([]byte("kilo-t3-litellm-v1:" + scope))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+func t3LiteLLMProxyScope(token, localKey string) string {
+	if localKey == "" {
+		return ""
+	}
+	for _, scope := range []string{"codex", "claude"} {
+		if secureEqual(token, t3LiteLLMProxyToken(localKey, scope)) {
+			return scope
+		}
+	}
+	return ""
+}
+
+func t3LiteLLMInferencePath(r *http.Request, scope string) (string, bool) {
+	if scope != "codex" && scope != "claude" || r.URL.RawPath != "" || r.URL.ForceQuery {
+		return "", false
+	}
+	base := t3LiteLLMProxyPrefix + scope + "/v1/"
+	if r.Method == http.MethodGet && r.URL.Path == base+"models" && r.URL.RawQuery == "" {
+		return "/v1/models", true
+	}
+	if r.Method == http.MethodPost {
+		if scope == "codex" && r.URL.Path == base+"responses" && r.URL.RawQuery == "" {
+			return "/v1/responses", true
+		}
+		if scope == "claude" && r.URL.Path == base+"messages" && (r.URL.RawQuery == "" || r.URL.RawQuery == "beta=true") {
+			return "/v1/messages", true
+		}
+	}
+	return "", false
+}
 
 func t3CodeInferencePath(r *http.Request) bool {
 	return r.Method == http.MethodPost && r.URL.Path == "/t3-code/v1/messages" && r.URL.RawPath == "" && (r.URL.RawQuery == "" || r.URL.RawQuery == "beta=true") && !r.URL.ForceQuery
@@ -32,7 +78,9 @@ func t3CodeResolveModel(library modelLibrary, routes map[string]string, requeste
 }
 
 func (a *app) prepareT3CodeRequest(r *http.Request) (*http.Request, error) {
-	if managed, _ := r.Context().Value(t3CodeRequestContextKey{}).(bool); !managed {
+	managed, _ := r.Context().Value(t3CodeRequestContextKey{}).(bool)
+	scope, _ := r.Context().Value(t3LiteLLMRequestScopeKey{}).(string)
+	if !managed && scope == "" {
 		return r, nil
 	}
 	if r.Body == nil {
@@ -58,6 +106,49 @@ func (a *app) prepareT3CodeRequest(r *http.Request) (*http.Request, error) {
 	if json.Unmarshal(request["model"], &requested) != nil || requested == "" {
 		return r, errors.New("Choose a model in the prepared T3 Code selection.")
 	}
+	saved, err := a.t3CodePreparedForRequest()
+	if err != nil {
+		return r, err
+	}
+	if scope != "" {
+		library, err := a.t3LiteLLMPreparedLibrary(saved, scope)
+		if err != nil {
+			return r, err
+		}
+		for _, model := range library.Models {
+			if model.ID == requested {
+				ctx := context.WithValue(r.Context(), t3LiteLLMRequestAccountKey{}, saved.LiteLLMAccount)
+				ctx = context.WithValue(ctx, t3LiteLLMRequestModelKey{}, requested)
+				return r.Clone(ctx), nil
+			}
+		}
+		return r, errors.New("Choose a model in the prepared LiteLLM selection for this T3 Code account.")
+	}
+	model, err := t3CodeResolveModel(saved.ClaudeLibrary, saved.ClaudeRoutes, requested)
+	if err != nil {
+		return r, err
+	}
+	if model == requested {
+		return r, nil
+	}
+	request["model"], _ = json.Marshal(model)
+	encoded, err := json.Marshal(request)
+	if err != nil {
+		return r, err
+	}
+	// Only the native client-facing response uses the selected slug. Upstream
+	// requests, accounting and traces retain the exact prepared gateway model.
+	r = r.Clone(context.WithValue(r.Context(), claudeDesktopAliasContextKey{}, claudeDesktopAliasRoute{Alias: requested, Model: model}))
+	restore(encoded)
+	if observer, _ := r.Context().Value(usageContextKey{}).(*usageObserver); observer != nil {
+		observer.mu.Lock()
+		observer.usage.Model = model
+		observer.mu.Unlock()
+	}
+	return r, nil
+}
+
+func (a *app) t3CodePreparedForRequest() (t3CodePrepared, error) {
 	a.mu.Lock()
 	input, rt := a.t3CodeValidationInputLocked(), a.launchRuntime()
 	a.mu.Unlock()
@@ -102,28 +193,55 @@ func (a *app) prepareT3CodeRequest(r *http.Request) (*http.Request, error) {
 	a.mu.Unlock()
 	ready = ready && reflect.DeepEqual(input, current)
 	if !ready {
-		return r, errors.New("Prepare T3 Code again before using its managed models.")
+		return t3CodePrepared{}, errors.New("Prepare T3 Code again before using its managed models.")
 	}
-	model, err := t3CodeResolveModel(saved.ClaudeLibrary, saved.ClaudeRoutes, requested)
+	return saved, nil
+}
+
+func (a *app) t3LiteLLMPreparedLibrary(saved t3CodePrepared, scope string) (modelLibrary, error) {
+	fail := errors.New("Prepare T3 Code again with this LiteLLM connection and model selection.")
+	var library modelLibrary
+	switch {
+	case scope == "codex" && saved.Preferences.LiteLLMCodex:
+		library = saved.LiteLLMCodexLibrary
+	case scope == "claude" && saved.Preferences.LiteLLMClaude:
+		library = saved.LiteLLMClaudeLibrary
+	default:
+		return library, fail
+	}
+	a.mu.Lock()
+	connection, ready := a.liteLLMConnectionLocked()
+	a.mu.Unlock()
+	if !ready || saved.LiteLLMAccount != liteLLMAccountScope(connection) || len(library.Models) == 0 {
+		return modelLibrary{}, fail
+	}
+	prefix := liteLLMNamespace(connection.Base)
+	for _, model := range library.Models {
+		if alias, matches := strings.CutPrefix(model.ID, prefix); !matches || alias == "" {
+			return modelLibrary{}, fail
+		}
+	}
+	return library, nil
+}
+
+func (a *app) serveT3LiteLLMModels(w http.ResponseWriter, scope string) {
+	saved, err := a.t3CodePreparedForRequest()
 	if err != nil {
-		return r, err
+		jsonError(w, http.StatusConflict, err.Error())
+		return
 	}
-	if model == requested {
-		return r, nil
-	}
-	request["model"], _ = json.Marshal(model)
-	encoded, err := json.Marshal(request)
+	library, err := a.t3LiteLLMPreparedLibrary(saved, scope)
 	if err != nil {
-		return r, err
+		jsonError(w, http.StatusConflict, err.Error())
+		return
 	}
-	// Only the native client-facing response uses the selected slug. Upstream
-	// requests, accounting and traces retain the exact prepared gateway model.
-	r = r.Clone(context.WithValue(r.Context(), claudeDesktopAliasContextKey{}, claudeDesktopAliasRoute{Alias: requested, Model: model}))
-	restore(encoded)
-	if observer, _ := r.Context().Value(usageContextKey{}).(*usageObserver); observer != nil {
-		observer.mu.Lock()
-		observer.usage.Model = model
-		observer.mu.Unlock()
+	models := make([]map[string]any, 0, len(library.Models))
+	for _, model := range library.Models {
+		name := model.DisplayName
+		if name == "" {
+			name = model.ID
+		}
+		models = append(models, map[string]any{"id": model.ID, "object": "model", "type": "model", "owned_by": "litellm", "name": name, "display_name": name, "is_default": model.ID == library.DefaultModel})
 	}
-	return r, nil
+	jsonResponse(w, http.StatusOK, map[string]any{"object": "list", "data": models, "has_more": false})
 }

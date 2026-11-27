@@ -16,6 +16,9 @@ func TestT3CodePreferencesDefaultsAndValidation(t *testing.T) {
 	if !p.Codex || !p.Claude || !p.KiloCodex || !p.KiloClaude || p.CodexModels != "official" || p.ClaudeModels != "official" || len(p.Providers) != 0 || p.OpenCode2 {
 		t.Fatal("unexpected initial provider/model selection", p)
 	}
+	if p.LiteLLMCodex || p.LiteLLMClaude || p.LiteLLMCodexModels != "official" || p.LiteLLMClaudeModels != "official" {
+		t.Fatal("LiteLLM providers should be opt-in and default to family catalogs", p)
+	}
 	for _, mutate := range []func(*t3CodePreferences){
 		func(p *t3CodePreferences) { p.Version = 2 }, func(p *t3CodePreferences) { p.CodexModels = "everything" },
 		func(p *t3CodePreferences) { p.ClaudeModels = "" }, func(p *t3CodePreferences) { p.Providers = []string{"unknown"} },
@@ -36,6 +39,78 @@ func TestT3CodePreferencesDefaultsAndValidation(t *testing.T) {
 	n.Providers[0] = "cursor"
 	if p.Providers[0] != "pi" {
 		t.Fatal("normalization mutated the input")
+	}
+}
+
+func TestT3CodeLiteLLMPreferencesPreserveLegacySavesAndAllowDisconnect(t *testing.T) {
+	a := t3CodeTestApp(t, "linux")
+	prefs := a.config.T3Code
+	post := func(input any, wantStatus int) {
+		t.Helper()
+		data, err := json.Marshal(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if w := adminRequest(a, "clients/t3-code/preferences", string(data)); w.Code != wantStatus {
+			t.Fatalf("save %s returned %d: %s", data, w.Code, w.Body.String())
+		}
+	}
+	prefs.LiteLLMCodex, prefs.LiteLLMCodexModels = true, "selected"
+	post(prefs, 409)
+	if a.config.T3Code.LiteLLMCodex {
+		t.Fatal("enabled LiteLLM without a connection")
+	}
+	a.config.LiteLLM = liteLLMSettings{Enabled: true, URL: "https://litellm.example.test/v1"}
+	post(prefs, 200)
+
+	legacyJSON, err := json.Marshal(prefs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var legacy map[string]json.RawMessage
+	if err := json.Unmarshal(legacyJSON, &legacy); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"liteLLMCodex", "liteLLMClaude", "liteLLMCodexModels", "liteLLMClaudeModels"} {
+		delete(legacy, name)
+	}
+	legacy["codex"] = json.RawMessage("false")
+	post(legacy, 200)
+	saved, err := readSettings(a.dir)
+	if err != nil || !saved.T3Code.LiteLLMCodex || saved.T3Code.LiteLLMClaude || saved.T3Code.LiteLLMCodexModels != "selected" || saved.T3Code.Codex {
+		t.Fatal("legacy save overwrote LiteLLM choices or ignored the direct Codex change", saved.T3Code, err)
+	}
+
+	a.config.LiteLLM.Enabled = false
+	prefs = a.config.T3Code
+	prefs.LiteLLMCodex = false
+	post(prefs, 200)
+	if a.config.T3Code.LiteLLMCodex || a.config.T3Code.LiteLLMCodexModels != "selected" {
+		t.Fatal("disable should keep the selected scope after disconnect")
+	}
+}
+
+func TestT3CodeLiteLLMPreferencesRejectInvalidExplicitFields(t *testing.T) {
+	base := `{"version":1,"codexModels":"official","claudeModels":"official",`
+	for _, invalid := range []string{
+		`"liteLLMCodex":null`,
+		`"liteLLMClaude":"true"`,
+		`"liteLLMCodexModels":null`,
+		`"liteLLMClaudeModels":"shared"`,
+		`"liteLLMClaudeModels":""`,
+		`"liteLLMCodex":true,"liteLLMCodex":false`,
+	} {
+		if _, _, err := decodeT3CodePreferencesDocument([]byte(base + invalid + "}")); err == nil {
+			t.Errorf("accepted invalid preference %s", invalid)
+		}
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "settings.json")
+	if err := os.WriteFile(path, []byte(`{"t3Code":`+base+`"liteLLMCodexModels":null}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readSettings(dir); err == nil {
+		t.Fatal("reading settings accepted a null LiteLLM policy")
 	}
 }
 

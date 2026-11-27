@@ -12,17 +12,19 @@ import (
 const t3CodeDownloadURL = "https://github.com/pingdotgg/t3code/releases"
 
 type nativeT3CodeInfo struct {
-	Prepared                bool                       `json:"prepared"`
-	Library                 *modelLibrary              `json:"library"`
-	Version                 string                     `json:"version"`
-	ProtocolV2              bool                       `json:"protocolV2"`
-	ClaudeModelDefaults     bool                       `json:"claudeModelDefaults"`
-	Message                 string                     `json:"message"`
-	Preferences             nativeT3CodePreferences    `json:"preferences"`
-	EffectiveCodexModels    []nativeT3CodeModelSummary `json:"effectiveCodexModels"`
-	EffectiveClaudeModels   []nativeT3CodeModelSummary `json:"effectiveClaudeModels"`
-	EffectiveOpenCodeModels []nativeT3CodeModelSummary `json:"effectiveOpenCodeModels"`
-	EffectiveMuseModels     []nativeT3CodeModelSummary `json:"effectiveMuseModels"`
+	Prepared                     bool                       `json:"prepared"`
+	Library                      *modelLibrary              `json:"library"`
+	Version                      string                     `json:"version"`
+	ProtocolV2                   bool                       `json:"protocolV2"`
+	ClaudeModelDefaults          bool                       `json:"claudeModelDefaults"`
+	Message                      string                     `json:"message"`
+	Preferences                  nativeT3CodePreferences    `json:"preferences"`
+	EffectiveCodexModels         []nativeT3CodeModelSummary `json:"effectiveCodexModels"`
+	EffectiveClaudeModels        []nativeT3CodeModelSummary `json:"effectiveClaudeModels"`
+	EffectiveLiteLLMCodexModels  []nativeT3CodeModelSummary `json:"effectiveLiteLLMCodexModels"`
+	EffectiveLiteLLMClaudeModels []nativeT3CodeModelSummary `json:"effectiveLiteLLMClaudeModels"`
+	EffectiveOpenCodeModels      []nativeT3CodeModelSummary `json:"effectiveOpenCodeModels"`
+	EffectiveMuseModels          []nativeT3CodeModelSummary `json:"effectiveMuseModels"`
 }
 
 type nativeT3CodeState struct {
@@ -36,11 +38,11 @@ type nativeT3CodeState struct {
 	TelemetryRevision uint64
 }
 
-// Only confirmed, current preferences can opt out of the Kilo model gateway.
-// Older or unloaded responses retain the existing Kilo readiness checks.
+// Only confirmed, current preferences can opt out of local proxy accounts.
 func (u *nativeUI) t3CodeNativeOnly() bool {
 	prefs := &u.agentsState().T3Code.PreferencesState
-	return prefs.Loaded && validNativeT3CodePreferences(prefs.Preferences) && !prefs.Preferences.KiloCodex && !prefs.Preferences.KiloClaude && !nativeT3OpenCodeUsesKilo(prefs.Preferences) && !nativeT3MuseUsesKilo(prefs.Preferences)
+	p := prefs.Preferences
+	return prefs.Loaded && validNativeT3CodePreferences(p) && !t3CodeUsesLocalProxy(t3CodePreferences(p))
 }
 
 // Only confirmed preferences can opt out of the saved shared library.
@@ -53,8 +55,14 @@ func (u *nativeUI) t3CodeNeedsSavedLibrary() bool {
 func (u *nativeUI) t3CodeProviderCatalogConnectionError() error {
 	state := &u.agentsState().T3Code.PreferencesState
 	p := state.Preferences
-	if state.Loaded && validNativeT3CodePreferences(p) &&
-		t3CodeUsesProviderCatalog(t3CodePreferences(p)) && !u.owner.readUIProjection().KiloReady {
+	if !state.Loaded || !validNativeT3CodePreferences(p) {
+		return nil
+	}
+	connection := u.owner.readUIProjection()
+	if t3CodeUsesLiteLLM(t3CodePreferences(p)) && !connection.LiteLLMReady {
+		return errors.New(u.tr("Connect LiteLLM to use its enabled accounts in T3 Code.", "Conecta LiteLLM para usar sus cuentas activadas en T3 Code."))
+	}
+	if t3CodeUsesProviderCatalog(t3CodePreferences(p)) && !connection.KiloReady {
 		return errors.New(u.tr("Connect Kilo to use the Claude or Meta catalog in T3 Code.", "Conecta Kilo para usar el catálogo de Claude o Meta en T3 Code."))
 	}
 	return nil

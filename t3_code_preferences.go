@@ -15,18 +15,22 @@ const t3CodePreferencesEndpoint = "/api/clients/t3-code/preferences"
 // Preferences describe the private T3 workspace. They contain no credentials,
 // and changing them never edits a provider's normal home or a T3 conversation.
 type t3CodePreferences struct {
-	Version            int      `json:"version"`
-	Codex              bool     `json:"codex"`
-	Claude             bool     `json:"claude"`
-	KiloCodex          bool     `json:"kiloCodex"`
-	KiloClaude         bool     `json:"kiloClaude"`
-	CodexModels        string   `json:"codexModels"`
-	ClaudeModels       string   `json:"claudeModels"`
-	Providers          []string `json:"providers"`
-	OpenCode2          bool     `json:"openCode2"`
-	OpenCodeConnection string   `json:"openCodeConnection"`
-	MuseConnection     string   `json:"museConnection"`
-	MuseModels         string   `json:"museModels"`
+	Version             int      `json:"version"`
+	Codex               bool     `json:"codex"`
+	Claude              bool     `json:"claude"`
+	KiloCodex           bool     `json:"kiloCodex"`
+	KiloClaude          bool     `json:"kiloClaude"`
+	CodexModels         string   `json:"codexModels"`
+	ClaudeModels        string   `json:"claudeModels"`
+	LiteLLMCodex        bool     `json:"liteLLMCodex"`
+	LiteLLMClaude       bool     `json:"liteLLMClaude"`
+	LiteLLMCodexModels  string   `json:"liteLLMCodexModels,omitempty"`
+	LiteLLMClaudeModels string   `json:"liteLLMClaudeModels,omitempty"`
+	Providers           []string `json:"providers"`
+	OpenCode2           bool     `json:"openCode2"`
+	OpenCodeConnection  string   `json:"openCodeConnection"`
+	MuseConnection      string   `json:"museConnection"`
+	MuseModels          string   `json:"museModels"`
 }
 
 type t3CodeProviderSupport struct {
@@ -41,8 +45,10 @@ var t3CodeOptionalProviders = []t3CodeProviderSupport{
 
 func normalizeT3CodePreferences(p t3CodePreferences) t3CodePreferences {
 	if p.Version == 0 {
-		return t3CodePreferences{Version: 1, Codex: true, Claude: true, KiloCodex: true, KiloClaude: true, CodexModels: "official", ClaudeModels: "official", Providers: []string{}, OpenCodeConnection: "native", MuseConnection: "native", MuseModels: "official"}
+		p = t3CodePreferences{Version: 1, Codex: true, Claude: true, KiloCodex: true, KiloClaude: true, CodexModels: "official", ClaudeModels: "official", OpenCodeConnection: "native", MuseConnection: "native", MuseModels: "official"}
 	}
+	p.LiteLLMCodexModels = t3CodeLiteLLMModelMode(p.LiteLLMCodexModels)
+	p.LiteLLMClaudeModels = t3CodeLiteLLMModelMode(p.LiteLLMClaudeModels)
 	if p.OpenCodeConnection == "" {
 		p.OpenCodeConnection = "native"
 	}
@@ -66,6 +72,33 @@ func normalizeT3CodePreferences(p t3CodePreferences) t3CodePreferences {
 	return p
 }
 
+func t3CodeLiteLLMModelMode(mode string) string {
+	if mode == "" {
+		return "official"
+	}
+	return mode
+}
+
+func validT3CodeLiteLLMModelMode(mode string) bool {
+	return mode == "official" || mode == "selected"
+}
+
+func validateT3CodeLiteLLMPreferenceMember(name string, value json.RawMessage) error {
+	switch name {
+	case "liteLLMCodex", "liteLLMClaude":
+		var enabled *bool
+		if json.Unmarshal(value, &enabled) != nil || enabled == nil {
+			return errors.New("Invalid LiteLLM provider selection for T3 Code.")
+		}
+	case "liteLLMCodexModels", "liteLLMClaudeModels":
+		var policy string
+		if json.Unmarshal(value, &policy) != nil || !validT3CodeLiteLLMModelMode(policy) {
+			return errors.New("Choose a model family or selected LiteLLM models for T3 Code.")
+		}
+	}
+	return nil
+}
+
 func validateT3CodePreferences(p t3CodePreferences) error {
 	if p.Version != 1 || (p.CodexModels != "official" && p.CodexModels != "shared") || (p.ClaudeModels != "official" && p.ClaudeModels != "shared") {
 		return errors.New("Invalid T3 Code provider or model settings.")
@@ -78,6 +111,9 @@ func validateT3CodePreferences(p t3CodePreferences) error {
 	}
 	if p.MuseModels != "" && p.MuseModels != "official" && p.MuseModels != "shared" {
 		return errors.New("Choose Meta models or all shared models for Muse Code.")
+	}
+	if !validT3CodeLiteLLMModelMode(t3CodeLiteLLMModelMode(p.LiteLLMCodexModels)) || !validT3CodeLiteLLMModelMode(t3CodeLiteLLMModelMode(p.LiteLLMClaudeModels)) {
+		return errors.New("Choose a model family or selected LiteLLM models for T3 Code.")
 	}
 	seen := map[string]bool{}
 	for _, id := range p.Providers {
@@ -97,9 +133,33 @@ func validateT3CodePreferences(p t3CodePreferences) error {
 }
 
 type t3CodePreferenceFields struct {
-	OpenCodeConnection bool
-	MuseConnection     bool
-	MuseModels         bool
+	OpenCodeConnection, MuseConnection, MuseModels bool
+	LiteLLMCodex, LiteLLMClaude                    bool
+	LiteLLMCodexModels, LiteLLMClaudeModels        bool
+}
+
+func (fields t3CodePreferenceFields) applyOmitted(input *t3CodePreferences, saved t3CodePreferences) {
+	if !fields.OpenCodeConnection {
+		input.OpenCodeConnection = saved.OpenCodeConnection
+	}
+	if !fields.MuseConnection {
+		input.MuseConnection = saved.MuseConnection
+	}
+	if !fields.MuseModels {
+		input.MuseModels = saved.MuseModels
+	}
+	if !fields.LiteLLMCodex {
+		input.LiteLLMCodex = saved.LiteLLMCodex
+	}
+	if !fields.LiteLLMClaude {
+		input.LiteLLMClaude = saved.LiteLLMClaude
+	}
+	if !fields.LiteLLMCodexModels {
+		input.LiteLLMCodexModels = saved.LiteLLMCodexModels
+	}
+	if !fields.LiteLLMClaudeModels {
+		input.LiteLLMClaudeModels = saved.LiteLLMClaudeModels
+	}
 }
 
 func decodeT3CodePreferencesDocument(raw json.RawMessage) (t3CodePreferences, t3CodePreferenceFields, error) {
@@ -129,6 +189,9 @@ func decodeT3CodePreferencesDocument(raw json.RawMessage) (t3CodePreferences, t3
 		if decoder.Decode(&value) != nil {
 			return prefs, present, errors.New("Invalid T3 Code preferences.")
 		}
+		if err := validateT3CodeLiteLLMPreferenceMember(name, value); err != nil {
+			return prefs, present, err
+		}
 		switch name {
 		case "museModels":
 			var policy string
@@ -145,6 +208,14 @@ func decodeT3CodePreferencesDocument(raw json.RawMessage) (t3CodePreferences, t3
 			} else {
 				present.MuseConnection = true
 			}
+		case "liteLLMCodex":
+			present.LiteLLMCodex = true
+		case "liteLLMClaude":
+			present.LiteLLMClaude = true
+		case "liteLLMCodexModels":
+			present.LiteLLMCodexModels = true
+		case "liteLLMClaudeModels":
+			present.LiteLLMClaudeModels = true
 		}
 	}
 	return prefs, present, validateT3CodePreferences(prefs)
@@ -183,14 +254,10 @@ func (a *app) t3CodePreferencesAPI(w http.ResponseWriter, r *http.Request) {
 	defer a.mu.Unlock()
 	prefs := normalizeT3CodePreferences(a.config.T3Code)
 	if r.Method == http.MethodPost {
-		if !fields.OpenCodeConnection {
-			input.OpenCodeConnection = prefs.OpenCodeConnection
-		}
-		if !fields.MuseConnection {
-			input.MuseConnection = prefs.MuseConnection
-		}
-		if !fields.MuseModels {
-			input.MuseModels = prefs.MuseModels
+		fields.applyOmitted(&input, prefs)
+		if (input.LiteLLMCodex && !prefs.LiteLLMCodex || input.LiteLLMClaude && !prefs.LiteLLMClaude) && !a.liteLLMViewLocked().Ready {
+			jsonError(w, http.StatusConflict, "Connect LiteLLM before enabling it in T3 Code.")
+			return
 		}
 		input = normalizeT3CodePreferences(input)
 		if !reflect.DeepEqual(input, prefs) {

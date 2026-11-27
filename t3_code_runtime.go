@@ -90,10 +90,25 @@ func patchT3CodeProvidersAsset(source []byte) ([]byte, error) {
 	return result, nil
 }
 
+func t3CodeModelPolicyDriver(id string) string {
+	switch id {
+	case t3CodeCodexProxyID, t3CodeLiteLLMCodexID:
+		return "codex"
+	case t3CodeClaudeProxyID, t3CodeLiteLLMClaudeID:
+		return "claudeAgent"
+	case t3CodeOpenCodeProxyID:
+		return "opencode"
+	case t3CodeMuseProxyID:
+		return "muse"
+	default:
+		return ""
+	}
+}
+
 func normalizeT3CodeRuntimeModelAllowlist(input map[string][]string) (map[string][]string, error) {
 	result := map[string][]string{}
 	for id, models := range input {
-		if id != t3CodeCodexProxyID && id != t3CodeClaudeProxyID && id != t3CodeOpenCodeProxyID && id != t3CodeMuseProxyID || len(models) > 2048 {
+		if t3CodeModelPolicyDriver(id) == "" || len(models) > 2048 {
 			return nil, errors.New("Invalid private T3 Code model policy.")
 		}
 		seen := map[string]bool{}
@@ -114,7 +129,7 @@ func normalizeT3CodeRuntimeModelDefaults(defaults map[string]string, policy map[
 	result := map[string]string{}
 	for id, model := range defaults {
 		models, exists := policy[id]
-		if !exists || id != t3CodeCodexProxyID && id != t3CodeClaudeProxyID && id != t3CodeOpenCodeProxyID && id != t3CodeMuseProxyID {
+		if !exists || t3CodeModelPolicyDriver(id) == "" {
 			return nil, errors.New("Invalid private T3 Code default model account.")
 		}
 		valid := model == "" && len(models) == 0
@@ -204,9 +219,19 @@ func t3CodeRuntimeModelFilterWithMuse(allowlist map[string][]string, defaults ma
 	variantJSON, _ := json.Marshal(variants)
 	museLevels, _ := json.Marshal(muse.Levels)
 	museDefaults, _ := json.Marshal(muse.Defaults)
+	// Preserve the generated script for already-prepared workspaces without
+	// LiteLLM. Their private runtime integrity manifest remains valid.
+	codexIDs := `id==="` + t3CodeCodexProxyID + `"`
+	claudeIDs := `id==="` + t3CodeClaudeProxyID + `"`
+	if _, ok := allowlist[t3CodeLiteLLMCodexID]; ok {
+		codexIDs += `||id==="` + t3CodeLiteLLMCodexID + `"`
+	}
+	if _, ok := allowlist[t3CodeLiteLLMClaudeID]; ok {
+		claudeIDs += `||id==="` + t3CodeLiteLLMClaudeID + `"`
+	}
 	return []byte(`function __kiloT3OpenCodeVariants(model){const variants=` + string(variantJSON) + `,allowed=variants[model.slug]??[],cap=model.capabilities;if(!cap||!Array.isArray(cap.optionDescriptors))return model;let changed=false;const descriptors=cap.optionDescriptors.flatMap(descriptor=>{if(descriptor.id!=="variant")return [descriptor];changed=true;const options=Array.isArray(descriptor.options)?descriptor.options.filter(option=>allowed.includes(option.id)):[];if(options.length===0)return [];const result={...descriptor,options};if(Object.prototype.hasOwnProperty.call(result,"currentValue")&&!allowed.includes(result.currentValue))delete result.currentValue;return [result];});return changed?{...model,capabilities:{...cap,optionDescriptors:descriptors}}:model;}
 function __kiloT3MuseReasoning(model){const levels=` + string(museLevels) + `,defaults=` + string(museDefaults) + `,allowed=levels[model.slug]??[],initial=defaults[model.slug],cap=model.capabilities;if(!cap||!Array.isArray(cap.optionDescriptors))return model;let changed=false;const descriptors=cap.optionDescriptors.flatMap(descriptor=>{if(descriptor.id!=="reasoningEffort")return [descriptor];changed=true;if(descriptor.type!=="select")return [];const options=Array.isArray(descriptor.options)?descriptor.options.filter(option=>allowed.includes(option.id)).map(option=>{const result={...option};delete result.isDefault;if(option.id===initial)result.isDefault=true;return result;}):[];if(options.length===0)return [];const result={...descriptor,options};if(options.some(option=>option.id===initial))result.currentValue=initial;else delete result.currentValue;return [result];});return changed?{...model,capabilities:{...cap,optionDescriptors:descriptors}}:model;}
-function __kiloT3InstanceModels(id,driver,models){const policy=` + string(policy) + `,defaults=` + string(initial) + `;const expected=id==="` + t3CodeCodexProxyID + `"?"codex":id==="` + t3CodeClaudeProxyID + `"?"claudeAgent":id==="` + t3CodeOpenCodeProxyID + `"?"opencode":id==="` + t3CodeMuseProxyID + `"?"muse":null;if(expected===null||expected!==driver||!Object.prototype.hasOwnProperty.call(policy,id))return models;return Array.isArray(models)?models.filter(model=>policy[id].includes(model.slug)).map(model=>id==="` + t3CodeOpenCodeProxyID + `"?__kiloT3OpenCodeVariants(model):id==="` + t3CodeMuseProxyID + `"?__kiloT3MuseReasoning(model):model).map(model=>defaults[id]&&((model.isDefault===true)!==(model.slug===defaults[id]))?{...model,isDefault:model.slug===defaults[id]}:model):models;}` + "\n" + `function __kiloT3InstanceSnapshot(snapshot){const models=__kiloT3InstanceModels(snapshot.instanceId,snapshot.driver,snapshot.models);return models===snapshot.models?snapshot:{...snapshot,models};}` + "\n")
+function __kiloT3InstanceModels(id,driver,models){const policy=` + string(policy) + `,defaults=` + string(initial) + `;const expected=` + codexIDs + `?"codex":` + claudeIDs + `?"claudeAgent":id==="` + t3CodeOpenCodeProxyID + `"?"opencode":id==="` + t3CodeMuseProxyID + `"?"muse":null;if(expected===null||expected!==driver||!Object.prototype.hasOwnProperty.call(policy,id))return models;return Array.isArray(models)?models.filter(model=>policy[id].includes(model.slug)).map(model=>id==="` + t3CodeOpenCodeProxyID + `"?__kiloT3OpenCodeVariants(model):id==="` + t3CodeMuseProxyID + `"?__kiloT3MuseReasoning(model):model).map(model=>defaults[id]&&((model.isDefault===true)!==(model.slug===defaults[id]))?{...model,isDefault:model.slug===defaults[id]}:model):models;}` + "\n" + `function __kiloT3InstanceSnapshot(snapshot){const models=__kiloT3InstanceModels(snapshot.instanceId,snapshot.driver,snapshot.models);return models===snapshot.models?snapshot:{...snapshot,models};}` + "\n")
 }
 
 var t3CodeRuntimeModelsProjection = regexp.MustCompile(`snapshot:([A-Za-z_$][A-Za-z0-9_$]*),models:([A-Za-z_$][A-Za-z0-9_$]*)\.models`)

@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -114,6 +116,78 @@ func prepareT3CodeFixture(t *testing.T, a *app) {
 	w := adminRequest(a, "clients/t3-code", `{}`)
 	if w.Code != 200 {
 		t.Fatalf("prepare: %d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestT3LiteLLMPreparesFamilyProfilesWithoutKilo(t *testing.T) {
+	a := t3CodeTestApp(t, "macos")
+	if installed := os.Getenv("KILO_TEST_T3_LITELLM_APP"); installed != "" {
+		resolve := a.launcher.resolve
+		a.launcher.resolve = func(id, custom string) (string, error) {
+			if id == "t3-code" {
+				return installed, nil
+			}
+			return resolve(id, custom)
+		}
+	}
+	a.apiKey, a.config.OrgID = "", ""
+	a.config.T3Code.KiloCodex, a.config.T3Code.KiloClaude = false, false
+	a.config.T3Code.LiteLLMCodex, a.config.T3Code.LiteLLMClaude = true, true
+	const url = "https://gateway.example.invalid/t3/v1"
+	a.config.LiteLLM = liteLLMSettings{URL: url, Enabled: true}
+	a.liteLLMKey = "synthetic-t3-lite-key"
+	const modelList = `{"data":[{"id":"gpt-team","name":"GPT de equipo"},{"id":"claude-team","name":"Claude de equipo"},{"id":"unclassified"}]}`
+	const groups = `[{"access_group_name":"GPT","access_model_names":["gpt-team","unseen"]},{"access_group_name":"Claude","access_model_names":["claude-team"]}]`
+	var discovery int
+	a.transport = usageMemoryTransport(func(r *http.Request) (*http.Response, error) {
+		discovery++
+		if r.Method != http.MethodGet || r.URL.Host != "gateway.example.invalid" || r.Header.Get("Authorization") != "Bearer synthetic-t3-lite-key" {
+			t.Fatalf("unexpected LiteLLM discovery request %s %s", r.Method, r.URL.Path)
+		}
+		body := modelList
+		if r.URL.Path == "/t3/v1/access_group" {
+			body = groups
+		} else if r.URL.Path != "/t3/v1/models" {
+			t.Fatalf("unexpected catalog path %s", r.URL.Path)
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body))}, nil
+	})
+	prepareT3CodeFixture(t, a)
+	saved, err := a.readT3CodePrepared()
+	if err != nil || discovery != 2 {
+		t.Fatalf("LiteLLM profile was not prepared with scoped discovery: %v (%d requests)", err, discovery)
+	}
+	connection, _ := a.liteLLMConnectionLocked()
+	prefix := liteLLMNamespace(connection.Base)
+	if saved.LiteLLMAccount != liteLLMAccountScope(connection) || saved.LiteLLMCodexLibrary.DefaultModel != prefix+"gpt-team" ||
+		saved.LiteLLMClaudeLibrary.DefaultModel != prefix+"claude-team" || len(saved.LiteLLMCodexLibrary.Models) != 1 || len(saved.LiteLLMClaudeLibrary.Models) != 1 {
+		t.Fatal("T3 prepared incorrect LiteLLM family selections", saved.LiteLLMCodexLibrary, saved.LiteLLMClaudeLibrary)
+	}
+	for _, id := range []string{
+		t3CodeCodexNormalID, t3CodeClaudeNormalID, t3CodeCodexProxyID, t3CodeClaudeProxyID,
+		t3CodeLiteLLMCodexID, t3CodeLiteLLMClaudeID,
+	} {
+		if saved.Providers[id] == nil {
+			t.Fatalf("expected separate T3 provider %s", id)
+		}
+	}
+	if status := adminRequest(a, "clients/t3-code", ""); status.Code != 200 || !strings.Contains(status.Body.String(), `"prepared":true`) || discovery != 2 {
+		t.Fatalf("prepared state should be readable without network discovery: %d %s", status.Code, status.Body.String())
+	}
+	plan, err := a.planClientLaunch(clientLaunchRequest{Client: "t3-code"}, a.launchRuntime())
+	if err != nil || plan.skipProxy {
+		t.Fatalf("LiteLLM-only routing should start the local proxy: %v", err)
+	}
+	// Access groups and the cached authorized aliases are a preparation-time
+	// concern. An already running private workspace retains its exact policy.
+	a.t3CodeCheckRunning = func(string) (bool, error) { return true, nil }
+	prepareT3CodeFixture(t, a)
+	if discovery != 2 {
+		t.Fatal("reprepared catalog while the private workspace was running")
+	}
+	a.liteLLMKey = "synthetic-changed-account"
+	if status := adminRequest(a, "clients/t3-code", ""); !strings.Contains(status.Body.String(), `"prepared":false`) {
+		t.Fatal("a prepared account was reused after the LiteLLM credential changed")
 	}
 }
 

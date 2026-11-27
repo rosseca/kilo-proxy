@@ -139,7 +139,11 @@ test('T3 loads the Claude and Meta catalogs without shared models and still requ
  await expect(page.locator('#client-launch')).toBeEnabled();
  const prepare=page.waitForRequest(r=>r.method()==='POST'&&new URL(r.url()).pathname==='/api/clients/t3-code');
  await page.locator('#client-launch').click();
- expect((await prepare).postDataJSON()).toEqual({preferences});
+ expect((await prepare).postDataJSON()).toEqual({preferences:{
+  ...preferences,
+  liteLLMCodex:false,liteLLMCodexModels:'official',
+  liteLLMClaude:false,liteLLMClaudeModels:'official',
+ }});
  await expect.poll(async()=>(await records(gateway)).map(record=>record.client)).toEqual(['t3-code']);
  await expect(page.locator('#t3-code-summary')).toHaveText('Kilo Proxy · Codex: 0 · Kilo Proxy · Claude: 5 · Kilo Proxy · Muse Code: 2');
  const profile=await getAPI(request,gateway,'clients/t3-code');

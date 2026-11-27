@@ -36,6 +36,16 @@ func t3CodeDefaultSelection(current any, providers map[string]any, policy t3Code
 				if contains(policy.MuseLibrary, model) {
 					return t3CodeMuseSelectionReasoning(selected, policy.MuseReasoningLevels, policy.MuseReasoningDefaults)
 				}
+			case t3CodeLiteLLMCodexID:
+				if contains(policy.LiteLLMCodexLibrary, model) {
+					return current
+				}
+				return map[string]any{"instanceId": id, "model": policy.LiteLLMCodexLibrary.DefaultModel}
+			case t3CodeLiteLLMClaudeID:
+				if contains(policy.LiteLLMClaudeLibrary, model) {
+					return current
+				}
+				return map[string]any{"instanceId": id, "model": policy.LiteLLMClaudeLibrary.DefaultModel}
 			case t3CodeCodexProxyID:
 				if contains(policy.CodexLibrary, model) {
 					return current
@@ -67,7 +77,7 @@ func t3CodeDefaultSelection(current any, providers map[string]any, policy t3Code
 	for _, candidate := range []struct {
 		id      string
 		library modelLibrary
-	}{{t3CodeCodexProxyID, policy.CodexLibrary}, {t3CodeClaudeProxyID, claudePicker}, {t3CodeOpenCodeProxyID, openCodePicker}, {t3CodeMuseProxyID, policy.MuseLibrary}} {
+	}{{t3CodeCodexProxyID, policy.CodexLibrary}, {t3CodeClaudeProxyID, claudePicker}, {t3CodeOpenCodeProxyID, openCodePicker}, {t3CodeMuseProxyID, policy.MuseLibrary}, {t3CodeLiteLLMCodexID, policy.LiteLLMCodexLibrary}, {t3CodeLiteLLMClaudeID, policy.LiteLLMClaudeLibrary}} {
 		if enabled(candidate.id) && len(candidate.library.Models) > 0 {
 			selected := map[string]any{"instanceId": candidate.id, "model": candidate.library.DefaultModel}
 			if candidate.id == t3CodeMuseProxyID {
