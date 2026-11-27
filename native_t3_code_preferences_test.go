@@ -332,6 +332,70 @@ func TestNativeT3CodePreferencesCapabilitiesAndOpenCodeVersion(t *testing.T) {
 	}
 }
 
+func TestNativeT3CodeLiteLLMAccountsAreIndependent(t *testing.T) {
+	f := newNativeT3PreferencesFixture(t, "es")
+	u, h := f.u, f.h
+	state := &u.agentsState().T3Code.PreferencesState
+	before := state.Preferences
+	const codex, claude = "LiteLLM · Codex", "LiteLLM · Claude"
+	for _, node := range h.nodes() {
+		if node.Desc.Class == semantic.Switch && !node.Desc.Disabled && (node.Desc.Label == codex || node.Desc.Label == claude) {
+			t.Fatal("unconnected LiteLLM accounts were enabled")
+		}
+	}
+	setConnection := func(enabled bool) {
+		u.owner.mu.Lock()
+		u.owner.config.LiteLLM = liteLLMSettings{Enabled: enabled, URL: "https://litellm.example.test/v1"}
+		u.owner.publishUIProjectionLocked()
+		u.owner.mu.Unlock()
+		u.refreshState()
+		nativeTestWait(t, u, func() bool { return !u.busy["GET/api/state"] && u.liteLLMReady() == enabled })
+		h.frame()
+	}
+	click := func(label string, class semantic.ClassOp, posts int) {
+		h.reveal(label, class)
+		h.click(label, class)
+		nativeTestWait(t, u, func() bool { return f.postCount() == posts && !u.t3CodePreferencesBusy() && state.Pending == nil })
+		h.frame()
+	}
+	setConnection(true)
+	click(codex, semantic.Switch, 1)
+	h.reveal("Modelos OpenAI", semantic.RadioButton)
+	if !h.target("Modelos OpenAI", semantic.RadioButton).Desc.Selected || state.Preferences.LiteLLMClaude {
+		t.Fatal("enabling LiteLLM Codex did not select only its default family")
+	}
+	click("Elegir modelos de LiteLLM", semantic.RadioButton, 2)
+	click(claude, semantic.Switch, 3)
+	want := before
+	want.LiteLLMCodex, want.LiteLLMClaude = true, true
+	want.LiteLLMCodexModels = "selected"
+	if !nativeT3CodePreferencesEqual(state.Preferences, want) {
+		t.Fatal("changing one LiteLLM provider modified the other account or existing settings")
+	}
+	setConnection(false)
+	if u.t3CodeProviderCatalogConnectionError() == nil {
+		t.Fatal("disconnection did not block launch with a saved account")
+	}
+	click(codex, semantic.Switch, 4)
+	want.LiteLLMCodex = false
+	if !nativeT3CodePreferencesEqual(state.Preferences, want) {
+		t.Fatal("disabling Codex after disconnect lost the saved scope or changed Claude")
+	}
+
+	click("Kilo Proxy · Codex", semantic.Switch, 5)
+	click("Kilo Proxy · Claude", semantic.Switch, 6)
+	u.owner.mu.Lock()
+	u.owner.apiKey = ""
+	u.owner.publishUIProjectionLocked()
+	u.owner.mu.Unlock()
+	setConnection(true)
+	selection := u.sharedClientSelection("t3-code")
+	if u.owner.readUIProjection().KiloReady || u.t3CodeNativeOnly() || u.t3CodeNeedsSavedLibrary() ||
+		u.t3CodeProviderCatalogConnectionError() != nil || !*u.t3CodeDetail(selection).canPrepare {
+		t.Fatal("the official LiteLLM provider should prepare with Kilo disconnected and no shared model requirement")
+	}
+}
+
 func TestNativeT3CodePreferencesFailedLoadAndLateResponse(t *testing.T) {
 	f := newNativeT3PreferencesFixture(t, "en")
 	u := f.u

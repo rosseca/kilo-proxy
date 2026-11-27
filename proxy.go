@@ -296,17 +296,37 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 			jsonError(w, http.StatusForbidden, "Este endpoint solo admite clientes locales de API.")
 			return
 		}
-		bearer := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		authorization := r.Header.Get("Authorization")
+		bearer := strings.TrimPrefix(authorization, "Bearer ")
 		museScope := museProxyScope(bearer, localKey)
 		omnigentScope := omnigentProxyScope(bearer, localKey)
+		t3LiteLLMScope := ""
+		if strings.HasPrefix(authorization, "Bearer ") {
+			t3LiteLLMScope = t3LiteLLMProxyScope(bearer, localKey)
+		} else if authorization == "" && strings.HasPrefix(r.URL.Path, t3LiteLLMProxyPrefix+"claude/") && t3LiteLLMProxyScope(r.Header.Get("X-Api-Key"), localKey) == "claude" {
+			t3LiteLLMScope = "claude"
+		}
 		if r.Header.Get("Authorization") == "" && strings.HasPrefix(r.URL.Path, "/omnigent/") {
 			// The Anthropic SDK uses x-api-key. This exception accepts only a
 			// scoped Omnigent credential, never the general local key.
 			omnigentScope = omnigentProxyScope(r.Header.Get("X-Api-Key"), localKey)
 		}
-		if omnigentScope == "" && (!strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") || museScope == "" && !secureEqual(bearer, localKey)) {
+		if omnigentScope == "" && t3LiteLLMScope == "" && (!strings.HasPrefix(authorization, "Bearer ") || museScope == "" && !secureEqual(bearer, localKey)) {
 			jsonError(w, http.StatusUnauthorized, "API key local incorrecta. Cópiala desde Kilo Proxy.")
 			return
+		}
+		if t3LiteLLMScope != "" || strings.HasPrefix(r.URL.Path, t3LiteLLMProxyPrefix) {
+			path, ok := t3LiteLLMInferencePath(r, t3LiteLLMScope)
+			if !ok {
+				jsonError(w, http.StatusNotFound, "Use the local credential and route for this T3 LiteLLM provider.")
+				return
+			}
+			if r.Method == http.MethodGet {
+				a.serveT3LiteLLMModels(w, t3LiteLLMScope)
+				return
+			}
+			r = r.Clone(context.WithValue(r.Context(), t3LiteLLMRequestScopeKey{}, t3LiteLLMScope))
+			r.URL.Path = path
 		}
 		if omnigentScope != "" {
 			if omnigentScope == "claude" && r.Method == http.MethodPost && r.URL.Path == "/omnigent/claude/v1/session-effort" && r.URL.RawPath == "" && r.URL.RawQuery == "" && !r.URL.ForceQuery {
@@ -389,6 +409,9 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 			}
 			if museScope != "" {
 				capture.addSecrets(museProxyToken(localKey, museScope))
+			}
+			if t3LiteLLMScope != "" {
+				capture.addSecrets(t3LiteLLMProxyToken(localKey, t3LiteLLMScope))
 			}
 			r = r.WithContext(context.WithValue(r.Context(), traceContextKey{}, capture))
 			if r.Body != nil {
@@ -571,6 +594,14 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 			jsonError(recorder, status, routeErr.Error())
 			return
 		}
+		t3LiteAccount, _ := r.Context().Value(t3LiteLLMRequestAccountKey{}).(string)
+		if t3LiteLLMScope != "" {
+			preparedModel, _ := r.Context().Value(t3LiteLLMRequestModelKey{}).(string)
+			if t3LiteAccount == "" || model != preparedModel || !strings.HasPrefix(model, liteLLMModelPrefix) {
+				jsonError(recorder, http.StatusConflict, "Choose a model from the prepared T3 LiteLLM provider.")
+				return
+			}
+		}
 		if strings.HasPrefix(model, liteLLMModelPrefix) {
 			a.mu.Lock()
 			connection, ready := a.liteLLMConnectionLocked()
@@ -593,10 +624,24 @@ func (a *app) inferenceHandler(key, orgID, localKey, host string) http.Handler {
 				jsonError(recorder, http.StatusConflict, "This model belongs to a different LiteLLM connection. Choose a model from the active catalog.")
 				return
 			}
+			if t3LiteAccount != "" && t3LiteAccount != scope {
+				jsonError(recorder, http.StatusConflict, "The LiteLLM connection changed. Prepare T3 Code again.")
+				return
+			}
 			connection, routeErr = a.liteLLMRequestCredential(r.Context(), connection)
 			if routeErr != nil {
 				jsonError(recorder, http.StatusServiceUnavailable, "LiteLLM could not authorize this request. Check its connection in Accounts.")
 				return
+			}
+			if t3LiteAccount != "" {
+				a.mu.Lock()
+				current, available := a.liteLLMConnectionLocked()
+				unchanged := available && liteLLMAccountScope(current) == t3LiteAccount && liteLLMAccountScope(connection) == t3LiteAccount
+				a.mu.Unlock()
+				if !unchanged {
+					jsonError(recorder, http.StatusConflict, "The LiteLLM connection changed. Prepare T3 Code again.")
+					return
+				}
 			}
 			if capture != nil {
 				capture.addSecrets(connection.Key)

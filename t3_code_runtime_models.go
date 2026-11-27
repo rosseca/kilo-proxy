@@ -16,6 +16,12 @@ func t3CodeRuntimeModelAllowlist(policy t3CodeModelPolicy) map[string][]string {
 	for _, model := range t3CodeClaudePickerLibrary(policy.ClaudeLibrary, policy.ClaudeRoutes).Models {
 		result[t3CodeClaudeProxyID] = append(result[t3CodeClaudeProxyID], model.ID)
 	}
+	for _, model := range policy.LiteLLMCodexLibrary.Models {
+		result[t3CodeLiteLLMCodexID] = append(result[t3CodeLiteLLMCodexID], model.ID)
+	}
+	for _, model := range policy.LiteLLMClaudeLibrary.Models {
+		result[t3CodeLiteLLMClaudeID] = append(result[t3CodeLiteLLMClaudeID], model.ID)
+	}
 	if len(policy.OpenCodeLibrary.Models) > 0 {
 		for _, model := range t3CodeOpenCodePickerLibrary(policy.OpenCodeLibrary).Models {
 			result[t3CodeOpenCodeProxyID] = append(result[t3CodeOpenCodeProxyID], model.ID)
@@ -38,6 +44,12 @@ func t3CodeRuntimeModelDefaults(policy t3CodeModelPolicy) map[string]string {
 	claude := t3CodeClaudePickerLibrary(policy.ClaudeLibrary, policy.ClaudeRoutes)
 	if len(claude.Models) > 0 {
 		result[t3CodeClaudeProxyID] = claude.DefaultModel
+	}
+	if len(policy.LiteLLMCodexLibrary.Models) > 0 {
+		result[t3CodeLiteLLMCodexID] = policy.LiteLLMCodexLibrary.DefaultModel
+	}
+	if len(policy.LiteLLMClaudeLibrary.Models) > 0 {
+		result[t3CodeLiteLLMClaudeID] = policy.LiteLLMClaudeLibrary.DefaultModel
 	}
 	if len(policy.OpenCodeLibrary.Models) > 0 {
 		result[t3CodeOpenCodeProxyID] = "kilo-local/" + policy.OpenCodeLibrary.DefaultModel

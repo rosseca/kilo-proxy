@@ -1,13 +1,15 @@
 # T3 Code
 
-Kilo Proxy opens **T3 Code · Kilo**, a separate T3 Code workspace. In **Harnesses → T3 Code → gear → Accounts and models**, choose which direct and Kilo connections it offers. These controls belong to the T3 Code harness detail, rather than the global Settings page:
+Kilo Proxy opens **T3 Code · Kilo**, a separate T3 Code workspace. In **Harnesses → T3 Code → gear → Accounts and models**, choose which connections it offers.
 
 | Agent | Models and connection | Login |
 | --- | --- | --- |
 | Codex | Codex's normal model catalog | Your existing Codex CLI login |
 | Kilo Proxy · Codex | OpenAI/ChatGPT models from your shared selection, or all shared models | Private Kilo CLI profile |
+| LiteLLM · Codex (optional) | OpenAI models visible to your LiteLLM connection, or selected LiteLLM models | Saved LiteLLM connection |
 | Claude | Claude's normal model catalog | Your existing Claude Code login |
 | Kilo Proxy · Claude | Claude models available in T3 and Kilo, or all shared models | Private Kilo CLI profile |
+| LiteLLM · Claude (optional) | Claude models visible to your LiteLLM connection, or selected LiteLLM models | Saved LiteLLM connection |
 | OpenCode (optional) | OpenCode’s own model catalog | Its own login; OpenCode 2 has a separate profile |
 | Kilo Proxy · OpenCode (optional) | Models saved in Kilo’s shared library | Private Kilo profile |
 | Muse Code (optional) | Official models discovered by the native Muse driver | Your Muse Code / Meta login |
@@ -40,7 +42,7 @@ T3 builds using Orchestrator V2 have their own database migration. On first open
 ## Open the workspace
 
 1. In Kilo Proxy, open **Agents → T3 Code · Kilo**.
-2. Select **Open T3 Code · Kilo**. Kilo Proxy prepares the connections with the saved T3 settings. It starts the proxy when a Kilo connection is enabled; native-only accounts use their own login and catalog.
+2. Select **Open T3 Code · Kilo**. Kilo Proxy prepares the connections with the saved T3 settings and starts the local proxy for enabled Kilo and LiteLLM connections. Native accounts use their own login and catalog.
 3. Create a new chat in T3 Code and select an agent.
 
 On the T3 Code settings page, **Advanced → Prepare without opening** performs the same preparation without starting T3 Code. The local web interface also offers a **T3 Code · Kilo** integration tab.
@@ -60,6 +62,14 @@ Use **Harnesses → T3 Code → gear → Accounts and models** in Kilo Proxy to 
 **Kilo Proxy · Claude** defaults to **Claude models**, the intersection of T3's native Claude model catalog and the connected Kilo catalog. These models retain T3's native identities and model-specific controls. Older T3 bundles without a readable manifest use the known native model IDs. A dedicated local Messages route maps each identity to its exact prepared gateway ID. Selecting Sonnet cannot silently send Opus, and a model outside the prepared selection is rejected. The general Messages API and other clients are unchanged. Compatible saved reasoning defaults remain per model; levels selected for a turn remain under T3's native controls.
 
 Choose **All shared models** to expose additional models selected in Kilo Proxy's **Models** page. Models outside T3's native Claude catalog can have fewer controls; listing them does not establish protocol, tool or reasoning support. Codex retains the reasoning levels advertised for each effective model.
+
+### LiteLLM connections
+
+Connect LiteLLM in **Settings → Accounts**, then enable **LiteLLM · Codex** or **LiteLLM · Claude** under T3 Code's **Accounts and models**. Each connection has its own CLI profile. Choose the account and model when starting a chat. Close the private T3 workspace and prepare it again after changing the model selection or the LiteLLM connection.
+
+The default scopes show models from the gateway's GPT/OpenAI or Claude/Anthropic access groups that are visible to your saved connection. Kilo Proxy can also classify models from gateway metadata available to that connection. For unclassified aliases or a custom mix, save the models in **Models** and choose **Choose LiteLLM models** for the desired account. Each connection supports up to 32 models.
+
+The gateway must support the OpenAI Responses API for Codex and the Anthropic Messages API for Claude Code. Check tool, streaming and reasoning support for the selected model separately.
 
 Preparation creates a private Desktop asset view that filters both the Kilo model picker and its Models settings to the prepared selection. Native model objects and thinking capabilities are retained. New models discovered by the CLI remain excluded from Kilo until explicitly selected and prepared; they do not invalidate an existing workspace. Direct accounts retain their full native catalogs. Duplicate disabled native Codex/Claude rows are hidden when their managed direct account is present, retaining existing provider IDs and chats. Original application files are verified and left unchanged. Independently connected web/mobile clients retain their own picker preferences.
 

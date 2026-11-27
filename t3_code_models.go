@@ -11,10 +11,54 @@ import (
 
 type t3CodeModelPolicy struct {
 	CodexLibrary, ClaudeLibrary, OpenCodeLibrary, MuseLibrary modelLibrary
+	LiteLLMCodexLibrary, LiteLLMClaudeLibrary                 modelLibrary
 	ClaudeRoutes                                              map[string]string
 	OpenCodeVariantLevels                                     map[string][]string
 	MuseReasoningLevels                                       map[string][]string
 	MuseReasoningDefaults                                     map[string]string
+}
+
+func deriveT3LiteLLMLibraries(policy *t3CodeModelPolicy, prefs t3CodePreferences, library modelLibrary, catalog t3LiteLLMCatalog) error {
+	selected := make(map[string]bool, len(library.Models))
+	for _, model := range library.Models {
+		selected[model.ID] = true
+	}
+	for _, profile := range []struct {
+		name, family, mode string
+		enabled            bool
+		target             *modelLibrary
+	}{
+		{"LiteLLM · Codex", "openai", prefs.LiteLLMCodexModels, prefs.LiteLLMCodex, &policy.LiteLLMCodexLibrary},
+		{"LiteLLM · Claude", "claude", prefs.LiteLLMClaudeModels, prefs.LiteLLMClaude, &policy.LiteLLMClaudeLibrary},
+	} {
+		if !profile.enabled {
+			continue
+		}
+		result := emptyModelLibrary()
+		for _, model := range catalog.Models {
+			if profile.mode == "selected" && !selected[model.ID] || profile.mode != "selected" && catalog.Families[model.ID] != profile.family {
+				continue
+			}
+			item := t3CodeCatalogLibraryItem(model, library)
+			if item.DisplayName == "" {
+				name := []rune(model.Name)
+				item.DisplayName = string(name[:min(len(name), 80)])
+			}
+			result.Models = append(result.Models, item)
+		}
+		if len(result.Models) == 0 {
+			return fmt.Errorf("No models are available for %s. Choose LiteLLM models in Models and use the selected models option, or disable this provider.", profile.name)
+		}
+		if len(result.Models) > t3CodeCustomModelLimit {
+			return fmt.Errorf("%s supports up to %d models. Use the selected models option and choose fewer in Models.", profile.name, t3CodeCustomModelLimit)
+		}
+		result.DefaultModel = t3CodeEffectiveDefault(result, library.DefaultModel)
+		if err := validateT3CodeLibrary(result); err != nil {
+			return err
+		}
+		*profile.target = result
+	}
+	return nil
 }
 
 var t3CodeClaudeGatewayID = regexp.MustCompile(`^anthropic/(claude-(?:opus|sonnet|haiku|fable)-[0-9]+(?:[.-][0-9]+)?)(-[0-9]{8})?$`)

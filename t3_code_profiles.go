@@ -15,12 +15,18 @@ import (
 )
 
 const (
-	t3CodeCustomModelLimit = 32
-	t3CodeCodexNormalID    = "kilo_codex_normal"
-	t3CodeCodexProxyID     = "kilo_codex_proxy"
-	t3CodeClaudeNormalID   = "kilo_claude_normal"
-	t3CodeClaudeProxyID    = "kilo_claude_proxy"
-	t3CodeProxyAccentColor = "#327653"
+	t3CodeCustomModelLimit  = 32
+	t3CodeCodexNormalID     = "kilo_codex_normal"
+	t3CodeCodexProxyID      = "kilo_codex_proxy"
+	t3CodeClaudeNormalID    = "kilo_claude_normal"
+	t3CodeClaudeProxyID     = "kilo_claude_proxy"
+	t3CodeProxyAccentColor  = "#327653"
+	t3CodeLiteLLMCodexID    = "kilo_codex_litellm"
+	t3CodeLiteLLMClaudeID   = "kilo_claude_litellm"
+	t3CodeLiteLLMCodexHome  = "codex-litellm"
+	t3CodeLiteLLMClaudeHome = "claude-litellm"
+	t3CodeLiteLLMCodexKey   = "KILO_LOCAL_API_KEY"
+	t3CodeLiteLLMClaudeKey  = "ANTHROPIC_AUTH_TOKEN"
 )
 
 func validateT3CodeLibrary(library modelLibrary) error {
@@ -68,17 +74,19 @@ func planT3CodeProfiles(options t3CodeProfileOptions) (t3CodeProfiles, error) {
 	result := t3CodeProfiles{}
 	usesKilo := options.Preferences == nil || t3CodeUsesKilo(*options.Preferences)
 	kiloCodex, kiloClaude := true, true
+	liteLLMCodex, liteLLMClaude := false, false
 	normalCodexEnabled, normalClaudeEnabled := true, true
 	if options.Preferences != nil {
 		prefs := normalizeT3CodePreferences(*options.Preferences)
 		kiloCodex, kiloClaude = prefs.KiloCodex, prefs.KiloClaude
+		liteLLMCodex, liteLLMClaude = prefs.LiteLLMCodex, prefs.LiteLLMClaude
 		normalCodexEnabled, normalClaudeEnabled = prefs.Codex, prefs.Claude
 	}
 	paths := []string{options.RootDir, options.NormalHome}
-	if kiloCodex || normalCodexEnabled {
+	if kiloCodex || liteLLMCodex || normalCodexEnabled {
 		paths = append(paths, options.CodexBinary)
 	}
-	if kiloClaude || normalClaudeEnabled {
+	if kiloClaude || liteLLMClaude || normalClaudeEnabled {
 		paths = append(paths, options.ClaudeBinary)
 	}
 	for _, value := range paths {
@@ -86,7 +94,8 @@ func planT3CodeProfiles(options t3CodeProfileOptions) (t3CodeProfiles, error) {
 			return result, errors.New("T3 Code requires absolute private-profile, normal-home and CLI paths.")
 		}
 	}
-	if usesKilo && (options.Port < 1024 || options.Port > 65535 || options.LocalKey == "" || strings.ContainsAny(options.LocalKey, "\x00\r\n")) {
+	usesProxy := usesKilo || liteLLMCodex || liteLLMClaude
+	if usesProxy && (options.Port < 1024 || options.Port > 65535 || options.LocalKey == "" || strings.ContainsAny(options.LocalKey, "\x00\r\n")) {
 		return result, errors.New("T3 Code requires a valid local proxy port and key.")
 	}
 	if options.Policy == nil {
@@ -111,6 +120,12 @@ func planT3CodeProfiles(options t3CodeProfileOptions) (t3CodeProfiles, error) {
 	}
 	if kiloClaude {
 		privateHomes = append(privateHomes, result.ClaudeHome)
+	}
+	if liteLLMCodex {
+		privateHomes = append(privateHomes, filepath.Join(options.RootDir, "profiles", t3CodeLiteLLMCodexHome))
+	}
+	if liteLLMClaude {
+		privateHomes = append(privateHomes, filepath.Join(options.RootDir, "profiles", t3CodeLiteLLMClaudeHome))
 	}
 	normalHomes := []string{normalCodex, normalClaude}
 	// The native Claude environment retains its literal path. Keep the
@@ -141,11 +156,11 @@ func planT3CodeProfiles(options t3CodeProfileOptions) (t3CodeProfiles, error) {
 				return t3CodeProfiles{}, errors.New("Cannot safely resolve the private T3 Code provider home.")
 			}
 			if withinT3CodePath(normal, private) || withinT3CodePath(private, normal) {
-				return t3CodeProfiles{}, errors.New("T3 Code Kilo profiles must be separate from normal provider homes.")
+				return t3CodeProfiles{}, errors.New("T3 Code proxy profiles must be separate from normal provider homes.")
 			}
 		}
 	}
-	if !usesKilo {
+	if !usesProxy {
 		// Retain stable account IDs so T3 conversations and saved native model
 		// selections survive. Disabled Kilo slots need no profiles or secrets.
 		result.Providers = t3CodeProviderInstances(options, result, nil, claudeSelection{})
@@ -220,7 +235,7 @@ func planT3CodeProfiles(options t3CodeProfileOptions) (t3CodeProfiles, error) {
 		}
 		// T3 status probes use its server cwd, and tasks use their project cwd.
 		// An absolute catalog path keeps every app-server on this prepared catalog.
-		codexConfig, err = mergeT3CodeCatalogPath(codexConfig, filepath.Join(result.CodexHome, "models.json"))
+		codexConfig, err = mergeT3CodeCatalogPath(codexConfig, filepath.Join(result.CodexHome, "models.json"), "")
 		if err != nil {
 			return t3CodeProfiles{}, err
 		}
@@ -303,7 +318,7 @@ func planT3CodeProfiles(options t3CodeProfileOptions) (t3CodeProfiles, error) {
 				return t3CodeProfiles{}, err
 			}
 		}
-		claudeConfig, err = removeT3CodeClaudeToken(claudeConfig)
+		claudeConfig, err = t3CodeClaudeProfileSettings(claudeConfig, "")
 		if err != nil {
 			return t3CodeProfiles{}, err
 		}
@@ -320,6 +335,16 @@ func planT3CodeProfiles(options t3CodeProfileOptions) (t3CodeProfiles, error) {
 	}
 	result.Providers = t3CodeProviderInstances(options, result, choices, selection)
 	t3CodeNativeClaudeAuthEnvironment(options, result.Providers)
+	if liteLLMCodex {
+		if err := planT3LiteLLMProfile(options, &result, "codex", read, appendFile); err != nil {
+			return t3CodeProfiles{}, err
+		}
+	}
+	if liteLLMClaude {
+		if err := planT3LiteLLMProfile(options, &result, "claude", read, appendFile); err != nil {
+			return t3CodeProfiles{}, err
+		}
+	}
 	if err := addT3CodeOpenCodeProfile(options, &result); err != nil {
 		return t3CodeProfiles{}, err
 	}
@@ -443,8 +468,8 @@ func t3CodeNormalClaudeSecureStorageHome(options t3CodeProfileOptions) (string, 
 
 func t3CodeNormalProviderEnabled(options t3CodeProfileOptions, index int) bool {
 	// A disabled T3 direct account can still be used by an external CLI.
-	// Any Kilo writes must stay separate from both normal provider homes.
-	if options.Preferences == nil || options.Preferences.KiloCodex || options.Preferences.KiloClaude {
+	// Private proxy writes must stay separate from both normal provider homes.
+	if options.Preferences == nil || options.Preferences.KiloCodex || options.Preferences.KiloClaude || options.Preferences.LiteLLMCodex || options.Preferences.LiteLLMClaude {
 		return true
 	}
 	prefs := normalizeT3CodePreferences(*options.Preferences)
@@ -454,7 +479,7 @@ func t3CodeNormalProviderEnabled(options t3CodeProfileOptions, index int) bool {
 	return prefs.Claude
 }
 
-func mergeT3CodeCatalogPath(data []byte, catalogPath string) ([]byte, error) {
+func mergeT3CodeCatalogPath(data []byte, catalogPath, liteLLMBaseURL string) ([]byte, error) {
 	before := map[string]any{}
 	if err := toml.Unmarshal(data, &before); err != nil {
 		return nil, err
@@ -475,10 +500,24 @@ func mergeT3CodeCatalogPath(data []byte, catalogPath string) ([]byte, error) {
 		}
 		active["model_catalog_json"] = catalogPath
 	}
+	if liteLLMBaseURL != "" {
+		providers, err := configTable(after, "model_providers")
+		if err != nil {
+			return nil, err
+		}
+		provider, err := configTable(providers, "kilo-local")
+		if err != nil {
+			return nil, err
+		}
+		provider["name"] = "LiteLLM"
+		provider["base_url"] = liteLLMBaseURL
+		provider["requires_openai_auth"] = false
+		provider["env_key_instructions"] = "Open LiteLLM · Codex from the private T3 Code workspace."
+	}
 	return editCodexTOML(data, before, after)
 }
 
-func removeT3CodeClaudeToken(data []byte) ([]byte, error) {
+func t3CodeClaudeProfileSettings(data []byte, liteLLMBaseURL string) ([]byte, error) {
 	settings, err := decodeClaudeSettings(data)
 	if err != nil {
 		return nil, err
@@ -488,12 +527,131 @@ func removeT3CodeClaudeToken(data []byte) ([]byte, error) {
 		return nil, err
 	}
 	delete(env, "ANTHROPIC_AUTH_TOKEN")
+	if liteLLMBaseURL != "" {
+		env["ANTHROPIC_BASE_URL"], _ = json.Marshal(liteLLMBaseURL)
+	}
 	settings["env"], err = json.Marshal(env)
 	if err != nil {
 		return nil, err
 	}
 	data, err = json.MarshalIndent(settings, "", "  ")
 	return append(data, '\n'), err
+}
+
+func validateT3LiteLLMLibrary(library modelLibrary) error {
+	if len(library.Models) == 0 {
+		return errors.New("Choose LiteLLM models before preparing T3 Code.")
+	}
+	if err := validateT3CodeLibrary(library); err != nil {
+		return err
+	}
+	var namespace string
+	for _, model := range library.Models {
+		rest, namespaced := strings.CutPrefix(model.ID, liteLLMModelPrefix)
+		prefix, alias, found := strings.Cut(rest, "/")
+		if !namespaced || !found || len(prefix) != 32 || strings.Trim(prefix, "0123456789abcdef") != "" || alias == "" || namespace != "" && namespace != prefix {
+			return errors.New("T3 Code LiteLLM models must belong to one selected gateway.")
+		}
+		namespace = prefix
+	}
+	return nil
+}
+
+func planT3LiteLLMProfile(options t3CodeProfileOptions, result *t3CodeProfiles, scope string, read func(string) ([]byte, error), appendFile func(string, []byte) error) error {
+	if options.Policy == nil {
+		return errors.New("Choose LiteLLM models before preparing T3 Code.")
+	}
+	isClaude := scope == "claude"
+	library := options.Policy.LiteLLMCodexLibrary
+	id, driver, label := t3CodeLiteLLMCodexID, "codex", "LiteLLM · Codex"
+	homeName, keyName, binary := t3CodeLiteLLMCodexHome, t3CodeLiteLLMCodexKey, options.CodexBinary
+	if isClaude {
+		library = options.Policy.LiteLLMClaudeLibrary
+		id, driver, label = t3CodeLiteLLMClaudeID, "claudeAgent", "LiteLLM · Claude"
+		homeName, keyName, binary = t3CodeLiteLLMClaudeHome, t3CodeLiteLLMClaudeKey, options.ClaudeBinary
+	}
+	if err := validateT3LiteLLMLibrary(library); err != nil {
+		return err
+	}
+	home := filepath.Join(options.RootDir, "profiles", homeName)
+	base := "http://127.0.0.1:" + strconv.Itoa(options.Port) + t3LiteLLMProxyPrefix + scope
+	choices := terminalLibraryChoices(library, options.Catalog)
+	config := map[string]any{"binaryPath": binary, "homePath": home, "launchArgs": "", "customModels": t3CodeCustomModels(choices, isClaude, options.ClaudeCaps)}
+	environment := t3CodeNormalEnvironment(home, nil, options.Platform)
+	if isClaude {
+		// With no native aliases, the CLI's built-in names also resolve to
+		// the prepared initial LiteLLM model.
+		selection := claudeSelection{Initial: library.DefaultModel, Mode: "installed", Aliases: map[string]string{}}
+		for _, choice := range choices {
+			limits, err := contextPolicyForChoice(choice)
+			if err != nil {
+				return err
+			}
+			selection.Models = append(selection.Models, claudeModel{ID: choice.Model.ID, DisplayName: nativeCodexDisplayName(choice), Context: limits.ContextWindow, Output: limits.MaxOutputTokens})
+		}
+		if window, _ := claudeContextBudget(selection); window >= 100000 {
+			config["autoCompactWindow"] = strconv.Itoa(window)
+		}
+		configPath := filepath.Join(home, "settings.json")
+		previous, err := read(configPath)
+		if err != nil {
+			return err
+		}
+		settings, err := mergeClaudeSettings(previous, selection, claudeCapabilities{}, options.Port, "")
+		if err != nil {
+			return err
+		}
+		settings, err = t3CodeClaudeProfileSettings(settings, base)
+		if err != nil {
+			return err
+		}
+		models, err := json.MarshalIndent(selection, "", "  ")
+		if err != nil {
+			return err
+		}
+		if err := appendFile(filepath.Join(home, "kilo-models.json"), append(models, '\n')); err != nil {
+			return err
+		}
+		if err := appendFile(configPath, settings); err != nil {
+			return err
+		}
+		environment["ANTHROPIC_BASE_URL"] = base
+		environment["CLAUDE_SECURESTORAGE_CONFIG_DIR"] = home
+	} else {
+		config["setupMode"], config["shadowHomePath"] = "existing", ""
+		catalog, err := buildCodexCatalog(choices, library.DefaultModel, false)
+		if err != nil {
+			return err
+		}
+		configPath, catalogPath := filepath.Join(home, "config.toml"), filepath.Join(home, "models.json")
+		previous, err := read(configPath)
+		if err != nil {
+			return err
+		}
+		settings, err := mergeCodexConfig(previous, catalog, options.Port)
+		if err != nil {
+			return err
+		}
+		settings, err = mergeT3CodeCatalogPath(settings, catalogPath, base+"/v1")
+		if err != nil {
+			return err
+		}
+		if err := appendFile(catalogPath, append(bytes.TrimSpace(catalog), '\n')); err != nil {
+			return err
+		}
+		if err := appendFile(configPath, settings); err != nil {
+			return err
+		}
+	}
+	env := []map[string]any{}
+	for _, name := range []string{"HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME", "ANTHROPIC_BASE_URL", "CLAUDE_SECURESTORAGE_CONFIG_DIR"} {
+		if value, ok := environment[name]; ok {
+			env = append(env, map[string]any{"name": name, "value": value, "sensitive": false})
+		}
+	}
+	env = append(env, map[string]any{"name": keyName, "value": t3LiteLLMProxyToken(options.LocalKey, scope), "sensitive": true})
+	result.Providers[id] = map[string]any{"driver": driver, "displayName": label, "enabled": true, "config": config, "environment": env, "accentColor": t3CodeProxyAccentColor}
+	return nil
 }
 
 // The validated T3 releases accept this provider-instance envelope and environment records.

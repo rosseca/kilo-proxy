@@ -117,6 +117,11 @@ func readSettings(dir string) (settings, error) {
 	if raw, present := members["t3Code"]; present {
 		var fields map[string]json.RawMessage
 		_ = json.Unmarshal(raw, &fields)
+		for field, value := range fields {
+			if validateT3CodeLiteLLMPreferenceMember(field, value) != nil {
+				return s, errors.New("invalid T3 Code settings; restore a valid configuration")
+			}
+		}
 		if policy, present := fields["museModels"]; present {
 			var value string
 			if json.Unmarshal(policy, &value) != nil || (value != "official" && value != "shared") {

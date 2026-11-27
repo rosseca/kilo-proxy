@@ -451,7 +451,7 @@ func (a *app) planClientLaunch(input clientLaunchRequest, rt clientLaunchRuntime
 		err = a.applyOpenMausBotLaunch(&p, rt.platform)
 	} else if input.Client == "t3-code" {
 		err = a.applyT3CodeLaunch(&p, rt)
-		p.skipProxy = !t3CodeUsesKilo(a.config.T3Code)
+		p.skipProxy = !t3CodeUsesLocalProxy(a.config.T3Code)
 	} else if input.Client == "synara" {
 		err = a.applySynaraLaunch(&p, rt)
 		if err == nil {

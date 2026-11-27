@@ -374,16 +374,22 @@ func TestT3CodeRuntimeModelPolicyPreservesNativeCapabilitiesAndInstanceIsolation
 	if err != nil {
 		t.Skip("Node is required for the JavaScript behavioral fixture")
 	}
-	policy := map[string][]string{t3CodeClaudeProxyID: {"claude-opus-5-5", "vendor/shared"}, t3CodeCodexProxyID: {"gpt-5.5", "vendor/shared"}}
-	projection, err := patchT3CodeModelsProjection([]byte(t3CodeRuntimeFixtureProjectionSource), policy)
+	policy := map[string][]string{
+		t3CodeClaudeProxyID:   {"claude-opus-5-5", "vendor/shared"},
+		t3CodeCodexProxyID:    {"gpt-5.5", "vendor/shared"},
+		t3CodeLiteLLMCodexID:  {"litellm/test/gpt", "litellm/test/other"},
+		t3CodeLiteLLMClaudeID: {"litellm/test/claude"},
+	}
+	defaults := map[string]string{t3CodeLiteLLMCodexID: "litellm/test/other", t3CodeLiteLLMClaudeID: "litellm/test/claude"}
+	projection, err := patchT3CodeModelsProjection([]byte(t3CodeRuntimeFixtureProjectionSource), policy, defaults)
 	if err != nil {
 		t.Fatal(err)
 	}
-	card, err := patchT3CodeModelsCard([]byte(t3CodeRuntimeFixtureProvidersSource), policy)
+	card, err := patchT3CodeModelsCard([]byte(t3CodeRuntimeFixtureProvidersSource), policy, defaults)
 	if err != nil {
 		t.Fatal(err)
 	}
-	aliasedCard, err := patchT3CodeModelsCard([]byte(t3CodeRuntimeFixtureAliasedModelsCard), policy)
+	aliasedCard, err := patchT3CodeModelsCard([]byte(t3CodeRuntimeFixtureAliasedModelsCard), policy, defaults)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -401,6 +407,14 @@ if(projected[0].models[0].capabilities!==capabilities)throw Error("native capabi
 if(projected[0].snapshot.models[0]!==opus||projected[0].snapshot.models.length!==2)throw Error("picker snapshot leaked manifest model");
 for(let i=2;i<records.length;i++){if(projected[i].models!==models||projected[i].snapshot.models!==models)throw Error("unrelated instance or driver filtered")}
 if(models.length!==4||records[0].models!==models)throw Error("original server snapshot mutated");
+const liteModels=[{slug:"litellm/test/gpt",isDefault:true,capabilities},{slug:"litellm/test/other",capabilities},{slug:"litellm/test/claude",capabilities},opus,gpt];
+const liteCodex={instanceId:"kilo_codex_litellm",driver:"codex",models:liteModels};
+const liteClaude={instanceId:"kilo_claude_litellm",driver:"claudeAgent",models:liteModels};
+const liteWrongDriver={...liteClaude,driver:"codex"};
+const lite=project([liteCodex,liteClaude,liteWrongDriver]);
+if(lite[0].models.length!==2||lite[0].models[0].isDefault||!lite[0].models[1].isDefault||lite[0].models[1].capabilities!==capabilities)throw Error("LiteLLM Codex models or default lost");
+if(lite[1].models.length!==1||!lite[1].models[0].isDefault||lite[1].models[0].slug!=="litellm/test/claude")throw Error("LiteLLM Claude models or default lost");
+if(lite[2].models!==liteModels)throw Error("unrelated instance driver filtered");
 for(const renderCard of [modelCard,aliasedCard]){
 const cardValue=renderCard({instanceId:"kilo_claude_proxy",instance:{driver:"claudeAgent",models},liveProvider:records[0]});
 if(cardValue.liveModels.length!==2||cardValue.customModels.length!==2||cardValue.liveModels[0]!==opus)throw Error("Providers Models leaked unknown manifest or custom model "+JSON.stringify(cardValue));
@@ -408,6 +422,8 @@ const pending=renderCard({instanceId:"kilo_claude_proxy",instance:{driver:"claud
 if(pending.liveModels!==undefined||pending.customModels.length!==2)throw Error("pending provider lost policy correlation");
 const direct=renderCard({instanceId:"kilo_claude_normal",instance:{driver:"claudeAgent",models},liveProvider:records[2]});
 if(direct.liveModels!==models||direct.customModels!==models)throw Error("direct account altered");
+const liteCard=renderCard({instanceId:liteClaude.instanceId,instance:liteClaude,liveProvider:liteClaude});
+if(liteCard.liveModels.length!==1||liteCard.customModels.length!==1||liteCard.liveModels[0].slug!=="litellm/test/claude")throw Error("LiteLLM Claude settings lost its model");
 }
 `
 	command := exec.Command(node, "--input-type=module", "--eval", script)

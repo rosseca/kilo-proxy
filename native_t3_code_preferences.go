@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 	"sort"
 	"strings"
@@ -16,18 +17,22 @@ import (
 const nativeT3CodePreferencesEndpoint = "/api/clients/t3-code/preferences"
 
 type nativeT3CodePreferences struct {
-	Version            int      `json:"version"`
-	Codex              bool     `json:"codex"`
-	Claude             bool     `json:"claude"`
-	KiloCodex          bool     `json:"kiloCodex"`
-	KiloClaude         bool     `json:"kiloClaude"`
-	CodexModels        string   `json:"codexModels"`
-	ClaudeModels       string   `json:"claudeModels"`
-	Providers          []string `json:"providers"`
-	OpenCode2          bool     `json:"openCode2"`
-	OpenCodeConnection string   `json:"openCodeConnection"`
-	MuseConnection     string   `json:"museConnection"`
-	MuseModels         string   `json:"museModels,omitempty"`
+	Version             int      `json:"version"`
+	Codex               bool     `json:"codex"`
+	Claude              bool     `json:"claude"`
+	KiloCodex           bool     `json:"kiloCodex"`
+	KiloClaude          bool     `json:"kiloClaude"`
+	CodexModels         string   `json:"codexModels"`
+	ClaudeModels        string   `json:"claudeModels"`
+	LiteLLMCodex        bool     `json:"liteLLMCodex"`
+	LiteLLMClaude       bool     `json:"liteLLMClaude"`
+	LiteLLMCodexModels  string   `json:"liteLLMCodexModels,omitempty"`
+	LiteLLMClaudeModels string   `json:"liteLLMClaudeModels,omitempty"`
+	Providers           []string `json:"providers"`
+	OpenCode2           bool     `json:"openCode2"`
+	OpenCodeConnection  string   `json:"openCodeConnection"`
+	MuseConnection      string   `json:"museConnection"`
+	MuseModels          string   `json:"museModels,omitempty"`
 }
 
 // Missing Muse connection is the legacy native account; explicit null is not a
@@ -49,6 +54,11 @@ func (p *nativeT3CodePreferences) UnmarshalJSON(data []byte) error {
 		var policy string
 		if json.Unmarshal(raw, &policy) != nil || (policy != "official" && policy != "shared") {
 			return errors.New("Invalid Muse model policy.")
+		}
+	}
+	for field, raw := range fields {
+		if err := validateT3CodeLiteLLMPreferenceMember(field, raw); err != nil {
+			return err
 		}
 	}
 	*p = nativeT3CodePreferences(next)
@@ -148,6 +158,8 @@ func nativeT3CodePreferencesEqual(a, b nativeT3CodePreferences) bool {
 	a.OpenCodeConnection, b.OpenCodeConnection = nativeT3OpenCodeConnection(a), nativeT3OpenCodeConnection(b)
 	a.MuseConnection, b.MuseConnection = nativeT3MuseConnection(a), nativeT3MuseConnection(b)
 	a.MuseModels, b.MuseModels = nativeT3MuseModels(a), nativeT3MuseModels(b)
+	a.LiteLLMCodexModels, b.LiteLLMCodexModels = t3CodeLiteLLMModelMode(a.LiteLLMCodexModels), t3CodeLiteLLMModelMode(b.LiteLLMCodexModels)
+	a.LiteLLMClaudeModels, b.LiteLLMClaudeModels = t3CodeLiteLLMModelMode(a.LiteLLMClaudeModels), t3CodeLiteLLMModelMode(b.LiteLLMClaudeModels)
 	a.Providers = append([]string(nil), a.Providers...)
 	b.Providers = append([]string(nil), b.Providers...)
 	sort.Strings(a.Providers)
@@ -162,7 +174,8 @@ func nativeT3CodePreferencesEqual(a, b nativeT3CodePreferences) bool {
 }
 
 func validNativeT3CodePreferences(p nativeT3CodePreferences) bool {
-	return p.Version == 1 && (p.CodexModels == "official" || p.CodexModels == "shared") && (p.ClaudeModels == "official" || p.ClaudeModels == "shared") && (!p.OpenCode2 || helperContains(p.Providers, "opencode")) && (nativeT3OpenCodeConnection(p) == "native" || nativeT3OpenCodeConnection(p) == "kilo") && (nativeT3MuseConnection(p) == "native" || nativeT3MuseConnection(p) == "kilo") && (nativeT3MuseModels(p) == "official" || nativeT3MuseModels(p) == "shared")
+	return p.Version == 1 && (p.CodexModels == "official" || p.CodexModels == "shared") && (p.ClaudeModels == "official" || p.ClaudeModels == "shared") && (!p.OpenCode2 || helperContains(p.Providers, "opencode")) && (nativeT3OpenCodeConnection(p) == "native" || nativeT3OpenCodeConnection(p) == "kilo") && (nativeT3MuseConnection(p) == "native" || nativeT3MuseConnection(p) == "kilo") && (nativeT3MuseModels(p) == "official" || nativeT3MuseModels(p) == "shared") &&
+		validT3CodeLiteLLMModelMode(t3CodeLiteLLMModelMode(p.LiteLLMCodexModels)) && validT3CodeLiteLLMModelMode(t3CodeLiteLLMModelMode(p.LiteLLMClaudeModels))
 }
 
 func nativeT3CodePreferenceLibraryError(p nativeT3CodePreferences, library modelLibrary) error {
@@ -276,6 +289,8 @@ func (u *nativeUI) saveT3CodePreferences(next nativeT3CodePreferences) {
 	next.OpenCodeConnection = nativeT3OpenCodeConnection(next)
 	next.MuseModels = nativeT3MuseModels(next)
 	next.MuseConnection = nativeT3MuseConnection(next)
+	next.LiteLLMCodexModels = t3CodeLiteLLMModelMode(next.LiteLLMCodexModels)
+	next.LiteLLMClaudeModels = t3CodeLiteLLMModelMode(next.LiteLLMClaudeModels)
 	s.Pending, s.Error = &next, ""
 	s.Generation++
 	generation := s.Generation
@@ -366,6 +381,58 @@ func (u *nativeUI) t3CodePreferencesPanel() layout.Widget {
 		account("kilo-claude", "Kilo Proxy · Claude", u.tr("Models through Kilo Proxy", "Modelos a través de Kilo Proxy"), p.KiloClaude, func(p *nativeT3CodePreferences, v bool) { p.KiloClaude = v }),
 		u.uxsRow(u.tr("Claude Kilo models", "Modelos de Claude Kilo"), "", u.uxsRadioList("t3-preferences:claude-models:", []nativeChoice{{Value: "official", Label: u.tr("Claude models", "Modelos de Claude")}, {Value: "shared", Label: u.tr("All shared models", "Todos los modelos compartidos")}}, p.ClaudeModels, ready && p.KiloClaude, func(value string) { next := p; next.ClaudeModels = value; u.saveT3CodePreferences(next) }), nil, u.note(u.tr("Claude models come from your connected Kilo catalog. Choose reasoning in T3. Shared models depend on the installed driver and provider.", "Los modelos de Claude vienen del catálogo de tu conexión Kilo. Elige el razonamiento en T3. Los modelos compartidos dependen del driver y proveedor instalados."))),
 	)
+	connected := u.liteLLMReady()
+	liteLLMHelp := u.tr("Models from your connected LiteLLM gateway", "Modelos de tu conexión LiteLLM")
+	if !connected {
+		liteLLMHelp = u.tr("Connect LiteLLM in Settings → Accounts.", "Conecta LiteLLM en Ajustes → Cuentas.")
+	}
+	t3 := &u.agentsState().T3Code
+	info := t3.Info
+	for _, account := range []struct {
+		id, label, modelLabel, family, mode string
+		enabled                             bool
+		models                              []nativeT3CodeModelSummary
+		set                                 func(*nativeT3CodePreferences, bool, string)
+	}{
+		{"litellm-codex", "LiteLLM · Codex", u.tr("Codex LiteLLM models", "Modelos de Codex en LiteLLM"), u.tr("OpenAI models", "Modelos OpenAI"), p.LiteLLMCodexModels, p.LiteLLMCodex, info.EffectiveLiteLLMCodexModels, func(next *nativeT3CodePreferences, enabled bool, mode string) {
+			next.LiteLLMCodex, next.LiteLLMCodexModels = enabled, mode
+		}},
+		{"litellm-claude", "LiteLLM · Claude", u.tr("Claude LiteLLM models", "Modelos de Claude en LiteLLM"), u.tr("Claude models", "Modelos Claude"), p.LiteLLMClaudeModels, p.LiteLLMClaude, info.EffectiveLiteLLMClaudeModels, func(next *nativeT3CodePreferences, enabled bool, mode string) {
+			next.LiteLLMClaude, next.LiteLLMClaudeModels = enabled, mode
+		}},
+	} {
+		mode := t3CodeLiteLLMModelMode(account.mode)
+		toggle := u.uxsToggle("t3-preferences:"+account.id, account.label, liteLLMHelp, account.enabled, func(value bool) {
+			if value && !u.liteLLMReady() {
+				return
+			}
+			next := p
+			account.set(&next, value, mode)
+			u.saveT3CodePreferences(next)
+		})
+		rows = append(rows, u.uxsRow(account.label, "", u.disabled(ready && (connected || account.enabled), toggle), nil, nil))
+		if !account.enabled {
+			continue
+		}
+		choices := []nativeChoice{
+			{Value: "official", Label: account.family},
+			{Value: "selected", Label: u.tr("Choose LiteLLM models", "Elegir modelos de LiteLLM")},
+		}
+		controls := u.uxsRadioList("t3-preferences:"+account.id+"-models:", choices, mode, ready && connected, func(value string) {
+			next := p
+			account.set(&next, true, value)
+			u.saveT3CodePreferences(next)
+		})
+		help := u.tr("Uses the model group available to your LiteLLM account. If the group is unavailable, choose LiteLLM models in Models.", "Usa el grupo de modelos disponible para tu cuenta de LiteLLM. Si el grupo no está disponible, elige modelos de LiteLLM en Modelos.")
+		if mode == "selected" {
+			help = u.tr("Select up to 32 models from this gateway in Models. Choose models supported by this agent.", "Selecciona hasta 32 modelos de este gateway en Modelos. Elige los modelos compatibles con este agente.")
+		}
+		if connected && t3.Connection == u.launchConnectionFingerprint() && info.Prepared &&
+			nativeT3CodePreferencesEqual(p, info.Preferences) && len(account.models) > 0 {
+			help += " " + fmt.Sprintf(u.tr("Models prepared for T3: %d.", "Modelos preparados para T3: %d."), len(account.models))
+		}
+		rows = append(rows, u.uxsRow(account.modelLabel, "", controls, nil, u.note(help)))
+	}
 	for _, provider := range nativeT3CodeProviderChoices(p, s.SupportedProviders) {
 		id, label := provider.ID, strings.TrimSpace(provider.Label)
 		if id == "" || label == "" {
